@@ -20,7 +20,7 @@ export class Customer {
 
   @Field()
   @Column()
-  middlename: string;
+  middlename?: string;
 
   @Field({ nullable: true })
   @Column({ nullable: true })
@@ -32,7 +32,7 @@ export class Customer {
 
   @Field({ nullable: true })
   @Column({ nullable: true })
-  phone?: string;
+  phone: string;
 
   @Field()
   @CreateDateColumn()

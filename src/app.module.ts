@@ -6,8 +6,8 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { CustomerModule } from './components/customer/customer.module';
-import { Customer } from './components/customer/customer.entity';
+import { CustomerModule } from './modules/customers/customer.module';
+import { Customer } from './modules/customers/customer.entity';
 
 @Module({
   imports: [
