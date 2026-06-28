@@ -12,19 +12,19 @@ import {
 export class Customer {
   @Field(() => ID)
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Field()
   @Column()
-  firstname: string;
-
-  @Field()
-  @Column()
-  middlename?: string;
+  firstName!: string;
 
   @Field({ nullable: true })
   @Column({ nullable: true })
-  lastname: string;
+  middleName?: string;
+
+  @Field({ nullable: true })
+  @Column({ nullable: true })
+  lastName?: string;
 
   @Field({ nullable: true })
   @Column({ nullable: true })
@@ -32,13 +32,13 @@ export class Customer {
 
   @Field({ nullable: true })
   @Column({ nullable: true })
-  phone: string;
+  phone?: string;
 
   @Field()
   @CreateDateColumn()
-  createdAt?: Date;
+  createdAt!: Date;
 
   @Field()
   @UpdateDateColumn()
-  updatedAt?: Date;
+  updatedAt!: Date;
 }

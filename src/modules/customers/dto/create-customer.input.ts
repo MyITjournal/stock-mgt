@@ -3,13 +3,13 @@ import { Field, InputType } from '@nestjs/graphql';
 @InputType()
 export class CreateCustomerInput {
   @Field()
-  firstname: string;
-
-  @Field()
-  middlename: string;
+  firstName!: string;
 
   @Field({ nullable: true })
-  lastname?: string;
+  middleName?: string;
+
+  @Field({ nullable: true })
+  lastName?: string;
 
   @Field({ nullable: true })
   email?: string;
