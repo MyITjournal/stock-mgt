@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Customer {
+  id         String   @id @default(uuid())
+  firstName  String
+  middleName String?
+  lastName   String?
+  email      String?
+  phone      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  sales      Sale[]
+
+  @@map("customers")
+}
+
+model Product {
+  id          String  @id @default(uuid())
+  name        String
+  price       Float
+  description String?
+  sales       Sale[]
+
+  @@map("products")
+}
+
+model Sale {
+  id         String   @id @default(uuid())
+  productId  String
+  customerId String
+  quantity   Int
+  total      Float
+  createdAt  DateTime @default(now())
+  product    Product  @relation(fields: [productId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@map("sales")
+}
+
+model User {
+  id                 String          @id @default(uuid())
+  email              String          @unique
+  password           String?
+  firstName          String?
+  lastName           String?
+  bio                String?
+  photoUrl           String?
+  isPublished        Boolean         @default(false)
+  role               UserRole        @default(user)
+  authProvider       AuthProvider    @default(email)
+  isVerified         Boolean         @default(false)
+  onboardingComplete Boolean         @default(false)
+  otpHash            String?
+  otpExpiresAt       DateTime?
+  lastLoginIp        String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  deletedAt          DateTime?
+  resetPasswords     ResetPassword[]
+
+  @@map("users")
+}
+
+model ResetPassword {
+  id            String   @id @default(uuid())
+  userId        String
+  tokenSelector String   @unique
+  tokenHash     String
+  used          Boolean  @default(false)
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@map("reset_passwords")
+}
+
+enum UserRole {
+  admin
+  user
+}
+
+enum AuthProvider {
+  email
+  google
+}
