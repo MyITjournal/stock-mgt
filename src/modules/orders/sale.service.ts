@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { multiply } from '../../common/money/money';
 
 @Injectable()
 export class SaleService {
@@ -17,7 +18,7 @@ export class SaleService {
     });
     if (!customer) throw new NotFoundException('Customer not found');
 
-    const total = input.total ?? product.price * input.quantity;
+    const total = input.total ?? multiply(product.price, input.quantity);
 
     return this.prisma.sale.create({
       data: {

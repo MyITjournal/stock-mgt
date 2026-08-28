@@ -25,7 +25,8 @@ model Customer {
 model Product {
   id          String  @id @default(uuid())
   name        String
-  price       Float
+  /// Tax-inclusive, in minor units (kobo).
+  price       Int  
   description String?
   sales       Sale[]
 
@@ -37,7 +38,8 @@ model Sale {
   productId  String
   customerId String
   quantity   Int
-  total      Float
+  /// Tax-inclusive, in minor units (kobo).
+  total      Int  
   createdAt  DateTime @default(now())
   product    Product  @relation(fields: [productId], references: [id])
   customer   Customer @relation(fields: [customerId], references: [id])
