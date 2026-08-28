@@ -1,33 +1,53 @@
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { Product } from "./product.entity";
-import { CreateProductInput } from "./dto/create-product.input";
-import { UpdateProductInput } from "./dto/update-product.input";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 
 @Injectable()
 export class ProductService {
-  constructor(@InjectRepository(Product) private repo: Repository<Product>) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  create(input: CreateProductInput) {
-    const p = this.repo.create(input);
-    return this.repo.save(p);
+  create(input: CreateProductDto) {
+    return this.prisma.product.create({
+      data: {
+        name: input.name,
+        price: input.price,
+        description: input.description ?? null,
+      },
+    });
   }
 
   findAll() {
-    return this.repo.find();
+    return this.prisma.product.findMany();
   }
 
   findOne(id: string) {
-    return this.repo.findOneBy({ id });
+    return this.findOneOrFail(id);
   }
 
-  async update(input: UpdateProductInput) {
-    await this.repo.update(input.id, input as any);
-    return this.findOne(input.id);
+  async update(id: string, input: UpdateProductDto) {
+    await this.findOneOrFail(id);
+
+    return this.prisma.product.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.price !== undefined && { price: input.price }),
+        ...(input.description !== undefined && {
+          description: input.description,
+        }),
+      },
+    });
   }
 
-  remove(id: string) {
-    return this.repo.delete({ id });
+  async remove(id: string) {
+    await this.findOneOrFail(id);
+    await this.prisma.product.delete({ where: { id } });
+  }
+
+  private async findOneOrFail(id: string) {
+    const product = await this.prisma.product.findUnique({ where: { id } });
+    if (!product) throw new NotFoundException('Product not found');
+    return product;
   }
 }
