@@ -222,8 +222,8 @@ export class UsersService {
       createPayload: {
         email: lowercasedEmail,
         password: passwordHash,
-        authProvider: AuthProvider.EMAIL,
-        role: UserRole.USER,
+        authProvider: AuthProvider.email,
+        role: UserRole.user,
         firstName: dto.firstName,
         lastName: dto.lastName,
         otpHash: null,
@@ -264,7 +264,7 @@ export class UsersService {
     await this.userModelAction.update({
       ...NO_TRANSACTION,
       identifierOptions: { id },
-      updatePayload: { authProvider: AuthProvider.GOOGLE },
+      updatePayload: { authProvider: AuthProvider.google },
     });
   }
 
@@ -284,10 +284,10 @@ export class UsersService {
         password: passwordHash,
         firstName: dto.firstName,
         lastName: dto.lastName,
-        authProvider: AuthProvider.GOOGLE,
+        authProvider: AuthProvider.google,
         isVerified: dto.isVerified,
         onboardingComplete: dto.onboardingComplete,
-        role: UserRole.USER,
+        role: UserRole.user,
       },
     });
   }
