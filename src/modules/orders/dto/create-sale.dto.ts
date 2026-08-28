@@ -1,5 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsNumber, IsOptional, IsUUID, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsInt, IsOptional, IsUUID, Min } from 'class-validator';
+import { IsMoney } from '../../../common/money/is-money.validator';
 
 /**
  * Interim shape. Slice 5 replaces this with an invoice carrying multiple lines,
@@ -19,11 +20,8 @@ export class CreateSaleDto {
   @Min(1)
   quantity!: number;
 
-  @ApiPropertyOptional({
-    description: 'Overrides the computed price x quantity when supplied',
-  })
+  /** Overrides the computed price x quantity when supplied. */
   @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
+  @IsMoney({ example: 750000, optional: true })
   total?: number;
 }
