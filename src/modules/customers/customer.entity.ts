@@ -1,44 +1,10 @@
-import { Field, ID, ObjectType } from '@nestjs/graphql';
-import {
-  Column,
-  Entity,
-  PrimaryGeneratedColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
-} from 'typeorm';
-
-@ObjectType()
-@Entity({ name: 'customers' })
 export class Customer {
-  @Field(() => ID)
-  @PrimaryGeneratedColumn('uuid')
   id!: string;
-
-  @Field()
-  @Column()
   firstName!: string;
-
-  @Field({ nullable: true })
-  @Column({ nullable: true })
-  middleName?: string;
-
-  @Field({ nullable: true })
-  @Column({ nullable: true })
-  lastName?: string;
-
-  @Field({ nullable: true })
-  @Column({ nullable: true })
-  email?: string;
-
-  @Field({ nullable: true })
-  @Column({ nullable: true })
-  phone?: string;
-
-  @Field()
-  @CreateDateColumn()
+  middleName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  phone?: string | null;
   createdAt!: Date;
-
-  @Field()
-  @UpdateDateColumn()
   updatedAt!: Date;
 }

@@ -1,23 +1,30 @@
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { Customer } from "./customer.entity";
-import { CreateCustomerInput } from "./dto/create-customer.input";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { CreateCustomerDto } from './dto/create-customer.dto';
 
 @Injectable()
 export class CustomerService {
-  constructor(@InjectRepository(Customer) private repo: Repository<Customer>) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  create(input: CreateCustomerInput) {
-    const c = this.repo.create(input);
-    return this.repo.save(c);
+  create(input: CreateCustomerDto) {
+    return this.prisma.customer.create({
+      data: {
+        firstName: input.firstName,
+        middleName: input.middleName ?? null,
+        lastName: input.lastName ?? null,
+        email: input.email ?? null,
+        phone: input.phone ?? null,
+      },
+    });
   }
 
   findAll() {
-    return this.repo.find();
+    return this.prisma.customer.findMany();
   }
 
-  findOne(id: string) {
-    return this.repo.findOneBy({ id });
+  async findOne(id: string) {
+    const customer = await this.prisma.customer.findUnique({ where: { id } });
+    if (!customer) throw new NotFoundException('Customer not found');
+    return customer;
   }
 }
