@@ -18,9 +18,9 @@ const baseUser = {
   email: 'test@example.com',
   firstName: 'Test',
   lastName: 'User',
-  authProvider: AuthProvider.EMAIL,
+  authProvider: AuthProvider.email,
   isVerified: false,
-  role: UserRole.USER,
+  role: UserRole.user,
   otpHash: null,
   otpExpiresAt: null,
 } as User;
@@ -72,8 +72,8 @@ describe('UsersService', () => {
         createPayload: {
           email: lowercasedEmail,
           password: 'mocked-password-hash',
-          authProvider: AuthProvider.EMAIL,
-          role: UserRole.USER,
+          authProvider: AuthProvider.email,
+          role: UserRole.user,
           firstName: dto.firstName,
           lastName: dto.lastName,
           otpHash: null,

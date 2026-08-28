@@ -1,15 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Exclude } from 'class-transformer';
+import { AuthProvider, UserRole } from '@prisma/client';
 
-export enum UserRole {
-  ADMIN = 'admin',
-  USER = 'user',
-}
-
-export enum AuthProvider {
-  EMAIL = 'email',
-  GOOGLE = 'google',
-}
+/**
+ * Re-exported from Prisma rather than redeclared. Locally declared copies of
+ * these looked identical but were a separate type, so comparing a value read
+ * off a domain object against a Prisma enum member was a type error.
+ */
+export { AuthProvider, UserRole };
 
 export class User {
   @ApiProperty({ format: 'uuid' })
@@ -40,10 +38,10 @@ export class User {
   @ApiProperty({ nullable: true })
   photoUrl!: string | null;
 
-  @ApiProperty({ enum: UserRole, default: UserRole.USER })
+  @ApiProperty({ enum: UserRole, default: UserRole.user })
   role!: UserRole;
 
-  @ApiProperty({ enum: AuthProvider, default: AuthProvider.EMAIL })
+  @ApiProperty({ enum: AuthProvider, default: AuthProvider.email })
   authProvider!: AuthProvider;
 
   @ApiProperty({ default: false })
