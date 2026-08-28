@@ -2,6 +2,8 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Connection URL lives in prisma.config.ts (Prisma 7 removed `url` from this
+// block); the runtime client connects via the pg adapter in PrismaService.
 datasource db {
   provider = "postgresql"
 }
@@ -43,26 +45,95 @@ model Sale {
   @@map("sales")
 }
 
+/// A business. Every tenant-scoped row from Slice 2 onward carries organizationId.
+model Organization {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique
+  /// ISO 4217. Money is stored as integer minor units of this currency.
+  currency  String    @default("NGN")
+  timezone  String    @default("Africa/Lagos")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+
+  @@map("organizations")
+}
+
+/// Joins a user to a business, with the role they hold *inside that business*.
+model Membership {
+  id             String           @id @default(uuid())
+  userId         String
+  organizationId String
+  role           OrgRole          @default(sales_rep)
+  status         MembershipStatus @default(active)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("memberships")
+}
+
+/// Rotating refresh tokens. Stored as selector + hash so a row can be looked up
+/// without reversing the hash, mirroring ResetPassword. `familyId` groups every
+/// token descended from one login so reuse can revoke the whole chain.
+model RefreshToken {
+  id             String    @id @default(uuid())
+  userId         String
+  organizationId String?
+  tokenSelector  String    @unique
+  tokenHash      String
+  familyId       String
+  userAgent      String?
+  ip             String?
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  replacedById   String?
+  createdAt      DateTime  @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
 model User {
-  id                 String          @id @default(uuid())
-  email              String          @unique
-  password           String?
-  firstName          String?
-  lastName           String?
-  bio                String?
-  photoUrl           String?
-  isPublished        Boolean         @default(false)
-  role               UserRole        @default(user)
-  authProvider       AuthProvider    @default(email)
-  isVerified         Boolean         @default(false)
-  onboardingComplete Boolean         @default(false)
+  id       String  @id @default(uuid())
+  email    String  @unique
+  password String?
+
+  firstName String?
+  lastName  String?
+  bio       String?
+  photoUrl  String?
+
+  /// Platform-level role: is this person staff of the SaaS itself. Distinct from
+  /// OrgRole, which is what they may do inside a given business.
+  role UserRole @default(user)
+
+  authProvider       AuthProvider @default(email)
+  isVerified         Boolean      @default(false)
+  onboardingComplete Boolean      @default(false)
   otpHash            String?
   otpExpiresAt       DateTime?
   lastLoginIp        String?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  deletedAt          DateTime?
-  resetPasswords     ResetPassword[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  resetPasswords ResetPassword[]
+  memberships    Membership[]
+  refreshTokens  RefreshToken[]
 
   @@map("users")
 }
@@ -80,9 +151,25 @@ model ResetPassword {
   @@map("reset_passwords")
 }
 
+/// Platform role — staff of the SaaS operator, not of a customer business.
 enum UserRole {
   admin
   user
+}
+
+/// Role held inside one organization.
+enum OrgRole {
+  owner
+  manager
+  sales_rep
+  storekeeper
+  accountant
+}
+
+enum MembershipStatus {
+  active
+  invited
+  suspended
 }
 
 enum AuthProvider {
