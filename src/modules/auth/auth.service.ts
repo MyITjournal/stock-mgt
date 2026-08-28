@@ -16,7 +16,6 @@ import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService, EMAIL_ALREADY_EXISTS } from '../users/users.service';
-import { AuthProvider as DomainAuthProvider } from '../users/entities/user.entity';
 import { MailService } from '../mail/mail.service';
 import { TokenContext, TokenPair, TokenService } from './token.service';
 import { env } from '../../config/env';
@@ -285,10 +284,7 @@ export class AuthService {
         isVerified: true,
         onboardingComplete: false,
       });
-      // `user` here is the domain type from users/entities, which declares its
-      // own AuthProvider enum separate from Prisma's. Same string values, but
-      // not type-compatible — so compare against the domain one.
-    } else if (user.authProvider !== DomainAuthProvider.GOOGLE) {
+    } else if (user.authProvider !== AuthProvider.google) {
       await this.users.linkGoogleAccount(user.id);
     }
 
