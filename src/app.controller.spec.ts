@@ -1,22 +1,38 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { PrismaService } from './prisma/prisma.service';
 
 describe('AppController', () => {
-  let appController: AppController;
+  let controller: AppController;
+  const prisma = { isReachable: jest.fn() };
 
   beforeEach(async () => {
-    const app: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [AppService],
+      providers: [AppService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
-    appController = app.get<AppController>(AppController);
+    controller = module.get<AppController>(AppController);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+  afterEach(() => jest.resetAllMocks());
+
+  it('reports ok when the database is reachable', async () => {
+    prisma.isReachable.mockResolvedValue(true);
+
+    await expect(controller.getHealth()).resolves.toMatchObject({
+      status: 'ok',
+      database: 'up',
+    });
+  });
+
+  it('reports degraded when the database is unreachable', async () => {
+    prisma.isReachable.mockResolvedValue(false);
+
+    await expect(controller.getHealth()).resolves.toMatchObject({
+      status: 'degraded',
+      database: 'down',
     });
   });
 });
