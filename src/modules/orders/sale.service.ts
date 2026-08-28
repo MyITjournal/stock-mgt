@@ -1,42 +1,45 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Sale } from './sale.entity';
-import { CreateSaleInput } from './dto/create-sale.input';
-import { Product } from '../products/product.entity';
-import { Customer } from '../customers/customer.entity';
+import { PrismaService } from '../../prisma/prisma.service';
+import { CreateSaleDto } from './dto/create-sale.dto';
 
 @Injectable()
 export class SaleService {
-  constructor(
-    @InjectRepository(Sale) private repo: Repository<Sale>,
-    @InjectRepository(Product) private productRepo: Repository<Product>,
-    @InjectRepository(Customer) private customerRepo: Repository<Customer>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async create(input: CreateSaleInput) {
-    const product = await this.productRepo.findOneBy({ id: input.productId });
+  async create(input: CreateSaleDto) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: input.productId },
+    });
     if (!product) throw new NotFoundException('Product not found');
-    const customer = await this.customerRepo.findOneBy({
-      id: input.customerId,
+
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: input.customerId },
     });
     if (!customer) throw new NotFoundException('Customer not found');
 
     const total = input.total ?? product.price * input.quantity;
-    const sale = this.repo.create({
-      product,
-      customer,
-      quantity: input.quantity,
-      total,
+
+    return this.prisma.sale.create({
+      data: {
+        productId: input.productId,
+        customerId: input.customerId,
+        quantity: input.quantity,
+        total,
+      },
+      include: { product: true, customer: true },
     });
-    return this.repo.save(sale);
   }
 
   findAll() {
-    return this.repo.find();
+    return this.prisma.sale.findMany({
+      include: { product: true, customer: true },
+    });
   }
 
   findOne(id: string) {
-    return this.repo.findOneBy({ id });
+    return this.prisma.sale.findUnique({
+      where: { id },
+      include: { product: true, customer: true },
+    });
   }
 }
