@@ -48,7 +48,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const organizationId = TenantContext.organizationId();
     if (!organizationId) return next.handle();
 
-    const endpoint = `${request.method} ${request.route?.path ?? request.path}`;
+    // The route pattern ("/products") rather than the concrete path, so a key
+    // is scoped to the operation and not to one particular resource id.
+    const route = (request as Request & { route?: { path?: string } }).route;
+    const endpoint = `${request.method} ${route?.path ?? request.path}`;
     const requestHash = hashBody(request.body);
 
     const existing = await this.prisma.idempotencyKey.findFirst({
