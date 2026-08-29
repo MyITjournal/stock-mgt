@@ -18,6 +18,7 @@ import {
 
 const PRODUCT_INCLUDE = {
   category: true,
+  packagingType: true,
   units: { orderBy: { factor: 'asc' } },
   prices: { include: { tier: true, unit: true } },
 } as const;
@@ -29,6 +30,9 @@ export class ProductService {
   async create(input: CreateProductDto) {
     assertExactlyOneBaseUnit(input.units);
     if (input.categoryId) await this.assertCategoryExists(input.categoryId);
+    if (input.packagingTypeId) {
+      await this.assertPackagingTypeExists(input.packagingTypeId);
+    }
 
     const sku = input.sku?.trim() || generateSku(input.name);
     const organizationId = TenantContext.requireOrganizationId();
@@ -42,6 +46,7 @@ export class ProductService {
           name: input.name,
           description: input.description ?? null,
           categoryId: input.categoryId ?? null,
+          packagingTypeId: input.packagingTypeId ?? null,
           basePrice: input.basePrice,
           costPrice: input.costPrice ?? null,
           ...(input.taxRateBps !== undefined && {
@@ -69,11 +74,20 @@ export class ProductService {
     }
   }
 
-  findAll(options: { categoryId?: string; search?: string } = {}) {
+  findAll(
+    options: {
+      categoryId?: string;
+      packagingTypeId?: string;
+      search?: string;
+    } = {},
+  ) {
     return this.prisma.product.findMany({
       where: {
         deletedAt: null,
         ...(options.categoryId && { categoryId: options.categoryId }),
+        ...(options.packagingTypeId && {
+          packagingTypeId: options.packagingTypeId,
+        }),
         ...(options.search && {
           OR: [
             {
@@ -109,6 +123,9 @@ export class ProductService {
   async update(id: string, input: UpdateProductDto) {
     await this.findOneOrFail(id);
     if (input.categoryId) await this.assertCategoryExists(input.categoryId);
+    if (input.packagingTypeId) {
+      await this.assertPackagingTypeExists(input.packagingTypeId);
+    }
     if (input.units) assertExactlyOneBaseUnit(input.units);
 
     try {
@@ -122,6 +139,9 @@ export class ProductService {
           }),
           ...(input.categoryId !== undefined && {
             categoryId: input.categoryId,
+          }),
+          ...(input.packagingTypeId !== undefined && {
+            packagingTypeId: input.packagingTypeId,
           }),
           ...(input.basePrice !== undefined && { basePrice: input.basePrice }),
           ...(input.costPrice !== undefined && { costPrice: input.costPrice }),
@@ -234,6 +254,15 @@ export class ProductService {
       where: { id: categoryId, deletedAt: null },
     });
     if (!category) throw new NotFoundException('Category not found');
+  }
+
+  private async assertPackagingTypeExists(packagingTypeId: string) {
+    const packagingType = await this.prisma.packagingType.findFirst({
+      where: { id: packagingTypeId, deletedAt: null },
+    });
+    if (!packagingType) {
+      throw new NotFoundException('Packaging type not found');
+    }
   }
 }
 

@@ -74,6 +74,15 @@ export class CreateProductDto {
   @IsUUID()
   categoryId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Physical form of the base unit, from the organization's packaging types. Milo 400g and 800g are different products, both pouches.",
+  })
+  @IsOptional()
+  @IsUUID()
+  packagingTypeId?: string;
+
   @IsMoney({ example: 250000 })
   basePrice!: number;
 

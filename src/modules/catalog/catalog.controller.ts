@@ -22,11 +22,16 @@ import {
 import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CategoryService } from './category.service';
+import { PackagingTypeService } from './packaging-type.service';
 import { PriceTierService } from './price-tier.service';
 import { ProductService } from './product.service';
 import { BarcodeService } from './barcode.service';
 import { ScanService } from './scan.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
+import {
+  CreatePackagingTypeDto,
+  UpdatePackagingTypeDto,
+} from './dto/packaging-type.dto';
 import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
 import {
   CreateProductDto,
@@ -85,6 +90,61 @@ export class CategoryController {
 
 @ApiTags('catalog')
 @ApiBearerAuth('JWT')
+@Controller('packaging-types')
+export class PackagingTypeController {
+  constructor(private readonly packagingTypes: PackagingTypeService) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'List packaging types',
+    description:
+      "The organization's vocabulary for how goods are physically packed. Seeded at registration and editable, which is why it is a table rather than an enum.",
+  })
+  findAll() {
+    return this.packagingTypes.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a packaging type' })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.packagingTypes.findOne(id);
+  }
+
+  @Post()
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({
+    summary: 'Create a packaging type',
+    description:
+      'Reusing the name of a previously deleted type restores that row rather than failing.',
+  })
+  create(@Body() dto: CreatePackagingTypeDto) {
+    return this.packagingTypes.create(dto);
+  }
+
+  @Patch(':id')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({ summary: 'Update a packaging type' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePackagingTypeDto,
+  ) {
+    return this.packagingTypes.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(...CATALOG_EDITORS)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete a packaging type',
+    description:
+      'Soft delete: products packaged in this form keep reporting it.',
+  })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.packagingTypes.remove(id);
+  }
+}
+@ApiTags('catalog')
+@ApiBearerAuth('JWT')
 @Controller('price-tiers')
 export class PriceTierController {
   constructor(private readonly tiers: PriceTierService) {}
@@ -139,6 +199,11 @@ export class ProductController {
   @Get()
   @ApiQuery({ name: 'categoryId', required: false })
   @ApiQuery({
+    name: 'packagingTypeId',
+    required: false,
+    description: 'Everything packed in one form, e.g. every pouch',
+  })
+  @ApiQuery({
     name: 'search',
     required: false,
     description: 'Matches name or SKU',
@@ -146,9 +211,10 @@ export class ProductController {
   @ApiOperation({ summary: 'List products with their units and tier prices' })
   findAll(
     @Query('categoryId') categoryId?: string,
+    @Query('packagingTypeId') packagingTypeId?: string,
     @Query('search') search?: string,
   ) {
-    return this.products.findAll({ categoryId, search });
+    return this.products.findAll({ categoryId, packagingTypeId, search });
   }
 
   @Get(':id')
