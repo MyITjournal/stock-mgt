@@ -24,6 +24,9 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'ProductPrice',
   'Customer',
   'Sale',
+  // Reached through the raw client by the interceptor, which runs before the
+  // route handler; listed so one tenant's key can never match another's.
+  'IdempotencyKey',
 ]);
 
 /** Reads and writes that select rows through a `where` clause. */

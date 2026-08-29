@@ -233,6 +233,36 @@ model Sale {
   @@map("sales")
 }
 
+/// Records the outcome of a write so a retry returns it instead of repeating it.
+///
+/// Field reps work offline and sync later, so a request that timed out will be
+/// resent — often after the server already committed it. Without this a flaky
+/// connection silently duplicates sales and stock movements.
+model IdempotencyKey {
+  id             String @id @default(uuid())
+  organizationId String
+
+  /// Client-supplied, from the Idempotency-Key header.
+  key         String
+  /// method + path, so the same key on a different endpoint is not a match.
+  endpoint    String
+  /// Hash of the request body. The same key with different content is a
+  /// client bug worth reporting rather than silently replaying the old answer.
+  requestHash String
+
+  statusCode   Int
+  responseBody Json
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
 /// A business. Every tenant-scoped row from Slice 2 onward carries organizationId.
 model Organization {
   id        String    @id @default(uuid())
@@ -248,14 +278,15 @@ model Organization {
   memberships   Membership[]
   refreshTokens RefreshToken[]
 
-  categories    Category[]
-  products      Product[]
-  productUnits  ProductUnit[]
-  priceTiers    PriceTier[]
-  productPrices ProductPrice[]
-  customers     Customer[]
-  sales         Sale[]
-  barcodes      ProductBarcode[]
+  categories      Category[]
+  products        Product[]
+  productUnits    ProductUnit[]
+  priceTiers      PriceTier[]
+  productPrices   ProductPrice[]
+  customers       Customer[]
+  sales           Sale[]
+  barcodes        ProductBarcode[]
+  idempotencyKeys IdempotencyKey[]
 
   @@map("organizations")
 }
