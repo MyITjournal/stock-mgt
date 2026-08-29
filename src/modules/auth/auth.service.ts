@@ -19,6 +19,7 @@ import { UsersService, EMAIL_ALREADY_EXISTS } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { DEFAULT_PRICE_TIER } from '../catalog/price-tier.service';
 import { defaultPackagingTypeRows } from '../catalog/packaging-type.service';
+import { defaultLocationRow } from '../inventory/location.service';
 import { TokenContext, TokenPair, TokenService } from './token.service';
 import { env } from '../../config/env';
 import { RegisterDto } from './dto/register.dto';
@@ -143,7 +144,7 @@ export class AuthService {
    * transaction handle.
    */
   private async seedOrganizationDefaults(
-    db: Pick<PrismaService, 'priceTier' | 'packagingType'>,
+    db: Pick<PrismaService, 'priceTier' | 'packagingType' | 'location'>,
     organizationId: string,
   ) {
     await db.priceTier.create({
@@ -152,6 +153,9 @@ export class AuthService {
     await db.packagingType.createMany({
       data: defaultPackagingTypeRows(organizationId),
     });
+    // Stock has to land somewhere, and a business with one shop should never
+    // have to think about locations at all.
+    await db.location.create({ data: defaultLocationRow(organizationId) });
   }
 
   async verifyOtp(email: string, code: string, context: TokenContext = {}) {

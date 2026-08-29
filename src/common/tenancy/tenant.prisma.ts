@@ -9,7 +9,7 @@ import { TenantContext } from './tenant-context';
  * Adding a model here is the only thing that protects it. A new tenant-owned
  * table that is left off this list is readable by every other tenant.
  *
- * Slices 3-6 add StockMovement, Supplier, PurchaseOrder, Payment and Expense.
+ * Slices 4-6 add PurchaseOrder, Bill, Payment and Expense.
  */
 export const TENANT_SCOPED_MODELS = new Set<string>([
   'Membership',
@@ -28,6 +28,14 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   // Reached through the raw client by the interceptor, which runs before the
   // route handler; listed so one tenant's key can never match another's.
   'IdempotencyKey',
+  // Inventory (Slice 3).
+  'Location',
+  'Supplier',
+  'StockBatch',
+  'StockMovement',
+  'StockBalance',
+  'GoodsReceipt',
+  'GoodsReceiptLine',
 ]);
 
 /** Reads and writes that select rows through a `where` clause. */
