@@ -22,6 +22,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CategoryService } from './category.service';
 import { PriceTierService } from './price-tier.service';
 import { ProductService } from './product.service';
+import { BarcodeService } from './barcode.service';
+import { ScanService } from './scan.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
 import {
@@ -29,6 +31,7 @@ import {
   SetProductPriceDto,
   UpdateProductDto,
 } from './dto/product.dto';
+import { CreateBarcodeDto } from './dto/barcode.dto';
 
 /** Editing the catalog is a management job; every member may read it. */
 const CATALOG_EDITORS = [OrgRole.owner, OrgRole.manager];
@@ -125,7 +128,10 @@ export class PriceTierController {
 @ApiBearerAuth('JWT')
 @Controller('products')
 export class ProductController {
-  constructor(private readonly products: ProductService) {}
+  constructor(
+    private readonly products: ProductService,
+    private readonly barcodes: BarcodeService,
+  ) {}
 
   @Get()
   @ApiQuery({ name: 'categoryId', required: false })
@@ -197,5 +203,62 @@ export class ProductController {
   @ApiOperation({ summary: 'Delete a product' })
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.products.remove(id);
+  }
+
+  @Get(':id/barcodes')
+  @ApiOperation({ summary: 'List the barcodes on a product' })
+  listBarcodes(@Param('id', ParseUUIDPipe) id: string) {
+    return this.barcodes.findForProduct(id);
+  }
+
+  @Post(':id/barcodes')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({
+    summary: 'Attach a barcode to one unit of a product',
+    description:
+      'Omit `code` to generate an internal EAN-13 for goods that arrive unbarcoded. GS1 codes are rejected if the check digit does not match.',
+  })
+  addBarcode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateBarcodeDto,
+  ) {
+    return this.barcodes.create(id, dto);
+  }
+}
+
+@ApiTags('catalog')
+@ApiBearerAuth('JWT')
+@Controller()
+export class ScanController {
+  constructor(
+    private readonly scans: ScanService,
+    private readonly barcodes: BarcodeService,
+  ) {}
+
+  @Get('scan/:code')
+  @ApiQuery({ name: 'tierId', required: false })
+  @ApiOperation({
+    summary: 'Resolve a scanned code to a product, unit and price',
+    description:
+      'The single entry point for scanning. `baseQuantity` is how many base units one scan represents, so a carton code resolves to its full piece count.',
+  })
+  resolve(@Param('code') code: string, @Query('tierId') tierId?: string) {
+    return this.scans.resolve(code, tierId);
+  }
+
+  @Get('scan/:code/identify')
+  @ApiOperation({
+    summary: 'Report what kind of code this is, without a database lookup',
+  })
+  identify(@Param('code') code: string) {
+    return this.scans.identify(code);
+  }
+
+  @Delete('barcodes/:id')
+  @Roles(...CATALOG_EDITORS)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove a barcode' })
+  removeBarcode(@Param('id', ParseUUIDPipe) id: string) {
+    return this.barcodes.remove(id);
   }
 }
