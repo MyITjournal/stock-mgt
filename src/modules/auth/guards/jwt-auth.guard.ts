@@ -51,7 +51,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const authenticated = result as AuthenticatedUser | undefined;
 
     if (authenticated?.organizationId) {
-      TenantContext.enter({
+      TenantContext.set({
         userId: authenticated.sub,
         organizationId: authenticated.organizationId,
         orgRole: authenticated.orgRole,
