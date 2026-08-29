@@ -18,6 +18,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService, EMAIL_ALREADY_EXISTS } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { DEFAULT_PRICE_TIER } from '../catalog/price-tier.service';
+import { defaultPackagingTypeRows } from '../catalog/packaging-type.service';
 import { TokenContext, TokenPair, TokenService } from './token.service';
 import { env } from '../../config/env';
 import { RegisterDto } from './dto/register.dto';
@@ -54,7 +55,7 @@ export class AuthService {
   /**
    * Creates the user, their business and their `owner` membership atomically.
    *
-   * The three rows are written in one transaction rather than through
+   * The rows are written in one transaction rather than through
    * `UsersService.createEmailUser`, because a user created without an
    * organization would be unable to log in and unable to register again.
    * The duplicate-email semantics of that method are preserved below.
@@ -115,15 +116,7 @@ export class AuthService {
         },
       });
 
-      // Every organization needs a tier for prices to hang off, so the catalog
-      // is usable the moment registration completes.
-      await tx.priceTier.create({
-        data: {
-          organizationId: organization.id,
-          name: DEFAULT_PRICE_TIER,
-          isDefault: true,
-        },
-      });
+      await this.seedOrganizationDefaults(tx, organization.id);
 
       return { user, organization };
     });
@@ -136,6 +129,29 @@ export class AuthService {
       organizationId: result.organization.id,
       organizationSlug: result.organization.slug,
     };
+  }
+
+  /**
+   * What a new business needs before its catalog is usable: a default price
+   * tier for prices to hang off, and the packaging vocabulary.
+   *
+   * Both registration paths call it. Google sign-up used to create the
+   * organization and stop there, so those businesses had no tier at all and
+   * nowhere to put a price.
+   *
+   * Typed on the delegates it touches so it accepts either the client or a
+   * transaction handle.
+   */
+  private async seedOrganizationDefaults(
+    db: Pick<PrismaService, 'priceTier' | 'packagingType'>,
+    organizationId: string,
+  ) {
+    await db.priceTier.create({
+      data: { organizationId, name: DEFAULT_PRICE_TIER, isDefault: true },
+    });
+    await db.packagingType.createMany({
+      data: defaultPackagingTypeRows(organizationId),
+    });
   }
 
   async verifyOtp(email: string, code: string, context: TokenContext = {}) {
@@ -321,6 +337,7 @@ export class AuthService {
           status: MembershipStatus.active,
         },
       });
+      await this.seedOrganizationDefaults(this.prisma, organization.id);
     }
 
     if (context.ip) await this.users.updateLastLoginIp(user.id, context.ip);

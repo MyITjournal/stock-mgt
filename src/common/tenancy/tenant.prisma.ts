@@ -17,6 +17,7 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   // exists, so this is defence in depth rather than the active protection.
   'RefreshToken',
   'Category',
+  'PackagingType',
   'Product',
   'ProductUnit',
   'ProductBarcode',
