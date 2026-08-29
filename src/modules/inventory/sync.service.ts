@@ -1,20 +1,12 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
-
-/**
- * How far behind the server clock a page is allowed to reach.
- *
- * A row committed at 12:00:00.400 can become visible *after* one committed at
- * 12:00:00.600 — the timestamp is taken when the statement runs, the row
- * appears when the transaction commits. A cursor that advances to the newest
- * visible row therefore steps over anything still in flight, and because the
- * cursor only ever moves forward, that row is missed forever.
- *
- * Holding the window a second short of now means an in-flight transaction has
- * committed by the time its slice of time becomes eligible.
- */
-const SYNC_LAG_MS = 1000;
+import {
+  SYNC_LAG_MS,
+  decodeCursor,
+  encodeCursor,
+  keysetWhere,
+} from '../../common/pagination/keyset-cursor';
 
 /** How many movements one page returns when the caller does not say. */
 const DEFAULT_PAGE = 200;
@@ -27,11 +19,6 @@ export interface MovementQuery {
   since?: Date;
   cursor?: string;
   limit?: number;
-}
-
-interface Cursor {
-  createdAt: Date;
-  id: string;
 }
 
 /**
@@ -57,21 +44,7 @@ export class SyncService {
         ...(query.locationId && { locationId: query.locationId }),
         AND: [
           { createdAt: { lte: syncedThrough } },
-          ...(cursor
-            ? [
-                {
-                  OR: [
-                    { createdAt: { gt: cursor.createdAt } },
-                    {
-                      createdAt: cursor.createdAt,
-                      id: { gt: cursor.id },
-                    },
-                  ],
-                },
-              ]
-            : query.since
-              ? [{ createdAt: { gt: query.since } }]
-              : []),
+          ...keysetWhere(cursor, query.since),
         ],
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -97,24 +70,4 @@ export class SyncService {
       hasMore: rows.length === limit,
     };
   }
-}
-
-function encodeCursor(cursor: Cursor): string {
-  return Buffer.from(`${cursor.createdAt.toISOString()}|${cursor.id}`).toString(
-    'base64url',
-  );
-}
-
-function decodeCursor(raw: string): Cursor {
-  const decoded = Buffer.from(raw, 'base64url').toString('utf8');
-  const separator = decoded.indexOf('|');
-  const createdAt = new Date(decoded.slice(0, separator));
-
-  if (separator === -1 || Number.isNaN(createdAt.getTime())) {
-    throw new BadRequestException(
-      'Malformed sync cursor. Pass back the nextCursor from the previous page, or omit it to start over.',
-    );
-  }
-
-  return { createdAt, id: decoded.slice(separator + 1) };
 }

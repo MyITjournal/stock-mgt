@@ -13,6 +13,15 @@ export async function resolveProductUnit(
   prisma: TenantPrisma,
   productId: string,
   unitId?: string,
+  options: {
+    /**
+     * Return a non-stocked product instead of rejecting it. Selling is the
+     * case: a service still belongs on an invoice, priced and taxed like
+     * anything else — it simply never reaches the ledger. Moving stock is not,
+     * which is why this is off by default.
+     */
+    allowUnstocked?: boolean;
+  } = {},
 ) {
   const product = await prisma.product.findFirst({
     where: { id: productId, deletedAt: null },
@@ -20,7 +29,7 @@ export async function resolveProductUnit(
   });
   if (!product) throw new NotFoundException(`Product ${productId} not found`);
 
-  if (!product.trackStock) {
+  if (!product.trackStock && !options.allowUnstocked) {
     throw new BadRequestException(
       `"${product.name}" is not stocked, so it has no stock to move.`,
     );
