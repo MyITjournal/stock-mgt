@@ -1,5 +1,5 @@
 /**
- * End-to-end smoke test for Slices 0-3, against a running server.
+ * End-to-end smoke test for slices 0-4, against a running server.
  *
  *   npm run start:dev        # terminal 1
  *   npm run smoke            # terminal 2
@@ -8,14 +8,22 @@
  * (Resend is unconfigured). The script pauses twice and asks for it; paste the
  * six digits from the "verification code=NNNNNN" line in the server log.
  *
- * Env: BASE_URL (default http://localhost:4000/api/v1)
+ * To run it unattended, send the server's output to a file and point
+ * SMOKE_SERVER_LOG at it — the code is then read from the log instead:
+ *
+ *   npm run start:dev > server.log 2>&1
+ *   SMOKE_SERVER_LOG=server.log npm run smoke
+ *
+ * Env: BASE_URL (default http://localhost:4000/api/v1), SMOKE_SERVER_LOG.
  */
 import { createInterface } from 'node:readline/promises';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { stdin, stdout } from 'node:process';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:4000/api/v1';
-const rl = createInterface({ input: stdin, output: stdout });
+const SERVER_LOG = process.env.SMOKE_SERVER_LOG;
+const rl = SERVER_LOG ? null : createInterface({ input: stdin, output: stdout });
 
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
@@ -69,6 +77,39 @@ async function api(method, path, { body, token, key, expect = [200, 201] } = {})
   return { status: res.status, data };
 }
 
+/** How many codes the log had already produced before the current signup. */
+let otpsSeen = 0;
+
+/**
+ * The verification code, either typed in or picked out of the server log.
+ *
+ * Reading it from the log is what lets this run unattended. The count of codes
+ * already seen is tracked so the second registration waits for a code that is
+ * genuinely new rather than replaying the first one.
+ */
+async function readOtp() {
+  if (!SERVER_LOG) {
+    console.log('  Find the line "verification code=NNNNNN" in the server log.');
+    return (await rl.question('  OTP: ')).trim();
+  }
+
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const log = await readFile(SERVER_LOG, 'utf8').catch(() => '');
+    const codes = [...log.matchAll(/verification code=(\d{6})/g)].map((m) => m[1]);
+
+    if (codes.length > otpsSeen) {
+      otpsSeen = codes.length;
+      const code = codes.at(-1);
+      console.log(`  OTP from ${SERVER_LOG}: ${code}`);
+      return code;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+
+  throw new Error(`No new verification code appeared in ${SERVER_LOG}`);
+}
+
 /** Signs up a fresh owner and its organization, then verifies the OTP. */
 async function signUp(label) {
   const email = `smoke+${Date.now()}${Math.floor(Math.random() * 100)}@example.com`;
@@ -84,8 +125,7 @@ async function signUp(label) {
   });
 
   console.log(`\n  Registered ${email} for "${label}".`);
-  console.log('  Find the line "verification code=NNNNNN" in the server log.');
-  const code = (await rl.question('  OTP: ')).trim();
+  const code = await readOtp();
 
   const { data } = await api('POST', '/auth/verify-otp', { body: { email, code } });
   return { email, token: data.accessToken };
@@ -99,6 +139,11 @@ async function onHand(token, productId, locationId) {
     { token },
   );
   return data[0] ?? { quantity: 0, batches: [] };
+}
+
+/** Just the base-unit count, for the places that only need the number. */
+async function levelAt(token, productId, locationId) {
+  return (await onHand(token, productId, locationId)).quantity;
 }
 
 async function main() {
@@ -461,7 +506,219 @@ async function main() {
   check('with the reason attached', !!forced[0].forcedReason, JSON.stringify(forced[0].forcedReason));
   check('and the name of whoever recorded it', !!forced[0].recordedBy);
 
-  step(13, 'Delta sync: keyset paging over the ledger');
+  // -- Slice 4: selling ----------------------------------------------------
+  step(13, 'A credit sale on the wholesale tier, picked across two lots');
+  const shopkeeper = (
+    await api('POST', '/customers', {
+      token: t,
+      body: { firstName: 'Chidi', lastName: 'Okeke', phone: '+2348022222222' },
+    })
+  ).data;
+  eq('a new customer has no tier of their own', shopkeeper.priceTierId, null);
+
+  const moved = (
+    await api('PATCH', `/customers/${shopkeeper.id}`, {
+      token: t,
+      body: { priceTierId: tier.id },
+    })
+  ).data;
+  eq('and can be moved onto the wholesale list', moved.priceTierId, tier.id);
+
+  // Main Store holds LOT-B (48, expires sooner) and LOT-A (240). Three cartons
+  // is 72 pieces, so the pick must empty LOT-B and take the rest from LOT-A.
+  const credit = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        customerId: shopkeeper.id,
+        locationId: main.id,
+        amountPaid: 0,
+        note: 'Goes out on the Tuesday route.',
+        lines: [{ productId: product.id, unitId: carton.id, quantity: 3 }],
+      },
+    })
+  ).data;
+
+  eq('the first invoice is numbered INV-0001', credit.number, 'INV-0001');
+  eq('priced on the wholesale carton price', credit.total, 3 * 5_400_000);
+  eq('the tier it was priced on is recorded', credit.tier.id, tier.id);
+  eq('VAT is derived and frozen onto the sale', credit.taxTotal, credit.total - Math.round(credit.total / 1.075));
+  eq('nothing was paid, so the whole total is owed', credit.balance, credit.total);
+  // 48 pieces from LOT-B at NGN 400.00, then 24 from LOT-A at NGN 375.00.
+  eq('cost of goods sold spans both lots', credit.costTotal, 48 * 40_000 + 24 * 37_500);
+  eq('and it is rounded to whole kobo', Number.isInteger(credit.costTotal), true);
+
+  level = await onHand(t, product.id, main.id);
+  eq('stock actually left the shelf', level.quantity, 216);
+  eq('the short-dated lot is empty, so only one batch is left', level.batches.length, 1);
+  eq('and it is LOT-A', level.batches[0].lotCode, 'LOT-A');
+
+  step(14, 'A walk-in paying cash, at the default tier');
+  const cash = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        locationId: main.id,
+        lines: [{ productId: product.id, unitId: carton.id, quantity: 2 }],
+      },
+    })
+  ).data;
+
+  eq('the counter gets the next number', cash.number, 'INV-0002');
+  eq('no customer is invented for a stranger', cash.customerId, null);
+  // Retail has no carton price, so it falls back to basePrice x 24.
+  eq('priced at the base price scaled by the unit', cash.total, 2 * 250_000 * 24);
+  eq('a counter sale is paid in full by default', cash.amountPaid, cash.total);
+  eq('so nothing is owed', cash.balance, 0);
+  eq('cost comes from LOT-A alone', cash.costTotal, 48 * 37_500);
+  eq('168 left at Main Store', (await onHand(t, product.id, main.id)).quantity, 168);
+
+  step(15, 'A negotiated price, and something that is not stocked');
+  const service = (
+    await api('POST', '/products', {
+      token: t,
+      body: {
+        name: 'Delivery to Ikeja',
+        basePrice: 500_000,
+        trackStock: false,
+        units: [{ name: 'trip', factor: 1 }],
+      },
+    })
+  ).data;
+
+  // The ledger holds its window a second short of now, so both counts have to
+  // wait for their side of the sale to become visible.
+  const countMovements = async () => {
+    await new Promise((r) => setTimeout(r, 1500));
+    return (await api('GET', '/stock/movements?limit=1000', { token: t })).data
+      .movements.length;
+  };
+  const movementsBefore = await countMovements();
+
+  const mixed = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        locationId: main.id,
+        lines: [
+          // The price agreed on the phone, not the one on the list.
+          { productId: product.id, unitId: piece.id, quantity: 10, unitPrice: 230_000 },
+          { productId: service.id, quantity: 1 },
+        ],
+      },
+    })
+  ).data;
+
+  const soldPiece = mixed.lines.find((l) => l.productId === product.id);
+  const soldService = mixed.lines.find((l) => l.productId === service.id);
+  eq('the agreed price is what was charged', soldPiece.unitPrice, 230_000);
+  eq('not the list price', soldPiece.lineTotal, 2_300_000);
+  eq('a service is sold and taxed like anything else', soldService.lineTotal, 500_000);
+  eq('but has no cost of goods', soldService.costOfGoodsSold, 0);
+  eq('the sale totals both lines', mixed.total, 2_300_000 + 500_000);
+
+  const movementsAfter = await countMovements();
+  eq('only the stocked line reached the ledger', movementsAfter - movementsBefore, 1);
+  eq('158 left at Main Store', (await onHand(t, product.id, main.id)).quantity, 158);
+
+  step(16, 'Selling stock that is not there');
+  await api('POST', '/sales', {
+    token: t,
+    expect: 409,
+    body: {
+      locationId: main.id,
+      lines: [{ productId: product.id, unitId: carton.id, quantity: 100 }],
+    },
+  });
+  check('a sale larger than stock is 409', true);
+  eq('and no stock moved', (await onHand(t, product.id, main.id)).quantity, 158);
+
+  const forcedSale = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        locationId: van.id,
+        force: true,
+        forcedReason: 'Rep sold it off the van this morning.',
+        lines: [{ productId: product.id, unitId: carton.id, quantity: 1 }],
+      },
+    })
+  ).data;
+  check('an owner can force it through', !!forcedSale.id);
+  eq('the van goes further short', (await onHand(t, product.id, van.id)).quantity, -48);
+
+  const forcedNow = (await api('GET', '/stock/forced', { token: t })).data;
+  check(
+    'and the forced sale joins the audit trail',
+    forcedNow.some((m) => m.type === 'sale'),
+    forcedNow.map((m) => m.type).join(', '),
+  );
+
+  step(17, 'Taking goods back');
+  const returned = (
+    await api('POST', `/sales/${cash.id}/returns`, {
+      token: t,
+      key: randomUUID(),
+      body: {
+        lines: [{ saleLineId: cash.lines[0].id, unitId: carton.id, quantity: 1 }],
+      },
+    })
+  ).data;
+
+  eq('one carton came back', returned.returns.length, 1);
+  eq('refunded half of what that line was charged', returned.refunded, cash.total / 2);
+  eq('so the shop now owes the customer', returned.balance, -(cash.total / 2));
+  eq(
+    'and the stock went back to the lot it came from',
+    (await onHand(t, product.id, main.id)).batches.find((b) => b.lotCode === 'LOT-A')
+      .quantity,
+    182,
+  );
+
+  await api('POST', `/sales/${cash.id}/returns`, {
+    token: t,
+    expect: 409,
+    body: { lines: [{ saleLineId: cash.lines[0].id, unitId: carton.id, quantity: 2 }] },
+  });
+  check('taking back more than was sold is 409', true);
+
+  step(18, 'Sales list, paged the same way the ledger is');
+  await new Promise((r) => setTimeout(r, 1500));
+  const invoices = [];
+  let saleCursor = null;
+  let salePages = 0;
+  do {
+    const page = (
+      await api(
+        'GET',
+        `/sales?limit=2${saleCursor ? `&cursor=${encodeURIComponent(saleCursor)}` : ''}`,
+        { token: t },
+      )
+    ).data;
+    invoices.push(...page.sales);
+    saleCursor = page.nextCursor;
+    salePages += 1;
+  } while (saleCursor && salePages < 20);
+
+  eq('every sale came back', invoices.length, 4);
+  eq('no id twice', new Set(invoices.map((s) => s.id)).size, invoices.length);
+  eq(
+    'invoice numbers run in sequence with no gaps',
+    invoices.map((s) => s.number).sort().join(','),
+    'INV-0001,INV-0002,INV-0003,INV-0004',
+  );
+  eq(
+    'filtering by customer finds the credit sale',
+    (await api('GET', `/sales?customerId=${shopkeeper.id}`, { token: t })).data.sales
+      .length,
+    1,
+  );
+
+  step(19, 'Delta sync: keyset paging over the ledger');
   // The window stops a second short of now, so a movement written this instant
   // is deliberately withheld until it can no longer be raced by a commit.
   await new Promise((r) => setTimeout(r, 1500));
@@ -482,24 +739,38 @@ async function main() {
     pages += 1;
   } while (cursor && pages < 20);
 
-  eq('every movement came back across the pages', seen.length, 7);
+  eq('every movement came back across the pages', seen.length, 13);
   check('and it actually paged', pages > 1, `${pages} pages`);
   eq('no id was returned twice', new Set(seen.map((m) => m.id)).size, seen.length);
   check('every movement carries a batch', seen.every((m) => !!m.batchId));
+  check(
+    'selling wrote sale movements, and the return wrote one back',
+    seen.filter((m) => m.type === 'sale').length === 5 &&
+      seen.filter((m) => m.type === 'return_in').length === 1,
+    seen.map((m) => m.type).join(', '),
+  );
+
+  // The check that catches a sale deducting wrongly: the ledger is the truth,
+  // the levels are a cache of it, and the two must agree to the unit.
+  const levels = (await api('GET', '/stock/levels?includeEmpty=true', { token: t })).data;
+  const ledgerSum = seen.reduce((sum, m) => sum + m.quantity, 0);
   eq(
     'the ledger sums to what the levels say',
-    seen.reduce((sum, m) => sum + m.quantity, 0),
-    288 - 24,
+    ledgerSum,
+    levels.reduce((sum, row) => sum + row.quantity, 0),
   );
+  eq('182 left at Main Store after everything', await levelAt(t, product.id, main.id), 182);
+  eq('and the van is 48 short', await levelAt(t, product.id, van.id), -48);
+  eq('which is what the ledger adds up to', ledgerSum, 134);
 
   await api('GET', '/stock/movements?cursor=not-a-cursor', { token: t, expect: 400 });
   check('a malformed cursor is 400, not a silent full resync', true);
 
-  step(14, 'The balance cache can be rebuilt from the ledger');
+  step(20, 'The balance cache can be rebuilt from the ledger');
   const rebuild = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
   eq('cache and ledger agree, nothing to correct', rebuild.corrected, 0);
 
-  step(15, 'Tenancy: a second organization sees none of this');
+  step(21, 'Tenancy: a second organization sees none of this');
   const other = await signUp('Chidi Provisions');
   eq(
     'no products leak across the tenant boundary',
@@ -523,8 +794,37 @@ async function main() {
     (await api('GET', '/price-tiers', { token: other.token })).data.length,
     1,
   );
+  eq(
+    'no sales leak either',
+    (await api('GET', '/sales', { token: other.token })).data.sales.length,
+    0,
+  );
+  // Its own catalog, and a non-stocked item so this needs no stock of its own.
+  const theirProduct = (
+    await api('POST', '/products', {
+      token: other.token,
+      body: {
+        name: 'Delivery',
+        basePrice: 100_000,
+        trackStock: false,
+        units: [{ name: 'trip', factor: 1 }],
+      },
+    })
+  ).data;
+  eq(
+    'and its invoice numbering starts fresh at one',
+    (
+      await api('POST', '/sales', {
+        token: other.token,
+        body: { lines: [{ productId: theirProduct.id, quantity: 1 }] },
+      })
+    ).data.number,
+    'INV-0001',
+  );
   await api('GET', `/products/${product.id}`, { token: other.token, expect: 404 });
   check("fetching the other org's product by id is 404", true);
+  await api('GET', `/sales/${credit.id}`, { token: other.token, expect: 404 });
+  check("and neither is the other org's invoice", true);
 
   const verdict = failures.length ? `${RED}FAILED` : `${GREEN}PASSED`;
   console.log(`\n${BOLD}${verdict}${OFF}  ${passed} checks passed, ${failures.length} failed.`);
@@ -537,4 +837,4 @@ main()
     console.error(`\n${RED}Aborted:${OFF} ${err.message}`);
     process.exitCode = 1;
   })
-  .finally(() => rl.close());
+  .finally(() => rl?.close());

@@ -14,7 +14,7 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { OrgRolesGuard } from './modules/auth/guards/org-roles.guard';
 import { CustomerModule } from './modules/customers/customer.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
-import { SalesModule } from './modules/orders/sales.module';
+import { SalesModule } from './modules/sales/sales.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { UsersModule } from './modules/users/users.module';
 
