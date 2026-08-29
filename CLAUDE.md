@@ -26,25 +26,37 @@ These are load-bearing. Breaking one is a data-integrity bug, not a style choice
 
 ## Where things stand
 
-**Slices 0–3 are done**: rails, tenancy + auth, catalog (products, units, tier pricing, barcodes,
-money in kobo), write idempotency, packaging types, and the inventory ledger — `StockMovement`
+**Slices 0–4 are done**: rails, tenancy + auth, catalog (products, units, tier pricing, barcodes,
+money in kobo), write idempotency, packaging types, the inventory ledger — `StockMovement`
 (append-only), locations, suppliers, batches with expiry, receiving, FEFO picking, adjustments
-and transfers, and delta-sync cursors.
+and transfers, delta-sync cursors — and sales: invoices with lines, tier pricing, cost of goods
+sold, and returns.
 
 Two Slice 3 rules worth knowing before you touch stock: **every movement carries a batch** and
 **quantity is signed** (positive in, negative out). And the negative-stock policy — the ledger
 records everything, while the *write path* refuses an outbound movement it cannot cover with a
 409, unless an owner or manager forces it with a reason.
 
-**Next: Slice 4 — purchasing.** Purchase orders, vendor bills, and the monthly vendor purchase
-targets. `Supplier` and goods receipts already exist, so this slice is the paperwork *around*
-receiving rather than receiving itself.
+Two Slice 4 rules worth the same: **selling never writes to the ledger itself** — it calls
+`StockService.recordOutbound`, so FEFO, the 409 and the override are inherited rather than
+reimplemented — and **every money figure on a sale is a snapshot**, including cost of goods sold,
+which is rounded exactly once from the batches the pick actually took.
 
-**Known gap, not a bug:** the Slice 2 `Sale` placeholder does not deduct stock. Slice 5 rebuilds
-sales and calls `StockService.recordOutbound`, which is the seam `InventoryModule` exports.
+**Purchasing was cut, not deferred.** Purchase orders are not raised in this market; orders go by
+phone and are recorded as a goods receipt on arrival. Do not reintroduce it in a smaller hat — an
+"expected delivery", a draft receipt — see [docs/DECISIONS.md](docs/DECISIONS.md) §6. The monthly
+vendor purchase targets survived and moved to the reports slice.
+
+**Next: Slice 5 — money in.** Payments, receivables, aging, expenses. It replaces the interim
+`Sale.amountPaid` integer with real payment rows; `Sale.balance` is already derived, so only the
+source of the number changes.
+
+**Before declaring anything done, run `npm run smoke`** — `test/smoke.mjs` walks the whole API
+against a running server. Its load-bearing check is that the sum of every stock movement equals
+the sum of the stock levels; a sale that deducts wrongly breaks that and nothing else does.
 
 The detail — what is verified against a running server, what is still outstanding, and the full
-next-step list — is in [docs/DECISIONS.md](docs/DECISIONS.md) §11 and §12. This section is the
+next-step list — is in [docs/DECISIONS.md](docs/DECISIONS.md) §12 and §13. This section is the
 short version; that one is authoritative.
 
 ## Working practice
@@ -55,9 +67,13 @@ short version; that one is authoritative.
 - A branch is done when `npm run typecheck`, `npm run lint`, `npx jest` and `npm run build` are
   all clean **and** the behaviour is verified against a running server.
 - **Finishing a slice means updating the docs in the same branch**: the "Where things stand"
-  section above, and `docs/DECISIONS.md` (§11 status, §12 next, the roadmap table, plus any
+  section above, and `docs/DECISIONS.md` (§12 status, §13 next, the roadmap table, plus any
   decision made or trap hit along the way). The chat gets cleared between slices, so these two
   files are the entire handover — if it is not written down here, the next session does not know it.
+- **Never edit a doc with PowerShell `Get-Content -Raw` / `Set-Content`.** PS 5.1 reads UTF-8 as
+  ANSI and writes it back mangled — every `—` and `₦` becomes mojibake — and `$` in a regex will
+  not match a CRLF line ending, so the replacement silently does nothing while the file is
+  corrupted anyway. Use the editing tools.
 
 ## Commands
 
@@ -69,6 +85,16 @@ npm run lint
 npx jest
 npm run build
 npm run db:studio
+
+npm run smoke          # end-to-end against a running server; see below
+```
+
+`npm run smoke` needs the OTP. It prompts for it, or reads it from the server's log when told
+where that is:
+
+```bash
+npm run start:dev > server.log 2>&1        # terminal 1
+SMOKE_SERVER_LOG=server.log npm run smoke  # terminal 2, unattended
 ```
 
 Migrations: `prisma migrate dev` is interactive and fails in a non-interactive shell. Use

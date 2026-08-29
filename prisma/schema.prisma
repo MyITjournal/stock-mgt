@@ -18,14 +18,20 @@ model Customer {
   email      String?
   phone      String?
 
+  /// Which price list this customer buys on. Null falls back to the
+  /// organization's default tier, which is what a walk-in gets.
+  priceTierId String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  priceTier    PriceTier?   @relation(fields: [priceTierId], references: [id], onDelete: SetNull)
   sales        Sale[]
 
   @@index([organizationId])
+  @@index([priceTierId])
   @@map("customers")
 }
 
@@ -93,8 +99,9 @@ model Product {
   /// Tax-inclusive price of ONE base unit, in minor units (kobo). Used when no
   /// ProductPrice row matches the customer's tier.
   basePrice  Int
-  /// Last known purchase cost of one base unit. Slice 4 maintains this as a
-  /// moving weighted average from goods receipts.
+  /// Last known purchase cost of one base unit, refreshed by receiving. A
+  /// cached rounded snapshot **for display only** — never an input to a
+  /// calculation, per DECISIONS.md §2.
   costPrice  Int?
   /// VAT rate in basis points: 750 = 7.5%.
   taxRateBps Int  @default(750)
@@ -112,7 +119,7 @@ model Product {
   packagingType     PackagingType?     @relation(fields: [packagingTypeId], references: [id], onDelete: SetNull)
   units             ProductUnit[]
   prices            ProductPrice[]
-  sales             Sale[]
+  saleLines         SaleLine[]
   barcodes          ProductBarcode[]
   stockBatches      StockBatch[]
   stockMovements    StockMovement[]
@@ -152,6 +159,7 @@ model ProductUnit {
   prices            ProductPrice[]
   barcodes          ProductBarcode[]
   goodsReceiptLines GoodsReceiptLine[]
+  saleLines         SaleLine[]
 
   @@unique([organizationId, productId, name])
   @@index([productId])
@@ -171,6 +179,8 @@ model PriceTier {
 
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   prices       ProductPrice[]
+  customers    Customer[]
+  sales        Sale[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -250,24 +260,155 @@ model ProductPrice {
   @@map("product_prices")
 }
 
+/// An invoice: what left the shop, at what price, and what it had cost to buy.
+///
+/// Every money figure here is a **snapshot**. A price list edited next month
+/// must not rewrite what a customer paid last week, which is the same reasoning
+/// `GoodsReceiptLine.unitFactor` already encodes for quantities.
 model Sale {
   id             String @id @default(uuid())
   organizationId String
-  productId      String
-  customerId     String
 
-  quantity Int
-  /// Tax-inclusive, in minor units (kobo).
-  total    Int
+  /// Human-readable and sequential per organization: INV-0001. The number a
+  /// customer quotes on the phone; `id` is the one machines use.
+  number String
+
+  /// Null for a walk-in. Most counter sales are strangers paying cash, and
+  /// inventing a customer row for each one buries the real customers.
+  customerId String?
+  /// Where the stock left from.
+  locationId String
+  /// The tier the prices were resolved against, kept so a sale stays
+  /// explainable after the customer is moved to another price list.
+  tierId     String?
+
+  /// Tax-inclusive, in minor units (kobo). The sum of its lines.
+  total     Int
+  /// The VAT inside `total`, derived by subtraction at sale time and frozen.
+  taxTotal  Int
+  /// Cost of the goods sold, rounded once, per DECISIONS.md §2.
+  costTotal Int
+
+  /// What the customer actually handed over: the full total for a cash sale,
+  /// zero on credit, or something in between. The balance is derived.
+  ///
+  /// An interim stand-in for the payments slice, which replaces it with real
+  /// payment rows. Until then it is what answers "who owes me".
+  amountPaid Int @default(0)
+
+  note String?
+
+  /// When it happened by the recording device's clock — a rep offline at 9am
+  /// syncing at 5pm. `createdAt` is when the server stored it.
+  occurredAt DateTime @default(now())
+
+  recordedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer?    @relation(fields: [customerId], references: [id])
+  location     Location     @relation(fields: [locationId], references: [id])
+  tier         PriceTier?   @relation(fields: [tierId], references: [id])
+  recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  lines        SaleLine[]
+  returns      SaleReturn[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([occurredAt])
+  @@map("sales")
+}
+
+/// One product on an invoice, priced and costed at the moment it was sold.
+model SaleLine {
+  id             String @id @default(uuid())
+  organizationId String
+  saleId         String
+  productId      String
+  unitId         String
+
+  /// As typed, counted in `unitId` — two cartons, not forty-eight pieces.
+  quantity     Int
+  /// What `unitId` meant at the time. Copied, so redefining a carton later
+  /// cannot retroactively change what this sale took off the shelf.
+  unitFactor   Int
+  /// `quantity * unitFactor`. Converted once, on write.
+  baseQuantity Int
+
+  /// Tax-inclusive price of ONE `unitId`, in kobo. Either resolved from the
+  /// tier or typed in by the seller, which is how a negotiated price is
+  /// recorded — there is no separate discount model.
+  unitPrice Int
+  /// `unitPrice * quantity`.
+  lineTotal Int
+
+  /// The VAT rate and amount at the time of sale, frozen.
+  taxRateBps Int
+  taxAmount  Int
+
+  /// What these goods cost to buy, from the batches FEFO actually picked.
+  /// Rounded exactly once, here, per DECISIONS.md §2. Zero for a product that
+  /// is not stocked.
+  costOfGoodsSold Int
 
   createdAt DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product      Product      @relation(fields: [productId], references: [id])
-  customer     Customer     @relation(fields: [customerId], references: [id])
+  unit         ProductUnit  @relation(fields: [unitId], references: [id])
+  returns      SaleReturn[]
 
   @@index([organizationId])
-  @@map("sales")
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_lines")
+}
+
+/// Goods coming back. One row per returned line; several returned in one visit
+/// share a `returnGroupId`, the same way a transfer pairs its two movements
+/// rather than growing a header table of its own.
+model SaleReturn {
+  id             String @id @default(uuid())
+  organizationId String
+  saleId         String
+  saleLineId     String
+
+  /// Groups the lines handed back together in one visit.
+  returnGroupId String
+
+  /// In base units, always positive.
+  quantity     Int
+  /// What the customer got back, in kobo. A proportion of the line total.
+  refundAmount Int
+  /// The share of the line's cost that came back with the goods, so margin
+  /// reporting nets out.
+  costAmount   Int
+
+  /// False when the goods came back broken: the refund still happens, but
+  /// nothing returns to sellable stock and no movement is written.
+  restocked Boolean @default(true)
+
+  reason String?
+  note   String?
+
+  occurredAt       DateTime @default(now())
+  recordedByUserId String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  saleLine     SaleLine     @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
+  recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([saleId])
+  @@index([returnGroupId])
+  @@map("sale_returns")
 }
 
 /// Records the outcome of a write so a retry returns it instead of repeating it.
@@ -302,12 +443,19 @@ model IdempotencyKey {
 
 /// A business. Every tenant-scoped row from Slice 2 onward carries organizationId.
 model Organization {
-  id        String    @id @default(uuid())
-  name      String
-  slug      String    @unique
+  id       String @id @default(uuid())
+  name     String
+  slug     String @unique
   /// ISO 4217. Money is stored as integer minor units of this currency.
-  currency  String    @default("NGN")
-  timezone  String    @default("Africa/Lagos")
+  currency String @default("NGN")
+  timezone String @default("Africa/Lagos")
+
+  /// The next invoice number to hand out. Incremented inside the same
+  /// transaction that writes the sale, which takes a row lock and so
+  /// guarantees no gaps and no duplicates. It serialises concurrent sales
+  /// within one business, which at counter volumes costs nothing.
+  nextSaleNumber Int @default(1)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -323,6 +471,8 @@ model Organization {
   productPrices     ProductPrice[]
   customers         Customer[]
   sales             Sale[]
+  saleLines         SaleLine[]
+  saleReturns       SaleReturn[]
   barcodes          ProductBarcode[]
   idempotencyKeys   IdempotencyKey[]
   locations         Location[]
@@ -408,6 +558,8 @@ model User {
   memberships    Membership[]
   refreshTokens  RefreshToken[]
   stockMovements StockMovement[]
+  sales          Sale[]
+  saleReturns    SaleReturn[]
 
   @@map("users")
 }
@@ -482,15 +634,18 @@ model Location {
   movements     StockMovement[]
   balances      StockBalance[]
   goodsReceipts GoodsReceipt[]
+  sales         Sale[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
   @@map("locations")
 }
 
-/// A vendor goods are bought from. Pulled forward from Slice 4 so receipts link
-/// to a real row from the start; purchase orders and bills still belong to that
-/// slice.
+/// A vendor goods are bought from.
+///
+/// There is deliberately no purchase order pointing at it: orders here are
+/// placed by phone and recorded as a goods receipt when the delivery lands.
+/// See DECISIONS.md §6 on why that slice was cut.
 model Supplier {
   id             String  @id @default(uuid())
   organizationId String

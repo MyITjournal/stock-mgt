@@ -186,6 +186,41 @@ export class StockService {
   }
 
   /**
+   * What a set of movements cost to buy, as an **exact fraction**.
+   *
+   * Batch cost is inventory's business, not the caller's, so the arithmetic
+   * lives here: each batch contributes `taken × totalCost / quantityReceived`,
+   * the ratio §2 insists is computed rather than stored. The result is
+   * deliberately fractional — the caller rounds **once**, when it writes the
+   * figure down, which for a sale is onto the sale line.
+   *
+   * Movements from a batch that recorded nothing received contribute nothing:
+   * those are the placeholder batches a forced movement leaves behind, and they
+   * have no invoice to divide.
+   */
+  async costOf(
+    movements: readonly Pick<StockMovement, 'batchId' | 'quantity'>[],
+    db: StockWriter = this.prisma,
+  ): Promise<number> {
+    const batchIds = [...new Set(movements.map((m) => m.batchId))];
+    if (batchIds.length === 0) return 0;
+
+    const batches = await db.stockBatch.findMany({
+      where: { id: { in: batchIds } },
+      select: { id: true, totalCost: true, quantityReceived: true },
+    });
+    const byId = new Map(batches.map((batch) => [batch.id, batch]));
+
+    return movements.reduce((total, movement) => {
+      const batch = byId.get(movement.batchId);
+      if (!batch || batch.quantityReceived <= 0) return total;
+
+      const units = Math.abs(movement.quantity);
+      return total + (units * batch.totalCost) / batch.quantityReceived;
+    }, 0);
+  }
+
+  /**
    * Batches with stock, ordered for picking. Reads the cached balance rather
    * than summing the ledger — that is what the cache is for.
    */

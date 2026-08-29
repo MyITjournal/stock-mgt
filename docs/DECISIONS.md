@@ -4,7 +4,7 @@ The reasoning behind how this app is built. Code shows *what*; this records *why
 what was rejected — the part that is expensive to reconstruct.
 
 Read this first when picking the project back up. Update it whenever a decision is made
-or reversed. Last updated: 2026-08-29, end of Slice 3.
+or reversed. Last updated: 2026-08-30, end of Slice 4.
 
 ---
 
@@ -26,17 +26,21 @@ The owner's own business is tenant #1; other businesses follow.
 | 2 | Catalog: products, units, pricing, barcodes, money | done |
 | 2.5 | Packaging types | done |
 | 3 | Inventory ledger: movements, locations, batches, receiving, FEFO, sync | done |
-| 4 | Purchasing: POs, bills, vendor purchase targets (Supplier and receiving landed in 3) | next |
-| 5 | Sales: invoices with lines, returns | |
-| 6 | Money in: payments, receivables, aging, expenses | |
-| 7 | Reports: dashboard, profit, stock valuation, expiry, target vs actual | |
-| 8 | Web dashboard | |
-| 9 | Mobile app | |
-| 10 | Subscriptions and billing | |
-| 11 | Telegram bot | |
+| ~~4~~ | ~~Purchasing: POs, bills~~ | **cut** — see §6 |
+| 4 | Sales: invoices with lines, returns | done |
+| 5 | Money in: payments, receivables, aging, expenses | next |
+| 6 | Reports: dashboard, profit, stock valuation, expiry, **vendor purchase targets**, target vs actual | |
+| 7 | Web dashboard | |
+| 8 | Mobile app | |
+| 9 | Subscriptions and billing | |
+| 10 | Telegram bot | |
 
 Mobile sits **ahead of** Telegram: it is the primary tool for field reps, and Telegram is the
 fallback for people who will not install an app.
+
+Purchasing was cut rather than deferred, and vendor purchase targets moved to reports. The
+reasoning is in §6; the short version is that this market places orders by phone, so a purchase
+order is a form that generates work instead of removing it.
 
 ---
 
@@ -295,11 +299,94 @@ past delivery brought in.
 ### Delta sync cursors carry a safety lag
 
 `GET /stock/movements` pages on a `(createdAt, id)` keyset, and the window stops one second short
-of the server clock. See §10 — this is a trap, not a preference.
+of the server clock. See §11 — this is a trap, not a preference.
+
+The cursor helpers live in `src/common/pagination/keyset-cursor.ts` rather than in the inventory
+module, because sales pages the same way and two copies of this rule would eventually disagree.
 
 ---
 
-## 6. Identification: barcodes now, RFID later
+## 6. Selling
+
+### There is no purchasing slice
+
+Purchase orders and vendor bills were planned as Slice 4 and **cut** (decided with the owner,
+2026-08-29). Businesses here order by phone and record what arrived when it arrives; a purchase
+order would be a form somebody has to remember to raise and then close out, which is the
+QuickBooks failure mode — features that generate work instead of removing it.
+
+Nothing depended on it. Vendor target progress had already been decided to count *goods received,
+not orders placed* (§13), so the PO had no readers. `Supplier` and goods receipts already exist,
+and the goods receipt **is** the record of a delivery.
+
+Resist reintroducing it in a smaller hat: an "expected delivery", a draft receipt, a pending-order
+list. Those are the same feature, and they still need someone to close them out. Vendor bills come
+back only if "what do I owe this supplier" becomes a question someone actually asks, and then they
+belong beside receivables, not in a slice of their own.
+
+### A sale is priced and costed at the moment it happens
+
+Every money figure on a sale is a snapshot: the unit price, the tax rate and amount, and the cost
+of goods sold. Price lists get edited, VAT rates change, and a carton gets redefined; none of that
+may rewrite what a customer paid last week. This is the same reasoning that puts `unitFactor` on
+`GoodsReceiptLine`.
+
+**Cost of goods sold is rounded exactly once**, onto the sale line, from the exact fractions of
+the batches FEFO actually picked — `StockService.costOf` returns the unrounded sum precisely so
+that rounding has one home. Never `costPrice × quantity`: that is the rounded average §2 forbids
+as an input.
+
+### Selling does not touch the ledger
+
+`SaleService` calls `StockService.recordOutbound`. It does not write movements itself. FEFO
+picking, the refusal to sell stock that is not there, and the owner/manager override are inherited
+rather than reimplemented, so the sales path cannot drift from receiving, transfers or
+adjustments. A sale of a non-stocked product — a delivery fee, a service — is priced and taxed
+like anything else and simply never reaches the ledger.
+
+### The price override *is* the discount
+
+A line takes an optional `unitPrice`. A rep who agreed ₦4,900 on the phone types ₦4,900. There is
+deliberately no discount model — no percentage fields, no discount reasons — because what the
+business needs to know afterwards is what was charged, and a percentage is a worse way of
+recording that than the number itself.
+
+### A walk-in has no customer row
+
+`Sale.customerId` is nullable. Most counter sales are strangers paying cash, and inventing a
+customer for each one buries the handful of real, named customers the owner actually tracks. A
+sale with no customer prices on the organization's default tier — which is what the seeded
+"Retail" tier is for. `Customer.priceTierId` is how a named customer gets a different price list.
+
+### Returns, and why there is no "void"
+
+A return is one row per returned line, grouped by a `returnGroupId` — the same idiom that pairs
+the two halves of a transfer, rather than a header table that would carry nothing. It refunds a
+share of **what was actually charged**, not of the list price, and restocks into the batches the
+sale drew from, so a returned carton keeps the expiry date it left with. Goods that come back
+broken are refunded with `restocked: false`: the customer is made whole, and nothing unsellable
+re-enters stock.
+
+A sale rung up by mistake is returned in full. That is why there is no void, no status machine and
+no delete — and it leaves both movements in the ledger, which is the honest record of what
+physically happened.
+
+### Invoice numbers are sequential per organization, and cost a row lock
+
+`INV-0001`, from a counter on the organization row, incremented inside the sale's own transaction.
+The lock that makes it gapless also serialises concurrent sales *within one tenant* — acceptable
+at counter volumes, and worth knowing before anyone reports that a busy till feels sluggish. The
+alternative, a UUID, is not something a customer can read out over the phone.
+
+### `amountPaid` is a placeholder for the payments slice
+
+One integer on the sale: the full total for a cash sale, zero on credit, or a part-payment. The
+balance is derived, never stored. It exists so "who owes me" is answerable before payments are
+built, and Slice 5 replaces it with real payment rows.
+
+---
+
+## 7. Identification: barcodes now, RFID later
 
 ### Barcodes attach to units, not products
 
@@ -337,7 +424,7 @@ over-reads create phantom inventory.
 
 ---
 
-## 7. Offline-first
+## 8. Offline-first
 
 The mobile app serves **field reps as well as the owner**, on patchy connectivity, so offline
 capture is a requirement. This constrains the API being built now, long before the app exists:
@@ -358,7 +445,7 @@ combine; a mutable quantity column would corrupt.
 
 ---
 
-## 8. Auth
+## 9. Auth
 
 JWT access tokens plus refresh tokens with **rotation and reuse detection**: replaying an
 already-rotated token revokes the whole token family, so a stolen copy cannot keep renewing
@@ -376,7 +463,7 @@ unconfigured, so OTP and password-reset flows are testable without a verified se
 
 ---
 
-## 9. Working practices
+## 10. Working practices
 
 - **Branching**: `main` (release, tagged) → `dev` (integration) → short-lived feature branches
   merged with `--no-ff`. Never commit to `main` directly.
@@ -388,7 +475,7 @@ unconfigured, so OTP and password-reset flows are testable without a verified se
 
 ---
 
-## 10. Traps already hit
+## 11. Traps already hit
 
 Recorded because each cost real time and none is obvious.
 
@@ -406,19 +493,57 @@ Recorded because each cost real time and none is obvious.
 | **Timestamp sync cursors lose rows** | A row committed at 12:00:00.400 becomes visible *after* one committed at .600 — the timestamp is taken when the statement runs, the row appears when the transaction commits. A cursor that advances to the newest visible row steps over the straggler, and because it only moves forward, that movement is missed **forever** | `SYNC_LAG_MS = 1000` in `sync.service.ts`: the window stops a second short of now, by which time an in-flight transaction has committed. Paging is a `(createdAt, id)` keyset, so movements sharing a timestamp cannot hide each other either |
 | **Upsert vs the tenant extension** | The extension injects `organizationId` into the `where` clause. `updateMany` accepts a non-unique filter there; a strict unique upsert does not | Balances move with `updateMany`, falling back to `create`, with a P2002 retry for two transactions racing to open the same balance row |
 | **Git Bash converts POSIX paths in *arguments* only** | `node script.mjs /tmp/x.log` arrives as a Windows path, but `/tmp/x.log` hard-coded inside the script does not — Node resolves it to `C:\tmp\`. Cost an afternoon of a verification script reading a file that was not there | Pass paths as arguments, or use `cygpath -w`. `/tmp` here is `C:\Users\USER\AppData\Local\Temp` |
+| **PowerShell 5.1 round-tripping a UTF-8 doc** | `Get-Content -Raw` reads UTF-8 as ANSI, so `Set-Content` writes back mojibake — every `—` becomes `â€"`. Worse, `$` in a `(?m)` regex will not match before a CRLF, so the bulk replacement silently matches nothing *and* corrupts the file. Both happened at once while renumbering this document | Never bulk-edit a tracked text file through PS 5.1. Use the editing tools; `git checkout --` is the recovery |
+| **A leftover watch server keeps port 4000** | The new `nest start --watch` compiles, maps its routes, logs "successfully started", *then* dies on `EADDRINUSE` — leaving the previous process serving **old code** while the log looks healthy | `Get-NetTCPConnection -LocalPort 4000 -State Listen` before starting, and `taskkill /PID <id> /T /F` on the whole tree |
 ---
 
-## 11. Where things stand
+## 12. Where things stand
 
-**Slices 0–3 done.** 158 tests across 14 suites, seven migrations,
+**Slices 0–4 done.** 203 tests across 17 suites, eight migrations,
 `typecheck`/`lint`/`build` clean.
+
+Slice 4 (sales) added: `SaleLine` and `SaleReturn`, a rebuilt `Sale`, `Customer.priceTierId`,
+`Organization.nextSaleNumber`, and the `src/modules/sales/` module (renamed from `orders/`). The
+Slice 2 `Sale` placeholder is **gone** — the migration truncates the table, since its rows
+described sales no stock movement ever accounted for. `StockService.costOf` is the new seam
+selling uses to cost a pick; `src/common/pagination/keyset-cursor.ts` now holds the cursor helpers
+that inventory and sales share.
 
 Slice 3 added: `Location`, `Supplier`, `StockBatch`, `StockMovement`, `StockBalance`,
 `GoodsReceipt` and `GoodsReceiptLine`; the `src/modules/inventory/` module; and `Main Store`
-seeded at registration. `Supplier` was pulled forward from Slice 4 so receipts link to a real
-vendor from day one, and so the monthly purchase targets in §12 have their anchor.
+seeded at registration. `Supplier` was pulled forward from the old purchasing slice so receipts
+link to a real vendor from day one, and so the monthly purchase targets in §13 have their anchor.
 
-Verified against a running server, not just compiled — 46 checks, all passing:
+**The regression net**: `npm run smoke` (`test/smoke.mjs`) walks the whole API against a running
+server — register, catalog, receive, sell, return, sync, tenancy — and is the thing to run before
+declaring a slice done. It needs the OTP, which `MailService` logs; it prompts for it, or reads it
+from a log file when `SMOKE_SERVER_LOG` is set:
+
+```bash
+npm run start:dev > server.log 2>&1     # terminal 1
+SMOKE_SERVER_LOG=server.log npm run smoke
+```
+
+Its load-bearing assertion is that **the sum of every movement equals the sum of the stock
+levels**. A sale that deducts wrongly breaks that equality and nothing else does.
+
+Verified against a running server, not just compiled. Slice 4's checks:
+
+- a sale spanning two lots empties the short-dated one first and takes the rest from the other,
+  and its cost of goods sold is the two lots at their *own* rates, rounded once
+- a walk-in with no customer prices on the seeded default tier; a customer moved onto the
+  wholesale list prices on that instead
+- a line with an explicit `unitPrice` charges the agreed price, not the list one
+- a non-stocked product sells, is taxed, and writes no movement at all
+- a sale larger than stock is a 409 that writes nothing; an owner forcing it is recorded and
+  appears on `GET /stock/forced` as a `sale`
+- a returned carton goes back into the lot it came from, refunds half a two-carton line, and
+  leaves the sale with a negative balance — the shop owes the customer
+- returning more than was sold is a 409
+- invoice numbers run `INV-0001` upward per organization, and a second organization starts at
+  `INV-0001` of its own
+
+Slice 3's checks, still passing:
 
 - a new organization is seeded exactly one location, `Main Store`, flagged default
 - 20 cartons of 24 received while paying for 19, at ₦949,449: stock rises 480 base units, the
@@ -443,7 +568,7 @@ Carried over from Slice 2.5 and still verified: barcode resolution to unit and b
 tier pricing fallback, packaging-type seeding and soft-delete revival.
 
 **Not verified by hand**: the Google sign-up path. It calls the same `seedOrganizationDefaults`
-as email registration — which is the §10 trap that put it there — so the location is seeded by
+as email registration — which is the §11 trap that put it there — so the location is seeded by
 construction, but no OAuth round trip was performed.
 
 **Not yet done**: `.gitattributes` for line endings (git warns `LF will be replaced by CRLF`;
@@ -451,15 +576,20 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
 
 ---
 
-## 12. Next
+## 13. Next
 
-1. **Slice 4 — purchasing**: purchase orders, vendor bills, and the **monthly purchase targets**
-   below. `Supplier` and goods receipts already exist, so this slice is the paperwork *around*
-   receiving rather than receiving itself.
+1. **Slice 5 — money in**: payments, receivables, aging, expenses. This is what replaces
+   `Sale.amountPaid` with real payment rows: a shop paying half now and half on the next delivery
+   needs two rows and a date on each, not one integer. `Sale.balance` is already derived, so the
+   shape of the answer does not change — only where the number comes from. Vendor bills, cut from
+   purchasing, belong here if they belong anywhere.
 
-2. **Vendor purchase targets** (model in Slice 4, chart in Slice 8–9). The owner carries a monthly
-   offtake target per vendor — "110 cartons of lotions, 18 cartons of roll-on" — and wants the
-   dashboard to show target, achieved, and remaining. Decided with the owner:
+2. **Vendor purchase targets** (model and chart both in the reports slice — moved out of the cut
+   purchasing slice, and nothing is lost by the wait: progress is summed from `GoodsReceiptLine`,
+   which is append-only and accumulating now, so a target created in November still measures
+   September correctly). The owner carries a monthly offtake target per vendor — "110 cartons of
+   lotions, 18 cartons of roll-on" — and wants the dashboard to show target, achieved, and
+   remaining. Decided with the owner:
 
    - **A target attaches to either a category or a single product.** "Lotions" and "roll-on" are
      `Category` rows, which already exist and are a tree. Product-level targets exist for the
@@ -487,12 +617,15 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
    tile is a **donut gauge or a stacked bar per item type** — one arc per category, done vs left —
    rather than a pie of three slices. A pie cannot compare lotions against roll-on, which is the
    comparison the owner is actually making. The owner has agreed to the donut-or-bar form; it can
-   land as late as Slice 9.
+   land as late as the mobile slice.
 
-3. **Sales must deduct stock (Slice 5).** The existing `Sale` model and `sale.service.ts` are a
-   Slice 2 placeholder and do **not** touch the ledger — this is a known gap, not a bug. Slice 5
-   rebuilds sales with lines and returns, calling `StockService.recordOutbound`, which is exactly
-   the seam `InventoryModule` exports for it. Everything the sales path needs is already there:
-   FEFO picking, the negative-stock refusal, and the owner/manager override.
+3. **`.gitattributes`** for line endings, before a second machine touches the repo.
 
-4. **`.gitattributes`** for line endings, before a second machine touches the repo.
+4. **Smaller things noticed while building sales**, none urgent:
+   - `SaleService.prepareLine` reads the product twice per line — once through `resolveProductUnit`
+     for the unit and `trackStock`, once inside `ProductService.resolvePrice`. Harmless at counter
+     volumes; worth collapsing if a 30-line invoice ever feels slow.
+   - `GoodsReceipt` stores `recordedByUserId` with no relation to `User`, while `StockMovement`,
+     `Sale` and `SaleReturn` all have one. Receipts cannot say who booked them in.
+   - There is no `GET /sales/:id/receipt` — printing is a client concern for now, but the mobile
+     slice will want a stable payload rather than assembling one from `findOne`.

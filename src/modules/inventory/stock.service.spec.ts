@@ -36,7 +36,7 @@ describe('StockService', () => {
       updateMany: jest.Mock;
       create: jest.Mock;
     };
-    stockBatch: { create: jest.Mock };
+    stockBatch: { create: jest.Mock; findMany: jest.Mock };
   };
 
   beforeEach(async () => {
@@ -53,7 +53,10 @@ describe('StockService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         create: jest.fn().mockResolvedValue({}),
       },
-      stockBatch: { create: jest.fn().mockResolvedValue({ id: 'new-batch' }) },
+      stockBatch: {
+        create: jest.fn().mockResolvedValue({ id: 'new-batch' }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -349,6 +352,75 @@ describe('StockService', () => {
           where: expect.objectContaining({ batchId: 'pinned' }) as object,
         }),
       );
+    });
+  });
+
+  describe('costOf', () => {
+    /** ₦90,000 for 240 pieces, and ₦48,000 for 120 — two lots, two costs. */
+    const batches = [
+      { id: 'batch-a', totalCost: 9_000_000, quantityReceived: 240 },
+      { id: 'batch-b', totalCost: 4_800_000, quantityReceived: 120 },
+    ];
+
+    it('divides each batch total by what it received', async () => {
+      prisma.stockBatch.findMany.mockResolvedValue(batches);
+
+      const cost = await as(OrgRole.sales_rep, () =>
+        service.costOf([{ batchId: 'batch-a', quantity: -24 }]),
+      );
+
+      expect(cost).toBe(24 * 37_500);
+    });
+
+    it('costs a pick spanning two lots at each lot’s own rate', async () => {
+      prisma.stockBatch.findMany.mockResolvedValue(batches);
+
+      const cost = await as(OrgRole.sales_rep, () =>
+        service.costOf([
+          { batchId: 'batch-b', quantity: -24 },
+          { batchId: 'batch-a', quantity: -24 },
+        ]),
+      );
+
+      expect(cost).toBe(24 * 40_000 + 24 * 37_500);
+    });
+
+    /**
+     * The reason this returns a fraction rather than kobo: rounding belongs to
+     * whoever writes the number down, once, not to each batch on the way.
+     */
+    it('returns the exact fraction, leaving the rounding to the caller', async () => {
+      prisma.stockBatch.findMany.mockResolvedValue([
+        { id: 'batch-c', totalCost: 100, quantityReceived: 3 },
+      ]);
+
+      const cost = await as(OrgRole.sales_rep, () =>
+        service.costOf([{ batchId: 'batch-c', quantity: -1 }]),
+      );
+
+      expect(cost).toBeCloseTo(33.3333, 4);
+      expect(Number.isInteger(cost)).toBe(false);
+    });
+
+    it('costs the placeholder batch a forced movement leaves behind at nothing', async () => {
+      // quantityReceived 0 marks a batch invented to carry a shortfall. It has
+      // no invoice, so there is nothing to divide.
+      prisma.stockBatch.findMany.mockResolvedValue([
+        { id: 'batch-forced', totalCost: 0, quantityReceived: 0 },
+      ]);
+
+      const cost = await as(OrgRole.sales_rep, () =>
+        service.costOf([{ batchId: 'batch-forced', quantity: -5 }]),
+      );
+
+      expect(cost).toBe(0);
+    });
+
+    it('costs nothing when there are no movements, without a query', async () => {
+      const cost = await as(OrgRole.sales_rep, () => service.costOf([]));
+
+      expect(cost).toBe(0);
+      expect(prisma.stockBatch.findMany).not.toHaveBeenCalled();
     });
   });
 });
