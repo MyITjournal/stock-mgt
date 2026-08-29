@@ -1,6 +1,6 @@
-import { applyTenantScope } from './tenant.prisma';
+import { applyTenantScope, TENANT_SCOPED_MODELS } from './tenant.prisma';
 import { TenantContext } from './tenant-context';
-import { OrgRole } from '@prisma/client';
+import { OrgRole, Prisma } from '@prisma/client';
 
 const ORG = 'org-aaa';
 const OTHER = 'org-bbb';
@@ -74,6 +74,40 @@ describe('applyTenantScope', () => {
     const args = { where: { id: 'row-1' } };
     applyTenantScope('findMany', args, ORG);
     expect(args).toEqual({ where: { id: 'row-1' } });
+  });
+});
+
+describe('TENANT_SCOPED_MODELS', () => {
+  /**
+   * Every model carrying an organizationId column belongs on the scoping list.
+   * A model left off it is silently readable by every tenant, which is exactly
+   * how ProductBarcode shipped unscoped until a manual cross-tenant scan caught
+   * it. This asserts the invariant so the next new table cannot repeat it.
+   */
+  it('covers every model that has an organizationId', () => {
+    const owned = Prisma.dmmf.datamodel.models
+      .filter((model) =>
+        model.fields.some((field) => field.name === 'organizationId'),
+      )
+      .map((model) => model.name);
+
+    const unscoped = owned.filter((name) => !TENANT_SCOPED_MODELS.has(name));
+
+    expect(unscoped).toEqual([]);
+  });
+
+  it('does not list models that have no organizationId', () => {
+    const names = new Set(
+      Prisma.dmmf.datamodel.models
+        .filter((model) =>
+          model.fields.some((field) => field.name === 'organizationId'),
+        )
+        .map((model) => model.name),
+    );
+
+    const stale = [...TENANT_SCOPED_MODELS].filter((name) => !names.has(name));
+
+    expect(stale).toEqual([]);
   });
 });
 

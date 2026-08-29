@@ -13,9 +13,13 @@ import { TenantContext } from './tenant-context';
  */
 export const TENANT_SCOPED_MODELS = new Set<string>([
   'Membership',
+  // Auth reaches RefreshToken through the raw client, before any tenant context
+  // exists, so this is defence in depth rather than the active protection.
+  'RefreshToken',
   'Category',
   'Product',
   'ProductUnit',
+  'ProductBarcode',
   'PriceTier',
   'ProductPrice',
   'Customer',
