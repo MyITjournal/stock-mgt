@@ -4,7 +4,7 @@ The reasoning behind how this app is built. Code shows *what*; this records *why
 what was rejected — the part that is expensive to reconstruct.
 
 Read this first when picking the project back up. Update it whenever a decision is made
-or reversed. Last updated: 2026-08-29, end of Slice 2.5.
+or reversed. Last updated: 2026-08-29, end of Slice 2.5 (plus the vendor-target requirement in §12).
 
 ---
 
@@ -26,10 +26,10 @@ The owner's own business is tenant #1; other businesses follow.
 | 2 | Catalog: products, units, pricing, barcodes, money | done |
 | 2.5 | Packaging types | done |
 | 3 | Inventory ledger: movements, batches, expiry | next |
-| 4 | Purchasing: suppliers, POs, receiving, bills | |
+| 4 | Purchasing: suppliers, POs, receiving, bills, vendor purchase targets | |
 | 5 | Sales: invoices with lines, returns | |
 | 6 | Money in: payments, receivables, aging, expenses | |
-| 7 | Reports: dashboard, profit, stock valuation, expiry | |
+| 7 | Reports: dashboard, profit, stock valuation, expiry, target vs actual | |
 | 8 | Web dashboard | |
 | 9 | Mobile app | |
 | 10 | Subscriptions and billing | |
@@ -363,3 +363,36 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
 1. **Slice 3 — inventory ledger**: `StockMovement` (append-only), locations, batches and expiry,
    receiving with `quantityReceived`/`quantityPaidFor`/`totalCost`, FEFO picking, damage
    adjustments with reasons, and delta-sync cursors.
+
+2. **Vendor purchase targets** (model lands in Slice 4, dashboard in Slice 7/8). The owner carries
+   a monthly offtake target per vendor — "110 cartons of lotions, 18 cartons of roll-on" — and
+   wants the dashboard to show target, achieved, and remaining. Decided so far:
+
+   - **A target attaches to either a category or a single product.** "Lotions" and "roll-on" are
+     `Category` rows, which already exist and are a tree. Product-level targets exist for the
+     vendor that quotas one SKU.
+     *Rollup rule*: a category target covers only the products in that category that do **not**
+     have their own target row, otherwise the same carton is counted twice. Whatever computes the
+     summary must subtract, not just sum.
+   - **Scoped to a vendor**, once `Supplier` exists in Slice 4. Until then there is nothing to
+     hang it on, which is why this is not Slice 3.
+   - **Progress counts goods received**, not orders placed and not vendor bills. Ordered-but-
+     undelivered stays in "remaining", which is the number the owner actually needs to chase.
+   - **Every target carries both a quantity and a value.** Quantity in **base units** with a
+     display `unitId` (the vendor speaks in cartons; the ledger speaks in base units — convert on
+     write, using the unit factor at that time, and store the base figure so a later factor change
+     cannot rewrite history). Value in kobo, per §2.
+   - **Period is a calendar month in the organization's timezone** (`Organization.timezone`,
+     default `Africa/Lagos`). Not a rolling 30 days — the vendor's scheme runs on months.
+   - **Free goods do not count toward the target** (confirmed by the owner, 2026-08-29). Progress
+     is measured on `quantityPaidFor`: "buy 19, get 1 free" advances a 110-case target by 19, not
+     20. The free case is still real stock and still absorbs into cost per §2 — it counts for
+     valuation and against inventory, just not against the vendor quota.
+   - **Achieved value comes from the receipt's `totalCost`**, apportioned — never from
+     `costPrice × quantity`, which is the rounded average §2 forbids as an input.
+
+   On the chart: "target / done / left" is a progress figure, not a composition, so the summary
+   tile is a **donut gauge or a stacked bar per item type** — one arc per category, done vs left —
+   rather than a pie of three slices. A pie cannot compare lotions against roll-on, which is the
+   comparison the owner is actually making. The owner has agreed to the donut-or-bar form; it can
+   land as late as Slice 9.
