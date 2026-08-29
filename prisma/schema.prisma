@@ -77,11 +77,12 @@ model Product {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  category     Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   units        ProductUnit[]
   prices       ProductPrice[]
   sales        Sale[]
+  barcodes     ProductBarcode[]
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -110,9 +111,10 @@ model ProductUnit {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  product      Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
   prices       ProductPrice[]
+  barcodes     ProductBarcode[]
 
   @@unique([organizationId, productId, name])
   @@index([productId])
@@ -136,6 +138,51 @@ model PriceTier {
   @@unique([organizationId, name])
   @@index([organizationId])
   @@map("price_tiers")
+}
+
+/// A scannable code identifying one *unit* of a product.
+///
+/// Attached to the unit rather than the product because the case and the item
+/// carry different numbers: an ITF-14 on the carton, an EAN-13 on the piece.
+/// That is what lets a scan during goods receiving resolve to "one carton = 24
+/// pieces" instead of one anonymous item.
+///
+/// Unique per organization, not globally: two tenants will stock the same Peak
+/// Milk, and one will invent its own internal code.
+model ProductBarcode {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  unitId         String
+
+  code      String
+  symbology BarcodeSymbology @default(EAN13)
+  /// The code printed on labels for this unit when there are several.
+  isPrimary Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([productId])
+  @@index([unitId])
+  @@map("product_barcodes")
+}
+
+/// INTERNAL is a valid EAN-13 in the GS1 restricted-circulation range (leading
+/// 2), generated for goods that arrive with no barcode of their own.
+enum BarcodeSymbology {
+  EAN13
+  UPC_A
+  EAN8
+  ITF14
+  CODE128
+  QR
+  INTERNAL
 }
 
 /// Price of one `unit` of `product` for customers on `tier`.
@@ -208,6 +255,7 @@ model Organization {
   productPrices ProductPrice[]
   customers     Customer[]
   sales         Sale[]
+  barcodes      ProductBarcode[]
 
   @@map("organizations")
 }
