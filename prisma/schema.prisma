@@ -51,14 +51,44 @@ model Category {
   @@map("categories")
 }
 
-model Product {
+/// The physical form of a product's base unit: pouch, tin, sachet, roll, crate.
+///
+/// A per-organization lookup rather than a Prisma enum because the vocabulary
+/// grows with the business, and an enum would need a migration every time a
+/// tenant stocks something in a form nobody had listed.
+///
+/// It describes the *product*, not the unit hierarchy: "Milo 400g Pouch" and
+/// "Milo 800g Pouch" are different products, both packaged as a pouch.
+model PackagingType {
   id             String  @id @default(uuid())
   organizationId String
-  /// Stock-keeping unit. Generated from the name when the caller omits it.
-  sku            String
   name           String
   description    String?
-  categoryId     String?
+  /// Display order in pickers; ties break on name.
+  sortOrder      Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("packaging_types")
+}
+
+model Product {
+  id              String  @id @default(uuid())
+  organizationId  String
+  /// Stock-keeping unit. Generated from the name when the caller omits it.
+  sku             String
+  name            String
+  description     String?
+  categoryId      String?
+  /// Physical form of the base unit, from the org's PackagingType lookup.
+  packagingTypeId String?
 
   /// Tax-inclusive price of ONE base unit, in minor units (kobo). Used when no
   /// ProductPrice row matches the customer's tier.
@@ -77,16 +107,18 @@ model Product {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  category     Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  units        ProductUnit[]
-  prices       ProductPrice[]
-  sales        Sale[]
-  barcodes     ProductBarcode[]
+  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category      Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  packagingType PackagingType?   @relation(fields: [packagingTypeId], references: [id], onDelete: SetNull)
+  units         ProductUnit[]
+  prices        ProductPrice[]
+  sales         Sale[]
+  barcodes      ProductBarcode[]
 
   @@unique([organizationId, sku])
   @@index([organizationId])
   @@index([categoryId])
+  @@index([packagingTypeId])
   @@map("products")
 }
 
@@ -279,6 +311,7 @@ model Organization {
   refreshTokens RefreshToken[]
 
   categories      Category[]
+  packagingTypes  PackagingType[]
   products        Product[]
   productUnits    ProductUnit[]
   priceTiers      PriceTier[]
