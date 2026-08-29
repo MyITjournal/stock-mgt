@@ -4,7 +4,7 @@ The reasoning behind how this app is built. Code shows *what*; this records *why
 what was rejected — the part that is expensive to reconstruct.
 
 Read this first when picking the project back up. Update it whenever a decision is made
-or reversed. Last updated: 2026-08-29, end of Slice 2.
+or reversed. Last updated: 2026-08-29, end of Slice 2.5.
 
 ---
 
@@ -24,7 +24,7 @@ The owner's own business is tenant #1; other businesses follow.
 | 0 | Rails: validation, CORS, Swagger, health | done |
 | 1 | Tenancy + auth | done |
 | 2 | Catalog: products, units, pricing, barcodes, money | done |
-| 2.5 | Packaging types | next |
+| 2.5 | Packaging types | done |
 | 3 | Inventory ledger: movements, batches, expiry | next |
 | 4 | Purchasing: suppliers, POs, receiving, bills | |
 | 5 | Sales: invoices with lines, returns | |
@@ -181,10 +181,21 @@ default "Retail" tier at registration so pricing always has a home.
 ### Products vs packaging
 
 "Milo 400g Pouch" and "Milo 800g Pouch" are **different products** — different barcodes,
-different prices, separate stock. `packagingType` (pouch, tin, sachet, roll, crate, bag, keg…) is
+different prices, separate stock. `PackagingType` (pouch, tin, sachet, roll, crate, bag, keg…) is
 an attribute describing the base unit's physical form, so the catalog can answer "show me
-everything in pouches". It is a per-organization lookup table, not a Prisma enum, because the
-vocabulary grows and a Prisma enum would need a migration each time.
+everything in pouches" — `GET /products?packagingTypeId=…`.
+
+It is a per-organization lookup table, not a Prisma enum, because the vocabulary grows and a
+Prisma enum would need a migration each time. It hangs off the **product**, not the unit: a
+carton of pouches is already described by the unit hierarchy, and putting a form on every unit
+buys nothing the factor does not already say.
+
+Fourteen types are seeded at registration — piece, sachet, pouch, bottle, can, tin, jar, tube,
+pack, roll, carton, crate, bag, keg — numbered in tens so a business can slot its own in between.
+Deletion is soft, so a product packaged in a form the business has stopped using still reports
+what it was. That leaves the name occupied as far as the unique constraint is concerned, so
+**re-creating a deleted type revives that row** rather than returning a 409 naming something the
+caller cannot see in any list.
 
 ---
 
@@ -318,12 +329,13 @@ Recorded because each cost real time and none is obvious.
 | **`.gitignore` had `*.spec.ts`** | Every new test invisible to git | Removed; four spec files now tracked |
 | **`@t3-oss/env-core`** | ESM-only with no `main`, unresolvable under Jest's CommonJS transform | Dropped; plain zod in `env.ts` |
 | **Prisma types vs the tenant extension** | Extension injects `organizationId` at runtime, but generated input types still require it | Pass it explicitly on creates; extension remains the backstop |
+| **Two registration paths, one seed** | Email sign-up seeded the default price tier; Google sign-up created the organization and stopped, so those businesses had nowhere to put a price | One `seedOrganizationDefaults` both paths call. Any future per-org default goes there, not inline |
 
 ---
 
 ## 11. Where things stand
 
-**Merged to `dev` and pushed**: Slices 0–2. 88 tests across 8 suites, five migrations,
+**Merged to `dev` and pushed**: Slices 0–2.5. 104 tests across 9 suites, six migrations,
 `typecheck`/`lint`/`build` clean.
 
 Verified against a running server, not just compiled:
@@ -336,6 +348,10 @@ Verified against a running server, not just compiled:
   `Idempotent-Replay: true`; the same key with a different body returns 409
 - org B gets `[]` for org A's products, 404 by id, 404 on PATCH/DELETE, and can independently
   reuse the same SKU and the same barcode
+- each organization is seeded its own 14 packaging types; org B gets 404 for org A's `pouch` by
+  id, and 404 when creating a product against it
+- `?packagingTypeId=` returns only the pouches; deleting `pouch` hides it from the list while the
+  product it was on still reports it; re-creating `pouch` returns the same row id
 
 **Not yet done**: `.gitattributes` for line endings (git warns `LF will be replaced by CRLF`;
 invisible while solo, produces phantom whole-file diffs the moment a second machine touches it).
@@ -344,8 +360,6 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
 
 ## 12. Next
 
-1. **`feat/packaging-types`** — per-org lookup table, `Product.packagingType`, seeded on
-   registration.
-2. **Slice 3 — inventory ledger**: `StockMovement` (append-only), locations, batches and expiry,
+1. **Slice 3 — inventory ledger**: `StockMovement` (append-only), locations, batches and expiry,
    receiving with `quantityReceived`/`quantityPaidFor`/`totalCost`, FEFO picking, damage
    adjustments with reasons, and delta-sync cursors.
