@@ -6,10 +6,21 @@ import { TenantContext } from './tenant-context';
  * Models whose rows belong to exactly one organization. Anything listed here is
  * automatically filtered and stamped; anything not listed is untouched.
  *
- * Slices 2-6 add Product, Customer, Sale, SaleLine, StockMovement, Supplier,
- * PurchaseOrder, Payment and Expense as those models are created.
+ * Adding a model here is the only thing that protects it. A new tenant-owned
+ * table that is left off this list is readable by every other tenant.
+ *
+ * Slices 3-6 add StockMovement, Supplier, PurchaseOrder, Payment and Expense.
  */
-export const TENANT_SCOPED_MODELS = new Set<string>(['Membership']);
+export const TENANT_SCOPED_MODELS = new Set<string>([
+  'Membership',
+  'Category',
+  'Product',
+  'ProductUnit',
+  'PriceTier',
+  'ProductPrice',
+  'Customer',
+  'Sale',
+]);
 
 /** Reads and writes that select rows through a `where` clause. */
 const WHERE_OPERATIONS = new Set([

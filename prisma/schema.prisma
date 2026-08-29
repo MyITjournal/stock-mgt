@@ -9,41 +9,180 @@ datasource db {
 }
 
 model Customer {
-  id         String   @id @default(uuid())
+  id             String @id @default(uuid())
+  organizationId String
+
   firstName  String
   middleName String?
   lastName   String?
   email      String?
   phone      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  sales      Sale[]
 
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sales        Sale[]
+
+  @@index([organizationId])
   @@map("customers")
 }
 
-model Product {
-  id          String  @id @default(uuid())
-  name        String
-  /// Tax-inclusive, in minor units (kobo).
-  price       Int  
-  description String?
-  sales       Sale[]
+/// A product category. `parentId` allows nesting, e.g. Beverages > Soft Drinks.
+model Category {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  parentId       String?
 
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[]   @relation("CategoryTree")
+  products     Product[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("categories")
+}
+
+model Product {
+  id             String  @id @default(uuid())
+  organizationId String
+  /// Stock-keeping unit. Generated from the name when the caller omits it.
+  sku            String
+  name           String
+  description    String?
+  categoryId     String?
+
+  /// Tax-inclusive price of ONE base unit, in minor units (kobo). Used when no
+  /// ProductPrice row matches the customer's tier.
+  basePrice  Int
+  /// Last known purchase cost of one base unit. Slice 4 maintains this as a
+  /// moving weighted average from goods receipts.
+  costPrice  Int?
+  /// VAT rate in basis points: 750 = 7.5%.
+  taxRateBps Int  @default(750)
+
+  isActive   Boolean @default(true)
+  /// False for services and non-stocked items, which the ledger should ignore.
+  trackStock Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  units        ProductUnit[]
+  prices       ProductPrice[]
+  sales        Sale[]
+
+  @@unique([organizationId, sku])
+  @@index([organizationId])
+  @@index([categoryId])
   @@map("products")
 }
 
-model Sale {
-  id         String   @id @default(uuid())
-  productId  String
-  customerId String
-  quantity   Int
-  /// Tax-inclusive, in minor units (kobo).
-  total      Int  
-  createdAt  DateTime @default(now())
-  product    Product  @relation(fields: [productId], references: [id])
-  customer   Customer @relation(fields: [customerId], references: [id])
+/// How a product is packaged and sold: piece, pack, carton.
+///
+/// Per product, because a carton of milk and a carton of soap hold different
+/// counts. Exactly one unit per product is the base (factor 1); all stock is
+/// recorded in base units, which is what the Slice 3 ledger depends on.
+model ProductUnit {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
 
+  name   String
+  /// How many base units this contains. The base unit itself is 1.
+  factor Int
+
+  isBase           Boolean @default(false)
+  /// The unit pre-selected when selling this product.
+  isDefaultSelling Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  prices       ProductPrice[]
+
+  @@unique([organizationId, productId, name])
+  @@index([productId])
+  @@map("product_units")
+}
+
+/// A customer class with its own pricing, e.g. Retail, Wholesale, Distributor.
+model PriceTier {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  isDefault      Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  prices       ProductPrice[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("price_tiers")
+}
+
+/// Price of one `unit` of `product` for customers on `tier`.
+///
+/// Keyed by unit as well as tier on purpose: a carton price is not twelve times
+/// the piece price. Bulk discount is the norm in FMCG, and a model that can only
+/// multiply the base price cannot express it.
+model ProductPrice {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  tierId         String
+  unitId         String
+
+  /// Tax-inclusive, in minor units (kobo), for ONE of that unit.
+  price Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tier         PriceTier    @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId, tierId, unitId])
+  @@index([productId])
+  @@map("product_prices")
+}
+
+model Sale {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  customerId     String
+
+  quantity Int
+  /// Tax-inclusive, in minor units (kobo).
+  total    Int
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id])
+  customer     Customer     @relation(fields: [customerId], references: [id])
+
+  @@index([organizationId])
   @@map("sales")
 }
 
@@ -61,6 +200,14 @@ model Organization {
 
   memberships   Membership[]
   refreshTokens RefreshToken[]
+
+  categories    Category[]
+  products      Product[]
+  productUnits  ProductUnit[]
+  priceTiers    PriceTier[]
+  productPrices ProductPrice[]
+  customers     Customer[]
+  sales         Sale[]
 
   @@map("organizations")
 }
