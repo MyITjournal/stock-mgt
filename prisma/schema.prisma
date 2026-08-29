@@ -107,13 +107,17 @@ model Product {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  category      Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  packagingType PackagingType?   @relation(fields: [packagingTypeId], references: [id], onDelete: SetNull)
-  units         ProductUnit[]
-  prices        ProductPrice[]
-  sales         Sale[]
-  barcodes      ProductBarcode[]
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  packagingType     PackagingType?     @relation(fields: [packagingTypeId], references: [id], onDelete: SetNull)
+  units             ProductUnit[]
+  prices            ProductPrice[]
+  sales             Sale[]
+  barcodes          ProductBarcode[]
+  stockBatches      StockBatch[]
+  stockMovements    StockMovement[]
+  stockBalances     StockBalance[]
+  goodsReceiptLines GoodsReceiptLine[]
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -143,10 +147,11 @@ model ProductUnit {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  product      Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
-  prices       ProductPrice[]
-  barcodes     ProductBarcode[]
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product           Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  prices            ProductPrice[]
+  barcodes          ProductBarcode[]
+  goodsReceiptLines GoodsReceiptLine[]
 
   @@unique([organizationId, productId, name])
   @@index([productId])
@@ -310,16 +315,23 @@ model Organization {
   memberships   Membership[]
   refreshTokens RefreshToken[]
 
-  categories      Category[]
-  packagingTypes  PackagingType[]
-  products        Product[]
-  productUnits    ProductUnit[]
-  priceTiers      PriceTier[]
-  productPrices   ProductPrice[]
-  customers       Customer[]
-  sales           Sale[]
-  barcodes        ProductBarcode[]
-  idempotencyKeys IdempotencyKey[]
+  categories        Category[]
+  packagingTypes    PackagingType[]
+  products          Product[]
+  productUnits      ProductUnit[]
+  priceTiers        PriceTier[]
+  productPrices     ProductPrice[]
+  customers         Customer[]
+  sales             Sale[]
+  barcodes          ProductBarcode[]
+  idempotencyKeys   IdempotencyKey[]
+  locations         Location[]
+  suppliers         Supplier[]
+  stockBatches      StockBatch[]
+  stockMovements    StockMovement[]
+  stockBalances     StockBalance[]
+  goodsReceipts     GoodsReceipt[]
+  goodsReceiptLines GoodsReceiptLine[]
 
   @@map("organizations")
 }
@@ -395,6 +407,7 @@ model User {
   resetPasswords ResetPassword[]
   memberships    Membership[]
   refreshTokens  RefreshToken[]
+  stockMovements StockMovement[]
 
   @@map("users")
 }
@@ -436,4 +449,272 @@ enum MembershipStatus {
 enum AuthProvider {
   email
   google
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (Slice 3)
+//
+// The ledger is append-only: `StockMovement` rows are written and never updated
+// or deleted. Current stock is the sum of those rows, cached in `StockBalance`
+// for speed and rebuildable from the ledger at any time. Quantities everywhere
+// are integers in base units.
+// ---------------------------------------------------------------------------
+
+/// Somewhere stock physically sits: the main store, a shop counter, a van.
+/// A flat list, not a tree — bin-level nesting is more than an FMCG distributor
+/// needs and it slows every balance query.
+model Location {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+
+  /// Where movements land when the caller names no location.
+  isDefault Boolean @default(false)
+  /// Display order in pickers. Ties break on name.
+  sortOrder Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  movements     StockMovement[]
+  balances      StockBalance[]
+  goodsReceipts GoodsReceipt[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("locations")
+}
+
+/// A vendor goods are bought from. Pulled forward from Slice 4 so receipts link
+/// to a real row from the start; purchase orders and bills still belong to that
+/// slice.
+model Supplier {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  phone          String?
+  email          String?
+  address        String?
+  notes          String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batches       StockBatch[]
+  goodsReceipts GoodsReceipt[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("suppliers")
+}
+
+/// One received lot of one product. Created per receipt line and never merged
+/// with another delivery — each keeps its own exact invoice total, which is what
+/// makes unit cost honest.
+model StockBatch {
+  id             String  @id @default(uuid())
+  organizationId String
+  productId      String
+  supplierId     String?
+
+  /// The vendor's own lot number, when the carton carries one.
+  lotCode    String?
+  expiryDate DateTime?
+  receivedAt DateTime  @default(now())
+
+  /// What physically arrived, in base units. Stock increases by this.
+  quantityReceived Int
+  /// What the invoice charged for, in base units. Free goods make this smaller
+  /// than quantityReceived.
+  quantityPaidFor  Int
+  /// Exact invoice total in minor units (kobo). The only money stored; unit cost
+  /// is totalCost / quantityReceived, computed on read.
+  totalCost        Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier     Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  movements    StockMovement[]
+  balances     StockBalance[]
+  receiptLine  GoodsReceiptLine?
+
+  @@index([organizationId])
+  @@index([productId])
+  /// FEFO picks on this: earliest expiry first.
+  @@index([organizationId, productId, expiryDate])
+  @@map("stock_batches")
+}
+
+/// The ledger. Append-only: there is no update or delete path anywhere in the
+/// application. A mutable quantity column was rejected — no audit trail, and it
+/// does not merge when three offline devices sync.
+model StockMovement {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  locationId     String
+  batchId        String
+
+  type     StockMovementType
+  /// Signed, in base units: positive brings stock in, negative takes it out.
+  /// A balance is then a plain sum, with no branch on type.
+  quantity Int
+
+  /// Why, for adjustments. Damage and spoilage are movements with a reason,
+  /// never silent decrements.
+  reason StockAdjustmentReason?
+  note   String?
+
+  /// When it happened, by the recording device's clock — a rep offline at 9am
+  /// syncing at 5pm. `createdAt` is when the server stored it; offline, the two
+  /// differ.
+  occurredAt DateTime @default(now())
+
+  /// Who recorded it.
+  recordedByUserId String?
+
+  /// What caused it: "goods_receipt" and the receipt id today, a sale in Slice 5.
+  referenceType String?
+  referenceId   String?
+
+  /// Shared by the two halves of a transfer, so the pair reads as one act.
+  transferGroupId String?
+
+  /// True when an owner or manager pushed this through a shortfall. The reason is
+  /// kept so "we sold stock we had not entered yet" is a line on a report rather
+  /// than a mystery.
+  isForced     Boolean @default(false)
+  forcedReason String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location     Location     @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, productId, locationId])
+  /// The delta-sync cursor: keyset paging over (createdAt, id).
+  @@index([organizationId, createdAt, id])
+  @@index([transferGroupId])
+  @@map("stock_movements")
+}
+
+/// Cached sum of the ledger, at the finest grain FEFO needs. Written in the same
+/// transaction as the movement it reflects, and rebuildable from `StockMovement`
+/// if it ever drifts.
+model StockBalance {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  locationId     String
+  batchId        String
+
+  /// Base units on hand. May go negative — see the forced-movement path.
+  quantity Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location     Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId, locationId, batchId])
+  @@index([organizationId, productId])
+  @@map("stock_balances")
+}
+
+/// One delivery from one vendor: the paperwork the movements were created from.
+model GoodsReceipt {
+  id             String @id @default(uuid())
+  organizationId String
+  supplierId     String
+  locationId     String
+
+  invoiceNumber String?
+  receivedAt    DateTime @default(now())
+  note          String?
+
+  recordedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  location     Location           @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  lines        GoodsReceiptLine[]
+
+  @@index([organizationId])
+  @@index([organizationId, receivedAt])
+  @@map("goods_receipts")
+}
+
+/// A line of a delivery. Quantities are stored in base units; `unitId` and
+/// `unitFactor` record what the user actually typed — "20 cartons" — so a later
+/// edit to the unit factor cannot rewrite history.
+model GoodsReceiptLine {
+  id             String @id @default(uuid())
+  organizationId String
+  receiptId      String
+  productId      String
+  unitId         String
+  batchId        String @unique
+
+  /// As entered, in `unitId`.
+  quantityReceivedInUnit Int
+  quantityPaidForInUnit  Int
+  /// The factor applied at write time.
+  unitFactor             Int
+
+  /// The same figures in base units, which is what the ledger moved.
+  quantityReceived Int
+  quantityPaidFor  Int
+  /// Exact invoice total for this line, in minor units (kobo).
+  totalCost        Int
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receipt      GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([receiptId])
+  @@map("goods_receipt_lines")
+}
+
+enum StockMovementType {
+  receipt
+  sale
+  return_in
+  return_out
+  adjustment
+  transfer_in
+  transfer_out
+  damage
+}
+
+/// Why an adjustment happened. Breakage and spoilage are movements with a
+/// reason, so "we lost this much to breakage this month" is answerable.
+enum StockAdjustmentReason {
+  damage
+  expiry
+  theft
+  count_correction
+  opening_balance
+  other
 }

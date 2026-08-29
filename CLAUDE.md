@@ -26,16 +26,26 @@ These are load-bearing. Breaking one is a data-integrity bug, not a style choice
 
 ## Where things stand
 
-**Slices 0–2.5 are done** and merged to `dev`: rails, tenancy + auth, catalog (products, units,
-tier pricing, barcodes, money in kobo), write idempotency, packaging types.
+**Slices 0–3 are done**: rails, tenancy + auth, catalog (products, units, tier pricing, barcodes,
+money in kobo), write idempotency, packaging types, and the inventory ledger — `StockMovement`
+(append-only), locations, suppliers, batches with expiry, receiving, FEFO picking, adjustments
+and transfers, and delta-sync cursors.
 
-**Next: Slice 3 — the inventory ledger.** `StockMovement` (append-only), locations, batches and
-expiry, receiving with `quantityReceived`/`quantityPaidFor`/`totalCost`, FEFO picking, damage
-adjustments with reasons, delta-sync cursors.
+Two Slice 3 rules worth knowing before you touch stock: **every movement carries a batch** and
+**quantity is signed** (positive in, negative out). And the negative-stock policy — the ledger
+records everything, while the *write path* refuses an outbound movement it cannot cover with a
+409, unless an owner or manager forces it with a reason.
+
+**Next: Slice 4 — purchasing.** Purchase orders, vendor bills, and the monthly vendor purchase
+targets. `Supplier` and goods receipts already exist, so this slice is the paperwork *around*
+receiving rather than receiving itself.
+
+**Known gap, not a bug:** the Slice 2 `Sale` placeholder does not deduct stock. Slice 5 rebuilds
+sales and calls `StockService.recordOutbound`, which is the seam `InventoryModule` exports.
 
 The detail — what is verified against a running server, what is still outstanding, and the full
 next-step list — is in [docs/DECISIONS.md](docs/DECISIONS.md) §11 and §12. This section is the
-two-line version; that one is authoritative.
+short version; that one is authoritative.
 
 ## Working practice
 

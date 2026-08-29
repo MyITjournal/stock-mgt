@@ -4,7 +4,7 @@ The reasoning behind how this app is built. Code shows *what*; this records *why
 what was rejected — the part that is expensive to reconstruct.
 
 Read this first when picking the project back up. Update it whenever a decision is made
-or reversed. Last updated: 2026-08-29, end of Slice 2.5.
+or reversed. Last updated: 2026-08-29, end of Slice 3.
 
 ---
 
@@ -25,11 +25,11 @@ The owner's own business is tenant #1; other businesses follow.
 | 1 | Tenancy + auth | done |
 | 2 | Catalog: products, units, pricing, barcodes, money | done |
 | 2.5 | Packaging types | done |
-| 3 | Inventory ledger: movements, batches, expiry | next |
-| 4 | Purchasing: suppliers, POs, receiving, bills | |
+| 3 | Inventory ledger: movements, locations, batches, receiving, FEFO, sync | done |
+| 4 | Purchasing: POs, bills, vendor purchase targets (Supplier and receiving landed in 3) | next |
 | 5 | Sales: invoices with lines, returns | |
 | 6 | Money in: payments, receivables, aging, expenses | |
-| 7 | Reports: dashboard, profit, stock valuation, expiry | |
+| 7 | Reports: dashboard, profit, stock valuation, expiry, target vs actual | |
 | 8 | Web dashboard | |
 | 9 | Mobile app | |
 | 10 | Subscriptions and billing | |
@@ -199,12 +199,14 @@ caller cannot see in any list.
 
 ---
 
-## 5. Inventory (Slice 3, not yet built)
+## 5. Inventory
 
 ### The ledger is append-only
 
 `StockMovement` records every purchase, sale, return, adjustment, transfer and damage.
-Current stock is **derived** from it, with a cached balance for speed.
+Current stock is **derived** from it, cached in `StockBalance` for speed and rebuildable at any
+time through `POST /stock/rebuild-balances`, which reports what it corrected. An empty report is
+the proof that cache and ledger agree.
 
 A mutable `quantity` column was rejected: no audit trail, no way to answer "why is this number
 wrong", corruption under concurrent sales, and it does not merge when three offline devices sync.
@@ -214,15 +216,86 @@ This is the one decision that cannot be retrofitted.
 
 Same reason as money. Float quantities make stock counts unreconcilable.
 
+### Quantity is signed
+
+Positive brings stock in, negative takes it out. A balance is then a plain sum and the cache is a
+running total, with no branch on movement type anywhere. The alternative — a positive magnitude
+plus a direction derived from `type` — puts that branch in every query that ever adds stock up.
+
+### Every movement carries a batch
+
+`batchId` is NOT NULL on both `StockMovement` and `StockBalance`. Inbound stock creates a batch;
+outbound references the one FEFO picked; an opening-balance adjustment invents one.
+
+This is load-bearing in two places. It keeps `StockBalance`'s unique key
+`(organizationId, productId, locationId, batchId)` free of the Postgres "NULLs are distinct" trap,
+which would otherwise let duplicate balance rows accumulate silently. And it makes batch-level
+stock the primary figure, with product- and location-level views as sums over it — the direction
+that works, since the reverse cannot be decomposed.
+
+### Locations are a flat list
+
+Main store, shop counter, a rep's van. `Main Store` is seeded at registration through
+`seedOrganizationDefaults`, so a business with one shop never has to think about locations at all.
+
+Nesting (warehouse → aisle → shelf) was rejected: more than an FMCG distributor needs, and it
+slows every balance query. A location holding stock cannot be deleted — movements point at it
+forever, so retiring it would strand what is there where no report can see it.
+
 ### Perishables
 
 Batch and expiry per received lot. Picking is **FEFO** — first *expired* out, not first *in* out.
 For eggs and short-dated goods the two differ often enough to matter, and picking the wrong lot
-costs you the older one.
+costs you the older one. Undated batches sort *last*: a product with no expiry has no urgency, so
+anything that can go off should leave the shelf ahead of it.
+
+Batches are created per receipt line and never merged with an earlier delivery, even when the lot
+code matches. Merging would average two invoice totals together and lose the exact figure for
+each, which is the one thing that makes unit cost honest.
 
 Breakage and spoilage are **adjustment movements with a reason**, not silent decrements. That is
 the difference between "we lost ₦2,000 to breakage this month" and stock that mysteriously never
 adds up.
+
+### Negative stock: the ledger records, the write path refuses
+
+The ledger never refuses a movement. Refusing to record what happened is how a stock count stops
+reconciling, and an offline sale that syncs at 5pm already happened at 9am — the goods left the
+shop and cannot be un-sold. Rejecting it at sync time would delete a real sale from the books,
+which is strictly worse than a negative number.
+
+So the policy lives in the write path instead. An outbound movement that stock does not cover is
+refused with a **409 naming the shortfall**. An **owner or manager** may override with
+`force: true` and a reason, which is stored on the movement as `isForced` / `forcedReason` and
+listed by `GET /stock/forced`.
+
+The owner's own scenario decided this: in a rush, with stock physically present but not yet
+entered, a hard block loses the sale and a silent allowance loses the audit trail. The override
+gives the person in charge one extra tap and leaves a row behind. A store that forces ten sales a
+week sees ten rows saying so, which is the lever that actually gets deliveries entered on time —
+not the block.
+
+Rejected: a hard block with no override (an offline sale that syncs late gets rejected and the
+rep re-enters it, or gives up); allowing anyone to override (the trail exists, but anyone can
+create it). A per-organization toggle was left out as an unnecessary branch in every write path —
+the override already covers the case it would serve.
+
+Where the shortfall lands: on the batch FEFO would have picked, driving it negative, since those
+goods almost certainly came from that lot. When the product has never been received at that
+location, there is no lot to blame, so a batch with `quantityReceived = 0` and no cost is opened
+to hang it on — which is also how those placeholder batches are recognised.
+
+### Unit conversion happens once, on write
+
+The vendor speaks in cartons; the ledger speaks in base units. `GoodsReceiptLine` stores what was
+typed (`quantityReceivedInUnit`, `unitId`) *and* the factor applied (`unitFactor`) alongside the
+converted figure. Editing what a carton contains must not retroactively change how much stock a
+past delivery brought in.
+
+### Delta sync cursors carry a safety lag
+
+`GET /stock/movements` pages on a `(createdAt, id)` keyset, and the window stops one second short
+of the server clock. See §10 — this is a trap, not a preference.
 
 ---
 
@@ -330,28 +403,48 @@ Recorded because each cost real time and none is obvious.
 | **`@t3-oss/env-core`** | ESM-only with no `main`, unresolvable under Jest's CommonJS transform | Dropped; plain zod in `env.ts` |
 | **Prisma types vs the tenant extension** | Extension injects `organizationId` at runtime, but generated input types still require it | Pass it explicitly on creates; extension remains the backstop |
 | **Two registration paths, one seed** | Email sign-up seeded the default price tier; Google sign-up created the organization and stopped, so those businesses had nowhere to put a price | One `seedOrganizationDefaults` both paths call. Any future per-org default goes there, not inline |
-
+| **Timestamp sync cursors lose rows** | A row committed at 12:00:00.400 becomes visible *after* one committed at .600 — the timestamp is taken when the statement runs, the row appears when the transaction commits. A cursor that advances to the newest visible row steps over the straggler, and because it only moves forward, that movement is missed **forever** | `SYNC_LAG_MS = 1000` in `sync.service.ts`: the window stops a second short of now, by which time an in-flight transaction has committed. Paging is a `(createdAt, id)` keyset, so movements sharing a timestamp cannot hide each other either |
+| **Upsert vs the tenant extension** | The extension injects `organizationId` into the `where` clause. `updateMany` accepts a non-unique filter there; a strict unique upsert does not | Balances move with `updateMany`, falling back to `create`, with a P2002 retry for two transactions racing to open the same balance row |
+| **Git Bash converts POSIX paths in *arguments* only** | `node script.mjs /tmp/x.log` arrives as a Windows path, but `/tmp/x.log` hard-coded inside the script does not — Node resolves it to `C:\tmp\`. Cost an afternoon of a verification script reading a file that was not there | Pass paths as arguments, or use `cygpath -w`. `/tmp` here is `C:\Users\USER\AppData\Local\Temp` |
 ---
 
 ## 11. Where things stand
 
-**Merged to `dev` and pushed**: Slices 0–2.5. 104 tests across 9 suites, six migrations,
+**Slices 0–3 done.** 158 tests across 14 suites, seven migrations,
 `typecheck`/`lint`/`build` clean.
 
-Verified against a running server, not just compiled:
+Slice 3 added: `Location`, `Supplier`, `StockBatch`, `StockMovement`, `StockBalance`,
+`GoodsReceipt` and `GoodsReceiptLine`; the `src/modules/inventory/` module; and `Main Store`
+seeded at registration. `Supplier` was pulled forward from Slice 4 so receipts link to a real
+vendor from day one, and so the monthly purchase targets in §12 have their anchor.
 
-- an EAN-13 resolves to `unit=piece, baseQuantity=1`; an ITF-14 on the same product resolves to
-  `unit=carton, baseQuantity=24`
-- a wholesale carton price below 24× the piece price resolves correctly, with the piece still
-  falling back
-- a repeated write with the same `Idempotency-Key` returns the original row and
-  `Idempotent-Replay: true`; the same key with a different body returns 409
-- org B gets `[]` for org A's products, 404 by id, 404 on PATCH/DELETE, and can independently
-  reuse the same SKU and the same barcode
-- each organization is seeded its own 14 packaging types; org B gets 404 for org A's `pouch` by
-  id, and 404 when creating a product against it
-- `?packagingTypeId=` returns only the pouches; deleting `pouch` hides it from the list while the
-  product it was on still reports it; re-creating `pouch` returns the same row id
+Verified against a running server, not just compiled — 46 checks, all passing:
+
+- a new organization is seeded exactly one location, `Main Store`, flagged default
+- 20 cartons of 24 received while paying for 19, at ₦949,449: stock rises 480 base units, the
+  batch holds both quantities, and the implied unit cost divides by 480, not 456 — the free
+  carton pulls the cost of every unit down
+- the line keeps what was typed (20 cartons) *and* the factor it was converted with
+- a lot received *second* but expiring *sooner* is drawn from first, and the longer-dated lot is
+  left untouched — FEFO, not FIFO
+- a write-off beyond what is on hand returns 409 naming the shortfall; the same call with
+  `force: true` from an owner is recorded, and appears on `GET /stock/forced` with its reason
+- a transfer moves stock between two locations, both halves sharing a `transferGroupId` and the
+  same `batchId`; the organization-wide total is unchanged
+- paging `GET /stock/movements` two at a time returns every movement exactly once, with no
+  duplicates and no gaps against a single large page; a malformed cursor is a 400
+- `POST /stock/rebuild-balances` corrects nothing — the cache and the ledger agree
+- a repeated `POST /goods-receipts` with the same `Idempotency-Key` replays the original receipt
+  and does **not** double the stock; the same key with a different body is a 409
+- org B gets `[]` or 404 for every one of org A's locations, suppliers, receipts, levels and
+  movements, and can reuse a supplier name org A has taken
+
+Carried over from Slice 2.5 and still verified: barcode resolution to unit and base quantity,
+tier pricing fallback, packaging-type seeding and soft-delete revival.
+
+**Not verified by hand**: the Google sign-up path. It calls the same `seedOrganizationDefaults`
+as email registration — which is the §10 trap that put it there — so the location is seeded by
+construction, but no OAuth round trip was performed.
 
 **Not yet done**: `.gitattributes` for line endings (git warns `LF will be replaced by CRLF`;
 invisible while solo, produces phantom whole-file diffs the moment a second machine touches it).
@@ -360,6 +453,46 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
 
 ## 12. Next
 
-1. **Slice 3 — inventory ledger**: `StockMovement` (append-only), locations, batches and expiry,
-   receiving with `quantityReceived`/`quantityPaidFor`/`totalCost`, FEFO picking, damage
-   adjustments with reasons, and delta-sync cursors.
+1. **Slice 4 — purchasing**: purchase orders, vendor bills, and the **monthly purchase targets**
+   below. `Supplier` and goods receipts already exist, so this slice is the paperwork *around*
+   receiving rather than receiving itself.
+
+2. **Vendor purchase targets** (model in Slice 4, chart in Slice 8–9). The owner carries a monthly
+   offtake target per vendor — "110 cartons of lotions, 18 cartons of roll-on" — and wants the
+   dashboard to show target, achieved, and remaining. Decided with the owner:
+
+   - **A target attaches to either a category or a single product.** "Lotions" and "roll-on" are
+     `Category` rows, which already exist and are a tree. Product-level targets exist for the
+     vendor that quotas one SKU.
+     *Rollup rule*: a category target covers only the products in that category that do **not**
+     have their own target row, otherwise the same carton is counted twice. Whatever computes the
+     summary must subtract, not just sum.
+   - **Scoped to a vendor** — `Supplier`, which Slice 3 built.
+   - **Progress counts goods received**, not orders placed and not vendor bills. Ordered-but-
+     undelivered stays in "remaining", which is the number the owner actually needs to chase.
+     `GoodsReceiptLine` is the row to sum.
+   - **Every target carries both a quantity and a value.** Quantity in **base units** with a
+     display `unitId` — convert on write using the factor at that time, exactly as
+     `GoodsReceiptLine` already does. Value in kobo, per §2.
+   - **Period is a calendar month in the organization's timezone** (`Organization.timezone`,
+     default `Africa/Lagos`). Not a rolling 30 days — the vendor's scheme runs on months.
+   - **Free goods do not count toward the target** (confirmed by the owner, 2026-08-29). Progress
+     is measured on `quantityPaidFor`: "buy 19, get 1 free" advances a 110-case target by 19, not
+     20. The free case is still real stock and still absorbs into cost per §2 — it counts for
+     valuation and against inventory, just not against the vendor quota.
+   - **Achieved value comes from `GoodsReceiptLine.totalCost`** — never from
+     `costPrice × quantity`, which is the rounded average §2 forbids as an input.
+
+   On the chart: "target / done / left" is a progress figure, not a composition, so the summary
+   tile is a **donut gauge or a stacked bar per item type** — one arc per category, done vs left —
+   rather than a pie of three slices. A pie cannot compare lotions against roll-on, which is the
+   comparison the owner is actually making. The owner has agreed to the donut-or-bar form; it can
+   land as late as Slice 9.
+
+3. **Sales must deduct stock (Slice 5).** The existing `Sale` model and `sale.service.ts` are a
+   Slice 2 placeholder and do **not** touch the ledger — this is a known gap, not a bug. Slice 5
+   rebuilds sales with lines and returns, calling `StockService.recordOutbound`, which is exactly
+   the seam `InventoryModule` exports for it. Everything the sales path needs is already there:
+   FEFO picking, the negative-stock refusal, and the owner/manager override.
+
+4. **`.gitattributes`** for line endings, before a second machine touches the repo.
