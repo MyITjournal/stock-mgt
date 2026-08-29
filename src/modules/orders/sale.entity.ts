@@ -1,13 +1,13 @@
-import { Product } from '../products/product.entity';
 import { Customer } from '../customers/customer.entity';
 
 export class Sale {
   id: string;
+  organizationId: string;
   productId: string;
   customerId: string;
-  product: Product;
   customer: Customer;
   quantity: number;
+  /** Tax-inclusive, in minor units (kobo). */
   total: number;
   createdAt: Date;
 }

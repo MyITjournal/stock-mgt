@@ -17,6 +17,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService, EMAIL_ALREADY_EXISTS } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
+import { DEFAULT_PRICE_TIER } from '../catalog/price-tier.service';
 import { TokenContext, TokenPair, TokenService } from './token.service';
 import { env } from '../../config/env';
 import { RegisterDto } from './dto/register.dto';
@@ -111,6 +112,16 @@ export class AuthService {
           organizationId: organization.id,
           role: OrgRole.owner,
           status: MembershipStatus.active,
+        },
+      });
+
+      // Every organization needs a tier for prices to hang off, so the catalog
+      // is usable the moment registration completes.
+      await tx.priceTier.create({
+        data: {
+          organizationId: organization.id,
+          name: DEFAULT_PRICE_TIER,
+          isDefault: true,
         },
       });
 
