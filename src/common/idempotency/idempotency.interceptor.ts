@@ -50,7 +50,9 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     // The route pattern ("/products") rather than the concrete path, so a key
     // is scoped to the operation and not to one particular resource id.
-    const route = (request as Request & { route?: { path?: string } }).route;
+    // Express types `route` as any, so go through unknown to get a checked
+    // shape rather than letting the any spread into the template literal.
+    const { route } = request as unknown as { route?: { path?: string } };
     const endpoint = `${request.method} ${route?.path ?? request.path}`;
     const requestHash = hashBody(request.body);
 
