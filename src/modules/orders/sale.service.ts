@@ -1,27 +1,36 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
+import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
+import { TenantContext } from '../../common/tenancy/tenant-context';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { multiply } from '../../common/money/money';
 
+/**
+ * Interim single-line sales. Slice 5 replaces this with invoices carrying
+ * multiple lines, each snapshotting the price charged at the time of sale, and
+ * decrementing stock through the movement ledger.
+ */
 @Injectable()
 export class SaleService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
   async create(input: CreateSaleDto) {
-    const product = await this.prisma.product.findUnique({
-      where: { id: input.productId },
+    const product = await this.prisma.product.findFirst({
+      where: { id: input.productId, deletedAt: null },
     });
     if (!product) throw new NotFoundException('Product not found');
 
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: input.customerId },
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: input.customerId, deletedAt: null },
     });
     if (!customer) throw new NotFoundException('Customer not found');
 
-    const total = input.total ?? multiply(product.price, input.quantity);
+    // Quantity is in base units until Slice 5 lets the caller pick a unit.
+    const total = input.total ?? multiply(product.basePrice, input.quantity);
 
     return this.prisma.sale.create({
       data: {
+        organizationId: TenantContext.requireOrganizationId(),
         productId: input.productId,
         customerId: input.customerId,
         quantity: input.quantity,
@@ -34,13 +43,16 @@ export class SaleService {
   findAll() {
     return this.prisma.sale.findMany({
       include: { product: true, customer: true },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  findOne(id: string) {
-    return this.prisma.sale.findUnique({
+  async findOne(id: string) {
+    const sale = await this.prisma.sale.findFirst({
       where: { id },
       include: { product: true, customer: true },
     });
+    if (!sale) throw new NotFoundException('Sale not found');
+    return sale;
   }
 }
