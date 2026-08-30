@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
-import { saleBalance } from './balance';
+import { LIVE_ALLOCATIONS, saleBalance } from './balance';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -33,7 +33,7 @@ export class ReceivableService {
         customer: {
           select: { id: true, firstName: true, lastName: true, phone: true },
         },
-        allocations: { select: { amount: true } },
+        allocations: LIVE_ALLOCATIONS,
         returns: { select: { refundAmount: true } },
       },
     });
@@ -76,8 +76,12 @@ export class ReceivableService {
 
     const [{ invoices }, payments] = await Promise.all([
       this.outstanding({ customerId }),
+      // Voided payments are left out of a statement entirely. This is the
+      // customer's position, not an audit log, and a line claiming money moved
+      // when it never did is worse than no line. The row stays on
+      // `GET /payments`, flagged, which is where the audit trail belongs.
       this.prisma.payment.findMany({
-        where: { customerId },
+        where: { customerId, voidedAt: null },
         orderBy: [{ occurredAt: 'asc' }],
         include: { allocations: { select: { amount: true } } },
       }),

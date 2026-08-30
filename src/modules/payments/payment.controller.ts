@@ -22,6 +22,7 @@ import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.int
 import { PaymentService } from './payment.service';
 import { ReceivableService } from './receivable.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { VoidPaymentDto } from './dto/void-payment.dto';
 
 /**
  * Taking money is the counter's job and the rep's on the route; reconciling it
@@ -89,6 +90,20 @@ export class PaymentController {
   })
   create(@Body() dto: CreatePaymentDto) {
     return this.payments.create(dto);
+  }
+
+  @Post(':id/void')
+  @Roles(OrgRole.owner, OrgRole.manager, OrgRole.accountant)
+  @ApiOperation({
+    summary: 'Void a payment that should never have been recorded',
+    description:
+      'For a data-entry mistake — a mis-keyed amount, a collection booked against the wrong customer. **Not** for a refund: money genuinely handed back is a negative payment, because it happened. The row is kept with its reason and whoever voided it, and stops counting toward any balance, so the invoices it had settled go back to being owed. A sales rep cannot void; correcting a collection is a supervisor’s call.',
+  })
+  voidPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: VoidPaymentDto,
+  ) {
+    return this.payments.voidPayment(id, dto);
   }
 }
 

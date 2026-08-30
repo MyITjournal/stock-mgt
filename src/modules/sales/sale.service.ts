@@ -50,7 +50,12 @@ const SALE_INCLUDE = {
     },
   },
   returns: true,
+  // A voided payment never settled anything, so it must not appear against the
+  // invoice it briefly claimed — otherwise `withBalance` counts money that was
+  // never taken. Same rule as `LIVE_ALLOCATIONS`, spelled out here because this
+  // selection also carries the payment for display.
   allocations: {
+    where: { payment: { voidedAt: null } },
     include: {
       payment: {
         select: { id: true, method: true, reference: true, occurredAt: true },
