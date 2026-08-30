@@ -1,5 +1,5 @@
 /**
- * End-to-end smoke test for slices 0-5, against a running server.
+ * End-to-end smoke test for slices 0-6, against a running server.
  *
  *   npm run start:dev        # terminal 1
  *   npm run smoke            # terminal 2
@@ -81,6 +81,20 @@ async function api(method, path, { body, token, key, expect = [200, 201] } = {})
 let otpsSeen = 0;
 
 /**
+ * Counts the codes already in the log before this run registers anything.
+ *
+ * Without this, a second run against a log the server is still appending to
+ * finds `codes.length > 0` immediately and takes the last code from the
+ * *previous* run — which has expired, so verification fails with a 401 that
+ * looks like a broken auth path rather than a stale read.
+ */
+async function primeOtpLog() {
+  if (!SERVER_LOG) return;
+  const log = await readFile(SERVER_LOG, 'utf8').catch(() => '');
+  otpsSeen = [...log.matchAll(/verification code=(\d{6})/g)].length;
+}
+
+/**
  * The verification code, either typed in or picked out of the server log.
  *
  * Reading it from the log is what lets this run unattended. The count of codes
@@ -147,6 +161,7 @@ async function levelAt(token, productId, locationId) {
 }
 
 async function main() {
+  await primeOtpLog();
   console.log(`${BOLD}stock-mgt smoke test${OFF}  ->  ${BASE}`);
 
   // -- Slice 0: rails ------------------------------------------------------
@@ -1080,7 +1095,154 @@ async function main() {
   check('cost of goods sold never reaches the customer', receipt.costTotal === undefined);
   check('and neither does the tier', receipt.tier === undefined);
 
-  step(29, 'Tenancy: a second organization sees none of this');
+  // -- Slice 6: reports ----------------------------------------------------
+  step(29, 'Reports reconcile with the rows they summarise');
+  // The load-bearing property of this slice, and the analogue of the ledger-sum
+  // check in step 19: a report that quietly disagrees with the transactional
+  // endpoints is the failure mode, and nothing else catches it.
+
+  const soldInvoices = (await api('GET', '/sales?limit=100', { token: t })).data.sales;
+  const grossSales = soldInvoices.reduce((sum, s) => sum + s.total, 0);
+  const salesExTax = soldInvoices.reduce((sum, s) => sum + s.total - s.taxTotal, 0);
+  // The one carton that came back, and the VAT inside its refund.
+  const refunded = cash.total / 2;
+  const refundNet = Math.round((refunded * 10_000) / 10_750);
+
+  const profit = (await api('GET', '/reports/profit?period=today', { token: t })).data;
+  eq('gross sales match the invoices themselves', profit.grossSales, grossSales);
+  eq('and the return is accounted for', profit.returned, refunded);
+  eq(
+    'revenue is tax-exclusive and net of returns',
+    profit.revenue,
+    salesExTax - (refunded - (refunded - refundNet)),
+  );
+  check('which is less than the money that changed hands', profit.revenue < grossSales);
+  eq('gross profit is revenue less cost', profit.grossProfit, profit.revenue - profit.cogs);
+  eq('expenses come off to reach the operating figure', profit.expenses, 1_500_000);
+  eq(
+    'operating profit is gross profit less expenses',
+    profit.operatingProfit,
+    profit.grossProfit - 1_500_000,
+  );
+
+  step(30, 'The dashboard: what I sold, and what I actually collected');
+  const dash = (await api('GET', '/reports/dashboard', { token: t })).data;
+
+  eq('it reports in the organisation timezone', dash.timezone, 'Africa/Lagos');
+  eq('sales agree with the profit report', dash.sales.monthGross, grossSales);
+  eq('so does revenue', dash.sales.month, profit.revenue);
+
+  // The distinction the dashboard exists to draw. Six payments stand, one was
+  // voided, and the voided one must not be money the business thinks it has.
+  const standing = (await api('GET', '/payments?limit=100', { token: t })).data.payments
+    .filter((p) => !p.voidedAt)
+    .reduce((sum, p) => sum + p.amount, 0);
+  eq('collections count every payment that stands', dash.collections.month, standing);
+  check(
+    'and exclude the voided one',
+    dash.collections.month !== standing + 12_000_000,
+    `${dash.collections.month}`,
+  );
+  check(
+    'sales and collections are different numbers, which is the point',
+    dash.collections.month !== dash.sales.monthGross,
+  );
+
+  eq(
+    'receivables agree with the receivables endpoint',
+    dash.receivables.total,
+    (await api('GET', '/receivables', { token: t })).data.totalOutstanding,
+  );
+  eq('and the profit block agrees too', dash.profit.operatingProfit, profit.operatingProfit);
+  check('the trend covers 30 days', dash.trend.days.length === 30, `${dash.trend.days.length}`);
+  eq('the last of which is today', dash.trend.days.at(-1).grossSales, grossSales);
+
+  step(31, 'Stock valuation reconciles with the ledger');
+  const valuation = (await api('GET', '/reports/stock-valuation', { token: t })).data;
+  // Step 19 proved the ledger sums to 134 base units. The valuation walks the
+  // same balances, so if it disagrees, one of the two is wrong.
+  eq('valuation covers exactly the stock the ledger says exists', valuation.units, 134);
+  check('and it is worth something', valuation.total > 0, `${valuation.total}`);
+  eq(
+    'the shortfall on the van is carried as negative value, not clamped',
+    valuation.byLocation.find((l) => l.label === "Ibrahim's Van").units,
+    -48,
+  );
+  check(
+    'Main Store holds the rest',
+    valuation.byLocation.find((l) => l.label === 'Main Store').units === 182,
+  );
+
+  step(32, 'Alerts: out of stock, and below a level somebody set');
+  let alerts = (await api('GET', '/reports/stock-alerts', { token: t })).data;
+  check(
+    'nothing is flagged low while no product has a reorder point',
+    alerts.lowStock.length === 0,
+    `${alerts.lowStock.length}`,
+  );
+  check('and the report says how many have none', alerts.withoutReorderPoint > 0);
+
+  await api('PATCH', `/products/${product.id}`, {
+    token: t,
+    body: { reorderPoint: 200 },
+  });
+  alerts = (await api('GET', '/reports/stock-alerts', { token: t })).data;
+  eq('setting a level puts the product on the low-stock list', alerts.lowStock.length, 1);
+  eq('with the level it was given', alerts.lowStock[0].reorderPoint, 200);
+  // 134 across both locations, not 182 at Main Store: the level is per product.
+  eq('measured across every location at once', alerts.lowStock[0].quantity, 134);
+
+  step(33, 'Sales sliced by product, by customer, and by day');
+  const byProduct = (
+    await api('GET', '/reports/sales?period=today&groupBy=product', { token: t })
+  ).data;
+  eq('every line is grouped', byProduct.groupBy, 'product');
+  eq('the totals still match the invoices', byProduct.totals.grossSales, grossSales);
+  const milk = byProduct.rows.find((r) => r.label === 'Peak Milk 400g');
+  check('the stocked product carries a margin', milk.marginBps > 0, `${milk.marginBps}`);
+  const delivery = byProduct.rows.find((r) => r.label === 'Delivery to Ikeja');
+  eq('a service has no cost of goods, so it is all margin', delivery.cogs, 0);
+
+  const byCustomer = (
+    await api('GET', '/reports/sales?period=today&groupBy=customer', { token: t })
+  ).data;
+  check(
+    'walk-ins are one bucket and the account is another',
+    byCustomer.rows.some((r) => r.key === 'walk-in') &&
+      byCustomer.rows.some((r) => r.key === shopkeeper.id),
+    byCustomer.rows.map((r) => r.label).join(', '),
+  );
+
+  const byDay = (await api('GET', '/reports/sales?period=today&groupBy=day', { token: t })).data;
+  eq('a single day groups into a single row', byDay.rows.length, 1);
+  eq('holding the whole day', byDay.rows[0].grossSales, grossSales);
+
+  step(34, 'Expiry, movers and the audit trail');
+  const expiringSoon = (await api('GET', '/reports/expiry?withinDays=3650', { token: t })).data;
+  check('the dated lot is listed', expiringSoon.batches.length > 0, `${expiringSoon.batches.length}`);
+  check('with value at risk attached', expiringSoon.valueAtRisk > 0);
+  check(
+    'soonest first, which is the order FEFO will take them',
+    expiringSoon.batches.every(
+      (b, i, all) => i === 0 || new Date(all[i - 1].expiryDate) <= new Date(b.expiryDate),
+    ),
+  );
+
+  const movers = (await api('GET', '/reports/products?period=today', { token: t })).data;
+  check('there is a best seller', movers.topByRevenue.length > 0);
+  eq('and it is the milk', movers.topByRevenue[0].label, 'Peak Milk 400g');
+
+  const audit = (await api('GET', '/reports/stock-audit?period=today', { token: t })).data;
+  check('the forced movements are on the audit report', audit.forced > 0, `${audit.forced}`);
+  check('with a reason grouping', audit.byReason.length > 0);
+
+  const customers = (await api('GET', '/reports/customers?period=today', { token: t })).data;
+  const account = customers.customers.find((c) => c.customer.id === shopkeeper.id);
+  eq('the customer report knows what they spent', account.invoices, 1);
+  eq('and that they have settled up', account.balance, 0);
+  check('and when they last bought', !!account.lastPurchase);
+
+  step(35, 'Tenancy: a second organization sees none of this');
   const other = await signUp('Chidi Provisions');
   eq(
     'no products leak across the tenant boundary',
@@ -1124,6 +1286,17 @@ async function main() {
     (await api('GET', '/expenses', { token: other.token })).data.total,
     0,
   );
+  // A fresh business opens the dashboard to zeros, not to another business's month.
+  const theirDash = (await api('GET', '/reports/dashboard', { token: other.token })).data;
+  eq('the dashboard shows a new business nothing sold', theirDash.sales.monthGross, 0);
+  eq('nothing collected', theirDash.collections.month, 0);
+  eq('and no stock to value', theirDash.attention.outOfStockCount, 0);
+  eq(
+    'and its stock valuation is empty rather than inherited',
+    (await api('GET', '/reports/stock-valuation', { token: other.token })).data.total,
+    0,
+  );
+
   // Its own seeded categories, which is a different set of rows entirely.
   const theirCategories = (await api('GET', '/expense-categories', { token: other.token })).data;
   eq('though it has its own categories to spend against', theirCategories.length, 9);

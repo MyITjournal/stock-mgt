@@ -104,6 +104,16 @@ export class CreateProductDto {
   @IsBoolean()
   trackStock?: boolean;
 
+  @ApiPropertyOptional({
+    example: 240,
+    description:
+      'Reorder once stock on hand falls to or below this, in **base units**. Omit it and the product is simply left off the low-stock list; set it to 0 to be told only when it runs out entirely.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  reorderPoint?: number;
+
   @ApiProperty({
     type: [ProductUnitInput],
     description:

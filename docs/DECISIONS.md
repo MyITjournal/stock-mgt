@@ -4,7 +4,7 @@ The reasoning behind how this app is built. Code shows *what*; this records *why
 what was rejected — the part that is expensive to reconstruct.
 
 Read this first when picking the project back up. Update it whenever a decision is made
-or reversed. Last updated: 2026-08-30, end of Slice 5.
+or reversed. Last updated: 2026-08-30, end of Slice 6.
 
 ---
 
@@ -32,7 +32,9 @@ and a wholesale route have to coexist in the same model rather than one being as
 | ~~4~~ | ~~Purchasing: POs, bills~~ | **cut** — see §6 |
 | 4 | Sales: invoices with lines, returns | done |
 | 5 | Money in: payments, receivables, expenses | done |
-| 6 | Reports: dashboard, profit, stock valuation, expiry, **vendor purchase targets**, target vs actual, **PDF invoice + statement** | next |
+| 6 | Reports: dashboard, profit, sales, stock valuation, expiry, movers, alerts | done |
+| 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | next |
+| — | **Deploy to Render** — free tier, before a domain | next |
 | 7 | Web dashboard | |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
@@ -302,7 +304,7 @@ past delivery brought in.
 ### Delta sync cursors carry a safety lag
 
 `GET /stock/movements` pages on a `(createdAt, id)` keyset, and the window stops one second short
-of the server clock. See §12 — this is a trap, not a preference.
+of the server clock. See §13 — this is a trap, not a preference.
 
 The cursor helpers live in `src/common/pagination/keyset-cursor.ts` rather than in the inventory
 module, because sales pages the same way and two copies of this rule would eventually disagree.
@@ -319,7 +321,7 @@ order would be a form somebody has to remember to raise and then close out, whic
 QuickBooks failure mode — features that generate work instead of removing it.
 
 Nothing depended on it. Vendor target progress had already been decided to count *goods received,
-not orders placed* (§14), so the PO had no readers. `Supplier` and goods receipts already exist,
+not orders placed* (§15), so the PO had no readers. `Supplier` and goods receipts already exist,
 and the goods receipt **is** the record of a delivery.
 
 Resist reintroducing it in a smaller hat: an "expected delivery", a draft receipt, a pending-order
@@ -622,7 +624,7 @@ the accounting the product exists to avoid.
 `PackagingType` is one (§4): the list grows with the business, and an enum needs a migration
 every time somebody starts paying for something new. Nine are seeded at registration —
 transport, fuel, diesel and power, salaries, rent, repairs, bank charges, levies and permits,
-miscellaneous — through the same `seedOrganizationDefaults` both registration paths call (§12).
+miscellaneous — through the same `seedOrganizationDefaults` both registration paths call (§13).
 Deletion is soft, so a corrected month still explains what it used to say, and recreating a
 deleted name revives the buried row rather than colliding with the unique constraint.
 
@@ -638,7 +640,109 @@ that brought them in. Nothing needs a bill to sit between the two.
 
 ---
 
-## 12. Traps already hit
+## 12. Reports
+
+### Computed on read, until something is slow
+
+Nothing is materialised, cached or rolled up nightly. Every report is an
+aggregation over rows that are already correct, and a stored summary is a second
+source of truth that can drift from the first — which is the bug nobody notices
+for a month.
+
+The honest position is that nobody knows the row counts yet. Compute on read, and
+let the first genuinely slow query be the evidence that changes it. The
+containment is that the arithmetic lives in pure modules, so moving where it runs
+does not mean rewriting what it computes.
+
+### Revenue is tax-exclusive, and this is the number that surprises people
+
+Prices are stored VAT-inclusive (§2), so an invoice total contains money that was
+never the business's. Counting the gross as revenue overstates **every** margin by
+the VAT rate:
+
+```
+₦120,000 sale, ₦80,000 cost, 7.5% VAT inclusive
+  naive:    (120,000 − 80,000) / 120,000        = 33.3%
+  correct:  (111,627.91 − 80,000) / 111,627.91  = 28.3%
+```
+
+Five points of margin that do not exist, on every line, forever. `Sale.taxTotal` is
+frozen on the row, so the subtraction is exact rather than re-derived.
+
+This also means **the dashboard will read lower than the owner expects**. That is
+the report working.
+
+### A return counts in the period it happened
+
+Not the period of the sale it reverses. Restating a month that has already been
+read, acted on and possibly paid tax on is what accounting does, and this is
+deliberately not accounting (§1). A month with only returns in it goes negative,
+which is a true statement about that month.
+
+### Profit is a management figure, not a P&L
+
+Revenue − cost of goods = gross profit. Minus expenses = operating profit. There
+is no depreciation, no accruals, no allocation of overhead to products, and no
+attempt to be defensible to a tax authority. It answers "did I make money this
+month", which is the question actually being asked.
+
+### Sales and collections are two numbers, and the gap is the point
+
+The dashboard reports what was sold and what was actually received as separate
+figures. On a credit route they diverge constantly, and conflating them is how a
+business reads a strong month while running out of cash. Anything else on that
+screen is arithmetic; this pair is the insight the product exists to deliver.
+
+### Periods are resolved in the organization's timezone
+
+Rows are UTC instants; an owner asks about a day in Lagos. Bucketing on the UTC
+date files every sale made between midnight and 1am WAT under the previous day —
+so "today's takings" is wrong for the first hour of every day, and the daily chart
+is silently shifted. `Organization.timezone` exists for exactly this.
+
+All of it lives in [`period.ts`](../src/modules/reports/period.ts) and nothing
+outside that file does date arithmetic. Ranges are **half-open** (`from` inclusive,
+`to` exclusive) so consecutive periods tile without double-counting midnight, and
+the offset is resolved in two passes so a tenant in a DST zone is not a future bug
+report.
+
+### Stock is valued from lot totals, never from `costPrice`
+
+`onHand × (batch.totalCost ÷ batch.quantityReceived)`, summed, and **rounded once**
+at the end. Rounding each lot first lets the error grow with the number of lots in
+the building — there is a test showing ₦3.33 of drift from a thousand lots alone.
+`Product.costPrice` is a rounded display snapshot and §2 forbids it as an input.
+
+Free goods need no special case: a free carton raises `quantityReceived` without
+raising `totalCost`, so every unit in that lot is worth slightly less, which is
+what actually happened.
+
+Group subtotals each round their own fractions, so they will not always add to the
+grand total to the kobo. The grand total is valued over every lot at once, and a
+screen showing both must take it from there rather than summing the groups.
+
+### Reorder points are per product, in base units
+
+Below this level, the dashboard asks for it. `NULL` means nobody set a level and
+the product is left off the low-stock list entirely — deliberately different from
+`0`, which means "tell me the moment it runs out". The list also reports how many
+products have no level, so it is never mistaken for complete.
+
+Quantities are summed **across locations**, because the level is per product: an
+empty van is not a reason to reorder when the store is full. Per-location levels
+were considered and rejected for now — they need a table and a setup step before
+a single alert works, and nobody has yet asked for a van to reorder itself.
+
+### Reps do not see cost
+
+Margin, cost of goods and stock valuation are restricted to owner, manager and
+accountant. A `sales_rep` carrying buying prices around a market is a commercial
+problem rather than a permissions technicality, and it cannot be undone once it
+has happened. Reps keep the reports that expose no cost: what sold, and to whom.
+
+---
+
+## 13. Traps already hit
 
 Recorded because each cost real time and none is obvious.
 
@@ -660,14 +764,22 @@ Recorded because each cost real time and none is obvious.
 | **A leftover watch server keeps port 4000** | The new `nest start --watch` compiles, maps its routes, logs "successfully started", *then* dies on `EADDRINUSE` — leaving the previous process serving **old code** while the log looks healthy | `Get-NetTCPConnection -LocalPort 4000 -State Listen` before starting, and `taskkill /PID <id> /T /F` on the whole tree |
 ---
 
-## 13. Where things stand
+## 14. Where things stand
 
-**Slices 0–5 done.** 243 tests across 20 suites, ten migrations,
-`typecheck`/`lint`/`build` clean, and `npm run smoke` green at 193 checks against a running
+**Slices 0–6 done.** 288 tests across 23 suites, twelve migrations,
+`typecheck`/`lint`/`build` clean, and `npm run smoke` green at 240 checks against a running
 server.
 
-Two follow-ups from the slice were closed straight after it: `.gitattributes` now pins line
-endings (see §12), and a payment can be **voided** — the decision is in §11. Voiding was added
+Slice 6 (reports) added `src/modules/reports/`: three pure modules — `period.ts` (timezone-aware
+windows), `profit.ts` and `valuation.ts` — under a `ReportService` and a `DashboardService`, plus
+`Product.reorderPoint`. It writes nothing; every endpoint is a read. The decisions are in §12.
+
+`GET /reports/dashboard` is one call by design — a rep on a phone pays a round trip per request,
+and nine of them feels broken long before it is slow. `ReceivableService` is reused rather than
+reimplemented, so the dashboard and the receivables screen cannot disagree.
+
+Two follow-ups from Slice 5 were closed straight after it: `.gitattributes` now pins line
+endings (see §13), and a payment can be **voided** — the decision is in §11. Voiding was added
 rather than an editable payment, and rather than leaving an offsetting negative row as the only
 correction.
 
@@ -700,7 +812,7 @@ that inventory and sales share.
 Slice 3 added: `Location`, `Supplier`, `StockBatch`, `StockMovement`, `StockBalance`,
 `GoodsReceipt` and `GoodsReceiptLine`; the `src/modules/inventory/` module; and `Main Store`
 seeded at registration. `Supplier` was pulled forward from the old purchasing slice so receipts
-link to a real vendor from day one, and so the monthly purchase targets in §14 have their anchor.
+link to a real vendor from day one, and so the monthly purchase targets in §15 have their anchor.
 
 **The regression net**: `npm run smoke` (`test/smoke.mjs`) walks the whole API against a running
 server — register, catalog, receive, sell, return, take payment, chase what is owed, spend, sync,
@@ -716,7 +828,26 @@ SMOKE_SERVER_LOG=server.log npm run smoke
 Its load-bearing assertion is that **the sum of every movement equals the sum of the stock
 levels**. A sale that deducts wrongly breaks that equality and nothing else does.
 
-Verified against a running server, not just compiled. Slice 5's checks:
+Verified against a running server, not just compiled. Slice 6's checks — and the load-bearing
+one is **reconciliation**, the analogue of the ledger-sum check below: a report that quietly
+disagrees with the rows it summarises is this slice's failure mode, and nothing else catches it.
+
+- the profit report's gross sales equal the sum of the invoices from `GET /sales`, and its
+  revenue equals those invoices less their frozen VAT, less the refund net of *its* VAT
+- the dashboard's sales, revenue, receivables and operating profit each equal what the
+  corresponding endpoint returns — `/reports/profit` and `/receivables`
+- collections equal the sum of every payment that stands, and **exclude the voided one**; sales
+  and collections come back as different numbers, which is the pair the screen exists to show
+- stock valuation covers exactly 134 base units — the same figure step 19 proves the ledger sums
+  to — and carries the van's −48 as negative value rather than clamping it
+- nothing is flagged low until a `reorderPoint` is set; setting one to 200 puts the product on
+  the list at 134 units, summed across both locations rather than per location
+- sales grouped by product still total the invoices; a service line shows no cost of goods;
+  walk-ins group separately from the account customer
+- expiry lists the dated lot with value at risk, in the order FEFO would take it
+- a second organization's dashboard is zeros, and its stock valuation is empty
+
+Slice 5's checks:
 
 - `GET /receivables` lists only invoices with money on them, oldest first, and a sale returned
   after it was paid appears as money owed **back** without being netted off `totalOutstanding`
@@ -782,7 +913,7 @@ Carried over from Slice 2.5 and still verified: barcode resolution to unit and b
 tier pricing fallback, packaging-type seeding and soft-delete revival.
 
 **Not verified by hand**: the Google sign-up path. It calls the same `seedOrganizationDefaults`
-as email registration — which is the §12 trap that put it there — so the location is seeded by
+as email registration — which is the §13 trap that put it there — so the location is seeded by
 construction, but no OAuth round trip was performed.
 
 **Not verified by hand either**: that a `sales_rep` is refused the void route. The guard is the
@@ -791,23 +922,35 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ---
 
-## 14. Next
+## 15. Next
 
-1. **Slice 6 — reports**: dashboard, profit, stock valuation, expiry, and the vendor purchase
-   targets below. Every input now exists and none of it needs a new source of truth — profit is
-   sale lines minus `costTotal` minus `Expense`, valuation is the exact batch totals of §2, expiry
-   is `StockBatch`, and "who owes me" is already `GET /receivables`. The slice is arithmetic over
-   rows that are all being written correctly today, which is the point of having built it in this
-   order.
+1. **Deploy to Render**, free tier, decided 2026-08-30 — before buying a domain, since
+   `*.onrender.com` is a working URL and a domain is a rename rather than a prerequisite. Planned
+   but not built: a version-controlled `render.yaml` (web service + Postgres, region **Frankfurt**
+   as the closest to Lagos), build `npm ci && npx prisma generate && npm run build`, start
+   `npm run db:deploy && npm run start:prod` — migrations on boot, since `migrate deploy` is
+   idempotent and the free tier has no pre-deploy hook — and the existing `/api/v1/health` as the
+   health check.
 
-   The one thing to decide before starting: **whether a report is computed on read or
-   materialised.** Read is right until it is not, and the honest answer is that nobody knows the
-   row counts yet. Compute on read, and let the first slow query say otherwise.
+   Four things already known about it:
 
-   **The PDF invoice and customer statement land here too** (§6). Same rendering dependency, and
-   the statement is the artifact that makes chasing a debtor over WhatsApp work.
+   - **`NODE_VERSION` must be pinned.** There is no `engines` field in `package.json`.
+   - **`?connection_limit=5` on the database URL.** Prisma sizes its pool from CPU count and will
+     exhaust a free Postgres's connection cap.
+   - **`OTP_OVERRIDE` (already in `env.ts`, honoured at `auth.service.ts:392`) makes smoke run
+     unattended against Render** — no Resend account, no log scraping, since `smoke.mjs` cannot
+     read a `server.log` that lives on someone else's machine. ⚠️ **It is also a backdoor into any
+     account.** Long random value, test instance only, and never on an instance holding real data.
+     "Test instance" has a way of quietly becoming production.
+   - **Free tier means ~30–50s cold starts** after idle and a database that expires under Render's
+     terms. Smoke needs a warm-up request first, and no real business data goes on it.
 
-2. **Vendor purchase targets** (model and chart both in the reports slice — moved out of the cut
+2. **Slice 6.5 — vendor purchase targets and PDFs.** The targets are the spec below: a new model
+   with the rollup rules, which is why they were split out of Slice 6 rather than bolted on. The
+   **PDF invoice and customer statement** land with them (§6) — same rendering dependency, and the
+   statement is the artifact that makes chasing a debtor over WhatsApp work.
+
+3. **Vendor purchase targets** (model and chart both in the reports slice — moved out of the cut
    purchasing slice, and nothing is lost by the wait: progress is summed from `GoodsReceiptLine`,
    which is append-only and accumulating now, so a target created in November still measures
    September correctly). The owner carries a monthly offtake target per vendor — "110 cartons of
@@ -842,13 +985,13 @@ sign in as, so it is covered by construction rather than by demonstration.
    comparison the owner is actually making. The owner has agreed to the donut-or-bar form; it can
    land as late as the mobile slice.
 
-3. ~~**`.gitattributes`** for line endings~~ — **done**, 2026-08-30. `* text=auto eol=lf` plus
+4. ~~**`.gitattributes`** for line endings~~ — **done**, 2026-08-30. `* text=auto eol=lf` plus
    the usual exceptions. It cost nothing: `git add --renormalize .` against existing history
    produced no diff, because `core.autocrlf=true` on this machine had been storing LF all along.
    That is precisely why it had to be pinned in the repo — the policy was one machine's local
    config, and it does not travel with a clone.
 
-4. **Smaller things noticed while building payments**, none urgent:
+5. **Smaller things noticed while building payments**, none urgent:
    - `ReceivableService.outstanding` loads every sale for the organization and computes balances
      in memory. Correct, and fine at the volumes a distributor reaches this year; it becomes a SQL
      aggregate the first time a business has ten thousand invoices. The rewrite is contained
@@ -868,7 +1011,7 @@ sign in as, so it is covered by construction rather than by demonstration.
      It does not matter until someone wants a cash-up at the end of a shift; it matters a lot on
      the day they do, and the column is much cheaper to add before there are rows.
 
-5. **Gaps raised on 2026-08-30 and deliberately not scheduled.** Recorded so the next session
+6. **Gaps raised on 2026-08-30 and deliberately not scheduled.** Recorded so the next session
    weighs them rather than rediscovering them; none is a decision yet.
 
    - **There is no deployment story at all.** No `Dockerfile`, no compose file, no CI, and no

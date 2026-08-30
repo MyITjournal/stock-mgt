@@ -107,6 +107,14 @@ model Product {
   /// VAT rate in basis points: 750 = 7.5%.
   taxRateBps Int  @default(750)
 
+  /// Reorder once stock on hand falls to or below this, in **base units** like
+  /// everything else in the ledger.
+  ///
+  /// Null means nobody has set a level, so the product is simply left off the
+  /// low-stock list. That is deliberately different from a level of `0`, which
+  /// means "tell me the moment this runs out".
+  reorderPoint Int?
+
   isActive   Boolean @default(true)
   /// False for services and non-stocked items, which the ledger should ignore.
   trackStock Boolean @default(true)
