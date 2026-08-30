@@ -32,7 +32,7 @@ and a wholesale route have to coexist in the same model rather than one being as
 | ~~4~~ | ~~Purchasing: POs, bills~~ | **cut** — see §6 |
 | 4 | Sales: invoices with lines, returns | done |
 | 5 | Money in: payments, receivables, expenses | done |
-| 6 | Reports: dashboard, profit, stock valuation, expiry, **vendor purchase targets**, target vs actual | next |
+| 6 | Reports: dashboard, profit, stock valuation, expiry, **vendor purchase targets**, target vs actual, **PDF invoice + statement** | next |
 | 7 | Web dashboard | |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
@@ -396,6 +396,26 @@ is not part of what the sale was worth.
 
 The rules the payment itself obeys are §11.
 
+### Printing: the server serves payloads and PDFs, the device drives the printer
+
+`GET /sales/:id/receipt` returns a deliberately narrow payload — what the customer is handed and
+nothing else, with no cost of goods sold and no tier on it. It is kept separate from the sale
+row because a receipt is a **contract with a printer**: it has to keep saying the same things in
+the same shape while the sale model underneath keeps growing.
+
+Three printing needs, and they do not belong in the same place (decided 2026-08-30):
+
+- **Thermal receipts** (58/80mm Bluetooth ESC/POS — what a counter and a van actually use) are
+  **client-side, in the mobile slice**. Not a decision about layering: the server cannot reach a
+  Bluetooth printer paired to a phone. The payload above is the whole of the server's part.
+- **A4 / PDF invoices and customer statements** are **server-side, with the reports slice**. A
+  wholesale buyer wants a document, and a debtor gets chased over WhatsApp — neither survives as
+  JSON. It lands with reports because it shares the rendering dependency, and because a statement
+  is a receivables artifact rather than a new source of truth.
+- **Barcode label sheets** are deferred. The internal EAN-13 generator in §7 exists so labels
+  *can* be printed; nothing renders a sheet yet, and nothing needs one until there is a screen to
+  press the button on.
+
 ---
 
 ## 7. Identification: barcodes now, RFID later
@@ -543,6 +563,43 @@ Nothing is stored. `Sale.balance` was already derived before this slice, so only
 the number changed — which is what made replacing `amountPaid` a small change rather than a
 migration of meaning.
 
+### Correcting a mistake is a void; correcting reality is a negative payment
+
+These are two different facts and they get two different mechanisms. Confusing them is how a
+receivables figure ends up describing something that never happened.
+
+| | A **negative payment** | A **void** |
+|---|---|---|
+| Says | money moved back | the money never moved |
+| Because | a refund, a bounced cheque | a mis-keyed amount, the wrong customer |
+| On the bank statement | appears | never appeared |
+| Effect on the row | a new row | flags the original |
+
+`POST /payments/:id/void` sets `voidedAt`, `voidedReason` and `voidedByUserId`. The row is kept
+and its allocations stay attached, so both the mistake and its correction are legible afterwards
+— nothing here is ever hard-deleted. What changes is that it stops counting: the invoices it had
+settled go back to being owed.
+
+**The reason is required**, exactly as it is on a forced stock movement, and for the same
+argument: a void with no reason is indistinguishable from a payment quietly disappearing, which
+is the thing a reader later needs to rule out.
+
+**A `sales_rep` cannot void.** Owner, manager and accountant can. A rep who both collects cash
+and can erase the record of collecting it is an obvious hole, and correcting a collection is a
+supervisor's call — which is the same shape as the negative-stock override in §5.
+
+**Why not an editable payment.** A `PATCH` that rewrites the amount produces the tidiest
+statement and the worst record: the row stops matching the bank line it exists to reconcile
+against, and the original entry is gone. Voiding keeps the audit trail an append-only ledger
+would give you, while still letting the customer's statement show only what really happened —
+because a statement excludes voided rows (they remain on `GET /payments`).
+
+**What counts toward a balance is one decision, expressed twice**, and both live in
+[`balance.ts`](../src/modules/payments/balance.ts): `saleBalance` does the arithmetic, and
+`LIVE_ALLOCATIONS` is the Prisma fragment that filters voided payments out of every query
+feeding it. They sit in the same file deliberately — spread across four `include` blocks, the
+fourth is the one that gets forgotten.
+
 ### Receivables is a sorted list, not 30/60/90 buckets
 
 Aging buckets are a convention borrowed from accounting packages, and this product is
@@ -605,9 +662,14 @@ Recorded because each cost real time and none is obvious.
 
 ## 13. Where things stand
 
-**Slices 0–5 done.** 238 tests across 20 suites, nine migrations,
-`typecheck`/`lint`/`build` clean, and `npm run smoke` green at 179 checks against a running
+**Slices 0–5 done.** 243 tests across 20 suites, ten migrations,
+`typecheck`/`lint`/`build` clean, and `npm run smoke` green at 193 checks against a running
 server.
+
+Two follow-ups from the slice were closed straight after it: `.gitattributes` now pins line
+endings (see §12), and a payment can be **voided** — the decision is in §11. Voiding was added
+rather than an editable payment, and rather than leaving an offsetting negative row as the only
+correction.
 
 Slice 5 (money in) added: `Payment`, `PaymentAllocation`, `Expense`, `ExpenseCategory` and the
 `PaymentMethod` enum; the `src/modules/payments/` and `src/modules/expenses/` modules; nine
@@ -675,6 +737,9 @@ Verified against a running server, not just compiled. Slice 5's checks:
 - `GET /sales/:id/receipt` returns the narrow payload — no cost of goods sold, no tier
 - a second organization sees no payments, no receivables and no expenses, and its nine categories
   are its own rows
+- voiding a payment keeps the row, its reason and its allocations, puts the invoice it had
+  settled back on the receivables list, removes the credit it had created, and drops it off the
+  customer's statement; voiding twice is a 409 and voiding without a reason is a 400
 
 Slice 4's checks:
 
@@ -720,8 +785,9 @@ tier pricing fallback, packaging-type seeding and soft-delete revival.
 as email registration — which is the §12 trap that put it there — so the location is seeded by
 construction, but no OAuth round trip was performed.
 
-**Not yet done**: `.gitattributes` for line endings (git warns `LF will be replaced by CRLF`;
-invisible while solo, produces phantom whole-file diffs the moment a second machine touches it).
+**Not verified by hand either**: that a `sales_rep` is refused the void route. The guard is the
+same `@Roles` one every other restricted route uses and the smoke script has no second user to
+sign in as, so it is covered by construction rather than by demonstration.
 
 ---
 
@@ -737,6 +803,9 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
    The one thing to decide before starting: **whether a report is computed on read or
    materialised.** Read is right until it is not, and the honest answer is that nobody knows the
    row counts yet. Compute on read, and let the first slow query say otherwise.
+
+   **The PDF invoice and customer statement land here too** (§6). Same rendering dependency, and
+   the statement is the artifact that makes chasing a debtor over WhatsApp work.
 
 2. **Vendor purchase targets** (model and chart both in the reports slice — moved out of the cut
    purchasing slice, and nothing is lost by the wait: progress is summed from `GoodsReceiptLine`,
@@ -773,7 +842,11 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
    comparison the owner is actually making. The owner has agreed to the donut-or-bar form; it can
    land as late as the mobile slice.
 
-3. **`.gitattributes`** for line endings, before a second machine touches the repo.
+3. ~~**`.gitattributes`** for line endings~~ — **done**, 2026-08-30. `* text=auto eol=lf` plus
+   the usual exceptions. It cost nothing: `git add --renormalize .` against existing history
+   produced no diff, because `core.autocrlf=true` on this machine had been storing LF all along.
+   That is precisely why it had to be pinned in the repo — the policy was one machine's local
+   config, and it does not travel with a clone.
 
 4. **Smaller things noticed while building payments**, none urgent:
    - `ReceivableService.outstanding` loads every sale for the organization and computes balances
@@ -783,10 +856,30 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
    - **Expenses are not on the delta-sync path.** Payments page by keyset with the `SYNC_LAG_MS`
      window; expenses return everything matching a filter. Mobile will need the cursor, and the
      helpers in `keyset-cursor.ts` already exist.
-   - **A payment cannot be edited or voided** — a mis-keyed amount is corrected by recording an
-     offsetting negative payment. That is almost certainly right, since it keeps the row that
-     matches the bank statement, but nobody has confirmed it against how the owner actually
-     handles a wrong entry today. Worth asking before the mobile slice makes it permanent.
+   - **A void does not reach delta sync.** `GET /payments` pages by keyset over `(createdAt, id)`,
+     and voiding a payment changes `voidedAt`/`updatedAt` but not `createdAt` — so a client that
+     already synced past that row never learns it was voided, and goes on showing an invoice as
+     settled. The stock ledger does not have this problem because it is append-only; payments are
+     the first mutable row on a sync path. Nothing is broken today, because no client syncs yet.
+     **Fix it in the mobile slice, before a device ever caches a payment**: page the payment feed
+     by `updatedAt` rather than `createdAt`, keeping the same `SYNC_LAG_MS` window, and let
+     clients upsert by id.
    - **`Payment` carries no `locationId`**, so "which counter took this cash" cannot be answered.
      It does not matter until someone wants a cash-up at the end of a shift; it matters a lot on
      the day they do, and the column is much cheaper to add before there are rows.
+
+5. **Gaps raised on 2026-08-30 and deliberately not scheduled.** Recorded so the next session
+   weighs them rather than rediscovering them; none is a decision yet.
+
+   - **There is no deployment story at all.** No `Dockerfile`, no compose file, no CI, and no
+     backup for a database that will hold other businesses' money records. Everything so far has
+     run on one laptop. This is the only item on the list that is a *business* risk rather than a
+     missing feature, and it is a slice, not a chore.
+   - **No customer credit limit.** Receivables now make "this shop is ₦400,000 down and 60 days
+     late" answerable for the first time, which is exactly the input a credit route needs at the
+     point of sale — and the natural companion to the slice just finished.
+   - **No stocktake.** Per-item adjustments exist; a periodic count session (count sheet →
+     variance → posted adjustments) does not. `scan.service.ts` already names stocktake as a
+     future consumer of the scan seam.
+   - **Product images.** A Cloudinary service exists but is wired to user photos only. Both the
+     web dashboard and the mobile catalog will want them.
