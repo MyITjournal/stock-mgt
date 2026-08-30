@@ -1,10 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { PaymentMethod } from '@prisma/client';
 import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -56,6 +58,27 @@ export class SaleLineDto {
   unitPrice?: number;
 }
 
+/**
+ * Money taken at the point of sale, so a counter sale is one round trip
+ * rather than two — which matters when the device is offline and syncing
+ * later. Anything paid afterwards goes through `POST /payments`.
+ */
+export class SalePaymentDto {
+  @IsMoney({ example: 1080000 })
+  amount!: number;
+
+  @ApiPropertyOptional({ enum: PaymentMethod, default: PaymentMethod.cash })
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  method?: PaymentMethod;
+
+  @ApiPropertyOptional({ example: 'FT26083012345' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  reference?: string;
+}
+
 export class CreateSaleDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -84,13 +107,15 @@ export class CreateSaleDto {
   @IsUUID()
   locationId?: string;
 
-  /**
-   * What the customer handed over. Defaults to the full total — the counter
-   * sale, which is the common case. Zero is a sale on credit.
-   */
+  @ApiPropertyOptional({
+    type: () => SalePaymentDto,
+    description:
+      'What the customer handed over, recorded as a payment against this sale. Omitted, the sale is paid in full in cash — the counter sale. Pass `{ "amount": 0 }` for a sale on credit.',
+  })
   @IsOptional()
-  @IsMoney({ example: 1080000, optional: true })
-  amountPaid?: number;
+  @ValidateNested()
+  @Type(() => SalePaymentDto)
+  payment?: SalePaymentDto;
 
   @ApiPropertyOptional({ example: 'Delivered with the Tuesday route.' })
   @IsOptional()

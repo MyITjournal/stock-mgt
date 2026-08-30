@@ -86,6 +86,16 @@ export class SaleController {
     return this.sales.findOne(id);
   }
 
+  @Get(':id/receipt')
+  @ApiOperation({
+    summary: 'The printable receipt for a sale',
+    description:
+      'A deliberately narrow payload: what the customer is handed, and nothing else. Kept separate from the sale itself so the shape a printer depends on does not shift every time the sale model grows.',
+  })
+  receipt(@Param('id', ParseUUIDPipe) id: string) {
+    return this.sales.receipt(id);
+  }
+
   @Post()
   @Roles(...SELLERS)
   @UseInterceptors(IdempotencyInterceptor)

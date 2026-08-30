@@ -1,5 +1,5 @@
 /**
- * End-to-end smoke test for slices 0-4, against a running server.
+ * End-to-end smoke test for slices 0-5, against a running server.
  *
  *   npm run start:dev        # terminal 1
  *   npm run smoke            # terminal 2
@@ -533,7 +533,7 @@ async function main() {
       body: {
         customerId: shopkeeper.id,
         locationId: main.id,
-        amountPaid: 0,
+        payment: { amount: 0 },
         note: 'Goes out on the Tuesday route.',
         lines: [{ productId: product.id, unitId: carton.id, quantity: 3 }],
       },
@@ -570,7 +570,7 @@ async function main() {
   eq('no customer is invented for a stranger', cash.customerId, null);
   // Retail has no carton price, so it falls back to basePrice x 24.
   eq('priced at the base price scaled by the unit', cash.total, 2 * 250_000 * 24);
-  eq('a counter sale is paid in full by default', cash.amountPaid, cash.total);
+  eq('a counter sale is paid in full by default', cash.allocated, cash.total);
   eq('so nothing is owed', cash.balance, 0);
   eq('cost comes from LOT-A alone', cash.costTotal, 48 * 37_500);
   eq('168 left at Main Store', (await onHand(t, product.id, main.id)).quantity, 168);
@@ -770,7 +770,246 @@ async function main() {
   const rebuild = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
   eq('cache and ledger agree, nothing to correct', rebuild.corrected, 0);
 
-  step(21, 'Tenancy: a second organization sees none of this');
+  // -- Slice 5: money in ---------------------------------------------------
+  step(21, 'Receivables: who owes me, longest outstanding first');
+  const owed = (await api('GET', '/receivables', { token: t })).data;
+
+  eq('only invoices with money on them are listed', owed.invoices.length, 2);
+  eq('the credit sale is the one actually owed', owed.totalOutstanding, credit.total);
+  check(
+    'and the oldest is first',
+    owed.invoices[0].number === 'INV-0001',
+    owed.invoices.map((i) => i.number).join(', '),
+  );
+  // The returned walk-in sale is money owed *back*, so it is listed but never
+  // netted off what customers owe the business.
+  const walkIn = owed.invoices.find((i) => i.number === 'INV-0002');
+  eq('a sale returned after payment shows as money owed back', walkIn.balance, -(cash.total / 2));
+  eq('the customer totals split walk-ins from the account', owed.byCustomer.length, 2);
+  eq(
+    'the shopkeeper bucket carries the whole invoice',
+    owed.byCustomer.find((c) => c.customer?.id === shopkeeper.id).balance,
+    credit.total,
+  );
+
+  step(22, 'A part payment settles the oldest invoice');
+  const partKey = randomUUID();
+  const part = (
+    await api('POST', '/payments', {
+      token: t,
+      key: partKey,
+      body: {
+        customerId: shopkeeper.id,
+        amount: 6_200_000,
+        method: 'transfer',
+        reference: 'FT26083012345',
+        note: 'Part payment, balance on Friday.',
+      },
+    })
+  ).data;
+
+  eq('nobody said which invoice, so it went to the oldest', part.allocations.length, 1);
+  eq('and that is INV-0001', part.allocations[0].sale.number, 'INV-0001');
+  eq('all of it was claimed', part.allocated, 6_200_000);
+  eq('so none of it is sitting as credit', part.unallocated, 0);
+  eq('the method survives for the bank reconciliation', part.method, 'transfer');
+
+  let owing = (await api('GET', `/sales/${credit.id}`, { token: t })).data;
+  eq('the invoice records what was paid against it', owing.allocated, 6_200_000);
+  eq('and owes the rest', owing.balance, credit.total - 6_200_000);
+
+  // Byte-identical to the first attempt: the interceptor fingerprints the
+  // body, so a retry that quietly changed something is a different request.
+  const rebanked = (
+    await api('POST', '/payments', {
+      token: t,
+      key: partKey,
+      body: {
+        customerId: shopkeeper.id,
+        amount: 6_200_000,
+        method: 'transfer',
+        reference: 'FT26083012345',
+        note: 'Part payment, balance on Friday.',
+      },
+    })
+  ).data;
+  eq('a retried payment returns the original row', rebanked.id, part.id);
+  eq(
+    'and the money is not banked twice',
+    (await api('GET', `/sales/${credit.id}`, { token: t })).data.balance,
+    credit.total - 6_200_000,
+  );
+
+  step(23, 'Overpaying an invoice is refused; change becomes credit');
+  await api('POST', '/payments', {
+    token: t,
+    expect: 409,
+    body: {
+      customerId: shopkeeper.id,
+      amount: 99_999_999,
+      allocations: [{ saleId: credit.id, amount: 99_999_999 }],
+    },
+  });
+  check('allocating more than an invoice owes is 409', true);
+
+  // Pays the invoice off and hands over more than was due. The excess is not
+  // forced onto the invoice; it stays on the customer for the next one.
+  const settled = (
+    await api('POST', '/payments', {
+      token: t,
+      key: randomUUID(),
+      body: { customerId: shopkeeper.id, amount: 12_000_000, method: 'cash' },
+    })
+  ).data;
+
+  eq('what was owed came off the invoice', settled.allocated, credit.total - 6_200_000);
+  eq('and the rest is credit, not an overpaid invoice', settled.unallocated, 2_000_000);
+
+  owing = (await api('GET', `/sales/${credit.id}`, { token: t })).data;
+  eq('the invoice is settled exactly', owing.balance, 0);
+
+  const statement = (
+    await api('GET', `/customers/${shopkeeper.id}/statement`, { token: t })
+  ).data;
+  eq('their statement shows nothing outstanding', statement.owed, 0);
+  eq('and the credit they are holding', statement.credit, 2_000_000);
+  eq('with both payments on it', statement.payments.length, 2);
+
+  step(24, 'Handing money back is a negative payment');
+  // INV-0002 was a walk-in paid in full, then half of it came back. The shop
+  // owes the customer until the cash is actually handed over.
+  const refund = (
+    await api('POST', '/payments', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        amount: -(cash.total / 2),
+        method: 'cash',
+        note: 'Cash back for the carton returned.',
+        allocations: [{ saleId: cash.id, amount: -(cash.total / 2) }],
+      },
+    })
+  ).data;
+
+  eq('a refund needs no customer account', refund.customerId, null);
+  eq('and unwinds the allocation it points at', refund.allocated, -(cash.total / 2));
+  eq(
+    'so the returned sale settles back to zero',
+    (await api('GET', `/sales/${cash.id}`, { token: t })).data.balance,
+    0,
+  );
+
+  await api('POST', '/payments', {
+    token: t,
+    expect: 409,
+    body: {
+      customerId: shopkeeper.id,
+      amount: 500_000,
+      allocations: [{ saleId: cash.id, amount: -500_000 }],
+    },
+  });
+  check('an allocation running against its payment is 409', true);
+
+  const cleared = (await api('GET', '/receivables', { token: t })).data;
+  eq('nothing is outstanding once everything is paid', cleared.invoices.length, 0);
+  eq('and the total agrees', cleared.totalOutstanding, 0);
+
+  step(25, 'Payments list, paged the same way sales are');
+  await new Promise((r) => setTimeout(r, 1500));
+  const banked = [];
+  let payCursor = null;
+  let payPages = 0;
+  do {
+    const page = (
+      await api(
+        'GET',
+        `/payments?limit=2${payCursor ? `&cursor=${encodeURIComponent(payCursor)}` : ''}`,
+        { token: t },
+      )
+    ).data;
+    banked.push(...page.payments);
+    payCursor = page.nextCursor;
+    payPages += 1;
+  } while (payCursor && payPages < 20);
+
+  // Three counter sales banked their own payment as they were rung up, then
+  // the part payment, the settlement and the refund.
+  eq('every payment came back across the pages', banked.length, 6);
+  check('and it actually paged', payPages > 1, `${payPages} pages`);
+  eq('no id twice', new Set(banked.map((p) => p.id)).size, banked.length);
+  eq(
+    'a counter sale banked its own payment in the same request',
+    banked.filter((p) => p.allocations.some((a) => a.sale.number === 'INV-0003')).length,
+    1,
+  );
+  eq(
+    'filtering by customer finds only theirs',
+    (await api('GET', `/payments?customerId=${shopkeeper.id}`, { token: t })).data.payments
+      .length,
+    2,
+  );
+
+  step(26, 'Expenses: the other half of the profit subtraction');
+  const categories = (await api('GET', '/expense-categories', { token: t })).data;
+  eq('a new org is seeded with somewhere to file spending', categories.length, 9);
+  const transport = categories.find((c) => c.name === 'transport');
+  const fuel = categories.find((c) => c.name === 'fuel');
+  check('including transport and fuel', !!transport && !!fuel);
+
+  await api('POST', '/expenses', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      categoryId: fuel.id,
+      amount: 1_500_000,
+      note: 'Diesel for the Tuesday route.',
+    },
+  });
+  const lorry = (
+    await api('POST', '/expenses', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        categoryId: transport.id,
+        amount: 800_000,
+        method: 'transfer',
+        reference: 'Receipt 4471',
+      },
+    })
+  ).data;
+
+  let spend = (await api('GET', '/expenses', { token: t })).data;
+  eq('both are on the books', spend.expenses.length, 2);
+  eq('and the period totals them', spend.total, 2_300_000);
+  eq(
+    'broken down per category, largest first',
+    spend.byCategory.map((c) => c.name).join(', '),
+    'fuel, transport',
+  );
+  eq(
+    'filtering by category narrows it',
+    (await api('GET', `/expenses?categoryId=${fuel.id}`, { token: t })).data.total,
+    1_500_000,
+  );
+
+  await api('DELETE', `/expenses/${lorry.id}`, { token: t, expect: 204 });
+  spend = (await api('GET', '/expenses', { token: t })).data;
+  eq('a deleted expense leaves the list', spend.expenses.length, 1);
+  eq('and comes off the total', spend.total, 1_500_000);
+  await api('GET', `/expenses/${lorry.id}`, { token: t, expect: 404 });
+  check('and is gone by id, though the row survives underneath', true);
+
+  step(27, 'The receipt is a narrow payload, not the sale row');
+  const receipt = (await api('GET', `/sales/${credit.id}/receipt`, { token: t })).data;
+  eq('it names the invoice', receipt.number, 'INV-0001');
+  eq('and the customer', receipt.customer, 'Chidi Okeke');
+  eq('what was paid', receipt.paid, credit.total);
+  eq('and what is left', receipt.balance, 0);
+  check('the lines read as descriptions, not ids', !!receipt.lines[0].description);
+  check('cost of goods sold never reaches the customer', receipt.costTotal === undefined);
+  check('and neither does the tier', receipt.tier === undefined);
+
+  step(28, 'Tenancy: a second organization sees none of this');
   const other = await signUp('Chidi Provisions');
   eq(
     'no products leak across the tenant boundary',
@@ -798,6 +1037,28 @@ async function main() {
     'no sales leak either',
     (await api('GET', '/sales', { token: other.token })).data.sales.length,
     0,
+  );
+  eq(
+    'nor payments',
+    (await api('GET', '/payments', { token: other.token })).data.payments.length,
+    0,
+  );
+  eq(
+    'nobody owes the new business anything',
+    (await api('GET', '/receivables', { token: other.token })).data.totalOutstanding,
+    0,
+  );
+  eq(
+    'and it has spent nothing',
+    (await api('GET', '/expenses', { token: other.token })).data.total,
+    0,
+  );
+  // Its own seeded categories, which is a different set of rows entirely.
+  const theirCategories = (await api('GET', '/expense-categories', { token: other.token })).data;
+  eq('though it has its own categories to spend against', theirCategories.length, 9);
+  check(
+    'which are seeded fresh, not shared with the first org',
+    theirCategories.every((c) => !categories.some((mine) => mine.id === c.id)),
   );
   // Its own catalog, and a non-stocked item so this needs no stock of its own.
   const theirProduct = (

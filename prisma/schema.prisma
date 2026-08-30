@@ -29,6 +29,7 @@ model Customer {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   priceTier    PriceTier?   @relation(fields: [priceTierId], references: [id], onDelete: SetNull)
   sales        Sale[]
+  payments     Payment[]
 
   @@index([organizationId])
   @@index([priceTierId])
@@ -289,13 +290,6 @@ model Sale {
   /// Cost of the goods sold, rounded once, per DECISIONS.md §2.
   costTotal Int
 
-  /// What the customer actually handed over: the full total for a cash sale,
-  /// zero on credit, or something in between. The balance is derived.
-  ///
-  /// An interim stand-in for the payments slice, which replaces it with real
-  /// payment rows. Until then it is what answers "who owes me".
-  amountPaid Int @default(0)
-
   note String?
 
   /// When it happened by the recording device's clock — a rep offline at 9am
@@ -307,13 +301,14 @@ model Sale {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  customer     Customer?    @relation(fields: [customerId], references: [id])
-  location     Location     @relation(fields: [locationId], references: [id])
-  tier         PriceTier?   @relation(fields: [tierId], references: [id])
-  recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer?           @relation(fields: [customerId], references: [id])
+  location     Location            @relation(fields: [locationId], references: [id])
+  tier         PriceTier?          @relation(fields: [tierId], references: [id])
+  recordedBy   User?               @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
   lines        SaleLine[]
   returns      SaleReturn[]
+  allocations  PaymentAllocation[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -411,6 +406,154 @@ model SaleReturn {
   @@map("sale_returns")
 }
 
+/// Money changing hands, as one event.
+///
+/// One row per thing that actually happened — a ₦50,000 transfer is one
+/// payment, not three, even when it settles three invoices. That is what makes
+/// this reconcilable against a bank statement; the split across invoices lives
+/// in `PaymentAllocation`.
+model Payment {
+  id             String @id @default(uuid())
+  organizationId String
+
+  /// Null when there is no account behind it — cash back to a walk-in who
+  /// returned something.
+  customerId String?
+
+  /// Signed, in minor units (kobo): positive is money in, negative is money
+  /// handed back. A customer's position is then a plain sum with no branch on
+  /// type, exactly as `StockMovement.quantity` does for stock.
+  amount Int
+
+  method PaymentMethod @default(cash)
+
+  /// The transfer or POS slip number, or the cheque number. What someone quotes
+  /// when they say "I paid on Tuesday".
+  reference String?
+  note      String?
+
+  /// When the money moved, by the recording device's clock. `createdAt` is when
+  /// the server heard about it; offline, the two differ.
+  occurredAt DateTime @default(now())
+
+  recordedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer?           @relation(fields: [customerId], references: [id])
+  recordedBy   User?               @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  allocations  PaymentAllocation[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([occurredAt])
+  @@map("payments")
+}
+
+/// How much of a payment settled which invoice.
+///
+/// The allocations of a payment may sum to **less** than the payment. The
+/// remainder is credit sitting on the customer, waiting for the next invoice —
+/// which is a real thing that happens, not an error to reject.
+model PaymentAllocation {
+  id             String @id @default(uuid())
+  organizationId String
+  paymentId      String
+  saleId         String
+
+  /// Signed, following the payment it belongs to.
+  amount Int
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payment      Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([paymentId])
+  @@index([saleId])
+  @@map("payment_allocations")
+}
+
+/// What money was spent on: transport, diesel, salaries.
+///
+/// A per-organization lookup rather than a Prisma enum, for the same reason
+/// `PackagingType` is one: the list grows with the business, and an enum would
+/// need a migration every time somebody starts paying for something new.
+model ExpenseCategory {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  /// Display order in pickers; ties break on name.
+  sortOrder      Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  expenses     Expense[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("expense_categories")
+}
+
+/// Money going out that is not the cost of goods.
+///
+/// Deliberately flat: an amount, a category, a date and who recorded it. No
+/// budgets, no approval flow, no account codes — the moment those appear this
+/// has become the accounting the product exists to avoid. It is here so the
+/// profit view has both halves of its subtraction.
+model Expense {
+  id             String @id @default(uuid())
+  organizationId String
+  categoryId     String
+
+  /// In minor units (kobo). Positive — an expense refunded is a rare enough
+  /// event to record as a note rather than a sign.
+  amount Int
+
+  method PaymentMethod @default(cash)
+
+  /// Who was paid, when it happens to be a supplier already on file.
+  supplierId String?
+
+  reference String?
+  note      String?
+
+  occurredAt       DateTime @default(now())
+  recordedByUserId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     ExpenseCategory @relation(fields: [categoryId], references: [id])
+  supplier     Supplier?       @relation(fields: [supplierId], references: [id])
+  recordedBy   User?           @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([occurredAt])
+  @@map("expenses")
+}
+
+/// How money moved. A Prisma enum rather than a per-tenant lookup, unlike
+/// `PackagingType` and `ExpenseCategory`: this vocabulary is set by the
+/// payment rails, not by what a particular business does.
+enum PaymentMethod {
+  cash
+  transfer
+  pos
+  cheque
+}
+
 /// Records the outcome of a write so a retry returns it instead of repeating it.
 ///
 /// Field reps work offline and sync later, so a request that timed out will be
@@ -473,6 +616,10 @@ model Organization {
   sales             Sale[]
   saleLines         SaleLine[]
   saleReturns       SaleReturn[]
+  payments          Payment[]
+  allocations       PaymentAllocation[]
+  expenses          Expense[]
+  expenseCategories ExpenseCategory[]
   barcodes          ProductBarcode[]
   idempotencyKeys   IdempotencyKey[]
   locations         Location[]
@@ -560,6 +707,9 @@ model User {
   stockMovements StockMovement[]
   sales          Sale[]
   saleReturns    SaleReturn[]
+  payments       Payment[]
+  expenses       Expense[]
+  goodsReceipts  GoodsReceipt[]
 
   @@map("users")
 }
@@ -662,6 +812,7 @@ model Supplier {
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   batches       StockBatch[]
   goodsReceipts GoodsReceipt[]
+  expenses      Expense[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -809,6 +960,7 @@ model GoodsReceipt {
   organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   supplier     Supplier           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   location     Location           @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  recordedBy   User?              @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
   lines        GoodsReceiptLine[]
 
   @@index([organizationId])
