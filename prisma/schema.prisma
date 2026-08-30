@@ -438,12 +438,24 @@ model Payment {
 
   recordedByUserId String?
 
+  /// Set when this row should never have existed — a mis-keyed amount, a
+  /// payment recorded against the wrong customer. **Not** how a refund is
+  /// recorded: money genuinely handed back is a negative `Payment`, because it
+  /// is a thing that happened. Voiding says the opposite — nothing happened.
+  ///
+  /// The row is kept and excluded from every balance, so the mistake and its
+  /// correction are both on the record. Nothing is ever hard-deleted here.
+  voidedAt       DateTime?
+  voidedReason   String?
+  voidedByUserId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customer     Customer?           @relation(fields: [customerId], references: [id])
-  recordedBy   User?               @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  recordedBy   User?               @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  voidedBy     User?               @relation("PaymentVoidedBy", fields: [voidedByUserId], references: [id], onDelete: SetNull)
   allocations  PaymentAllocation[]
 
   @@index([organizationId])
@@ -707,7 +719,8 @@ model User {
   stockMovements StockMovement[]
   sales          Sale[]
   saleReturns    SaleReturn[]
-  payments       Payment[]
+  payments       Payment[]      @relation("PaymentRecordedBy")
+  voidedPayments Payment[]      @relation("PaymentVoidedBy")
   expenses       Expense[]
   goodsReceipts  GoodsReceipt[]
 

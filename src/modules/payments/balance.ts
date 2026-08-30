@@ -20,6 +20,20 @@ import { Minor } from '../../common/money/money';
  * customer. Hand back the cash as a **negative** payment allocated to the same
  * sale and it returns to zero. No branch on "is this a refund".
  */
+/**
+ * The query half of the same rule: allocations that still count are the ones
+ * belonging to a payment nobody voided.
+ *
+ * It lives here, beside the arithmetic, because "what counts toward a balance"
+ * is one decision and splitting it across four `include` blocks is how the
+ * fourth one gets forgotten. Spread it into any `allocations` selection that
+ * feeds `saleBalance`.
+ */
+export const LIVE_ALLOCATIONS = {
+  where: { payment: { voidedAt: null } },
+  select: { amount: true },
+} as const;
+
 export interface SaleBalanceInput {
   total: Minor;
   allocations: readonly { amount: Minor }[];

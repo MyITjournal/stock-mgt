@@ -22,8 +22,9 @@ import {
   allocateOldest,
   planAllocations,
 } from './allocation';
-import { saleBalance } from './balance';
+import { LIVE_ALLOCATIONS, saleBalance } from './balance';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { VoidPaymentDto } from './dto/void-payment.dto';
 
 /** How many payments one page returns when the caller does not say. */
 const DEFAULT_PAGE = 100;
@@ -41,6 +42,10 @@ const PAYMENT_INCLUDE = {
     select: { id: true, firstName: true, lastName: true, phone: true },
   },
   recordedBy: { select: { id: true, firstName: true, lastName: true } },
+  voidedBy: { select: { id: true, firstName: true, lastName: true } },
+  // Unfiltered on purpose: a voided payment still shows what it *had* claimed,
+  // which is the point of keeping the row. The filtering happens where a
+  // balance is computed, via `LIVE_ALLOCATIONS`.
   allocations: {
     include: { sale: { select: { id: true, number: true, total: true } } },
   },
@@ -150,7 +155,7 @@ export class PaymentService {
       select: {
         id: true,
         total: true,
-        allocations: { select: { amount: true } },
+        allocations: LIVE_ALLOCATIONS,
         returns: { select: { refundAmount: true } },
       },
     });
@@ -199,6 +204,41 @@ export class PaymentService {
     });
     if (!payment) throw new NotFoundException('Payment not found');
     return withUnallocated(payment);
+  }
+
+  /**
+   * Marks a payment as one that should never have existed.
+   *
+   * This is **not** how a refund is recorded. Money genuinely handed back is a
+   * negative `Payment`, because it is a thing that happened and the bank
+   * statement will show it. Voiding says the opposite: the money never moved,
+   * and the row is a data-entry mistake — a mis-keyed amount, or a collection
+   * booked against the wrong customer.
+   *
+   * The row is kept and the allocations are left attached, so the mistake and
+   * its correction are both legible afterwards. What changes is that nothing
+   * downstream counts it: `LIVE_ALLOCATIONS` drops it out of every balance, so
+   * the invoices it had settled go back to being owed.
+   */
+  async voidPayment(id: string, input: VoidPaymentDto) {
+    const payment = await this.findOne(id);
+
+    if (payment.voidedAt) {
+      throw new ConflictException(
+        'This payment is already voided. Voiding it twice would suggest two mistakes where there was one.',
+      );
+    }
+
+    await this.prisma.payment.update({
+      where: { id },
+      data: {
+        voidedAt: new Date(),
+        voidedReason: input.reason.trim(),
+        voidedByUserId: TenantContext.get()?.userId ?? null,
+      },
+    });
+
+    return this.findOne(id);
   }
 
   private async assertCustomerExists(id: string) {

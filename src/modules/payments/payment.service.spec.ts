@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { OrgRole, PaymentMethod } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -26,7 +30,7 @@ describe('PaymentService', () => {
   let prisma: {
     sale: { findMany: jest.Mock };
     customer: { findFirst: jest.Mock };
-    payment: { findFirst: jest.Mock; findMany: jest.Mock };
+    payment: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock };
     $transaction: jest.Mock;
   };
 
@@ -44,6 +48,7 @@ describe('PaymentService', () => {
           .fn()
           .mockResolvedValue({ id: 'payment-1', amount: 0, allocations: [] }),
         findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
       },
       $transaction: jest
         .fn()
@@ -183,5 +188,67 @@ describe('PaymentService', () => {
         where: { id: { in: [INV_A] } },
       }),
     );
+  });
+
+  describe('voiding', () => {
+    const voidIt = (reason = 'Keyed 500,000 instead of 50,000.') =>
+      TenantContext.run(
+        { organizationId: ORG, orgRole: OrgRole.manager, userId: 'user-9' },
+        () => service.voidPayment('payment-1', { reason }),
+      );
+
+    /** The single `payment.update` a void is expected to have written. */
+    const voidWrite = () => {
+      const calls = prisma.payment.update.mock.calls as [
+        { where: { id: string }; data: Record<string, unknown> },
+      ][];
+      return calls[0][0];
+    };
+
+    it('records who voided it, when, and why', async () => {
+      await voidIt('Booked against the wrong customer.');
+
+      const { where, data } = voidWrite();
+      expect(where).toEqual({ id: 'payment-1' });
+      expect(data.voidedAt).toBeInstanceOf(Date);
+      expect(data.voidedReason).toBe('Booked against the wrong customer.');
+      expect(data.voidedByUserId).toBe('user-9');
+    });
+
+    it('trims the reason rather than storing the whitespace', async () => {
+      await voidIt('   Duplicate entry.   ');
+
+      expect(voidWrite().data.voidedReason).toBe('Duplicate entry.');
+    });
+
+    it('flags the row rather than deleting anything', async () => {
+      await voidIt();
+
+      // The correction is three fields and nothing else: the payment keeps its
+      // amount and its allocations, so what it had claimed stays readable.
+      expect(Object.keys(voidWrite().data).sort()).toEqual([
+        'voidedAt',
+        'voidedByUserId',
+        'voidedReason',
+      ]);
+    });
+
+    it('refuses to void the same payment twice', async () => {
+      prisma.payment.findFirst.mockResolvedValue({
+        id: 'payment-1',
+        amount: 5_000_000,
+        allocations: [],
+        voidedAt: new Date('2026-08-30T09:00:00Z'),
+      });
+
+      await expect(voidIt()).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.payment.update).not.toHaveBeenCalled();
+    });
+
+    it('404s on a payment this organization cannot see', async () => {
+      prisma.payment.findFirst.mockResolvedValue(null);
+
+      await expect(voidIt()).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });
