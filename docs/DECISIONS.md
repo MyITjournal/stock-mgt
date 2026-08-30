@@ -15,7 +15,10 @@ it is **not accounting**: no chart of accounts, no double-entry ledger. It answe
 sell, what is left, who owes me" — which is what people actually want from QuickBooks and mostly
 do not get.
 
-The owner's own business is tenant #1; other businesses follow.
+The owner runs two businesses, and both are tenants: **#1 wholesale**, **#2 wholesale and retail
+combined**. Other businesses follow. Two tenants from day one is useful pressure — it means the
+multi-org path is exercised by the person who notices when it breaks, and that a retail counter
+and a wholesale route have to coexist in the same model rather than one being assumed.
 
 ### Roadmap
 
