@@ -1,0 +1,30 @@
+# Line endings are the repository's business, not each machine's.
+#
+# This worked by accident until now: `core.autocrlf=true` happens to be set on
+# the development machine, so history holds LF and the working tree holds CRLF.
+# That setting is local config — it does not travel with a clone. The first
+# checkout on a machine without it commits CRLF blobs, the stored form of the
+# file flips, and every line of that file reads as changed for everyone else.
+#
+# Declaring it here pins the policy to the repo, where a clone inherits it.
+
+# Normalize every text file to LF in history; check out per the platform.
+* text=auto eol=lf
+
+# Shell scripts must be LF even on Windows, or the shebang line carries a \r
+# and the interpreter is "not found".
+*.sh text eol=lf
+
+# Windows-only files that genuinely want CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary: never normalize, never diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
