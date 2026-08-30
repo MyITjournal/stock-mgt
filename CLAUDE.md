@@ -26,12 +26,13 @@ These are load-bearing. Breaking one is a data-integrity bug, not a style choice
 
 ## Where things stand
 
-**Slices 0–5 are done**: rails, tenancy + auth, catalog (products, units, tier pricing, barcodes,
+**Slices 0–6 are done**: rails, tenancy + auth, catalog (products, units, tier pricing, barcodes,
 money in kobo), write idempotency, packaging types, the inventory ledger — `StockMovement`
 (append-only), locations, suppliers, batches with expiry, receiving, FEFO picking, adjustments
 and transfers, delta-sync cursors — sales: invoices with lines, tier pricing, cost of goods
-sold, and returns — and money in: payments with allocations, receivables, customer statements,
-and expenses.
+sold, and returns — money in: payments with allocations, receivables, customer statements and
+expenses — and reports: a dashboard, profit, sales slices, stock valuation, expiry, movers and
+reorder alerts.
 
 Two Slice 3 rules worth knowing before you touch stock: **every movement carries a batch** and
 **quantity is signed** (positive in, negative out). And the negative-stock policy — the ledger
@@ -71,10 +72,24 @@ goes back to owed. What counts toward a balance is defined once in
 query filter. **Use `LIVE_ALLOCATIONS` in any new query that feeds a balance** — that is the one
 place this is easy to get wrong.
 
-**Next: Slice 6 — reports.** Dashboard, profit, stock valuation, expiry, the vendor purchase
-targets that moved out of the cut purchasing slice, and the **PDF invoice and customer
-statement**. Every input exists already; the slice is arithmetic over rows that are being written
-correctly today, plus a renderer.
+Slice 6 added **reports**, in `src/modules/reports/` — a read-only module with three pure cores:
+`period.ts`, `profit.ts`, `valuation.ts`. Four rules from it are load-bearing:
+
+- **Revenue is tax-exclusive.** Prices are VAT-inclusive, so counting the gross overstates every
+  margin by 7.5%. The dashboard reads lower than expected; that is it working.
+- **Periods resolve in `Organization.timezone`**, never UTC — otherwise "today" rolls over at 1am
+  Lagos time. All of it lives in `period.ts`; nothing else does date arithmetic.
+- **A return counts in the period it happened**, not the month of the sale it reverses.
+- **Stock is valued from lot totals, rounded once** — never `Product.costPrice`, which §2 forbids
+  as an input.
+
+`GET /reports/dashboard` is deliberately one call, and cost-bearing reports (profit, valuation,
+margins) are closed to `sales_rep`.
+
+**Next: Slice 6.5 — vendor purchase targets and PDFs**, and **deploying to Render** on the free
+tier. Both are specced in §15, including the four things already known about the Render setup —
+of which the sharpest is that `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into
+any account, so it is test-instance-only.
 
 On printing generally: thermal receipts (Bluetooth ESC/POS) are the mobile app's job — the server
 cannot reach a paired printer — and `GET /sales/:id/receipt` is already the stable payload for
@@ -85,7 +100,7 @@ against a running server. Its load-bearing check is that the sum of every stock 
 the sum of the stock levels; a sale that deducts wrongly breaks that and nothing else does.
 
 The detail — what is verified against a running server, what is still outstanding, and the full
-next-step list — is in [docs/DECISIONS.md](docs/DECISIONS.md) §13 and §14. This section is the
+next-step list — is in [docs/DECISIONS.md](docs/DECISIONS.md) §14 and §15. This section is the
 short version; that one is authoritative.
 
 ## Working practice
@@ -96,7 +111,7 @@ short version; that one is authoritative.
 - A branch is done when `npm run typecheck`, `npm run lint`, `npx jest` and `npm run build` are
   all clean **and** the behaviour is verified against a running server.
 - **Finishing a slice means updating the docs in the same branch**: the "Where things stand"
-  section above, and `docs/DECISIONS.md` (§13 status, §14 next, the roadmap table, plus any
+  section above, and `docs/DECISIONS.md` (§14 status, §15 next, the roadmap table, plus any
   decision made or trap hit along the way). The chat gets cleared between slices, so these two
   files are the entire handover — if it is not written down here, the next session does not know it.
 - **Never edit a doc with PowerShell `Get-Content -Raw` / `Set-Content`.** PS 5.1 reads UTF-8 as

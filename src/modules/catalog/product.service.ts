@@ -56,6 +56,9 @@ export class ProductService {
           ...(input.trackStock !== undefined && {
             trackStock: input.trackStock,
           }),
+          ...(input.reorderPoint !== undefined && {
+            reorderPoint: input.reorderPoint,
+          }),
           units: {
             create: input.units.map((unit) => ({
               organizationId,
@@ -151,6 +154,9 @@ export class ProductService {
           }),
           ...(input.trackStock !== undefined && {
             trackStock: input.trackStock,
+          }),
+          ...(input.reorderPoint !== undefined && {
+            reorderPoint: input.reorderPoint,
           }),
         },
         include: PRODUCT_INCLUDE,
