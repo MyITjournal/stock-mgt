@@ -26,11 +26,12 @@ These are load-bearing. Breaking one is a data-integrity bug, not a style choice
 
 ## Where things stand
 
-**Slices 0–4 are done**: rails, tenancy + auth, catalog (products, units, tier pricing, barcodes,
+**Slices 0–5 are done**: rails, tenancy + auth, catalog (products, units, tier pricing, barcodes,
 money in kobo), write idempotency, packaging types, the inventory ledger — `StockMovement`
 (append-only), locations, suppliers, batches with expiry, receiving, FEFO picking, adjustments
-and transfers, delta-sync cursors — and sales: invoices with lines, tier pricing, cost of goods
-sold, and returns.
+and transfers, delta-sync cursors — sales: invoices with lines, tier pricing, cost of goods
+sold, and returns — and money in: payments with allocations, receivables, customer statements,
+and expenses.
 
 Two Slice 3 rules worth knowing before you touch stock: **every movement carries a batch** and
 **quantity is signed** (positive in, negative out). And the negative-stock policy — the ledger
@@ -47,16 +48,30 @@ phone and are recorded as a goods receipt on arrival. Do not reintroduce it in a
 "expected delivery", a draft receipt — see [docs/DECISIONS.md](docs/DECISIONS.md) §6. The monthly
 vendor purchase targets survived and moved to the reports slice.
 
-**Next: Slice 5 — money in.** Payments, receivables, aging, expenses. It replaces the interim
-`Sale.amountPaid` integer with real payment rows; `Sale.balance` is already derived, so only the
-source of the number changes.
+Two Slice 5 rules to add to those: **a payment is one row per thing that happened** — a single
+transfer settling three invoices is one `Payment` with three `PaymentAllocation` rows, so it
+still reconciles against a bank statement — and **the amount is signed**, positive in and negative
+back out, so a refund is an ordinary payment row rather than a second table. Which invoice a
+payment answered is recorded, never inferred: allocations are validated, not spread cleverly, and
+`allocateOldest` runs only when the caller supplied none. Money left over stays as credit on the
+customer; over-allocating a single invoice is a 409. `Sale.amountPaid` is **gone** — a counter
+sale writes its own payment row inside the sale transaction, so recording a sale is still one
+request.
+
+Receivables is deliberately **a list sorted oldest-first, not 30/60/90 buckets** — the question
+people ask is who has owed longest, which is a sort. Buckets can be added the day someone asks to
+read them.
+
+**Next: Slice 6 — reports.** Dashboard, profit, stock valuation, expiry, and the vendor purchase
+targets that moved out of the cut purchasing slice. Every input exists already; the slice is
+arithmetic over rows that are being written correctly today.
 
 **Before declaring anything done, run `npm run smoke`** — `test/smoke.mjs` walks the whole API
 against a running server. Its load-bearing check is that the sum of every stock movement equals
 the sum of the stock levels; a sale that deducts wrongly breaks that and nothing else does.
 
 The detail — what is verified against a running server, what is still outstanding, and the full
-next-step list — is in [docs/DECISIONS.md](docs/DECISIONS.md) §12 and §13. This section is the
+next-step list — is in [docs/DECISIONS.md](docs/DECISIONS.md) §13 and §14. This section is the
 short version; that one is authoritative.
 
 ## Working practice
@@ -67,7 +82,7 @@ short version; that one is authoritative.
 - A branch is done when `npm run typecheck`, `npm run lint`, `npx jest` and `npm run build` are
   all clean **and** the behaviour is verified against a running server.
 - **Finishing a slice means updating the docs in the same branch**: the "Where things stand"
-  section above, and `docs/DECISIONS.md` (§12 status, §13 next, the roadmap table, plus any
+  section above, and `docs/DECISIONS.md` (§13 status, §14 next, the roadmap table, plus any
   decision made or trap hit along the way). The chat gets cleared between slices, so these two
   files are the entire handover — if it is not written down here, the next session does not know it.
 - **Never edit a doc with PowerShell `Get-Content -Raw` / `Set-Content`.** PS 5.1 reads UTF-8 as

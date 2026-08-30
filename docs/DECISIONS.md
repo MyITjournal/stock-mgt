@@ -4,7 +4,7 @@ The reasoning behind how this app is built. Code shows *what*; this records *why
 what was rejected — the part that is expensive to reconstruct.
 
 Read this first when picking the project back up. Update it whenever a decision is made
-or reversed. Last updated: 2026-08-30, end of Slice 4.
+or reversed. Last updated: 2026-08-30, end of Slice 5.
 
 ---
 
@@ -15,7 +15,10 @@ it is **not accounting**: no chart of accounts, no double-entry ledger. It answe
 sell, what is left, who owes me" — which is what people actually want from QuickBooks and mostly
 do not get.
 
-The owner's own business is tenant #1; other businesses follow.
+The owner runs two businesses, and both are tenants: **#1 wholesale**, **#2 wholesale and retail
+combined**. Other businesses follow. Two tenants from day one is useful pressure — it means the
+multi-org path is exercised by the person who notices when it breaks, and that a retail counter
+and a wholesale route have to coexist in the same model rather than one being assumed.
 
 ### Roadmap
 
@@ -28,8 +31,8 @@ The owner's own business is tenant #1; other businesses follow.
 | 3 | Inventory ledger: movements, locations, batches, receiving, FEFO, sync | done |
 | ~~4~~ | ~~Purchasing: POs, bills~~ | **cut** — see §6 |
 | 4 | Sales: invoices with lines, returns | done |
-| 5 | Money in: payments, receivables, aging, expenses | next |
-| 6 | Reports: dashboard, profit, stock valuation, expiry, **vendor purchase targets**, target vs actual | |
+| 5 | Money in: payments, receivables, expenses | done |
+| 6 | Reports: dashboard, profit, stock valuation, expiry, **vendor purchase targets**, target vs actual | next |
 | 7 | Web dashboard | |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
@@ -299,7 +302,7 @@ past delivery brought in.
 ### Delta sync cursors carry a safety lag
 
 `GET /stock/movements` pages on a `(createdAt, id)` keyset, and the window stops one second short
-of the server clock. See §11 — this is a trap, not a preference.
+of the server clock. See §12 — this is a trap, not a preference.
 
 The cursor helpers live in `src/common/pagination/keyset-cursor.ts` rather than in the inventory
 module, because sales pages the same way and two copies of this rule would eventually disagree.
@@ -316,7 +319,7 @@ order would be a form somebody has to remember to raise and then close out, whic
 QuickBooks failure mode — features that generate work instead of removing it.
 
 Nothing depended on it. Vendor target progress had already been decided to count *goods received,
-not orders placed* (§13), so the PO had no readers. `Supplier` and goods receipts already exist,
+not orders placed* (§14), so the PO had no readers. `Supplier` and goods receipts already exist,
 and the goods receipt **is** the record of a delivery.
 
 Resist reintroducing it in a smaller hat: an "expected delivery", a draft receipt, a pending-order
@@ -378,11 +381,20 @@ The lock that makes it gapless also serialises concurrent sales *within one tena
 at counter volumes, and worth knowing before anyone reports that a busy till feels sluggish. The
 alternative, a UUID, is not something a customer can read out over the phone.
 
-### `amountPaid` is a placeholder for the payments slice
+### `amountPaid` is gone; a sale banks its own payment
 
-One integer on the sale: the full total for a cash sale, zero on credit, or a part-payment. The
-balance is derived, never stored. It exists so "who owes me" is answerable before payments are
-built, and Slice 5 replaces it with real payment rows.
+It was one integer on the sale — the full total for a cash sale, zero on credit — and Slice 5
+removed the column, exactly as planned. A counter sale now writes a real `Payment` row and an
+allocation against itself, **inside the same transaction as the sale**, so recording a sale is
+still one round trip. That matters more than it looks: a rep at a counter with no signal cannot
+be asked to make two requests that must both land, and §8 is the reason.
+
+The request field is `payment: { amount, method, reference }`. Omitted, the sale is paid in full
+in cash. `{ "amount": 0 }` is the sale that goes out on credit. Anything paid later goes through
+`POST /payments`. Paying *more* than the total is refused rather than banked — change handed back
+is not part of what the sale was worth.
+
+The rules the payment itself obeys are §11.
 
 ---
 
@@ -475,7 +487,101 @@ unconfigured, so OTP and password-reset flows are testable without a verified se
 
 ---
 
-## 11. Traps already hit
+## 11. Money in
+
+### A payment is one row per thing that happened
+
+A ₦50,000 transfer that settles three invoices is **one** `Payment` with three
+`PaymentAllocation` rows — not three payments. The test is whether the row would still line up
+with a bank statement someone reconciles against, and three rows of ₦16,666.67 would not.
+
+This is the same shape as a goods receipt: one event, many lines.
+
+### Which invoice a payment answered is a separate claim
+
+`Payment` records what happened; `PaymentAllocation` records *which debts it settled*. They are
+different facts and they are stored separately, because the second one is exactly what customers
+dispute — "that transfer was for the September invoice, not August" — and an answer that was
+inferred cannot be corrected without rewriting history.
+
+So `planAllocations` is deliberately **not clever**. It validates a caller-supplied split and
+reports what is left over. `allocateOldest` exists for the caller that genuinely has no
+preference, and even then it is opt-in: it runs only when no allocations were supplied at all. A
+caller who named two invoices out of three meant the third to be left alone.
+
+**Allocations may sum to less than the payment.** The remainder is credit sitting on the
+customer, waiting for the next invoice. That is a real thing that happens on a route, not an
+error to reject.
+
+**Over-allocating a single invoice is refused with a 409.** Putting ₦6,000 against a ₦5,000
+invoice is a typo far more often than it is generosity, and the extra belongs on the customer as
+credit where the next invoice will find it.
+
+### The amount is signed, so a refund needs no second table
+
+Positive is money in, negative is money handed back — following `StockMovement.quantity`, which
+is signed for the same reason (§5). A customer's position is then a plain sum with no branch on
+"is this a refund", and cash back to a walk-in is an ordinary payment row that happens to be
+negative. Allocations must agree in sign with their payment: money in settles debt, money out
+unwinds it.
+
+This is the one place `IsMoney` allows a negative, via `allowNegative`. Everywhere else a
+negative amount is a bug.
+
+### Balance is `total − allocated − refunded`
+
+One function, [`balance.ts`](../src/modules/payments/balance.ts), because those three numbers
+must never disagree. It composes with no special cases:
+
+```
+₦12,000 invoice, paid in full          → balance 0
+half of it comes back as a return      → balance −₦6,000   (the shop owes the customer)
+the cash is handed over, allocated     → balance 0
+```
+
+Nothing is stored. `Sale.balance` was already derived before this slice, so only the source of
+the number changed — which is what made replacing `amountPaid` a small change rather than a
+migration of meaning.
+
+### Receivables is a sorted list, not 30/60/90 buckets
+
+Aging buckets are a convention borrowed from accounting packages, and this product is
+deliberately not one (§1). The question people actually ask is **"who has owed me longest"**,
+which is a sort, not a histogram. `GET /receivables` returns every invoice with money on it,
+oldest first, with a per-customer rollup. Buckets can be added the day somebody asks to read
+them.
+
+Money owed *back* — a sale returned after it was paid — is listed but **never netted off**
+`totalOutstanding`. Netting would let one customer's credit hide another customer's debt.
+
+### Expenses are deliberately flat
+
+An amount, a category, a date, and who recorded it. No budgets, no approvals, no account codes.
+It exists so the profit view has both halves of its subtraction: cost of goods sold comes off the
+sale lines, everything else comes off here. The moment it grows an approval flow it has become
+the accounting the product exists to avoid.
+
+`ExpenseCategory` is a per-organization table rather than a Prisma enum, for the same reason
+`PackagingType` is one (§4): the list grows with the business, and an enum needs a migration
+every time somebody starts paying for something new. Nine are seeded at registration —
+transport, fuel, diesel and power, salaries, rent, repairs, bank charges, levies and permits,
+miscellaneous — through the same `seedOrganizationDefaults` both registration paths call (§12).
+Deletion is soft, so a corrected month still explains what it used to say, and recreating a
+deleted name revives the buried row rather than colliding with the unique constraint.
+
+`PaymentMethod`, by contrast, **is** a Prisma enum — cash, transfer, POS, cheque. That vocabulary
+is set by the payment rails, not by what a particular business does.
+
+### Vendor bills are still not a thing
+
+Purchasing was cut (§6), and the payments slice was where a bill would have crept back in as
+"money out to a supplier". It did not. Paying a supplier is an `Expense` with a `supplierId` when
+the payee happens to be on file; the goods themselves are already accounted for by the receipt
+that brought them in. Nothing needs a bill to sit between the two.
+
+---
+
+## 12. Traps already hit
 
 Recorded because each cost real time and none is obvious.
 
@@ -497,10 +603,30 @@ Recorded because each cost real time and none is obvious.
 | **A leftover watch server keeps port 4000** | The new `nest start --watch` compiles, maps its routes, logs "successfully started", *then* dies on `EADDRINUSE` — leaving the previous process serving **old code** while the log looks healthy | `Get-NetTCPConnection -LocalPort 4000 -State Listen` before starting, and `taskkill /PID <id> /T /F` on the whole tree |
 ---
 
-## 12. Where things stand
+## 13. Where things stand
 
-**Slices 0–4 done.** 203 tests across 17 suites, eight migrations,
-`typecheck`/`lint`/`build` clean.
+**Slices 0–5 done.** 238 tests across 20 suites, nine migrations,
+`typecheck`/`lint`/`build` clean, and `npm run smoke` green at 179 checks against a running
+server.
+
+Slice 5 (money in) added: `Payment`, `PaymentAllocation`, `Expense`, `ExpenseCategory` and the
+`PaymentMethod` enum; the `src/modules/payments/` and `src/modules/expenses/` modules; nine
+expense categories seeded at registration. `src/modules/payments/balance.ts` is now the single
+definition of what a sale still owes, and `src/modules/catalog/pricing.ts` was extracted so
+selling prices a line from the product it has already loaded.
+
+**`Sale.amountPaid` is dropped, and the migration truncates `sales` to do it.** Dropping the
+column with rows still in the table would leave every existing sale looking unpaid, and the
+alternative — backfilling a `Payment` row per sale — was not worth writing for data that only
+ever came from smoke runs. Cleared rather than converted, decided with the owner; `CASCADE` takes
+`sale_lines` and `sale_returns` with it. This is the same call Slice 4 made about the Slice 2
+`Sale` placeholder, and it is the **last** time it is available: the next slice that touches
+sales will be doing it to rows a real business cannot lose.
+
+Three loose ends listed under "smaller things" in the last slice were closed along the way: the
+double product read in `SaleService.prepareLine` (now one read via `resolveProductUnit({
+withPrices: true })`), the missing `GoodsReceipt.recordedBy` relation, and
+`GET /sales/:id/receipt`.
 
 Slice 4 (sales) added: `SaleLine` and `SaleReturn`, a rebuilt `Sale`, `Customer.priceTierId`,
 `Organization.nextSaleNumber`, and the `src/modules/sales/` module (renamed from `orders/`). The
@@ -512,11 +638,12 @@ that inventory and sales share.
 Slice 3 added: `Location`, `Supplier`, `StockBatch`, `StockMovement`, `StockBalance`,
 `GoodsReceipt` and `GoodsReceiptLine`; the `src/modules/inventory/` module; and `Main Store`
 seeded at registration. `Supplier` was pulled forward from the old purchasing slice so receipts
-link to a real vendor from day one, and so the monthly purchase targets in §13 have their anchor.
+link to a real vendor from day one, and so the monthly purchase targets in §14 have their anchor.
 
 **The regression net**: `npm run smoke` (`test/smoke.mjs`) walks the whole API against a running
-server — register, catalog, receive, sell, return, sync, tenancy — and is the thing to run before
-declaring a slice done. It needs the OTP, which `MailService` logs; it prompts for it, or reads it
+server — register, catalog, receive, sell, return, take payment, chase what is owed, spend, sync,
+tenancy — and is the thing to run before declaring a slice done. It is 179 checks across 28 steps
+as of Slice 5. It needs the OTP, which `MailService` logs; it prompts for it, or reads it
 from a log file when `SMOKE_SERVER_LOG` is set:
 
 ```bash
@@ -527,7 +654,29 @@ SMOKE_SERVER_LOG=server.log npm run smoke
 Its load-bearing assertion is that **the sum of every movement equals the sum of the stock
 levels**. A sale that deducts wrongly breaks that equality and nothing else does.
 
-Verified against a running server, not just compiled. Slice 4's checks:
+Verified against a running server, not just compiled. Slice 5's checks:
+
+- `GET /receivables` lists only invoices with money on them, oldest first, and a sale returned
+  after it was paid appears as money owed **back** without being netted off `totalOutstanding`
+- a payment with no allocations settles the oldest invoice; the invoice reports what was paid
+  against it and owes the rest
+- the same `Idempotency-Key` replayed returns the original payment and does not bank the money
+  twice — and the *same key with a changed body* is a 409, which is how the first draft of the
+  smoke script found it was quietly altering the retry
+- allocating more than an invoice owes is a 409; overpaying the customer's account instead leaves
+  the surplus as credit, visible on `GET /customers/:id/statement` alongside a zero balance
+- a refund is a negative payment with no customer account, allocated to the walk-in sale it
+  reverses, and settles that sale back to zero
+- an allocation whose sign runs against its payment is a 409
+- `GET /payments` pages by keyset exactly as sales and the ledger do; the three counter sales each
+  banked their own payment in the same request that created them
+- nine expense categories are seeded per organization; expenses total per period and break down
+  per category, largest first; a soft-deleted expense leaves the list and the total and 404s by id
+- `GET /sales/:id/receipt` returns the narrow payload — no cost of goods sold, no tier
+- a second organization sees no payments, no receivables and no expenses, and its nine categories
+  are its own rows
+
+Slice 4's checks:
 
 - a sale spanning two lots empties the short-dated one first and takes the rest from the other,
   and its cost of goods sold is the two lots at their *own* rates, rounded once
@@ -568,7 +717,7 @@ Carried over from Slice 2.5 and still verified: barcode resolution to unit and b
 tier pricing fallback, packaging-type seeding and soft-delete revival.
 
 **Not verified by hand**: the Google sign-up path. It calls the same `seedOrganizationDefaults`
-as email registration — which is the §11 trap that put it there — so the location is seeded by
+as email registration — which is the §12 trap that put it there — so the location is seeded by
 construction, but no OAuth round trip was performed.
 
 **Not yet done**: `.gitattributes` for line endings (git warns `LF will be replaced by CRLF`;
@@ -576,13 +725,18 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
 
 ---
 
-## 13. Next
+## 14. Next
 
-1. **Slice 5 — money in**: payments, receivables, aging, expenses. This is what replaces
-   `Sale.amountPaid` with real payment rows: a shop paying half now and half on the next delivery
-   needs two rows and a date on each, not one integer. `Sale.balance` is already derived, so the
-   shape of the answer does not change — only where the number comes from. Vendor bills, cut from
-   purchasing, belong here if they belong anywhere.
+1. **Slice 6 — reports**: dashboard, profit, stock valuation, expiry, and the vendor purchase
+   targets below. Every input now exists and none of it needs a new source of truth — profit is
+   sale lines minus `costTotal` minus `Expense`, valuation is the exact batch totals of §2, expiry
+   is `StockBatch`, and "who owes me" is already `GET /receivables`. The slice is arithmetic over
+   rows that are all being written correctly today, which is the point of having built it in this
+   order.
+
+   The one thing to decide before starting: **whether a report is computed on read or
+   materialised.** Read is right until it is not, and the honest answer is that nobody knows the
+   row counts yet. Compute on read, and let the first slow query say otherwise.
 
 2. **Vendor purchase targets** (model and chart both in the reports slice — moved out of the cut
    purchasing slice, and nothing is lost by the wait: progress is summed from `GoodsReceiptLine`,
@@ -621,11 +775,18 @@ invisible while solo, produces phantom whole-file diffs the moment a second mach
 
 3. **`.gitattributes`** for line endings, before a second machine touches the repo.
 
-4. **Smaller things noticed while building sales**, none urgent:
-   - `SaleService.prepareLine` reads the product twice per line — once through `resolveProductUnit`
-     for the unit and `trackStock`, once inside `ProductService.resolvePrice`. Harmless at counter
-     volumes; worth collapsing if a 30-line invoice ever feels slow.
-   - `GoodsReceipt` stores `recordedByUserId` with no relation to `User`, while `StockMovement`,
-     `Sale` and `SaleReturn` all have one. Receipts cannot say who booked them in.
-   - There is no `GET /sales/:id/receipt` — printing is a client concern for now, but the mobile
-     slice will want a stable payload rather than assembling one from `findOne`.
+4. **Smaller things noticed while building payments**, none urgent:
+   - `ReceivableService.outstanding` loads every sale for the organization and computes balances
+     in memory. Correct, and fine at the volumes a distributor reaches this year; it becomes a SQL
+     aggregate the first time a business has ten thousand invoices. The rewrite is contained
+     because `saleBalance` already names the arithmetic.
+   - **Expenses are not on the delta-sync path.** Payments page by keyset with the `SYNC_LAG_MS`
+     window; expenses return everything matching a filter. Mobile will need the cursor, and the
+     helpers in `keyset-cursor.ts` already exist.
+   - **A payment cannot be edited or voided** — a mis-keyed amount is corrected by recording an
+     offsetting negative payment. That is almost certainly right, since it keeps the row that
+     matches the bank statement, but nobody has confirmed it against how the owner actually
+     handles a wrong entry today. Worth asking before the mobile slice makes it permanent.
+   - **`Payment` carries no `locationId`**, so "which counter took this cash" cannot be answered.
+     It does not matter until someone wants a cash-up at the end of a shift; it matters a lot on
+     the day they do, and the column is much cheaper to add before there are rows.

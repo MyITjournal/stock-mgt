@@ -1,11 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { OrgRole, StockMovementType } from '@prisma/client';
+import { OrgRole, PaymentMethod, StockMovementType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { LocationService } from '../inventory/location.service';
 import { StockService } from '../inventory/stock.service';
-import { ProductService } from '../catalog/product.service';
 import { SaleService } from './sale.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 
@@ -19,14 +18,17 @@ const WHOLESALE = 'tier-wholesale';
 
 /** ₦54,000 a carton, tax-inclusive. */
 const CARTON_PRICE = 5_400_000;
+/** The same carton, cheaper, for customers on the wholesale list. */
+const WHOLESALE_PRICE = 4_800_000;
 
 describe('SaleService', () => {
   let service: SaleService;
   let stock: { recordOutbound: jest.Mock; costOf: jest.Mock };
-  let products: { resolvePrice: jest.Mock };
   let tx: {
     sale: { create: jest.Mock };
     saleLine: { createMany: jest.Mock };
+    payment: { create: jest.Mock };
+    paymentAllocation: { create: jest.Mock };
     organization: { update: jest.Mock };
   };
   let prisma: {
@@ -41,6 +43,8 @@ describe('SaleService', () => {
     tx = {
       sale: { create: jest.fn().mockResolvedValue({}) },
       saleLine: { createMany: jest.fn().mockResolvedValue({}) },
+      payment: { create: jest.fn().mockResolvedValue({}) },
+      paymentAllocation: { create: jest.fn().mockResolvedValue({}) },
       organization: {
         // The counter names the *next* number, so a first sale sees 2 here.
         update: jest.fn().mockResolvedValue({ nextSaleNumber: 2 }),
@@ -54,6 +58,11 @@ describe('SaleService', () => {
           name: 'Peak Milk 400g',
           trackStock: true,
           taxRateBps: 750,
+          basePrice: 250_000,
+          prices: [
+            { tierId: RETAIL, unitId: CARTON, price: CARTON_PRICE },
+            { tierId: WHOLESALE, unitId: CARTON, price: WHOLESALE_PRICE },
+          ],
           units: [
             { id: PIECE, name: 'piece', factor: 1 },
             { id: CARTON, name: 'carton', factor: 24 },
@@ -68,7 +77,7 @@ describe('SaleService', () => {
         findFirst: jest.fn().mockResolvedValue({
           id: 'sale-1',
           total: 0,
-          amountPaid: 0,
+          allocations: [],
           returns: [],
         }),
       },
@@ -87,16 +96,11 @@ describe('SaleService', () => {
       costOf: jest.fn().mockResolvedValue(1_800_000),
     };
 
-    products = {
-      resolvePrice: jest.fn().mockResolvedValue({ price: CARTON_PRICE }),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SaleService,
         { provide: TENANT_PRISMA, useValue: prisma },
         { provide: StockService, useValue: stock },
-        { provide: ProductService, useValue: products },
         {
           provide: LocationService,
           useValue: {
@@ -133,6 +137,20 @@ describe('SaleService', () => {
   const writtenSale = () => {
     const calls = tx.sale.create.mock.calls as [
       { data: Record<string, number> },
+    ][];
+    return calls[0][0].data;
+  };
+
+  const writtenPayment = () => {
+    const calls = tx.payment.create.mock.calls as [
+      { data: Record<string, unknown> },
+    ][];
+    return calls[0][0].data;
+  };
+
+  const writtenAllocation = () => {
+    const calls = tx.paymentAllocation.create.mock.calls as [
+      { data: Record<string, unknown> },
     ][];
     return calls[0][0].data;
   };
@@ -187,7 +205,7 @@ describe('SaleService', () => {
       ],
     });
 
-    expect(products.resolvePrice).not.toHaveBeenCalled();
+    // The agreed price wins over the tier's, which would have been ₦54,000.
     expect(writtenLine()).toMatchObject({
       unitPrice: 4_900_000,
       lineTotal: 9_800_000,
@@ -218,6 +236,8 @@ describe('SaleService', () => {
       name: 'Delivery to Ikeja',
       trackStock: false,
       taxRateBps: 750,
+      basePrice: 500_000,
+      prices: [],
       units: [{ id: PIECE, name: 'service', factor: 1 }],
     });
 
@@ -231,8 +251,8 @@ describe('SaleService', () => {
     await sell();
 
     expect(prisma.customer.findFirst).not.toHaveBeenCalled();
-    expect(products.resolvePrice).toHaveBeenCalledWith(PRODUCT, CARTON, RETAIL);
     expect(writtenSale()).toMatchObject({ customerId: null, tierId: RETAIL });
+    expect(writtenLine().unitPrice).toBe(CARTON_PRICE);
   });
 
   it("uses the customer's own tier when they have one", async () => {
@@ -240,11 +260,7 @@ describe('SaleService', () => {
 
     await sell({ customerId: 'customer-1' });
 
-    expect(products.resolvePrice).toHaveBeenCalledWith(
-      PRODUCT,
-      CARTON,
-      WHOLESALE,
-    );
+    expect(writtenLine().unitPrice).toBe(WHOLESALE_PRICE);
     expect(writtenSale()).toMatchObject({ tierId: WHOLESALE });
   });
 
@@ -272,23 +288,46 @@ describe('SaleService', () => {
     expect(writtenSale()).toMatchObject({ number: 'INV-10000' });
   });
 
-  it('treats a sale as paid in full unless told otherwise', async () => {
+  it('banks a counter sale in full, in the same transaction', async () => {
     await sell();
 
-    expect(writtenSale()).toMatchObject({
-      total: 10_800_000,
-      amountPaid: 10_800_000,
+    expect(writtenSale()).toMatchObject({ total: 10_800_000 });
+    expect(writtenPayment()).toMatchObject({
+      amount: 10_800_000,
+      method: PaymentMethod.cash,
+    });
+    // Allocated to the sale it paid for, so the balance lands on zero.
+    expect(writtenAllocation()).toMatchObject({ amount: 10_800_000 });
+  });
+
+  it('records a credit sale with no payment at all', async () => {
+    await sell({ payment: { amount: 0 } });
+
+    expect(writtenSale()).toMatchObject({ total: 10_800_000 });
+    expect(tx.payment.create).not.toHaveBeenCalled();
+    expect(tx.paymentAllocation.create).not.toHaveBeenCalled();
+  });
+
+  it('records a part payment, leaving the rest owed', async () => {
+    await sell({
+      payment: { amount: 5_000_000, method: PaymentMethod.transfer },
+    });
+
+    expect(writtenPayment()).toMatchObject({
+      amount: 5_000_000,
+      method: PaymentMethod.transfer,
     });
   });
 
-  it('records a credit sale as unpaid', async () => {
-    await sell({ amountPaid: 0 });
-
-    expect(writtenSale()).toMatchObject({ total: 10_800_000, amountPaid: 0 });
+  it('refuses to record more paid than the sale was worth', async () => {
+    await expect(
+      sell({ payment: { amount: 11_000_000 } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('refuses to record more paid than the sale was worth', async () => {
-    await expect(sell({ amountPaid: 11_000_000 })).rejects.toBeInstanceOf(
+  it('refuses a negative payment on a sale', async () => {
+    // Money going back out is a return, which reverses the goods too.
+    await expect(sell({ payment: { amount: -100 } })).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });

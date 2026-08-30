@@ -9,8 +9,8 @@ import { TenantContext } from './tenant-context';
  * Adding a model here is the only thing that protects it. A new tenant-owned
  * table that is left off this list is readable by every other tenant.
  *
- * The payments slice adds Payment and Expense. There is no PurchaseOrder or
- * Bill coming — see DECISIONS.md §6 on why purchasing was cut.
+ * There is no PurchaseOrder or Bill coming — see DECISIONS.md §6 on why
+ * purchasing was cut.
  */
 export const TENANT_SCOPED_MODELS = new Set<string>([
   'Membership',
@@ -29,6 +29,11 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'Sale',
   'SaleLine',
   'SaleReturn',
+  // Money in and out (Slice 5).
+  'Payment',
+  'PaymentAllocation',
+  'Expense',
+  'ExpenseCategory',
   // Reached through the raw client by the interceptor, which runs before the
   // route handler; listed so one tenant's key can never match another's.
   'IdempotencyKey',
