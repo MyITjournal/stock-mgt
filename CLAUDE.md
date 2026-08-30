@@ -62,9 +62,23 @@ Receivables is deliberately **a list sorted oldest-first, not 30/60/90 buckets**
 people ask is who has owed longest, which is a sort. Buckets can be added the day someone asks to
 read them.
 
-**Next: Slice 6 — reports.** Dashboard, profit, stock valuation, expiry, and the vendor purchase
-targets that moved out of the cut purchasing slice. Every input exists already; the slice is
-arithmetic over rows that are being written correctly today.
+**Correcting a mistake is a void; correcting reality is a negative payment.** A void
+(`POST /payments/:id/void`, owner/manager/accountant only, reason required) says the money never
+moved — a mis-key, the wrong customer. A negative payment says money moved back — a refund, a
+bounced cheque. Voiding keeps the row and its allocations and stops it counting, so the invoice
+goes back to owed. What counts toward a balance is defined once in
+`src/modules/payments/balance.ts`: `saleBalance` for the arithmetic, `LIVE_ALLOCATIONS` for the
+query filter. **Use `LIVE_ALLOCATIONS` in any new query that feeds a balance** — that is the one
+place this is easy to get wrong.
+
+**Next: Slice 6 — reports.** Dashboard, profit, stock valuation, expiry, the vendor purchase
+targets that moved out of the cut purchasing slice, and the **PDF invoice and customer
+statement**. Every input exists already; the slice is arithmetic over rows that are being written
+correctly today, plus a renderer.
+
+On printing generally: thermal receipts (Bluetooth ESC/POS) are the mobile app's job — the server
+cannot reach a paired printer — and `GET /sales/:id/receipt` is already the stable payload for
+it. PDFs are the server's job. Barcode label sheets are deferred. See §6.
 
 **Before declaring anything done, run `npm run smoke`** — `test/smoke.mjs` walks the whole API
 against a running server. Its load-bearing check is that the sum of every stock movement equals

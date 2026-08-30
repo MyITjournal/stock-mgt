@@ -914,7 +914,77 @@ async function main() {
   eq('nothing is outstanding once everything is paid', cleared.invoices.length, 0);
   eq('and the total agrees', cleared.totalOutstanding, 0);
 
-  step(25, 'Payments list, paged the same way sales are');
+  step(25, 'Voiding a payment that should never have existed');
+  // The opposite of the refund above. That one moved money; this one says the
+  // money never moved, so the invoice it claimed to settle goes back to owed.
+  const voided = (
+    await api('POST', `/payments/${settled.id}/void`, {
+      token: t,
+      body: { reason: 'Keyed against the wrong account; nothing was received.' },
+    })
+  ).data;
+
+  check('the row is kept, not deleted', !!voided.id);
+  check('with the time it was voided', !!voided.voidedAt);
+  eq(
+    'and the reason, which is required',
+    voided.voidedReason,
+    'Keyed against the wrong account; nothing was received.',
+  );
+  check('and who did it', !!voided.voidedBy);
+  check(
+    'its allocations stay attached, so the mistake is still legible',
+    voided.allocations.length > 0,
+  );
+
+  eq(
+    'the invoice it had settled is owed again',
+    (await api('GET', `/sales/${credit.id}`, { token: t })).data.balance,
+    credit.total - 6_200_000,
+  );
+  eq(
+    'and it is back on the receivables list',
+    (await api('GET', '/receivables', { token: t })).data.totalOutstanding,
+    credit.total - 6_200_000,
+  );
+
+  const afterVoid = (
+    await api('GET', `/customers/${shopkeeper.id}/statement`, { token: t })
+  ).data;
+  eq('the credit it created is gone', afterVoid.credit, 0);
+  eq('the customer owes again', afterVoid.owed, credit.total - 6_200_000);
+  eq('and it is off their statement entirely', afterVoid.payments.length, 1);
+
+  await api('POST', `/payments/${settled.id}/void`, {
+    token: t,
+    expect: 409,
+    body: { reason: 'Trying again.' },
+  });
+  check('voiding the same payment twice is 409', true);
+
+  await api('POST', `/payments/${settled.id}/void`, {
+    token: t,
+    expect: 400,
+    body: {},
+  });
+  check('and a void with no reason is refused', true);
+
+  // Put it right the way the counter would: record the payment that did happen.
+  const rebooked = (
+    await api('POST', '/payments', {
+      token: t,
+      key: randomUUID(),
+      body: { customerId: shopkeeper.id, amount: 12_000_000, method: 'cash' },
+    })
+  ).data;
+  eq('the corrected payment settles it again', rebooked.allocated, credit.total - 6_200_000);
+  eq(
+    'and the invoice is square',
+    (await api('GET', `/sales/${credit.id}`, { token: t })).data.balance,
+    0,
+  );
+
+  step(26, 'Payments list, paged the same way sales are');
   await new Promise((r) => setTimeout(r, 1500));
   const banked = [];
   let payCursor = null;
@@ -933,8 +1003,9 @@ async function main() {
   } while (payCursor && payPages < 20);
 
   // Three counter sales banked their own payment as they were rung up, then
-  // the part payment, the settlement and the refund.
-  eq('every payment came back across the pages', banked.length, 6);
+  // the part payment, the settlement, the refund, and the re-booked payment.
+  // The voided one is still a row: voiding keeps it, it just stops counting.
+  eq('every payment came back across the pages', banked.length, 7);
   check('and it actually paged', payPages > 1, `${payPages} pages`);
   eq('no id twice', new Set(banked.map((p) => p.id)).size, banked.length);
   eq(
@@ -946,10 +1017,10 @@ async function main() {
     'filtering by customer finds only theirs',
     (await api('GET', `/payments?customerId=${shopkeeper.id}`, { token: t })).data.payments
       .length,
-    2,
+    3,
   );
 
-  step(26, 'Expenses: the other half of the profit subtraction');
+  step(27, 'Expenses: the other half of the profit subtraction');
   const categories = (await api('GET', '/expense-categories', { token: t })).data;
   eq('a new org is seeded with somewhere to file spending', categories.length, 9);
   const transport = categories.find((c) => c.name === 'transport');
@@ -999,7 +1070,7 @@ async function main() {
   await api('GET', `/expenses/${lorry.id}`, { token: t, expect: 404 });
   check('and is gone by id, though the row survives underneath', true);
 
-  step(27, 'The receipt is a narrow payload, not the sale row');
+  step(28, 'The receipt is a narrow payload, not the sale row');
   const receipt = (await api('GET', `/sales/${credit.id}/receipt`, { token: t })).data;
   eq('it names the invoice', receipt.number, 'INV-0001');
   eq('and the customer', receipt.customer, 'Chidi Okeke');
@@ -1009,7 +1080,7 @@ async function main() {
   check('cost of goods sold never reaches the customer', receipt.costTotal === undefined);
   check('and neither does the tier', receipt.tier === undefined);
 
-  step(28, 'Tenancy: a second organization sees none of this');
+  step(29, 'Tenancy: a second organization sees none of this');
   const other = await signUp('Chidi Provisions');
   eq(
     'no products leak across the tenant boundary',
