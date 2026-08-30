@@ -161,6 +161,7 @@ export class ReceivingService {
       include: {
         supplier: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
+        recordedBy: { select: { id: true, firstName: true, lastName: true } },
         lines: {
           include: {
             product: { select: { id: true, name: true, sku: true } },

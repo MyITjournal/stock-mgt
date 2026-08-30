@@ -9,6 +9,7 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { splitTaxInclusive } from '../../common/money/money';
+import { resolveUnitPrice } from './pricing';
 import {
   CreateProductDto,
   ProductUnitInput,
@@ -223,21 +224,7 @@ export class ProductService {
       );
     }
 
-    const tiered = tierId
-      ? product.prices.find((p) => p.tierId === tierId && p.unitId === unitId)
-      : undefined;
-
-    const price = tiered ? tiered.price : product.basePrice * unit.factor;
-
-    return {
-      productId,
-      unitId,
-      unitName: unit.name,
-      baseQuantity: unit.factor,
-      price,
-      isTierPrice: Boolean(tiered),
-      tax: splitTaxInclusive(price, product.taxRateBps),
-    };
+    return { productId, ...resolveUnitPrice(product, unit, tierId) };
   }
 
   private async findOneOrFail(id: string) {
