@@ -20,6 +20,7 @@ import { MailService } from '../mail/mail.service';
 import { DEFAULT_PRICE_TIER } from '../catalog/price-tier.service';
 import { defaultPackagingTypeRows } from '../catalog/packaging-type.service';
 import { defaultLocationRow } from '../inventory/location.service';
+import { defaultExpenseCategoryRows } from '../expenses/expense-category.service';
 import { TokenContext, TokenPair, TokenService } from './token.service';
 import { env } from '../../config/env';
 import { RegisterDto } from './dto/register.dto';
@@ -133,18 +134,23 @@ export class AuthService {
   }
 
   /**
-   * What a new business needs before its catalog is usable: a default price
-   * tier for prices to hang off, and the packaging vocabulary.
+   * What a new business needs before the app is usable: a default price tier
+   * for prices to hang off, the packaging vocabulary, somewhere for stock to
+   * sit, and something to file spending under.
    *
    * Both registration paths call it. Google sign-up used to create the
    * organization and stop there, so those businesses had no tier at all and
-   * nowhere to put a price.
+   * nowhere to put a price. Any future per-org default belongs here, not
+   * inline in one of the two paths.
    *
    * Typed on the delegates it touches so it accepts either the client or a
    * transaction handle.
    */
   private async seedOrganizationDefaults(
-    db: Pick<PrismaService, 'priceTier' | 'packagingType' | 'location'>,
+    db: Pick<
+      PrismaService,
+      'priceTier' | 'packagingType' | 'location' | 'expenseCategory'
+    >,
     organizationId: string,
   ) {
     await db.priceTier.create({
@@ -156,6 +162,9 @@ export class AuthService {
     // Stock has to land somewhere, and a business with one shop should never
     // have to think about locations at all.
     await db.location.create({ data: defaultLocationRow(organizationId) });
+    await db.expenseCategory.createMany({
+      data: defaultExpenseCategoryRows(organizationId),
+    });
   }
 
   async verifyOtp(email: string, code: string, context: TokenContext = {}) {

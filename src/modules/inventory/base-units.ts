@@ -21,11 +21,16 @@ export async function resolveProductUnit(
      * which is why this is off by default.
      */
     allowUnstocked?: boolean;
+    /**
+     * Load the tier prices too. Selling needs them, and asks for them here so
+     * the product is read once rather than again inside the pricing service.
+     */
+    withPrices?: boolean;
   } = {},
 ) {
   const product = await prisma.product.findFirst({
     where: { id: productId, deletedAt: null },
-    include: { units: true },
+    include: { units: true, prices: options.withPrices },
   });
   if (!product) throw new NotFoundException(`Product ${productId} not found`);
 

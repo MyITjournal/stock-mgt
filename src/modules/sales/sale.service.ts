@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { StockMovementType } from '@prisma/client';
+import { PaymentMethod, StockMovementType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -18,9 +18,10 @@ import {
 import { resolveProductUnit } from '../inventory/base-units';
 import { LocationService } from '../inventory/location.service';
 import { StockService, StockWriter } from '../inventory/stock.service';
-import { ProductService } from '../catalog/product.service';
+import { resolveUnitPrice } from '../catalog/pricing';
 import { CreateSaleDto, SaleLineDto } from './dto/create-sale.dto';
 import { priceLine, roundCost } from './sale-pricing';
+import { withBalance } from '../payments/balance';
 
 /** How many sales one page returns when the caller does not say. */
 const DEFAULT_PAGE = 100;
@@ -49,6 +50,13 @@ const SALE_INCLUDE = {
     },
   },
   returns: true,
+  allocations: {
+    include: {
+      payment: {
+        select: { id: true, method: true, reference: true, occurredAt: true },
+      },
+    },
+  },
 } as const;
 
 /**
@@ -71,7 +79,6 @@ export class SaleService {
     @Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma,
     private readonly stock: StockService,
     private readonly locations: LocationService,
-    private readonly products: ProductService,
   ) {}
 
   async create(input: CreateSaleDto) {
@@ -109,9 +116,17 @@ export class SaleService {
       const taxTotal = sum(lines.map((line) => line.taxAmount));
       const costTotal = sum(lines.map((line) => line.costOfGoodsSold));
 
-      if (input.amountPaid !== undefined && input.amountPaid > total) {
+      // Omitted means paid in full in cash — the counter sale, which is the
+      // common case. `{ amount: 0 }` is the sale that goes out on credit.
+      const paid = input.payment?.amount ?? total;
+      if (paid > total) {
         throw new BadRequestException(
-          `Amount paid (${input.amountPaid}) is more than the sale total (${total}). Record what the sale was worth; change handed back is not part of it.`,
+          `Payment (${paid}) is more than the sale total (${total}). Record what the sale was worth; change handed back is not part of it.`,
+        );
+      }
+      if (paid < 0) {
+        throw new BadRequestException(
+          'A sale cannot be recorded with a negative payment. Take goods back through a return instead.',
         );
       }
 
@@ -126,9 +141,6 @@ export class SaleService {
           total,
           taxTotal,
           costTotal,
-          // A counter sale is paid in full; that is the common case and the
-          // one worth defaulting to. Zero is the sale that goes out on credit.
-          amountPaid: input.amountPaid ?? total,
           note: input.note ?? null,
           occurredAt,
           recordedByUserId,
@@ -138,6 +150,28 @@ export class SaleService {
       await tx.saleLine.createMany({
         data: lines.map((line) => ({ ...line, organizationId, saleId })),
       });
+
+      // Written here rather than left to a second request: a rep at a counter
+      // must be able to record one sale in one round trip, which is the whole
+      // point of the offline constraints in §8.
+      if (paid > 0) {
+        const paymentId = randomUUID();
+        await tx.payment.create({
+          data: {
+            id: paymentId,
+            organizationId,
+            customerId: input.customerId ?? null,
+            amount: paid,
+            method: input.payment?.method ?? PaymentMethod.cash,
+            reference: input.payment?.reference ?? null,
+            occurredAt,
+            recordedByUserId,
+          },
+        });
+        await tx.paymentAllocation.create({
+          data: { organizationId, paymentId, saleId, amount: paid },
+        });
+      }
     });
 
     return this.findOne(saleId);
@@ -155,22 +189,18 @@ export class SaleService {
     line: SaleLineDto,
     ctx: LineContext,
   ): Promise<LineToWrite> {
+    // One read: the unit, whether it is stocked, and the tier prices. Asking
+    // the catalog to price it separately would fetch the same product again.
     const { product, unit } = await resolveProductUnit(
       this.prisma,
       line.productId,
       line.unitId,
-      { allowUnstocked: true },
+      { allowUnstocked: true, withPrices: true },
     );
 
     const unitPrice =
       line.unitPrice ??
-      (
-        await this.products.resolvePrice(
-          product.id,
-          unit.id,
-          ctx.tierId ?? undefined,
-        )
-      ).price;
+      resolveUnitPrice(product, unit, ctx.tierId ?? undefined).price;
 
     const priced = priceLine(unitPrice, line.quantity, product.taxRateBps);
     const baseQuantity = line.quantity * unit.factor;
@@ -311,6 +341,41 @@ export class SaleService {
     if (!sale) throw new NotFoundException('Sale not found');
     return withBalance(sale);
   }
+
+  /**
+   * A flat payload for printing: what a customer is handed, and nothing else.
+   *
+   * Separate from `findOne` because a receipt is a *contract with a printer*,
+   * not a view of the row — it has to keep saying the same things in the same
+   * shape while the sale model underneath keeps growing. Deliberately narrow:
+   * no ids beyond the invoice number, no cost of goods sold, no tier name.
+   */
+  async receipt(id: string) {
+    const sale = await this.findOne(id);
+
+    return {
+      number: sale.number,
+      occurredAt: sale.occurredAt,
+      customer: sale.customer
+        ? `${sale.customer.firstName} ${sale.customer.lastName ?? ''}`.trim()
+        : null,
+      servedBy: sale.recordedBy
+        ? `${sale.recordedBy.firstName ?? ''} ${sale.recordedBy.lastName ?? ''}`.trim()
+        : null,
+      lines: sale.lines.map((line) => ({
+        description: line.product.name,
+        unit: line.unit.name,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal: line.lineTotal,
+      })),
+      total: sale.total,
+      tax: sale.taxTotal,
+      paid: sale.allocated,
+      balance: sale.balance,
+      note: sale.note,
+    };
+  }
 }
 
 interface LineContext {
@@ -339,23 +404,4 @@ interface LineToWrite {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
-}
-
-/**
- * What is still owed, and what has come back. Derived rather than stored: two
- * numbers that must agree are one number too many.
- */
-function withBalance<
-  T extends {
-    total: number;
-    amountPaid: number;
-    returns: { refundAmount: number }[];
-  },
->(sale: T) {
-  const refunded = sum(sale.returns.map((row) => row.refundAmount));
-  return {
-    ...sale,
-    refunded,
-    balance: sale.total - sale.amountPaid - refunded,
-  };
 }

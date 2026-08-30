@@ -13,15 +13,29 @@ const MONEY_DESCRIPTION =
  * describing it in its own words or not at all.
  */
 export function IsMoney(
-  options: { example?: number; optional?: boolean } = {},
+  options: {
+    example?: number;
+    optional?: boolean;
+    /**
+     * Allow a negative amount. Off by default, because almost every money
+     * field here is a price or a total and a negative one is a bug. Payments
+     * are the exception: the amount is signed so that cash handed back is the
+     * same kind of row as cash taken in, the way `StockMovement.quantity` is
+     * signed for stock leaving as well as arriving.
+     */
+    allowNegative?: boolean;
+  } = {},
 ) {
-  const { example = 250000, optional = false } = options;
+  const { example = 250000, optional = false, allowNegative = false } = options;
+  const description = allowNegative
+    ? `${MONEY_DESCRIPTION} Signed: negative reverses the movement.`
+    : MONEY_DESCRIPTION;
 
   return applyDecorators(
     optional
-      ? ApiPropertyOptional({ example, description: MONEY_DESCRIPTION })
-      : ApiProperty({ example, description: MONEY_DESCRIPTION }),
+      ? ApiPropertyOptional({ example, description })
+      : ApiProperty({ example, description }),
     IsInt({ message: '$property must be an integer number of minor units' }),
-    Min(0),
+    ...(allowNegative ? [] : [Min(0)]),
   );
 }
