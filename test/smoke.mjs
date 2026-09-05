@@ -930,6 +930,19 @@ async function main() {
   eq('and the total agrees', cleared.totalOutstanding, 0);
 
   step(25, 'Voiding a payment that should never have existed');
+
+  // Stand in for a device that has already synced every payment and then goes
+  // offline. The wait puts the existing rows behind the sync window, so this
+  // checkpoint genuinely means "I have seen everything up to here".
+  await new Promise((r) => setTimeout(r, 1500));
+  const synced = (await api('GET', '/payments?limit=500', { token: t })).data;
+  const checkpoint = synced.syncedThrough;
+  check(
+    'a client can checkpoint the payment feed',
+    !!checkpoint,
+    JSON.stringify(checkpoint),
+  );
+
   // The opposite of the refund above. That one moved money; this one says the
   // money never moved, so the invoice it claimed to settle goes back to owed.
   const voided = (
@@ -969,6 +982,24 @@ async function main() {
   eq('the credit it created is gone', afterVoid.credit, 0);
   eq('the customer owes again', afterVoid.owed, credit.total - 6_200_000);
   eq('and it is off their statement entirely', afterVoid.payments.length, 1);
+
+  // The regression this ordering exists for. Paged by `createdAt`, the void
+  // would never reach a client that had already synced this payment: the row's
+  // creation time did not move, so it would sit forever behind the cursor while
+  // the device went on showing the invoice as settled.
+  await new Promise((r) => setTimeout(r, 1500));
+  const delta = (
+    await api(`GET`, `/payments?since=${encodeURIComponent(checkpoint)}`, {
+      token: t,
+    })
+  ).data;
+  const resent = delta.payments.find((p) => p.id === settled.id);
+  check(
+    'the void reaches a client that had already synced that payment',
+    !!resent,
+    delta.payments.map((p) => p.id).join(', '),
+  );
+  check('and it arrives carrying the void', !!resent?.voidedAt);
 
   await api('POST', `/payments/${settled.id}/void`, {
     token: t,
@@ -1035,6 +1066,30 @@ async function main() {
     3,
   );
 
+  // The cash-up: a counter sale banks its payment at the counter that rang it
+  // up, with no extra input from the person selling.
+  const counterSale = banked.find((p) =>
+    p.allocations.some((a) => a.sale.number === 'INV-0003'),
+  );
+  eq('a counter sale banks its payment at that counter', counterSale.location.id, main.id);
+  eq('and names it', counterSale.location.name, 'Main Store');
+
+  const cashUp = (await api('GET', '/reports/collections?period=today', { token: t })).data;
+  const till = cashUp.byLocation.find((l) => l.locationId === main.id);
+  check('the cash-up knows what the till took', till.total > 0, `${till?.total}`);
+  // Payments taken away from a counter are their own row, not folded into one.
+  const offTill = cashUp.byLocation.find((l) => l.locationId === 'unassigned');
+  check(
+    'and separates money that never touched a till',
+    !!offTill,
+    cashUp.byLocation.map((l) => l.label).join(', '),
+  );
+  eq(
+    'every location adds back up to the total collected',
+    cashUp.byLocation.reduce((sum, l) => sum + l.total, 0),
+    cashUp.total,
+  );
+
   step(27, 'Expenses: the other half of the profit subtraction');
   const categories = (await api('GET', '/expense-categories', { token: t })).data;
   eq('a new org is seeded with somewhere to file spending', categories.length, 9);
@@ -1078,12 +1133,37 @@ async function main() {
     1_500_000,
   );
 
+  // Checkpoint a device that has seen both expenses, then delete one.
+  await new Promise((r) => setTimeout(r, 1500));
+  const spendSynced = (await api('GET', '/expenses?since=1970-01-01', { token: t })).data;
+  eq('expenses page for sync when asked', spendSynced.expenses.length, 2);
+  const spendCheckpoint = spendSynced.syncedThrough;
+
   await api('DELETE', `/expenses/${lorry.id}`, { token: t, expect: 204 });
   spend = (await api('GET', '/expenses', { token: t })).data;
   eq('a deleted expense leaves the list', spend.expenses.length, 1);
   eq('and comes off the total', spend.total, 1_500_000);
   await api('GET', `/expenses/${lorry.id}`, { token: t, expect: 404 });
   check('and is gone by id, though the row survives underneath', true);
+
+  // Same rule as the payment void: a device that already has this expense has
+  // to be told it went away, or it keeps showing spending that was retracted.
+  await new Promise((r) => setTimeout(r, 1500));
+  const spendDelta = (
+    await api(
+      'GET',
+      `/expenses?since=${encodeURIComponent(spendCheckpoint)}&includeDeleted=true`,
+      { token: t },
+    )
+  ).data;
+  const tombstone = spendDelta.expenses.find((e) => e.id === lorry.id);
+  check('the deletion reaches a syncing client', !!tombstone, `${spendDelta.expenses.length} rows`);
+  check('as a tombstone it can act on', !!tombstone?.deletedAt);
+  eq(
+    'while the totals still ignore what was deleted',
+    spendDelta.total,
+    1_500_000,
+  );
 
   step(28, 'The receipt is a narrow payload, not the sale row');
   const receipt = (await api('GET', `/sales/${credit.id}/receipt`, { token: t })).data;
@@ -1242,7 +1322,280 @@ async function main() {
   eq('and that they have settled up', account.balance, 0);
   check('and when they last bought', !!account.lastPurchase);
 
-  step(35, 'Tenancy: a second organization sees none of this');
+  step(35, 'Credit is exceptional: clear the last one before taking more');
+  // The shopkeeper settled up in step 25, so the first credit sale is allowed.
+  const onCredit = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        customerId: shopkeeper.id,
+        locationId: main.id,
+        payment: { amount: 0 },
+        lines: [{ productId: product.id, unitId: carton.id, quantity: 1 }],
+      },
+    })
+  ).data;
+  eq('a customer who owes nothing can take goods on credit', onCredit.balance, onCredit.total);
+
+  // A second one, while the first still stands, is refused.
+  await api('POST', '/sales', {
+    token: t,
+    expect: 409,
+    body: {
+      customerId: shopkeeper.id,
+      locationId: main.id,
+      payment: { amount: 0 },
+      lines: [{ productId: product.id, unitId: carton.id, quantity: 1 }],
+    },
+  });
+  check('a second credit sale is refused while the first is unpaid', true);
+
+  // The rule is about credit, not about the customer. Paying settles nothing
+  // owed, but it is not a debt either, so it goes through.
+  const paidUp = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        customerId: shopkeeper.id,
+        locationId: main.id,
+        lines: [{ productId: product.id, unitId: carton.id, quantity: 1 }],
+      },
+    })
+  ).data;
+  eq('but the same customer can still buy for cash', paidUp.balance, 0);
+
+  // And an owner can overrule it, on the record.
+  const overridden = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        customerId: shopkeeper.id,
+        locationId: main.id,
+        payment: { amount: 0 },
+        creditOverrideReason: 'Owner approved; paying both on Friday.',
+        lines: [{ productId: product.id, unitId: carton.id, quantity: 1 }],
+      },
+    })
+  ).data;
+  eq(
+    'an owner can overrule it, and the reason is kept on the sale',
+    overridden.creditOverrideReason,
+    'Owner approved; paying both on Friday.',
+  );
+  eq('the override still leaves the money owed', overridden.balance, overridden.total);
+
+  step(36, 'Product images');
+  // A business that already hosts its product shots sets the URL directly, and
+  // needs no image hosting configured at all.
+  const pictured = (
+    await api('PATCH', `/products/${product.id}`, {
+      token: t,
+      body: { imageUrl: 'https://cdn.example.com/peak-milk-400g.jpg' },
+    })
+  ).data;
+  eq(
+    'a product can point at an image hosted elsewhere',
+    pictured.imageUrl,
+    'https://cdn.example.com/peak-milk-400g.jpg',
+  );
+  eq(
+    'and it is not claimed as ours to delete',
+    pictured.imagePublicId,
+    null,
+  );
+
+  // Uploading needs Cloudinary, which is unset on a development machine. The
+  // failure has to say so rather than surfacing as a stack trace from the SDK.
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'x.png');
+  const upload = await fetch(`${BASE}/products/${product.id}/image`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${t}` },
+    body: form,
+  });
+  eq('uploading without image hosting configured is a 503', upload.status, 503);
+  check(
+    'and it names the variables to set',
+    (await upload.text()).includes('CLOUDINARY_CLOUD_NAME'),
+  );
+
+  const unpictured = (await api('DELETE', `/products/${product.id}/image`, { token: t })).data;
+  eq('the picture can be removed again', unpictured.imageUrl, null);
+
+  step(37, 'Cost when the goods outrun the paperwork');
+  // A product received at Main Store, then force-sold from the van, where it
+  // has never been stocked. The ledger has to invent a batch to carry the
+  // shortfall, and that batch has no invoice behind it.
+  const lateProduct = (
+    await api('POST', '/products', {
+      token: t,
+      body: {
+        name: 'Shea Butter 200ml',
+        basePrice: 120_000,
+        units: [
+          { name: 'jar', factor: 1 },
+          { name: 'carton', factor: 12 },
+        ],
+      },
+    })
+  ).data;
+  const lateCarton = lateProduct.units.find((u) => u.name === 'carton');
+
+  // 10 cartons of 12 for ₦1,080,000 — ₦9,000 a jar, exactly.
+  await api('POST', '/goods-receipts', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      supplierId: supplier.id,
+      locationId: main.id,
+      lines: [
+        {
+          productId: lateProduct.id,
+          unitId: lateCarton.id,
+          quantityReceived: 10,
+          quantityPaidFor: 10,
+          totalCost: 108_000_000,
+        },
+      ],
+    },
+  });
+
+  const soldEarly = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        locationId: van.id,
+        force: true,
+        forcedReason: 'Sold off the van before the delivery note was entered.',
+        lines: [{ productId: lateProduct.id, unitId: lateCarton.id, quantity: 1 }],
+      },
+    })
+  ).data;
+
+  // The bug this replaced: cost came out as zero, reporting 100% margin and
+  // leaving the real cost out of every report for good.
+  const earlyLine = soldEarly.lines[0];
+  check('a forced sale is not costed at nothing', earlyLine.costOfGoodsSold > 0, `${earlyLine.costOfGoodsSold}`);
+  eq(
+    'it borrows the rate from the last real delivery',
+    earlyLine.costOfGoodsSold,
+    12 * 900_000,
+  );
+  eq('and the line says the cost is a guess', earlyLine.costIsEstimated, true);
+
+  await new Promise((r) => setTimeout(r, 1500));
+  const guessed = (await api('GET', '/reports/profit?period=today', { token: t })).data;
+  check(
+    'the profit report says how much margin rests on an estimate',
+    guessed.estimatedCost >= 12 * 900_000,
+    `${guessed.estimatedCost}`,
+  );
+  check('and how many lines', guessed.estimatedLines >= 1, `${guessed.estimatedLines}`);
+
+  step(38, 'Stocktake: counting is not adjusting');
+  const beforeCount = await levelAt(t, product.id, main.id);
+
+  const sheet = (
+    await api('POST', '/stocktakes', {
+      token: t,
+      key: randomUUID(),
+      body: { locationId: main.id, note: 'Month-end count, main store.' },
+    })
+  ).data;
+  eq('a count opens against a location', sheet.location.id, main.id);
+  eq('and starts open', sheet.status, 'open');
+
+  await api('POST', '/stocktakes', {
+    token: t,
+    expect: 409,
+    body: { locationId: main.id },
+  });
+  check('a second open count at the same location is refused', true);
+
+  // Three tins are missing from the shelf.
+  const counted = (
+    await api('POST', `/stocktakes/${sheet.id}/lines`, {
+      token: t,
+      body: {
+        lines: [
+          {
+            productId: product.id,
+            countedQuantity: beforeCount - 3,
+            note: 'Three tins unaccounted for.',
+          },
+        ],
+      },
+    })
+  ).data;
+
+  eq('the sheet knows what the ledger expected', counted.lines[0].expectedQuantity, beforeCount);
+  eq('and what was actually there', counted.lines[0].countedQuantity, beforeCount - 3);
+  eq('so the variance is the difference', counted.lines[0].variance, -3);
+  eq('which is one discrepancy', counted.discrepancies, 1);
+
+  // The point of having two steps: recording a count moves nothing.
+  eq(
+    'recording the count leaves stock exactly as it was',
+    await levelAt(t, product.id, main.id),
+    beforeCount,
+  );
+
+  const postedCount = (await api('POST', `/stocktakes/${sheet.id}/post`, { token: t })).data;
+  eq('posting writes one correction', postedCount.corrections, 1);
+  eq('and closes the count', postedCount.status, 'posted');
+  eq('now the shelf and the ledger agree', await levelAt(t, product.id, main.id), beforeCount - 3);
+
+  await api('POST', `/stocktakes/${sheet.id}/post`, { token: t, expect: 409 });
+  check('posting the same count twice is 409', true);
+
+  // A surplus has no lot of its own, so it has to be given one.
+  const surplusSheet = (
+    await api('POST', '/stocktakes', {
+      token: t,
+      key: randomUUID(),
+      body: { locationId: main.id },
+    })
+  ).data;
+  await api('POST', `/stocktakes/${surplusSheet.id}/lines`, {
+    token: t,
+    body: {
+      lines: [{ productId: product.id, countedQuantity: beforeCount - 1 }],
+    },
+  });
+  const postedSurplus = (
+    await api('POST', `/stocktakes/${surplusSheet.id}/post`, { token: t })
+  ).data;
+  eq('a surplus posts too', postedSurplus.corrections, 1);
+  eq(
+    'and the found stock is on the shelf',
+    await levelAt(t, product.id, main.id),
+    beforeCount - 1,
+  );
+
+  await new Promise((r) => setTimeout(r, 1500));
+  const audited = (await api('GET', '/reports/stock-audit?period=today', { token: t })).data;
+  check(
+    'the corrections show up on the audit report as count corrections',
+    audited.byReason.some((r) => r.reason === 'count_correction'),
+    audited.byReason.map((r) => r.reason).join(', '),
+  );
+
+  // The invariant the whole suite rests on, re-checked after the ledger has
+  // been corrected: the movements still add up to the levels.
+  const finalMovements = (await api('GET', '/stock/movements?limit=1000', { token: t })).data
+    .movements;
+  const finalLevels = (await api('GET', '/stock/levels?includeEmpty=true', { token: t })).data;
+  eq(
+    'and the ledger still sums to what the levels say',
+    finalMovements.reduce((sum, m) => sum + m.quantity, 0),
+    finalLevels.reduce((sum, row) => sum + row.quantity, 0),
+  );
+
+  step(39, 'Tenancy: a second organization sees none of this');
   const other = await signUp('Chidi Provisions');
   eq(
     'no products leak across the tenant boundary',

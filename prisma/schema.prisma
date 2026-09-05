@@ -107,6 +107,18 @@ model Product {
   /// VAT rate in basis points: 750 = 7.5%.
   taxRateBps Int  @default(750)
 
+  /// A picture of the product, for pickers on a phone and the web catalog.
+  ///
+  /// Two fields rather than one: the URL is what clients render, and the
+  /// public id is what lets the old image actually be deleted from the CDN when
+  /// it is replaced. Storing only the URL leaks an orphan on every change.
+  ///
+  /// `imagePublicId` is null when the URL was supplied directly rather than
+  /// uploaded here — a business that already hosts its product shots elsewhere
+  /// should not be forced through our uploader.
+  imageUrl      String?
+  imagePublicId String?
+
   /// Reorder once stock on hand falls to or below this, in **base units** like
   /// everything else in the ledger.
   ///

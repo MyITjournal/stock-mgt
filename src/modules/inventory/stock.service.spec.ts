@@ -369,7 +369,7 @@ describe('StockService', () => {
         service.costOf([{ batchId: 'batch-a', quantity: -24 }]),
       );
 
-      expect(cost).toBe(24 * 37_500);
+      expect(cost.cost).toBe(24 * 37_500);
     });
 
     it('costs a pick spanning two lots at each lot’s own rate', async () => {
@@ -382,7 +382,7 @@ describe('StockService', () => {
         ]),
       );
 
-      expect(cost).toBe(24 * 40_000 + 24 * 37_500);
+      expect(cost.cost).toBe(24 * 40_000 + 24 * 37_500);
     });
 
     /**
@@ -398,28 +398,80 @@ describe('StockService', () => {
         service.costOf([{ batchId: 'batch-c', quantity: -1 }]),
       );
 
-      expect(cost).toBeCloseTo(33.3333, 4);
-      expect(Number.isInteger(cost)).toBe(false);
+      expect(cost.cost).toBeCloseTo(33.3333, 4);
+      expect(Number.isInteger(cost.cost)).toBe(false);
     });
 
-    it('costs the placeholder batch a forced movement leaves behind at nothing', async () => {
-      // quantityReceived 0 marks a batch invented to carry a shortfall. It has
-      // no invoice, so there is nothing to divide.
-      prisma.stockBatch.findMany.mockResolvedValue([
-        { id: 'batch-forced', totalCost: 0, quantityReceived: 0 },
-      ]);
+    /**
+     * `quantityReceived: 0` marks a batch invented to carry a shortfall —
+     * goods sold before the delivery they came from was recorded. It has no
+     * invoice of its own.
+     *
+     * This used to cost at zero, which reported a 100% margin and left the real
+     * cost out of every report permanently. The product's last known rate is a
+     * guess, but it is a close one, and it keeps aggregate cost honest.
+     */
+    it('prices a forced shortfall from the last delivery, not at nothing', async () => {
+      prisma.stockBatch.findMany
+        // The batch the movement points at: a placeholder.
+        .mockResolvedValueOnce([
+          {
+            id: 'batch-forced',
+            productId: PRODUCT,
+            totalCost: 0,
+            quantityReceived: 0,
+          },
+        ])
+        // The lookup for that product's most recent real lot: ₦375.00 a piece.
+        .mockResolvedValueOnce([
+          { productId: PRODUCT, totalCost: 9_000_000, quantityReceived: 240 },
+        ]);
 
       const cost = await as(OrgRole.sales_rep, () =>
         service.costOf([{ batchId: 'batch-forced', quantity: -5 }]),
       );
 
-      expect(cost).toBe(0);
+      expect(cost.cost).toBe(5 * 37_500);
+      // And it says so, so the margin can be marked as resting on a guess.
+      expect(cost.estimated).toBe(5 * 37_500);
+    });
+
+    it('still costs at nothing when the product has never been received', async () => {
+      // The one case where the cost is genuinely unknown rather than merely
+      // unrecorded: there is no earlier delivery to borrow a rate from.
+      prisma.stockBatch.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'batch-forced',
+            productId: PRODUCT,
+            totalCost: 0,
+            quantityReceived: 0,
+          },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const cost = await as(OrgRole.sales_rep, () =>
+        service.costOf([{ batchId: 'batch-forced', quantity: -5 }]),
+      );
+
+      expect(cost.cost).toBe(0);
+      expect(cost.estimated).toBe(0);
+    });
+
+    it('reports nothing as estimated when every batch has an invoice', async () => {
+      prisma.stockBatch.findMany.mockResolvedValue(batches);
+
+      const cost = await as(OrgRole.sales_rep, () =>
+        service.costOf([{ batchId: 'batch-a', quantity: -24 }]),
+      );
+
+      expect(cost.estimated).toBe(0);
     });
 
     it('costs nothing when there are no movements, without a query', async () => {
       const cost = await as(OrgRole.sales_rep, () => service.costOf([]));
 
-      expect(cost).toBe(0);
+      expect(cost.cost).toBe(0);
       expect(prisma.stockBatch.findMany).not.toHaveBeenCalled();
     });
   });
