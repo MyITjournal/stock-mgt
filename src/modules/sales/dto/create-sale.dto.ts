@@ -154,4 +154,22 @@ export class CreateSaleDto {
   @IsString()
   @MaxLength(500)
   forcedReason?: string;
+
+  /**
+   * Why this customer is being given credit while they still owe.
+   *
+   * Selling on credit to someone with an unsettled balance is refused with a
+   * 409: what is owed is meant to be cleared first. Supplying a reason *is* the
+   * override — there is no separate boolean, so an override can never be
+   * recorded without one — and only an owner or manager may use it.
+   */
+  @ApiPropertyOptional({
+    example: 'Owner approved; paying both invoices on Friday.',
+    description:
+      'Overrides the refusal to sell on credit to a customer who already owes. Owner or manager only, and recorded on the sale.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  creditOverrideReason?: string;
 }

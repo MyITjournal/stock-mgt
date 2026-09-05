@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import {
   ProductService,
   assertExactlyOneBaseUnit,
@@ -93,7 +94,22 @@ describe('ProductService packaging types', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ProductService, { provide: TENANT_PRISMA, useValue: prisma }],
+      providers: [
+        ProductService,
+        { provide: TENANT_PRISMA, useValue: prisma },
+        // Nothing in this suite uploads; the service only needs the collaborator
+        // to exist. The image path is covered against a running server instead,
+        // where the interesting behaviour (an unconfigured CDN) actually lives.
+        {
+          provide: CloudinaryService,
+          useValue: {
+            isConfigured: false,
+            assertConfigured: jest.fn(),
+            uploadImage: jest.fn(),
+            deleteImage: jest.fn(),
+          },
+        },
+      ],
     }).compile();
 
     service = module.get(ProductService);

@@ -34,6 +34,9 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'PaymentAllocation',
   'Expense',
   'ExpenseCategory',
+  // Physical counts.
+  'Stocktake',
+  'StocktakeLine',
   // Reached through the raw client by the interceptor, which runs before the
   // route handler; listed so one tenant's key can never match another's.
   'IdempotencyKey',

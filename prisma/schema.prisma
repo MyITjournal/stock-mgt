@@ -107,6 +107,18 @@ model Product {
   /// VAT rate in basis points: 750 = 7.5%.
   taxRateBps Int  @default(750)
 
+  /// A picture of the product, for pickers on a phone and the web catalog.
+  ///
+  /// Two fields rather than one: the URL is what clients render, and the
+  /// public id is what lets the old image actually be deleted from the CDN when
+  /// it is replaced. Storing only the URL leaks an orphan on every change.
+  ///
+  /// `imagePublicId` is null when the URL was supplied directly rather than
+  /// uploaded here — a business that already hosts its product shots elsewhere
+  /// should not be forced through our uploader.
+  imageUrl      String?
+  imagePublicId String?
+
   /// Reorder once stock on hand falls to or below this, in **base units** like
   /// everything else in the ledger.
   ///
@@ -134,6 +146,7 @@ model Product {
   stockMovements    StockMovement[]
   stockBalances     StockBalance[]
   goodsReceiptLines GoodsReceiptLine[]
+  stocktakeLines    StocktakeLine[]
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -300,6 +313,16 @@ model Sale {
 
   note String?
 
+  /// Why this sale was allowed to go out on credit to a customer who already
+  /// owed money.
+  ///
+  /// The product does not sell on credit as a matter of course: an outstanding
+  /// balance is meant to be cleared before another is given, and the write path
+  /// refuses a second credit sale with a 409. An owner or manager can override
+  /// that, and the reason is kept here so the exception is reportable rather
+  /// than invisible — the same shape as `StockMovement.forcedReason`.
+  creditOverrideReason String?
+
   /// When it happened by the recording device's clock — a rep offline at 9am
   /// syncing at 5pm. `createdAt` is when the server stored it.
   occurredAt DateTime @default(now())
@@ -356,6 +379,16 @@ model SaleLine {
   /// Rounded exactly once, here, per DECISIONS.md §2. Zero for a product that
   /// is not stocked.
   costOfGoodsSold Int
+
+  /// True when some of `costOfGoodsSold` came from an **estimated** rate rather
+  /// than an invoice.
+  ///
+  /// That happens when goods are sold before the delivery they came from was
+  /// recorded: the movement is forced through a shortfall onto a batch that has
+  /// no invoice behind it, so the rate is taken from the product's most recent
+  /// real lot instead. The number is a good guess, not a fact, and a margin
+  /// resting on it should say so rather than read like the others.
+  costIsEstimated Boolean @default(false)
 
   createdAt DateTime @default(now())
 
@@ -428,6 +461,14 @@ model Payment {
   /// returned something.
   customerId String?
 
+  /// Which counter or van took the money.
+  ///
+  /// Set automatically when a sale banks its own payment, and optional on a
+  /// standalone payment — a transfer that lands in the bank belongs to no
+  /// counter. This is what makes a cash-up at the end of a shift answerable:
+  /// "what did this till take today" is otherwise unanswerable from the data.
+  locationId String?
+
   /// Signed, in minor units (kobo): positive is money in, negative is money
   /// handed back. A customer's position is then a plain sum with no branch on
   /// type, exactly as `StockMovement.quantity` does for stock.
@@ -462,6 +503,7 @@ model Payment {
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customer     Customer?           @relation(fields: [customerId], references: [id])
+  location     Location?           @relation(fields: [locationId], references: [id], onDelete: SetNull)
   recordedBy   User?               @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
   voidedBy     User?               @relation("PaymentVoidedBy", fields: [voidedByUserId], references: [id], onDelete: SetNull)
   allocations  PaymentAllocation[]
@@ -469,6 +511,14 @@ model Payment {
   @@index([organizationId])
   @@index([customerId])
   @@index([occurredAt])
+  /// The cash-up query: what one counter took over a shift.
+  @@index([organizationId, locationId, occurredAt])
+  /// The delta-sync cursor: keyset paging over (updatedAt, id).
+  ///
+  /// On `updatedAt` rather than `createdAt`, unlike the stock ledger, because a
+  /// payment is mutable — voiding one has to reach a client that already synced
+  /// it. See `keyset-cursor.ts`.
+  @@index([organizationId, updatedAt, id])
   @@map("payments")
 }
 
@@ -561,6 +611,9 @@ model Expense {
   @@index([organizationId])
   @@index([categoryId])
   @@index([occurredAt])
+  /// The delta-sync cursor, on (updatedAt, id) for the same reason as payments:
+  /// an expense can be edited and soft-deleted after it is written.
+  @@index([organizationId, updatedAt, id])
   @@map("expenses")
 }
 
@@ -640,6 +693,8 @@ model Organization {
   allocations       PaymentAllocation[]
   expenses          Expense[]
   expenseCategories ExpenseCategory[]
+  stocktakes        Stocktake[]
+  stocktakeLines    StocktakeLine[]
   barcodes          ProductBarcode[]
   idempotencyKeys   IdempotencyKey[]
   locations         Location[]
@@ -729,6 +784,9 @@ model User {
   saleReturns    SaleReturn[]
   payments       Payment[]      @relation("PaymentRecordedBy")
   voidedPayments Payment[]      @relation("PaymentVoidedBy")
+  stocktakesStarted Stocktake[]     @relation("StocktakeStartedBy")
+  stocktakesPosted  Stocktake[]     @relation("StocktakePostedBy")
+  stocktakeLines    StocktakeLine[]
   expenses       Expense[]
   goodsReceipts  GoodsReceipt[]
 
@@ -805,6 +863,8 @@ model Location {
   movements     StockMovement[]
   balances      StockBalance[]
   goodsReceipts GoodsReceipt[]
+  payments      Payment[]
+  stocktakes    Stocktake[]
   sales         Sale[]
 
   @@unique([organizationId, name])
@@ -1038,6 +1098,95 @@ enum StockMovementType {
 
 /// Why an adjustment happened. Breakage and spoilage are movements with a
 /// reason, so "we lost this much to breakage this month" is answerable.
+/// A physical count: what is actually on the shelf, against what the ledger
+/// believes.
+///
+/// Counting is not adjusting. The count is recorded first and posted second,
+/// because the two are different acts by different people — a storekeeper walks
+/// the aisles, and a manager decides the variance is real before it becomes
+/// movements. Between those two moments the count is just a claim, and an open
+/// stocktake changes nothing about stock on hand.
+///
+/// Posting is what writes to the ledger, as ordinary `adjustment` movements
+/// with reason `count_correction`. Nothing here is a second source of truth for
+/// stock: the ledger stays the only one (§5).
+model Stocktake {
+  id             String @id @default(uuid())
+  organizationId String
+  /// Counts are per location. Counting "everywhere at once" is not a thing
+  /// anybody does with a clipboard.
+  locationId     String
+
+  status StocktakeStatus @default(open)
+  note   String?
+
+  startedAt   DateTime  @default(now())
+  postedAt    DateTime?
+  cancelledAt DateTime?
+
+  startedByUserId String?
+  postedByUserId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  location     Location        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  startedBy    User?           @relation("StocktakeStartedBy", fields: [startedByUserId], references: [id], onDelete: SetNull)
+  postedBy     User?           @relation("StocktakePostedBy", fields: [postedByUserId], references: [id], onDelete: SetNull)
+  lines        StocktakeLine[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([locationId])
+  @@map("stocktakes")
+}
+
+/// One product on a count sheet.
+///
+/// `countedQuantity` is what the person found. `expectedQuantity` is what the
+/// ledger said **at the moment it was counted** — kept as a snapshot so the
+/// sheet still explains itself later, when stock has moved on.
+///
+/// The variance that actually posts is recomputed against live stock inside the
+/// posting transaction. The snapshot is evidence; it is not the arithmetic.
+model StocktakeLine {
+  id             String @id @default(uuid())
+  organizationId String
+  stocktakeId    String
+  productId      String
+
+  /// Base units, like every other quantity in the ledger.
+  countedQuantity  Int
+  /// What the ledger believed when this line was counted.
+  expectedQuantity Int
+
+  note            String?
+  countedByUserId String?
+  countedAt       DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stocktake    Stocktake    @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  countedBy    User?        @relation(fields: [countedByUserId], references: [id], onDelete: SetNull)
+
+  /// One line per product per count: counting a product twice is a correction
+  /// to the first line, not a second opinion.
+  @@unique([stocktakeId, productId])
+  @@index([organizationId])
+  @@index([stocktakeId])
+  @@map("stocktake_lines")
+}
+
+enum StocktakeStatus {
+  open
+  posted
+  cancelled
+}
+
 enum StockAdjustmentReason {
   damage
   expiry

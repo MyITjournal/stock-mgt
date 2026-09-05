@@ -12,6 +12,8 @@ import { StockOperationsService } from './stock-operations.service';
 import { StockLevelService } from './stock-level.service';
 import { ReceivingService } from './receiving.service';
 import { SyncService } from './sync.service';
+import { StocktakeService } from './stocktake.service';
+import { StocktakeController } from './stocktake.controller';
 
 @Module({
   controllers: [
@@ -19,6 +21,7 @@ import { SyncService } from './sync.service';
     SupplierController,
     GoodsReceiptController,
     StockController,
+    StocktakeController,
   ],
   providers: [
     LocationService,
@@ -28,6 +31,7 @@ import { SyncService } from './sync.service';
     StockLevelService,
     ReceivingService,
     SyncService,
+    StocktakeService,
   ],
   // `StockService` is the seam Slice 5 sells through: a sale records an
   // outbound movement rather than touching the ledger itself.

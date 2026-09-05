@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -43,20 +44,46 @@ export class ExpenseController {
   @ApiQuery({ name: 'categoryId', required: false })
   @ApiQuery({ name: 'from', required: false, description: 'ISO date-time.' })
   @ApiQuery({ name: 'to', required: false, description: 'ISO date-time.' })
-  @ApiOperation({
-    summary: 'List expenses',
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description: 'ISO date-time. Switches to delta-sync paging by `updatedAt`.',
+  })
+  @ApiQuery({
+    name: 'cursor',
+    required: false,
+    description: 'The `nextCursor` from the previous sync page.',
+  })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({
+    name: 'includeDeleted',
+    required: false,
+    type: Boolean,
     description:
-      'Newest first, with the period total and a breakdown per category — the shape "what did I spend on transport last month" needs.',
+      'Include soft-deleted rows. A syncing device needs them, or it goes on showing an expense that was removed.',
+  })
+  @ApiOperation({
+    summary: 'List expenses, and page them for delta sync',
+    description:
+      'Newest first, with the period total and a breakdown per category — the shape "what did I spend on transport last month" needs. Passing `since` or `cursor` switches to keyset paging over `(updatedAt, id)`: an expense can be edited and deleted after it is written, so unlike the stock ledger it cannot sync on `createdAt`. Totals always describe the whole filter rather than the page, and always exclude deleted rows.',
   })
   findAll(
     @Query('categoryId') categoryId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('since') since?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('includeDeleted') includeDeleted?: string,
   ) {
     return this.expenses.findAll({
       categoryId,
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,
+      since: since ? new Date(since) : undefined,
+      cursor,
+      limit,
+      includeDeleted: includeDeleted === 'true',
     });
   }
 

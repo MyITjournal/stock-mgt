@@ -48,6 +48,21 @@ export interface InboundInput extends MovementInput {
   batchId: string;
 }
 
+/**
+ * What a pick cost, and how much of that is a guess.
+ *
+ * Two numbers rather than one because the difference matters: cost taken from
+ * an invoice is a fact, and cost taken from the last known rate is an estimate
+ * standing in for paperwork that had not arrived yet. A margin built on the
+ * second kind should be able to say so.
+ */
+export interface PickCost {
+  /** The exact fraction. Rounding belongs to whoever writes the number down. */
+  cost: number;
+  /** The part of `cost` that came from an estimated rate. */
+  estimated: number;
+}
+
 export interface OutboundInput extends MovementInput {
   /** Pin a specific batch instead of letting FEFO choose. */
   batchId?: string;
@@ -201,23 +216,79 @@ export class StockService {
   async costOf(
     movements: readonly Pick<StockMovement, 'batchId' | 'quantity'>[],
     db: StockWriter = this.prisma,
-  ): Promise<number> {
+  ): Promise<PickCost> {
     const batchIds = [...new Set(movements.map((m) => m.batchId))];
-    if (batchIds.length === 0) return 0;
+    if (batchIds.length === 0) return { cost: 0, estimated: 0 };
 
     const batches = await db.stockBatch.findMany({
       where: { id: { in: batchIds } },
-      select: { id: true, totalCost: true, quantityReceived: true },
+      select: {
+        id: true,
+        productId: true,
+        totalCost: true,
+        quantityReceived: true,
+      },
     });
     const byId = new Map(batches.map((batch) => [batch.id, batch]));
 
-    return movements.reduce((total, movement) => {
+    // A batch that received nothing is a placeholder invented to carry a
+    // forced shortfall — it has no invoice, so its rate has to come from
+    // somewhere else.
+    const needEstimate = [
+      ...new Set(
+        batches
+          .filter((batch) => batch.quantityReceived <= 0)
+          .map((batch) => batch.productId),
+      ),
+    ];
+    const estimates = await this.lastKnownRates(db, needEstimate);
+
+    let cost = 0;
+    let estimated = 0;
+
+    for (const movement of movements) {
       const batch = byId.get(movement.batchId);
-      if (!batch || batch.quantityReceived <= 0) return total;
+      if (!batch) continue;
 
       const units = Math.abs(movement.quantity);
-      return total + (units * batch.totalCost) / batch.quantityReceived;
-    }, 0);
+
+      if (batch.quantityReceived > 0) {
+        cost += (units * batch.totalCost) / batch.quantityReceived;
+        continue;
+      }
+
+      const amount = units * (estimates.get(batch.productId) ?? 0);
+      cost += amount;
+      estimated += amount;
+    }
+
+    return { cost, estimated };
+  }
+
+  /**
+   * What one base unit of each product cost on its most recent real delivery.
+   *
+   * Used only to price a forced movement that outran its paperwork. Zero when
+   * the product has never been received at all, which is the one case where the
+   * cost is genuinely unknown rather than merely unrecorded.
+   */
+  private async lastKnownRates(db: StockWriter, productIds: string[]) {
+    const rates = new Map<string, number>();
+    if (productIds.length === 0) return rates;
+
+    const batches = await db.stockBatch.findMany({
+      where: { productId: { in: productIds }, quantityReceived: { gt: 0 } },
+      orderBy: { receivedAt: 'desc' },
+      select: { productId: true, totalCost: true, quantityReceived: true },
+    });
+
+    for (const batch of batches) {
+      if (!rates.has(batch.productId)) {
+        rates.set(batch.productId, batch.totalCost / batch.quantityReceived);
+      }
+    }
+
+    return rates;
   }
 
   /**
