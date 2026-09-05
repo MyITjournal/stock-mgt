@@ -26,13 +26,14 @@ These are load-bearing. Breaking one is a data-integrity bug, not a style choice
 
 ## Where things stand
 
-**Slices 0–6 are done**: rails, tenancy + auth, catalog (products, units, tier pricing, barcodes,
-money in kobo), write idempotency, packaging types, the inventory ledger — `StockMovement`
+**Slices 0–6 are done, plus a 6.1 gap-closing pass**: rails, tenancy + auth, catalog (products,
+units, tier pricing, barcodes, money in kobo), write idempotency, packaging types, the inventory
+ledger — `StockMovement`
 (append-only), locations, suppliers, batches with expiry, receiving, FEFO picking, adjustments
 and transfers, delta-sync cursors — sales: invoices with lines, tier pricing, cost of goods
 sold, and returns — money in: payments with allocations, receivables, customer statements and
 expenses — and reports: a dashboard, profit, sales slices, stock valuation, expiry, movers and
-reorder alerts.
+reorder alerts — plus stocktake, product images, a cash-up, and the no-credit rule.
 
 Two Slice 3 rules worth knowing before you touch stock: **every movement carries a batch** and
 **quantity is signed** (positive in, negative out). And the negative-stock policy — the ledger
@@ -86,10 +87,32 @@ Slice 6 added **reports**, in `src/modules/reports/` — a read-only module with
 `GET /reports/dashboard` is deliberately one call, and cost-bearing reports (profit, valuation,
 margins) are closed to `sales_rep`.
 
-**Next: Slice 6.5 — vendor purchase targets and PDFs**, and **deploying to Render** on the free
-tier. Both are specced in §15, including the four things already known about the Render setup —
-of which the sharpest is that `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into
-any account, so it is test-instance-only.
+**Slice 6.1 closed five recorded gaps.** Four of its rules are load-bearing:
+
+- **Append-only feeds sync on `createdAt`; mutable ones sync on `updatedAt`** (§8). Payments and
+  expenses are mutable — a void or a delete must reach a client that already synced the row — so
+  they use `keysetWhereUpdated`. Clients upsert by id, because that ordering can re-send a row.
+  Pick the right helper deliberately for every new feed; getting it wrong fails silently.
+- **There is no credit limit** (§6). The product does not extend credit as a matter of course, so
+  an unsettled balance *gates* the next credit sale with a 409. An owner or manager overrides by
+  supplying `creditOverrideReason`, which is stored on the sale — supplying the reason is the
+  override, so one can never be recorded without one.
+- **Counting is not adjusting** (§5). A stocktake is recorded by whoever counts and **posted** by
+  an owner or manager; until posted it changes no stock. Posting recomputes variance against live
+  stock and writes `count_correction` adjustments — shortfalls FEFO out, surpluses land on the
+  newest batch at that location, because every movement carries a batch.
+- **`Payment.locationId`** is set automatically by a counter sale, and `GET /reports/collections`
+  groups on it: that is the end-of-shift cash-up (§11).
+- **Goods sold before their delivery is recorded are costed from the last real lot, never at
+  zero** (§2), and the line is flagged `costIsEstimated`; `GET /reports/profit` reports
+  `estimatedCost`. Costing them at zero silently lost the real cost from every report, forever —
+  on a 2–3% margin that is the whole signal.
+
+**Next: Slice 6.5 — vendor purchase targets and PDFs.** Then **deploy to Render** on the free
+tier — deliberately scheduled once the backend is finished and immediately before the web slice,
+so what gets deployed is not a moving target. The Render plan is §15, including that
+`OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is
+test-instance-only.
 
 On printing generally: thermal receipts (Bluetooth ESC/POS) are the mobile app's job — the server
 cannot reach a paired printer — and `GET /sales/:id/receipt` is already the stable payload for
