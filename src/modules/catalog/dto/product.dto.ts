@@ -114,6 +114,16 @@ export class CreateProductDto {
   @Min(0)
   reorderPoint?: number;
 
+  @ApiPropertyOptional({
+    example: 'https://cdn.example.com/peak-milk-400g.jpg',
+    description:
+      'A picture of the product. Set it directly when the image is already hosted somewhere; use POST /products/:id/image to upload one instead.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  imageUrl?: string;
+
   @ApiProperty({
     type: [ProductUnitInput],
     description:

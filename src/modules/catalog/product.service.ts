@@ -9,6 +9,7 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { splitTaxInclusive } from '../../common/money/money';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { resolveUnitPrice } from './pricing';
 import {
   CreateProductDto,
@@ -24,9 +25,26 @@ const PRODUCT_INCLUDE = {
   prices: { include: { tier: true, unit: true } },
 } as const;
 
+/**
+ * One uploaded file, typed structurally.
+ *
+ * The multer types are not installed, and pulling in a dependency to name four
+ * fields is not worth it. Multer hands us a buffer; this names the part of that
+ * we actually use.
+ */
+export interface UploadedImage {
+  buffer: Buffer;
+  mimetype: string;
+  size: number;
+  originalname: string;
+}
+
 @Injectable()
 export class ProductService {
-  constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
+  constructor(
+    @Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma,
+    private readonly images: CloudinaryService,
+  ) {}
 
   async create(input: CreateProductDto) {
     assertExactlyOneBaseUnit(input.units);
@@ -59,6 +77,7 @@ export class ProductService {
           ...(input.reorderPoint !== undefined && {
             reorderPoint: input.reorderPoint,
           }),
+          ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
           units: {
             create: input.units.map((unit) => ({
               organizationId,
@@ -158,6 +177,7 @@ export class ProductService {
           ...(input.reorderPoint !== undefined && {
             reorderPoint: input.reorderPoint,
           }),
+          ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
         },
         include: PRODUCT_INCLUDE,
       });
@@ -231,6 +251,66 @@ export class ProductService {
     }
 
     return { productId, ...resolveUnitPrice(product, unit, tierId) };
+  }
+
+  /**
+   * Uploads a product photo and points the product at it.
+   *
+   * The previous image is deleted from the CDN afterwards rather than before:
+   * if the upload fails, the product keeps the picture it had. Deleting first
+   * would trade a failed upload for no image at all.
+   *
+   * A failure to delete the old one is swallowed on purpose. The new image is
+   * already saved and the product is correct; an orphaned file on the CDN is
+   * not worth failing a request the user experienced as successful.
+   */
+  async setImage(id: string, file: UploadedImage) {
+    this.images.assertConfigured();
+    const product = await this.findOneOrFail(id);
+
+    const uploaded = await this.images.uploadImage(
+      file.buffer,
+      `products/${TenantContext.requireOrganizationId()}`,
+    );
+
+    const updated = await this.prisma.product.update({
+      where: { id },
+      data: {
+        imageUrl: uploaded.secure_url,
+        imagePublicId: uploaded.public_id,
+      },
+      include: PRODUCT_INCLUDE,
+    });
+
+    if (product.imagePublicId && product.imagePublicId !== uploaded.public_id) {
+      await this.images
+        .deleteImage(product.imagePublicId)
+        .catch(() => undefined);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Removes the picture. Only deletes from the CDN when we were the ones who
+   * put it there — a URL somebody supplied points at a file that is not ours.
+   */
+  async removeImage(id: string) {
+    const product = await this.findOneOrFail(id);
+
+    const updated = await this.prisma.product.update({
+      where: { id },
+      data: { imageUrl: null, imagePublicId: null },
+      include: PRODUCT_INCLUDE,
+    });
+
+    if (product.imagePublicId) {
+      await this.images
+        .deleteImage(product.imagePublicId)
+        .catch(() => undefined);
+    }
+
+    return updated;
   }
 
   private async findOneOrFail(id: string) {

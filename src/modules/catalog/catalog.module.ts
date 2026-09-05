@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import {
   CategoryController,
   PackagingTypeController,
@@ -14,6 +15,7 @@ import { BarcodeService } from './barcode.service';
 import { ScanService } from './scan.service';
 
 @Module({
+  imports: [CloudinaryModule],
   controllers: [
     CategoryController,
     PackagingTypeController,
