@@ -4,7 +4,7 @@ The reasoning behind how this app is built. Code shows *what*; this records *why
 what was rejected — the part that is expensive to reconstruct.
 
 Read this first when picking the project back up. Update it whenever a decision is made
-or reversed. Last updated: 2026-08-30, end of Slice 6.
+or reversed. Last updated: 2026-08-31, end of the Slice 6.1 gap-closing pass.
 
 ---
 
@@ -33,8 +33,9 @@ and a wholesale route have to coexist in the same model rather than one being as
 | 4 | Sales: invoices with lines, returns | done |
 | 5 | Money in: payments, receivables, expenses | done |
 | 6 | Reports: dashboard, profit, sales, stock valuation, expiry, movers, alerts | done |
+| 6.1 | Gap-closing: sync correctness, cash-up, the no-credit rule, images, stocktake | done |
 | 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | next |
-| — | **Deploy to Render** — free tier, before a domain | next |
+| — | **Deploy to Render** — free tier, once the backend is finished and before the web slice | next |
 | 7 | Web dashboard | |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
@@ -98,6 +99,46 @@ rounded average), roundings never compound, and every average is explainable fro
 
 `Product.costPrice` is a cached rounded snapshot **for display only** — never an input to a
 calculation.
+
+### When the goods outrun the paperwork, estimate — and say so
+
+Stock arriving and being sold before the delivery note is entered is normal in this trade, not an
+edge case. When it happens the outbound movement is forced through a shortfall onto a batch that
+has no invoice behind it.
+
+That batch used to cost **nothing**, and the consequence was worse than it looks:
+
+```
+10 cartons arrive, ₦600,000
+1 force-sold before the paperwork  → cost of goods sold 0
+delivery then recorded, 10 @ ₦600,000
+the remaining 9 sell at ₦60,000 each → ₦540,000
+
+total cost ever recorded  ₦540,000
+actually paid             ₦600,000
+```
+
+₦60,000 of real cost never appears in any report, **permanently** — and stock levels still
+reconcile, so nothing looks wrong. On a 2–3% margin that is the difference between a profit and a
+loss, reported as a sale with 100% margin.
+
+So the rate now comes from **the product's most recent real delivery**, and the sale line carries
+`costIsEstimated`. A guess close to the truth beats a zero that is certainly wrong, and the flag
+is what stops it passing as a measurement: `GET /reports/profit` reports `estimatedCost` and
+`estimatedLines`, so an owner reading a thin margin can see how much of it rests on paperwork that
+had not arrived.
+
+Two deliberate limits:
+
+- **Zero survives in one case**: a product that has never been received at all. There is no
+  earlier rate to borrow, and the cost is genuinely unknown rather than merely unrecorded.
+- **Old sales are never recomputed** when the delivery is finally entered. Rewriting a margin
+  somebody has already read and acted on is exactly the spreadsheet behaviour this design exists
+  to escape — see §1. The estimate stands, flagged, and the truth arrives with the next lot.
+
+This reverses an earlier decision that costed such a batch at zero on the grounds that it had no
+invoice to divide. That was defensible and wrong: it optimised for the purity of the number over
+the honesty of the total.
 
 ### Free goods ("buy 19, get 1 free")
 
@@ -178,6 +219,32 @@ factor 2.5, which is not an integer, so it cannot be created. The business rule 
 quarter of a 10-pack") and the type constraint are the same rule. For a 12-pack, quarter units
 *would* be allowed at factor 3 — also correct.
 
+### The base unit is the piece, even where pieces are not sold
+
+Confirmed with the owner, 2026-08-31. Most products here are not sold in pieces — a Soft Cup
+carton is 8 packs of 3, and the pack is the smallest thing that leaves the shop. The tempting
+setup is therefore `pack = 1`.
+
+**Set the piece as the base anyway**, with `pack` and `carton` as units above it. Two reasons:
+
+- Some vendors *do* break packs, and the model has to hold them.
+- The choice is close to irreversible. Factors must be integers, so if `pack = 1` and a piece is
+  later needed, a piece would want factor ⅓ — which the divisibility rule forbids. Undoing it
+  means rewriting every movement, sale line and batch quantity in history, against an append-only
+  ledger designed to resist precisely that.
+
+The cost of choosing piece is small and one-directional: stock counts read in pieces rather than
+packs. The cost of choosing pack and being wrong is a migration of the whole ledger.
+
+This is also what makes the spreadsheet's fractions go away. A sheet tracking cartons records
+`0.25` and needs the carton size to interpret it; the ledger records 2 packs — or 6 pieces — as an
+integer, and the invoice says "2 packs".
+
+**Known gap**: nothing currently *forbids* selling a unit. `isDefaultSelling` only chooses which
+one is pre-selected, and pricing falls back to `basePrice × factor` for any unit without a tier
+price, so a piece stays sellable if a client offers it. Enforcing "we never sell pieces" needs a
+flag that does not yet exist — see §15.
+
 ### Pricing is keyed by (tier, unit)
 
 `ProductPrice` is `(product, tier, unit) → price`, **not** a base price multiplied by the factor.
@@ -186,6 +253,23 @@ only multiply cannot express it. `Product.basePrice` is the fallback when no tie
 
 A **PriceTier** is a customer class — Retail, Wholesale, Distributor. Every organization gets a
 default "Retail" tier at registration so pricing always has a home.
+
+### Product images: two columns, and neither is required
+
+`imageUrl` is what clients render. `imagePublicId` is what lets the previous image actually be
+deleted from the CDN when it is replaced — store only the URL and every change leaks an orphan
+nobody will ever find.
+
+The public id stays null when the URL was **supplied directly**, which is the second point: a
+business that already hosts its product shots is not forced through our uploader, and a server
+with no image hosting configured can still show pictures. `POST /products/:id/image` exists for
+everyone else, and returns a **503 naming the missing environment variables** rather than failing
+somewhere inside the CDN's SDK — the credentials are optional in `env.ts` and unset on every
+development machine, so that path is the normal one, not the exceptional one.
+
+Replacing deletes the old image *after* the new one is stored, so a failed upload leaves the
+product with the picture it had. A failed delete is swallowed: the product is already correct, and
+an orphaned file is not worth failing a request the user experienced as working.
 
 ### Products vs packaging
 
@@ -294,6 +378,41 @@ goods almost certainly came from that lot. When the product has never been recei
 location, there is no lot to blame, so a batch with `quantityReceived = 0` and no cost is opened
 to hang it on — which is also how those placeholder batches are recognised.
 
+### Stocktake: counting is not adjusting
+
+A physical count is recorded first and **posted** second, and the two are
+deliberately different acts by different people. A storekeeper walks the aisles
+and records what is on the shelf; an owner or manager looks at the variance and
+decides it is real. Until it is posted, an open stocktake changes nothing about
+stock on hand — it is a claim about the world, not a change to it.
+
+The split is not ceremony. A counter who can both report a shortfall and approve
+it can walk out with the difference, which is why posting is restricted to
+owner and manager while counting is open to the storekeeper and the rep. Same
+reasoning as the forced-movement override above.
+
+Posting writes ordinary `adjustment` movements with reason `count_correction`,
+so the ledger stays the only source of truth for stock and a posted count is
+readable afterwards as exactly the movements it caused. Nothing about a
+stocktake is a second stock table.
+
+Three rules that are easy to get wrong:
+
+- **The variance that posts is recomputed against live stock**, not against the
+  figure captured while counting. Goods move between the count and the decision,
+  and the ledger has to record what was true when the correction was made. The
+  snapshot on the line is kept as *evidence* — so the sheet still explains itself
+  weeks later — but it is never the arithmetic.
+- **A surplus needs a lot, because every movement carries a batch.** Extra units
+  found on a shelf have no lot of their own, so they land on the most recently
+  received batch still holding stock there, which keeps the cost basis current.
+  Failing that, the newest batch of that product anywhere. Only a product that
+  has never been received needs a lot invented, and that one is honestly worth
+  nothing until somebody says otherwise — §2 stores what was paid, and nothing
+  was. Shortfalls need no such rule: they leave FEFO, exactly as a sale would.
+- **One open count per location.** Two would post variances against each other's
+  corrections, and the second would be measuring the first.
+
 ### Unit conversion happens once, on write
 
 The vendor speaks in cartons; the ledger speaks in base units. `GoodsReceiptLine` stores what was
@@ -398,6 +517,35 @@ is not part of what the sale was worth.
 
 The rules the payment itself obeys are §11.
 
+### There is no credit limit, because there is no credit facility
+
+Confirmed with the owner, 2026-08-31: **the product does not sell on credit as a
+matter of course.** Credit happens — a shop takes goods on Tuesday and pays on
+Friday — but it is an exception, and the rule the business actually runs on is
+that what is owed is cleared before more goes out.
+
+So there is no `creditLimit` column and there never was a reason for one. A
+limit is a number you top up against; this is a gate. Selling on credit to a
+customer who already has an unsettled balance is refused with a **409 naming the
+invoices and the amount**, and an owner or manager can overrule it by supplying
+`creditOverrideReason`, which is stored on the sale.
+
+Three details worth keeping:
+
+- **Supplying the reason *is* the override.** There is no separate boolean, so an
+  override can never be recorded without a reason — the same trick as voiding a
+  payment, and for the same purpose.
+- **Only positive balances count.** A customer the business owes money to, after
+  returning goods they had paid for, is not in debt; blocking their next purchase
+  over it would be nonsense.
+- **Paying in full is never blocked.** The rule is about credit, not about the
+  customer. Someone who owes can still buy for cash, and does.
+
+Encoding this stops a rep letting one shop's debt compound across three
+deliveries, which is how a distributor's receivables become uncollectable. The
+ledger still records whatever actually happened; it is the *write path* that is
+opinionated, exactly as with negative stock (§5).
+
 ### Printing: the server serves payloads and PDFs, the device drives the printer
 
 `GET /sales/:id/receipt` returns a deliberately narrow payload — what the customer is handed and
@@ -476,6 +624,33 @@ response never arrived, so the client cannot tell and resends.
 
 The append-only ledger is what makes offline merging tractable — movements from three devices
 combine; a mutable quantity column would corrupt.
+
+### Append-only feeds sync on `createdAt`; mutable ones sync on `updatedAt`
+
+This is the rule, and getting it wrong is silent. A feed ordered by `createdAt` only ever tells a
+client about rows it has never seen. That is exactly right for the stock ledger, which is
+append-only: a movement is written once and never changes.
+
+It is wrong the moment a row can change after it is written. Voiding a payment moves `updatedAt`
+and leaves `createdAt` alone, so a client that had already paged past that payment would never
+hear about the void — it would go on showing an invoice as settled, which is money the business
+does not have on a screen nobody thinks to doubt. Deleting an expense has the same shape.
+
+Ordering by `updatedAt` fixes it because a row only ever moves **forward** in the ordering.
+Moving forward can re-send a row the client already has, which is why **clients must upsert by
+id**; it cannot skip one, which is the failure that matters. A duplicate is a no-op; a missed
+void is not.
+
+`keysetWhereCreated` and `keysetWhereUpdated` in
+[`keyset-cursor.ts`](../src/common/pagination/keyset-cursor.ts) name the two cases so the choice
+has to be made deliberately for each new feed. Today: movements and sales are append-only,
+payments and expenses are mutable. Expenses also take an explicit `includeDeleted` flag, because
+a syncing device needs the tombstone while a person reading a list does not.
+
+**Derived figures are a client-side concern.** A sale's balance changes when a payment against it
+is voided, without the `Sale` row itself being touched — so clients compute balance from the
+payments and returns they have synced, using the same `balance.ts` arithmetic the server uses.
+That is why getting the *payment* feed right is what makes the sale's balance right.
 
 ---
 
@@ -601,6 +776,21 @@ because a statement excludes voided rows (they remain on `GET /payments`).
 `LIVE_ALLOCATIONS` is the Prisma fragment that filters voided payments out of every query
 feeding it. They sit in the same file deliberately — spread across four `include` blocks, the
 fourth is the one that gets forgotten.
+
+### A payment knows which counter took it
+
+`Payment.locationId`, set automatically when a sale banks its own payment — the counter that rang
+it up is the counter that took the cash, so the end-of-shift cash-up needs no extra input from the
+person selling. Optional on a standalone payment, because a transfer landing in the bank belongs
+to no till.
+
+`GET /reports/collections` groups on it, which is the cash-up. Payments with no location are
+reported under their own row rather than dropped or forced onto one: "not at a counter" is a real
+category, and hiding it would make the tills fail to add up to the total.
+
+Added before there were rows worth backfilling. Without the column the question is not merely
+hard, it is unanswerable from the data — and it is the first thing anyone asks the day two people
+are collecting money.
 
 ### Receivables is a sorted list, not 30/60/90 buckets
 
@@ -766,9 +956,30 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6 done.** 288 tests across 23 suites, twelve migrations,
-`typecheck`/`lint`/`build` clean, and `npm run smoke` green at 240 checks against a running
-server.
+**Slices 0–6 done, plus the 6.1 gap-closing pass.** 300 tests across 23 suites, eighteen
+migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 283 checks against a
+running server.
+
+Slice 6.1 (2026-08-31) closed five of the gaps recorded in §15, in this order:
+
+1. **Delta sync on mutable rows.** Payments and expenses now page by `updatedAt`, so a void or a
+   deletion reaches a client that had already synced the row — see §8. Expenses joined the sync
+   path at the same time, with an explicit `includeDeleted` for tombstones.
+2. **`Payment.locationId`**, and `GET /reports/collections` grouping on it: the end-of-shift
+   cash-up (§11).
+3. **The no-further-credit rule** (§6). Not a credit limit — the owner confirmed the product does
+   not extend credit as a matter of course, so an unsettled balance gates the next credit sale,
+   overridable by an owner or manager with a recorded reason.
+4. **Product images** (§4): `imageUrl`/`imagePublicId`, an upload endpoint, and an honest 503 when
+   image hosting is unconfigured — which is every development machine.
+5. **Stocktake** (§5): `Stocktake` and `StocktakeLine`, counting separated from posting, posting
+   restricted to owner and manager.
+6. **Cost when the paperwork is late** (§2): a forced shortfall is priced from the product’s last
+   real delivery instead of at zero, and the line is flagged `costIsEstimated` so the profit report
+   can say how much margin rests on a guess. Raised by the owner from the equivalent Excel
+   problem; the residual gaps are §15.
+
+`CloudinaryService` had been dead code since Slice 2; the image work is the first thing to use it.
 
 Slice 6 (reports) added `src/modules/reports/`: three pure modules — `period.ts` (timezone-aware
 windows), `profit.ts` and `valuation.ts` — under a `ReportService` and a `DashboardService`, plus
@@ -828,8 +1039,28 @@ SMOKE_SERVER_LOG=server.log npm run smoke
 Its load-bearing assertion is that **the sum of every movement equals the sum of the stock
 levels**. A sale that deducts wrongly breaks that equality and nothing else does.
 
-Verified against a running server, not just compiled. Slice 6's checks — and the load-bearing
-one is **reconciliation**, the analogue of the ledger-sum check below: a report that quietly
+Verified against a running server, not just compiled. Slice 6.1's checks:
+
+- a client checkpoints the payment feed, a payment is voided, and **the void comes back on the
+  next `since=` pull** — the regression the `updatedAt` ordering exists for
+- a deleted expense reaches a syncing client as a tombstone, while the totals go on ignoring it
+- a counter sale banks its payment at the counter that rang it up; the cash-up separates money
+  that never touched a till, and every location adds back up to the total collected
+- a customer who owes nothing can take goods on credit; a second credit sale is refused while the
+  first stands; the same customer can still buy for cash; an owner overrides with a reason that is
+  kept on the sale
+- a product can point at an image hosted elsewhere; uploading with no image hosting configured is
+  a 503 that names the variables to set
+- **recording a count leaves stock exactly as it was** — the whole point of separating counting
+  from posting — and posting then moves it, writes `count_correction` movements that appear on the
+  audit report, and refuses to post twice
+- a sale forced through before its delivery was recorded is **no longer costed at zero**: it
+  borrows the rate from the last real lot, is flagged as estimated, and the profit report says how
+  much of the month rests on that guess
+- after all of that, **the ledger still sums to what the levels say**: the suite's oldest
+  invariant, re-checked once corrections have been posted through it
+
+Slice 6's checks — and the load-bearing one is **reconciliation**, the analogue of the ledger-sum check below: a report that quietly
 disagrees with the rows it summarises is this slice's failure mode, and nothing else catches it.
 
 - the profit report's gross sales equal the sum of the invoices from `GET /sales`, and its
@@ -991,38 +1222,73 @@ sign in as, so it is covered by construction rather than by demonstration.
    That is precisely why it had to be pinned in the repo — the policy was one machine's local
    config, and it does not travel with a clone.
 
-5. **Smaller things noticed while building payments**, none urgent:
+5. **Smaller things noticed while building payments.** All closed in 6.1 except the first, which
+   is deliberately still open:
+
    - `ReceivableService.outstanding` loads every sale for the organization and computes balances
-     in memory. Correct, and fine at the volumes a distributor reaches this year; it becomes a SQL
-     aggregate the first time a business has ten thousand invoices. The rewrite is contained
-     because `saleBalance` already names the arithmetic.
-   - **Expenses are not on the delta-sync path.** Payments page by keyset with the `SYNC_LAG_MS`
-     window; expenses return everything matching a filter. Mobile will need the cursor, and the
-     helpers in `keyset-cursor.ts` already exist.
-   - **A void does not reach delta sync.** `GET /payments` pages by keyset over `(createdAt, id)`,
-     and voiding a payment changes `voidedAt`/`updatedAt` but not `createdAt` — so a client that
-     already synced past that row never learns it was voided, and goes on showing an invoice as
-     settled. The stock ledger does not have this problem because it is append-only; payments are
-     the first mutable row on a sync path. Nothing is broken today, because no client syncs yet.
-     **Fix it in the mobile slice, before a device ever caches a payment**: page the payment feed
-     by `updatedAt` rather than `createdAt`, keeping the same `SYNC_LAG_MS` window, and let
-     clients upsert by id.
-   - **`Payment` carries no `locationId`**, so "which counter took this cash" cannot be answered.
-     It does not matter until someone wants a cash-up at the end of a shift; it matters a lot on
-     the day they do, and the column is much cheaper to add before there are rows.
+     in memory. **Deliberately left alone on 2026-08-31**, and worth writing down why, because it
+     looks like an obvious cleanup:
 
-6. **Gaps raised on 2026-08-30 and deliberately not scheduled.** Recorded so the next session
-   weighs them rather than rediscovering them; none is a decision yet.
+     It is correct, and there is no evidence it is slow — §12 says compute on read until something
+     *is* slow, and nobody has measured anything. More importantly, the rewrite would move balance
+     arithmetic into SQL, giving this system **two implementations of what a sale still owes**.
+     That is precisely the failure §11 warns about: the void filter, the returns netting and the
+     sign handling would all have to be re-expressed and kept in step with `saleBalance` forever,
+     and the first divergence would show up as a dashboard quietly disagreeing with the
+     receivables screen it links to.
 
-   - **There is no deployment story at all.** No `Dockerfile`, no compose file, no CI, and no
-     backup for a database that will hold other businesses' money records. Everything so far has
-     run on one laptop. This is the only item on the list that is a *business* risk rather than a
-     missing feature, and it is a slice, not a chore.
-   - **No customer credit limit.** Receivables now make "this shop is ₦400,000 down and 60 days
-     late" answerable for the first time, which is exactly the input a credit route needs at the
-     point of sale — and the natural companion to the slice just finished.
-   - **No stocktake.** Per-item adjustments exist; a periodic count session (count sheet →
-     variance → posted adjustments) does not. `scan.service.ts` already names stocktake as a
-     future consumer of the scan seam.
-   - **Product images.** A Cloudinary service exists but is wired to user photos only. Both the
-     web dashboard and the mobile catalog will want them.
+     The trigger to revisit: a real organization with enough invoices that the query is measurably
+     slow. Then the right move is probably a narrowing `where` that still feeds `saleBalance`, not
+     a SQL reimplementation of it.
+
+   - ~~Expenses are not on the delta-sync path~~ — **done**, §8.
+   - ~~A void does not reach delta sync~~ — **done**, §8. Both feeds now page by `updatedAt`, and
+     smoke proves the void comes back to a client that had already synced the payment.
+   - ~~`Payment` carries no `locationId`~~ — **done**, §11.
+
+6. **Cost when the paperwork is late — what is still open.** §2 now estimates rather than costing
+   at zero, which stops cost disappearing permanently. Three related problems remain, and they are
+   worth understanding together because they all come from the same habit:
+
+   - **The silent case.** If the *old* lot still shows stock, a sale of newly arrived goods is
+     costed at the old rate with no error, no flag and nothing to see. Unlike the forced case there
+     is no shortfall, so nothing marks it. Aggregate cost is still right — the old lot is depleted
+     at its own rate and the new one arrives at its own — but **the attribution is wrong**: this
+     month's margin is overstated and a later month's understated. On a 2–3% margin that is the
+     whole signal. There is no way to detect it from the data; only recording deliveries promptly
+     prevents it.
+   - **Placeholder batches are never reconciled.** A forced shortfall leaves a batch sitting at a
+     negative quantity forever. The real delivery arrives as a *separate* lot, so the two never
+     meet. Worth a routine that matches a placeholder against the next receipt of the same product
+     and location, and closes it out.
+   - **Valuation ignores them.** `unitCost` returns 0 when `quantityReceived` is 0, so a negative
+     placeholder contributes nothing to stock value rather than reducing it. Small, and consistent
+     with not knowing the cost, but it means valuation and the ledger disagree slightly whenever a
+     forced sale is outstanding.
+
+7. **A "not sellable" flag on `ProductUnit`.** Raised 2026-08-31 with the base-unit decision (§4).
+   Today `isDefaultSelling` picks the default and nothing forbids selling any unit, so "we never
+   sell pieces" is convention rather than rule. Cheap to add; only matters once real reps are
+   using it.
+
+8. **Receiving must be a 30-second action on a phone.** Not a nice-to-have — it is the *only*
+   real fix for the silent case above, and the owner has confirmed it would change day-to-day
+   behaviour more than any report. The target is: scan or pick the product, enter cartons and the
+   invoice total, done, standing beside the van. If it is slower than writing on the delivery note,
+   people will keep writing on the delivery note and the cost data stays approximate. Treat it as a
+   **design constraint on the mobile slice**, not a screen to be specified later.
+
+9. **Gaps raised on 2026-08-30.** All but deployment were closed in 6.1 on 2026-08-31; the
+   decisions they produced are in the sections named.
+
+   - **There is no deployment story at all** — still true. No `Dockerfile`, no compose file, no
+     CI, and no backup for a database that will one day hold other businesses' money records.
+     Everything so far has run on one laptop. It remains the only item that is a *business* risk
+     rather than a missing feature. **Scheduled deliberately late** (owner, 2026-08-31): once the
+     backend is finished, immediately before the web slice, so the thing being deployed is
+     complete rather than a moving target. The plan is item 1 above.
+   - ~~No customer credit limit~~ — resolved, and the answer was that **there is no credit
+     limit**: see §6. The owner's correction, that credit is exceptional and must be cleared
+     rather than capped, made the column unnecessary and the rule better.
+   - ~~No stocktake~~ — **done**, §5.
+   - ~~Product images~~ — **done**, §4.

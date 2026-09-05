@@ -49,6 +49,15 @@ export class CreatePaymentDto {
   @IsUUID()
   customerId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Which counter or van took the money, for the end-of-shift cash-up. Omit it for a transfer that lands in the bank rather than at a till.',
+  })
+  @IsOptional()
+  @IsUUID()
+  locationId?: string;
+
   /**
    * Signed, in kobo: positive is money received, negative is money handed
    * back. One row per thing that actually happened — a single transfer

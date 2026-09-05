@@ -5,7 +5,7 @@ import {
   SYNC_LAG_MS,
   decodeCursor,
   encodeCursor,
-  keysetWhere,
+  keysetWhereCreated,
 } from '../../common/pagination/keyset-cursor';
 
 /** How many movements one page returns when the caller does not say. */
@@ -44,7 +44,7 @@ export class SyncService {
         ...(query.locationId && { locationId: query.locationId }),
         AND: [
           { createdAt: { lte: syncedThrough } },
-          ...keysetWhere(cursor, query.since),
+          ...keysetWhereCreated(cursor, query.since),
         ],
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -64,7 +64,7 @@ export class SyncService {
        */
       nextCursor:
         rows.length === limit && last
-          ? encodeCursor({ createdAt: last.createdAt, id: last.id })
+          ? encodeCursor({ at: last.createdAt, id: last.id })
           : null,
       syncedThrough,
       hasMore: rows.length === limit,

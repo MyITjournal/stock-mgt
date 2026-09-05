@@ -36,6 +36,16 @@ export interface PeriodQuery {
   to?: Date;
 }
 
+/**
+ * Profit for a window, plus how much of its cost is estimated rather than
+ * invoiced. The annotation travels with the figures so a caller cannot show
+ * the margin while quietly dropping the caveat.
+ */
+export type PeriodProfit = Profit & {
+  estimatedCost: Minor;
+  estimatedLines: number;
+};
+
 export interface SalesGroup {
   key: string;
   label: string;
@@ -115,7 +125,7 @@ export class ReportService {
    * what makes a return land in the period it happened rather than reopening
    * the month of the sale it reverses (`profit.ts`).
    */
-  async profit(period: Period): Promise<Profit> {
+  async profit(period: Period): Promise<PeriodProfit> {
     const window = { gte: period.from, lt: period.to };
 
     const [sales, returns, expenses] = await Promise.all([
@@ -137,7 +147,7 @@ export class ReportService {
       }),
     ]);
 
-    return computeProfit({
+    const profit = computeProfit({
       sales,
       returns: returns.map((row) => ({
         refundAmount: row.refundAmount,
@@ -146,6 +156,32 @@ export class ReportService {
       })),
       expenses,
     });
+
+    return { ...profit, ...(await this.estimatedCost(period)) };
+  }
+
+  /**
+   * How much of the period's cost of goods rests on a guess.
+   *
+   * A line is flagged when goods were sold before the delivery they came from
+   * was recorded, so the rate had to be taken from the product's last real lot.
+   * The margin is still the best available answer — but an owner reading a thin
+   * margin deserves to know which part of it is estimated, rather than having
+   * the guess blend invisibly into the facts.
+   */
+  private async estimatedCost(period: Period) {
+    const lines = await this.prisma.saleLine.findMany({
+      where: {
+        costIsEstimated: true,
+        sale: { occurredAt: { gte: period.from, lt: period.to } },
+      },
+      select: { costOfGoodsSold: true },
+    });
+
+    return {
+      estimatedCost: lines.reduce((sum, line) => sum + line.costOfGoodsSold, 0),
+      estimatedLines: lines.length,
+    };
   }
 
   // -- Sales ----------------------------------------------------------------
@@ -351,22 +387,49 @@ export class ReportService {
     });
   }
 
-  /** Money actually received in the window — collections, not sales. */
+  /**
+   * Money actually received in the window — collections, not sales.
+   *
+   * `byLocation` is the end-of-shift cash-up: what each counter or van took,
+   * which is the question `Payment.locationId` exists to answer. Payments with
+   * no location are a real category rather than a gap — a transfer landing in
+   * the bank belongs to no till — so they get their own row instead of being
+   * dropped or forced onto one.
+   */
   async collections(period: Period) {
     const payments = await this.prisma.payment.findMany({
       where: {
         voidedAt: null,
         occurredAt: { gte: period.from, lt: period.to },
       },
-      select: { amount: true, method: true },
+      select: {
+        amount: true,
+        method: true,
+        location: { select: { id: true, name: true } },
+      },
     });
 
     const byMethod = new Map<string, Minor>();
+    const byLocation = new Map<
+      string,
+      { label: string; total: Minor; count: number }
+    >();
+
     for (const payment of payments) {
       byMethod.set(
         payment.method,
         (byMethod.get(payment.method) ?? 0) + payment.amount,
       );
+
+      const key = payment.location?.id ?? 'unassigned';
+      const row = byLocation.get(key) ?? {
+        label: payment.location?.name ?? 'Not at a counter',
+        total: 0,
+        count: 0,
+      };
+      row.total += payment.amount;
+      row.count += 1;
+      byLocation.set(key, row);
     }
 
     return {
@@ -376,6 +439,9 @@ export class ReportService {
         method,
         total,
       })),
+      byLocation: [...byLocation.entries()]
+        .map(([locationId, row]) => ({ locationId, ...row }))
+        .sort((a, b) => b.total - a.total),
     };
   }
 

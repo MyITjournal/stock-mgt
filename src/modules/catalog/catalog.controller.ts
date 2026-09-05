@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -10,10 +11,14 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiHeader,
   ApiOperation,
   ApiQuery,
@@ -25,6 +30,7 @@ import { CategoryService } from './category.service';
 import { PackagingTypeService } from './packaging-type.service';
 import { PriceTierService } from './price-tier.service';
 import { ProductService } from './product.service';
+import type { UploadedImage } from './product.service';
 import { BarcodeService } from './barcode.service';
 import { ScanService } from './scan.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
@@ -43,6 +49,20 @@ import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.int
 
 /** Editing the catalog is a management job; every member may read it. */
 const CATALOG_EDITORS = [OrgRole.owner, OrgRole.manager];
+
+/** 5 MB. A product photo taken on a phone sits well under this. */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Checked here as well as by the CDN, so a wrong file is refused before it is
+ * sent anywhere rather than after.
+ */
+const ACCEPTED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+];
 
 @ApiTags('catalog')
 @ApiBearerAuth('JWT')
@@ -279,6 +299,55 @@ export class ProductController {
   @ApiOperation({ summary: 'Delete a product' })
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.products.remove(id);
+  }
+
+  @Post(':id/image')
+  @Roles(...CATALOG_EDITORS)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      // Held in memory rather than written to disk: the buffer goes straight to
+      // the CDN, and a server that never writes uploads has nothing to clean up.
+      limits: { fileSize: MAX_IMAGE_BYTES },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({
+    summary: 'Upload a product photo',
+    description:
+      'Replaces any existing photo, deleting the old one from the CDN afterwards. Returns 503 when image hosting is not configured on this server — set `imageUrl` directly instead if the picture is already hosted somewhere.',
+  })
+  uploadImage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file?: UploadedImage,
+  ) {
+    if (!file) {
+      throw new BadRequestException(
+        'No file was uploaded. Send it as multipart/form-data under the field name "file".',
+      );
+    }
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException(
+        `${file.mimetype} is not an image this server accepts. Use one of: ${ACCEPTED_IMAGE_TYPES.join(', ')}.`,
+      );
+    }
+    return this.products.setImage(id, file);
+  }
+
+  @Delete(':id/image')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({
+    summary: 'Remove a product photo',
+    description:
+      'Only deletes from the CDN when the image was uploaded here; a URL somebody supplied points at a file that is not ours to remove.',
+  })
+  removeImage(@Param('id', ParseUUIDPipe) id: string) {
+    return this.products.removeImage(id);
   }
 
   @Get(':id/barcodes')

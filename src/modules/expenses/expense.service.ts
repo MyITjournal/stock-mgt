@@ -3,8 +3,30 @@ import { PaymentMethod } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import {
+  SYNC_LAG_MS,
+  decodeCursor,
+  encodeCursor,
+  keysetWhereUpdated,
+} from '../../common/pagination/keyset-cursor';
 import { ExpenseCategoryService } from './expense-category.service';
 import { CreateExpenseDto, UpdateExpenseDto } from './dto/expense.dto';
+
+/** How many expenses one sync page returns when the caller does not say. */
+const DEFAULT_PAGE = 100;
+const MAX_PAGE = 500;
+
+export interface ExpenseQuery {
+  categoryId?: string;
+  from?: Date;
+  to?: Date;
+  /** Sync mode: page by `updatedAt` from here. */
+  cursor?: string;
+  since?: Date;
+  limit?: number;
+  /** Include soft-deleted rows, so a syncing client learns about removals. */
+  includeDeleted?: boolean;
+}
 
 const EXPENSE_INCLUDE = {
   category: { select: { id: true, name: true } },
@@ -49,42 +71,93 @@ export class ExpenseService {
   }
 
   /**
-   * Expenses in a window, newest first, with the period total and a breakdown
-   * per category — which is the shape "what did I spend on transport last
-   * month" actually needs.
+   * Expenses in a window, with the period total and a breakdown per category —
+   * the shape "what did I spend on transport last month" actually needs — and,
+   * when asked, paged for delta sync.
+   *
+   * **Two readers, one endpoint.** A person wants the newest first and does not
+   * want to see what was deleted. A syncing device wants a stable order it can
+   * resume from, and *does* need to hear about deletions, or it keeps showing an
+   * expense that was removed a week ago.
+   *
+   * So sync mode is opt-in and explicit: pass `cursor` or `since` to page by
+   * `updatedAt` (an expense is mutable — it can be edited and soft-deleted —
+   * which is why it follows the `keysetWhereUpdated` rule), and
+   * `includeDeleted` to receive the tombstones. The defaults are unchanged, so
+   * the human view stays exactly as it was.
+   *
+   * `total` and `byCategory` always describe the **whole filter**, never the
+   * page, and always exclude deleted rows. A total that silently meant "this
+   * page" would be worse than no total.
    */
-  async findAll(filter: { categoryId?: string; from?: Date; to?: Date } = {}) {
+  async findAll(filter: ExpenseQuery = {}) {
+    const syncing = Boolean(filter.cursor || filter.since);
+    const limit = Math.min(filter.limit ?? DEFAULT_PAGE, MAX_PAGE);
+    const cursor = filter.cursor ? decodeCursor(filter.cursor) : undefined;
+    const syncedThrough = new Date(Date.now() - SYNC_LAG_MS);
+
+    const scope = {
+      ...(!filter.includeDeleted && { deletedAt: null }),
+      ...(filter.categoryId && { categoryId: filter.categoryId }),
+      ...((filter.from || filter.to) && {
+        occurredAt: {
+          ...(filter.from && { gte: filter.from }),
+          ...(filter.to && { lte: filter.to }),
+        },
+      }),
+    };
+
     const expenses = await this.prisma.expense.findMany({
-      where: {
-        deletedAt: null,
-        ...(filter.categoryId && { categoryId: filter.categoryId }),
-        ...((filter.from || filter.to) && {
-          occurredAt: {
-            ...(filter.from && { gte: filter.from }),
-            ...(filter.to && { lte: filter.to }),
-          },
-        }),
-      },
-      orderBy: [{ occurredAt: 'desc' }],
+      where: syncing
+        ? {
+            ...scope,
+            AND: [
+              { updatedAt: { lte: syncedThrough } },
+              ...keysetWhereUpdated(cursor, filter.since),
+            ],
+          }
+        : scope,
+      orderBy: syncing
+        ? [{ updatedAt: 'asc' }, { id: 'asc' }]
+        : [{ occurredAt: 'desc' }],
+      ...(syncing && { take: limit }),
       include: EXPENSE_INCLUDE,
     });
 
-    const byCategory = new Map<string, { name: string; total: number }>();
-    for (const expense of expenses) {
-      const row = byCategory.get(expense.categoryId) ?? {
-        name: expense.category.name,
-        total: 0,
-      };
-      row.total += expense.amount;
-      byCategory.set(expense.categoryId, row);
-    }
+    // Totals come from their own aggregate rather than from the rows above, so
+    // they stay true to the filter even when the rows are one page of many.
+    const grouped = await this.prisma.expense.groupBy({
+      by: ['categoryId'],
+      where: { ...scope, deletedAt: null },
+      _sum: { amount: true },
+    });
+
+    const names = await this.prisma.expenseCategory.findMany({
+      where: { id: { in: grouped.map((row) => row.categoryId) } },
+      select: { id: true, name: true },
+    });
+    const nameOf = new Map(names.map((row) => [row.id, row.name]));
+
+    const last = expenses.at(-1);
 
     return {
       expenses,
-      total: expenses.reduce((sum, expense) => sum + expense.amount, 0),
-      byCategory: [...byCategory.entries()]
-        .map(([categoryId, row]) => ({ categoryId, ...row }))
+      total: grouped.reduce((sum, row) => sum + (row._sum.amount ?? 0), 0),
+      byCategory: grouped
+        .map((row) => ({
+          categoryId: row.categoryId,
+          name: nameOf.get(row.categoryId) ?? 'Unknown',
+          total: row._sum.amount ?? 0,
+        }))
         .sort((a, b) => b.total - a.total),
+      ...(syncing && {
+        nextCursor:
+          expenses.length === limit && last
+            ? encodeCursor({ at: last.updatedAt, id: last.id })
+            : null,
+        syncedThrough,
+        hasMore: expenses.length === limit,
+      }),
     };
   }
 

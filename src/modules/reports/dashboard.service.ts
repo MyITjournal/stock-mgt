@@ -104,6 +104,9 @@ export class DashboardService {
         expenses: monthProfit.expenses,
         operatingProfit: monthProfit.operatingProfit,
         marginBps: monthProfit.marginBps,
+        // How much of the month rests on a cost we had to guess.
+        estimatedCost: monthProfit.estimatedCost,
+        estimatedLines: monthProfit.estimatedLines,
         lastMonthOperating: lastMonthProfit.operatingProfit,
       },
 

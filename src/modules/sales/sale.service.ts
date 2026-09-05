@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { PaymentMethod, StockMovementType } from '@prisma/client';
+import { OrgRole, PaymentMethod, StockMovementType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -13,7 +15,7 @@ import {
   SYNC_LAG_MS,
   decodeCursor,
   encodeCursor,
-  keysetWhere,
+  keysetWhereCreated,
 } from '../../common/pagination/keyset-cursor';
 import { resolveProductUnit } from '../inventory/base-units';
 import { LocationService } from '../inventory/location.service';
@@ -21,7 +23,20 @@ import { StockService, StockWriter } from '../inventory/stock.service';
 import { resolveUnitPrice } from '../catalog/pricing';
 import { CreateSaleDto, SaleLineDto } from './dto/create-sale.dto';
 import { priceLine, roundCost } from './sale-pricing';
-import { withBalance } from '../payments/balance';
+import {
+  LIVE_ALLOCATIONS,
+  saleBalance,
+  withBalance,
+} from '../payments/balance';
+
+/**
+ * Who may extend further credit to a customer who already owes.
+ *
+ * The same two roles that can force a stock movement past a shortfall (§5),
+ * because it is the same kind of decision: the write path says no, and someone
+ * accountable overrules it on the record.
+ */
+const CREDIT_OVERRIDE_ROLES: OrgRole[] = [OrgRole.owner, OrgRole.manager];
 
 /** How many sales one page returns when the caller does not say. */
 const DEFAULT_PAGE = 100;
@@ -135,6 +150,15 @@ export class SaleService {
         );
       }
 
+      // Clear what is owed before taking more on credit.
+      if (paid < total && input.customerId) {
+        await this.assertMayTakeCredit(
+          tx,
+          input.customerId,
+          input.creditOverrideReason,
+        );
+      }
+
       await tx.sale.create({
         data: {
           id: saleId,
@@ -147,6 +171,7 @@ export class SaleService {
           taxTotal,
           costTotal,
           note: input.note ?? null,
+          creditOverrideReason: input.creditOverrideReason?.trim() || null,
           occurredAt,
           recordedByUserId,
         },
@@ -166,6 +191,9 @@ export class SaleService {
             id: paymentId,
             organizationId,
             customerId: input.customerId ?? null,
+            // The counter that rang the sale up is the counter that took the
+            // cash, so the end-of-shift cash-up needs no extra input.
+            locationId,
             amount: paid,
             method: input.payment?.method ?? PaymentMethod.cash,
             reference: input.payment?.reference ?? null,
@@ -222,6 +250,7 @@ export class SaleService {
         baseQuantity,
         ...priced,
         costOfGoodsSold: 0,
+        costIsEstimated: false,
       };
     }
 
@@ -240,6 +269,8 @@ export class SaleService {
       ctx.writer,
     );
 
+    const picked = await this.stock.costOf(movements, ctx.writer);
+
     return {
       id: line.id,
       productId: product.id,
@@ -251,9 +282,10 @@ export class SaleService {
       // Rounded exactly once, here, from the exact fractions of the batches
       // that actually left. Never `costPrice × quantity` — that is the rounded
       // average DECISIONS.md §2 forbids as an input.
-      costOfGoodsSold: roundCost(
-        await this.stock.costOf(movements, ctx.writer),
-      ),
+      costOfGoodsSold: roundCost(picked.cost),
+      // Flagged when the goods outran their paperwork, so a margin resting on
+      // an estimated rate can be told apart from one resting on an invoice.
+      costIsEstimated: picked.estimated > 0,
     };
   }
 
@@ -317,7 +349,7 @@ export class SaleService {
         ...(query.locationId && { locationId: query.locationId }),
         AND: [
           { createdAt: { lte: syncedThrough } },
-          ...keysetWhere(cursor, query.since),
+          ...keysetWhereCreated(cursor, query.since),
         ],
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -331,7 +363,7 @@ export class SaleService {
       sales: rows.map(withBalance),
       nextCursor:
         rows.length === limit && last
-          ? encodeCursor({ createdAt: last.createdAt, id: last.id })
+          ? encodeCursor({ at: last.createdAt, id: last.id })
           : null,
       syncedThrough,
       hasMore: rows.length === limit,
@@ -345,6 +377,67 @@ export class SaleService {
     });
     if (!sale) throw new NotFoundException('Sale not found');
     return withBalance(sale);
+  }
+
+  /**
+   * Refuses a second helping of credit to a customer who has not cleared the
+   * first.
+   *
+   * **This product does not sell on credit as a matter of course.** Credit
+   * happens — a shop takes goods on Tuesday and pays on Friday — but it is an
+   * exception, and the rule the business actually runs on is that what is owed
+   * is cleared before more goes out. Encoding that here means a rep cannot
+   * quietly let one shop's debt compound across three deliveries, which is how
+   * a distributor's receivables become uncollectable.
+   *
+   * The shape is deliberately the negative-stock override of §5: refuse with a
+   * 409 naming the number, and let an owner or manager through with a reason
+   * that is recorded on the sale. The write path is opinionated; the ledger
+   * still records whatever actually happened.
+   *
+   * Only *positive* balances count. A customer the business owes money to —
+   * goods returned after paying — is not in debt, and blocking their next
+   * purchase over it would be nonsense.
+   */
+  private async assertMayTakeCredit(
+    tx: Pick<TenantPrisma, 'sale'>,
+    customerId: string,
+    creditOverrideReason: string | undefined,
+  ) {
+    const sales = await tx.sale.findMany({
+      where: { customerId },
+      select: {
+        number: true,
+        total: true,
+        allocations: LIVE_ALLOCATIONS,
+        returns: { select: { refundAmount: true } },
+      },
+    });
+
+    const owing = sales
+      .map((sale) => ({ number: sale.number, ...saleBalance(sale) }))
+      .filter((sale) => sale.balance > 0);
+
+    if (owing.length === 0) return;
+
+    const outstanding = owing.reduce((sum, sale) => sum + sale.balance, 0);
+
+    if (!creditOverrideReason?.trim()) {
+      throw new ConflictException(
+        `This customer still owes ${outstanding} on ${owing.length} invoice(s) (${owing
+          .map((sale) => sale.number)
+          .join(
+            ', ',
+          )}). Settle that before selling on credit again, or record the sale as paid.`,
+      );
+    }
+
+    const orgRole = TenantContext.get()?.orgRole;
+    if (!orgRole || !CREDIT_OVERRIDE_ROLES.includes(orgRole)) {
+      throw new ForbiddenException(
+        'Only an owner or manager can extend further credit to a customer who already owes.',
+      );
+    }
   }
 
   /**
@@ -405,6 +498,7 @@ interface LineToWrite {
   taxRateBps: number;
   taxAmount: number;
   costOfGoodsSold: number;
+  costIsEstimated: boolean;
 }
 
 function sum(values: number[]): number {
