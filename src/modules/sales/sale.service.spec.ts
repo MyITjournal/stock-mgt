@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { OrgRole, PaymentMethod, StockMovementType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -25,7 +29,7 @@ describe('SaleService', () => {
   let service: SaleService;
   let stock: { recordOutbound: jest.Mock; costOf: jest.Mock };
   let tx: {
-    sale: { create: jest.Mock };
+    sale: { create: jest.Mock; findMany: jest.Mock };
     saleLine: { createMany: jest.Mock };
     payment: { create: jest.Mock };
     paymentAllocation: { create: jest.Mock };
@@ -41,7 +45,10 @@ describe('SaleService', () => {
 
   beforeEach(async () => {
     tx = {
-      sale: { create: jest.fn().mockResolvedValue({}) },
+      sale: {
+        create: jest.fn().mockResolvedValue({}),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       saleLine: { createMany: jest.fn().mockResolvedValue({}) },
       payment: { create: jest.fn().mockResolvedValue({}) },
       paymentAllocation: { create: jest.fn().mockResolvedValue({}) },
@@ -93,7 +100,7 @@ describe('SaleService', () => {
           { id: 'movement-1', batchId: 'batch-1', quantity: -48 },
         ]),
       // 48 pieces at ₦375.00 each, exactly.
-      costOf: jest.fn().mockResolvedValue(1_800_000),
+      costOf: jest.fn().mockResolvedValue({ cost: 1_800_000, estimated: 0 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -224,10 +231,27 @@ describe('SaleService', () => {
 
   it('rounds cost of goods sold exactly once', async () => {
     // A pick spanning two lots whose exact costs both end in a fraction.
-    stock.costOf.mockResolvedValue(1_799_999.7);
+    stock.costOf.mockResolvedValue({ cost: 1_799_999.7, estimated: 0 });
     await sell();
 
     expect(writtenLine().costOfGoodsSold).toBe(1_800_000);
+  });
+
+  it('records cost as fact when every batch had an invoice', async () => {
+    await sell();
+
+    expect(writtenLine().costIsEstimated).toBe(false);
+  });
+
+  // Goods sold before the delivery they came from was recorded. The cost is
+  // the last known rate, and the line says so rather than passing a guess off
+  // as a measurement.
+  it('flags the line when any of the cost was estimated', async () => {
+    stock.costOf.mockResolvedValue({ cost: 1_800_000, estimated: 900_000 });
+    await sell();
+
+    expect(writtenLine().costOfGoodsSold).toBe(1_800_000);
+    expect(writtenLine().costIsEstimated).toBe(true);
   });
 
   it('sells a non-stocked item without touching the ledger', async () => {
@@ -371,5 +395,128 @@ describe('SaleService', () => {
       }),
       tx,
     );
+  });
+
+  describe('clearing what is owed before taking more credit', () => {
+    const CUSTOMER = 'customer-1';
+
+    /** One unpaid ₦108,000 invoice already on this customer's account. */
+    const owes = () =>
+      tx.sale.findMany.mockResolvedValue([
+        {
+          number: 'INV-0001',
+          total: 10_800_000,
+          allocations: [],
+          returns: [],
+        },
+      ]);
+
+    const sellOnCredit = (
+      dto: Partial<CreateSaleDto> = {},
+      role: OrgRole = OrgRole.owner,
+    ) =>
+      TenantContext.run(
+        { organizationId: ORG, orgRole: role, userId: 'user-1' },
+        () =>
+          service.create({
+            customerId: CUSTOMER,
+            payment: { amount: 0 },
+            lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 2 }],
+            ...dto,
+          } as CreateSaleDto),
+      );
+
+    it('allows credit to a customer who owes nothing', async () => {
+      await sellOnCredit();
+      expect(tx.sale.create).toHaveBeenCalled();
+    });
+
+    it('refuses a second credit sale while the first is unpaid', async () => {
+      owes();
+
+      await expect(sellOnCredit()).rejects.toBeInstanceOf(ConflictException);
+      expect(tx.sale.create).not.toHaveBeenCalled();
+    });
+
+    it('names what is owed, so the counter can say why', async () => {
+      owes();
+
+      await expect(sellOnCredit()).rejects.toThrow(/10800000/);
+      await expect(sellOnCredit()).rejects.toThrow(/INV-0001/);
+    });
+
+    // Paying in full is never blocked: the rule is about *credit*, not about
+    // customers who happen to owe money buying something else for cash.
+    it('lets the same customer buy for cash', async () => {
+      owes();
+
+      await TenantContext.run(
+        { organizationId: ORG, orgRole: OrgRole.sales_rep, userId: 'user-1' },
+        () =>
+          service.create({
+            customerId: CUSTOMER,
+            lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 2 }],
+          } as CreateSaleDto),
+      );
+
+      expect(tx.sale.create).toHaveBeenCalled();
+    });
+
+    it('lets an owner override it, and records the reason on the sale', async () => {
+      owes();
+
+      await sellOnCredit({
+        creditOverrideReason: 'Paying both on Friday.',
+      });
+
+      const [[args]] = tx.sale.create.mock.calls as [
+        { data: { creditOverrideReason: string } },
+      ][];
+      expect(args.data.creditOverrideReason).toBe('Paying both on Friday.');
+    });
+
+    it('refuses that override to a sales rep', async () => {
+      owes();
+
+      await expect(
+        sellOnCredit(
+          { creditOverrideReason: 'Customer insisted.' },
+          OrgRole.sales_rep,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(tx.sale.create).not.toHaveBeenCalled();
+    });
+
+    // A customer the business owes money to is not in debt, and blocking their
+    // next purchase over it would be nonsense.
+    it('ignores a negative balance from goods returned after payment', async () => {
+      tx.sale.findMany.mockResolvedValue([
+        {
+          number: 'INV-0001',
+          total: 10_800_000,
+          allocations: [{ amount: 10_800_000 }],
+          returns: [{ refundAmount: 5_000_000 }],
+        },
+      ]);
+
+      await sellOnCredit();
+      expect(tx.sale.create).toHaveBeenCalled();
+    });
+
+    it('does not ask about credit for a walk-in with no account', async () => {
+      owes();
+
+      await TenantContext.run(
+        { organizationId: ORG, orgRole: OrgRole.sales_rep, userId: 'user-1' },
+        () =>
+          service.create({
+            payment: { amount: 0 },
+            lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 2 }],
+          } as CreateSaleDto),
+      );
+
+      expect(tx.sale.findMany).not.toHaveBeenCalled();
+      expect(tx.sale.create).toHaveBeenCalled();
+    });
   });
 });

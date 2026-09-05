@@ -190,6 +190,34 @@ describe('PaymentService', () => {
     );
   });
 
+  describe('the sync feed', () => {
+    const list = () =>
+      TenantContext.run({ organizationId: ORG, orgRole: OrgRole.owner }, () =>
+        service.findAll({}),
+      );
+
+    // The bug this ordering exists to prevent: voiding a payment moves
+    // `updatedAt` and leaves `createdAt` alone, so a feed ordered by
+    // `createdAt` never tells a client that had already synced the row.
+    it('orders by updatedAt, not createdAt', async () => {
+      await list();
+
+      const [[args]] = prisma.payment.findMany.mock.calls as [
+        { orderBy: { updatedAt?: string; createdAt?: string }[] },
+      ][];
+      expect(args.orderBy).toEqual([{ updatedAt: 'asc' }, { id: 'asc' }]);
+    });
+
+    it('holds back rows updated inside the sync lag', async () => {
+      await list();
+
+      const [[args]] = prisma.payment.findMany.mock.calls as [
+        { where: { AND: { updatedAt?: { lte?: Date } }[] } },
+      ][];
+      expect(args.where.AND[0].updatedAt?.lte).toBeInstanceOf(Date);
+    });
+  });
+
   describe('voiding', () => {
     const voidIt = (reason = 'Keyed 500,000 instead of 50,000.') =>
       TenantContext.run(

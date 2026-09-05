@@ -14,7 +14,7 @@ import {
   SYNC_LAG_MS,
   decodeCursor,
   encodeCursor,
-  keysetWhere,
+  keysetWhereUpdated,
 } from '../../common/pagination/keyset-cursor';
 import {
   AllocationRequest,
@@ -41,6 +41,7 @@ const PAYMENT_INCLUDE = {
   customer: {
     select: { id: true, firstName: true, lastName: true, phone: true },
   },
+  location: { select: { id: true, name: true } },
   recordedBy: { select: { id: true, firstName: true, lastName: true } },
   voidedBy: { select: { id: true, firstName: true, lastName: true } },
   // Unfiltered on purpose: a voided payment still shows what it *had* claimed,
@@ -72,6 +73,7 @@ export class PaymentService {
       throw new BadRequestException('A payment of zero records nothing');
     }
     if (input.customerId) await this.assertCustomerExists(input.customerId);
+    if (input.locationId) await this.assertLocationExists(input.locationId);
 
     const paymentId = input.id ?? randomUUID();
     const occurredAt = input.occurredAt
@@ -113,6 +115,7 @@ export class PaymentService {
           id: paymentId,
           organizationId,
           customerId: input.customerId ?? null,
+          locationId: input.locationId ?? null,
           amount: input.amount,
           method: input.method ?? PaymentMethod.cash,
           reference: input.reference ?? null,
@@ -165,7 +168,19 @@ export class PaymentService {
       .filter((row) => row.balance !== 0);
   }
 
-  /** Payments, paged by keyset the same way sales and the ledger are. */
+  /**
+   * Payments, paged by keyset — **on `updatedAt`, not `createdAt`**.
+   *
+   * A payment is the first row in this system that can change after it is
+   * written: voiding one leaves `createdAt` alone. Ordered by `createdAt`, a
+   * client that had already synced that payment would never hear it was voided
+   * and would go on showing the invoice as settled. Ordering by `updatedAt`
+   * sends it again the moment it changes.
+   *
+   * The cost is that a client can be handed a row it already has, so clients
+   * must upsert by id rather than append. That is the right trade: a duplicate
+   * is a no-op, a missed void is money the business does not have.
+   */
   async findAll(query: PaymentQuery = {}) {
     const limit = Math.min(query.limit ?? DEFAULT_PAGE, MAX_PAGE);
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
@@ -175,11 +190,11 @@ export class PaymentService {
       where: {
         ...(query.customerId && { customerId: query.customerId }),
         AND: [
-          { createdAt: { lte: syncedThrough } },
-          ...keysetWhere(cursor, query.since),
+          { updatedAt: { lte: syncedThrough } },
+          ...keysetWhereUpdated(cursor, query.since),
         ],
       },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
       take: limit,
       include: PAYMENT_INCLUDE,
     });
@@ -190,7 +205,7 @@ export class PaymentService {
       payments: rows.map(withUnallocated),
       nextCursor:
         rows.length === limit && last
-          ? encodeCursor({ createdAt: last.createdAt, id: last.id })
+          ? encodeCursor({ at: last.updatedAt, id: last.id })
           : null,
       syncedThrough,
       hasMore: rows.length === limit,
@@ -246,6 +261,13 @@ export class PaymentService {
       where: { id, deletedAt: null },
     });
     if (!customer) throw new NotFoundException('Customer not found');
+  }
+
+  private async assertLocationExists(id: string) {
+    const location = await this.prisma.location.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!location) throw new NotFoundException('Location not found');
   }
 }
 
