@@ -117,7 +117,17 @@ margins) are closed to `sales_rep`.
   `estimatedCost`. Costing them at zero silently lost the real cost from every report, forever —
   on a 2–3% margin that is the whole signal.
 
-**Next: Slice 6.5 — vendor purchase targets and PDFs.** Then **deploy to Render** on the free
+**Vendor purchase targets are built** (§12): `PurchaseTarget` plus `GET /purchase-targets/report`,
+in `src/modules/reports/` — the only writes in an otherwise read-only module, because a target is
+meaningless apart from the report measuring it. Four rules are load-bearing: progress counts
+goods **received** not ordered; quantity comes from **`quantityPaidFor`**, so free goods do not
+advance a quota; value comes from `GoodsReceiptLine.totalCost`, never `costPrice × quantity`; and
+**a category target counts only the products in it that carry no target of their own**, or one
+carton advances two rows. That subtraction is pure, in `purchase-target.ts`. Targets are
+deliberately **not** on `GET /reports/dashboard`: `targetValue` is a buying price and reps see the
+dashboard.
+
+**Next: the rest of Slice 6.5 — the PDF invoice and statement, and the targets chart.** Then **deploy to Render** on the free
 tier — deliberately scheduled once the backend is finished and immediately before the web slice,
 so what gets deployed is not a moving target. The Render plan is §15, including that
 `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is
