@@ -104,9 +104,31 @@ which is the same 404 you get from filling in Swagger's placeholder. **[gate]**
 ₦2,325.58 net and ₦174.42 tax. **[gate]** — VAT is derived by subtraction and never stored, so
 if it comes back as a stored field something has gone wrong.
 
-**15. `POST /products/{id}/prices`** — set a carton price for the Wholesale tier, cheaper per
-piece than 24 × base. Then `GET /products/{id}/price?tierId=…&unitId=…` and confirm the tier
-price beats the scaled base price. **[gate]**
+**15. `PATCH /products/{id}`** — `{ "prices": [{ "unit": "carton", "tierId": "<Wholesale id>",
+"price": 5400000 }] }`, cheaper per piece than 24 × base. Keyed by unit **name**, not id. Then
+`GET /products/{id}/price?tierId=…&unitId=…` and confirm the tier price beats the scaled base
+price. **[gate]**
+
+**15a.** `PATCH` again naming only the *piece* price, then re-check the carton. **The carton price
+must survive.** **[gate]** — the arrays upsert what they list; replace-all would mean editing one
+unit silently wipes the others.
+
+**15b. `POST /products`** with `prices` and `barcodes` inline in the same call:
+
+```json
+{
+  "name": "Bournvita Refill 500g",
+  "basePrice": 300000,
+  "units": [{ "name": "piece", "factor": 1, "isDefaultSelling": true },
+            { "name": "carton", "factor": 12 }],
+  "prices":   [{ "unit": "carton", "price": 3200000 }],
+  "barcodes": [{ "unit": "carton", "code": "5901234123457" }]
+}
+```
+
+Expect both back on the response. **[gate]** Omit `tierId` as above and it should land on the
+default `Retail` tier — which is what a walk-in gets, and the case the old separate endpoint let
+people forget. Then send one with `"unit": "crate"` and expect **400** naming the unit.
 
 **16. `POST /products/{id}/barcodes`** — attach a code to the *carton* unit. Then
 `GET /scan/{code}` and confirm it resolves to the product, the carton unit, and a price worth 24
