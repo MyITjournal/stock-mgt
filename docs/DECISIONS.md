@@ -1292,3 +1292,84 @@ sign in as, so it is covered by construction rather than by demonstration.
      rather than capped, made the column unnecessary and the rule better.
    - ~~No stocktake~~ — **done**, §5.
    - ~~Product images~~ — **done**, §4.
+
+10. **Catalog writes take the whole product, not a resource per field.** Raised by the owner on
+    2026-09-07 while walking `docs/MANUAL-TESTS.md`, and the sharper half of it is a live
+    overcharge, not a preference.
+
+    The observation: `POST /products` accepts `basePrice` and `costPrice` but offers no way to set
+    a **carton** price — and a carton price is not a factor of the piece price, even though the
+    carton *quantity* is a factor of the piece quantity. Twelve pieces at ₦100 is not a ₦1,200
+    carton; that is the whole reason a wholesaler exists.
+
+    What happens today: `resolveUnitPrice` (`src/modules/catalog/pricing.ts`) falls back to
+    `basePrice × unit.factor` when no `ProductPrice` row matches both the tier and the unit.
+    `ProductService.create` writes no such rows, and `SaleService.resolveTierId` hands back the
+    seeded default `Retail` tier for every walk-in — so **the fallback is the default path, not an
+    edge case**. A product created with piece + carton sells a carton at 24 × the piece price,
+    silently and with no error, until somebody remembers to POST a price row per tier per unit.
+    The comment in `pricing.ts` already says the scaling is "a fallback, not the rule"; nothing
+    made that true at the write end.
+
+    Note the asymmetry that made it visible: `costPrice` is accepted at create and is **display
+    only** per §2, never an input to a calculation. The field create takes is the one that changes
+    no number; the one that changes every sale is the one it will not take.
+
+    Decided (owner, 2026-09-07): **prices move into the `POST /products` payload and
+    `POST /products/:id/prices` goes.**
+
+    - Keyed by **unit name**, not unit id. The caller has no unit ids at create time — the units
+      are being created in the same request.
+    - `tierId` optional, defaulting to the organization's default tier.
+    - `PATCH /products/:id` takes the same array and **upserts the listed rows without deleting
+      the unlisted ones.** This is the trap to write down: replace-all semantics would let a
+      partial PATCH silently wipe every price the caller did not resend, which is the same class
+      of silent data loss as the zero-costing in §2.
+    - The scaling fallback **stays**. It is right for a sachet against a piece, and refusing to
+      price an unpriced unit would make the common case fail. It stays a fallback:
+      `GET /products/:id/price` already returns `isTierPrice`, which is how a client marks a
+      number as estimated.
+
+    **Barcodes take the same inline shape** — optional on `POST /products`, keyed by unit name for
+    the same reason. Whether `POST /products/:id/barcodes` *also* survives is **not settled**.
+    Unlike a price, attaching a code to a product that already exists is a genuinely separate act:
+    a supplier changes packaging, an unbarcoded item gets an internal EAN-13 generated, or someone
+    is standing at the counter with a scan gun and a product already in the catalog. Multiple
+    codes per unit are normal in FMCG — old and new packaging circulate together. `GET /scan/:code`
+    and `DELETE /barcodes/:id` stay regardless.
+
+    **Camera scanning is a client concern, and the server's half is already done.** The phone
+    decodes on-device and calls `GET /scan/:code` with the resulting string; `GET /scan/:code/identify`
+    classifies a code without a database hit. Nothing server-side changes. The constraint for the
+    mobile slice is that the symbologies the scanner enables must match what `identify` supports —
+    EAN13, UPC_A, EAN8, ITF14, CODE128, QR — otherwise the app decodes codes the API cannot name.
+
+11. **The 15-minute access token is not broken, and the cookies are already built.** Raised
+    2026-09-07 from "the refresh token has not been refreshing, so I keep logging out". Worth
+    recording because the diagnosis was reasonable and the cause is somewhere else entirely.
+
+    The cookie path is complete: `AuthController.respondWithTokens` sets `access_token` and
+    `refresh_token` as httpOnly cookies on register, verify, login and refresh; `JwtStrategy`
+    accepts a bearer header **or** the `access_token` cookie; `POST /auth/refresh` reads the
+    refresh cookie and only falls back to the body; CORS runs `credentials: true`.
+
+    **Swagger is not a client that refreshes.** Its Authorize box holds a pasted string, nothing
+    renews it, and `swaggerOptions` sets `persistAuthorization` but **not `withCredentials`** — so
+    the browser's cookies are never sent and the pasted bearer is the only credential in play. When
+    it expires at 15 minutes, everything 401s until it is pasted again. That is the entire symptom.
+
+    What to do, in order of value:
+
+    - **`withCredentials: true` in `swaggerOptions`.** Then verify-otp's cookie authenticates
+      Swagger directly, and renewing is one call to `POST /auth/refresh` — the browser swaps the
+      cookie itself, with no copy-paste. Cheap, and it exercises the same path the web dashboard
+      will use.
+    - **Raise `JWT_ACCESS_EXPIRES_IN` on development machines only.** It is already env-driven
+      (`src/config/env.ts`, default `15m`); a dev `.env` can say `12h` without a code change.
+    - **Leave 15m in production.** Note though that the usual argument for a short window is
+      weaker here than it looks: `JwtStrategy.validate` re-reads the membership on every request,
+      so revoking someone takes effect immediately whatever the token's lifetime. What 15m still
+      buys is bounding a *leaked* token for a still-active user.
+    - **Refresh-on-401 belongs to the client, and nothing has implemented it yet.** The mobile app
+      and the web dashboard each need an interceptor that retries once through `/auth/refresh`.
+      This is the actual missing work, and it is in the app slices, not the backend.
