@@ -109,3 +109,39 @@ export function generateInternalCode(): string {
 export function normaliseCode(code: string): string {
   return code.trim().replace(/\s+/g, '');
 }
+
+/**
+ * Turns what a caller supplied into the code and symbology to store, or says
+ * why it cannot.
+ *
+ * Extracted so creating a product with its barcodes inline and attaching one to
+ * an existing product reach the same verdict. A code that a scanner would read
+ * one way at the counter and another way through the product form is the kind
+ * of difference nobody finds until the labels are printed.
+ *
+ * Returns the reason as a string rather than throwing, so the caller decides
+ * which exception carries it — the product form wants to name the offending
+ * line, the barcode endpoint does not.
+ */
+export function resolveBarcode(input: {
+  code?: string;
+  symbology?: BarcodeSymbology;
+}): { code: string; symbology: BarcodeSymbology } | { error: string } {
+  // No code supplied means the goods arrived unbarcoded, which is common for
+  // repacks and local products: mint one in the internal range.
+  const generated = !input.code;
+  const code = generated ? generateInternalCode() : normaliseCode(input.code!);
+  const symbology = input.symbology ?? detectSymbology(code);
+
+  if (
+    !generated &&
+    requiresCheckDigit(symbology) &&
+    !hasValidCheckDigit(code)
+  ) {
+    return {
+      error: `"${code}" is not a valid ${symbology}: the check digit does not match. Re-scan or re-key it.`,
+    };
+  }
+
+  return { code, symbology };
+}
