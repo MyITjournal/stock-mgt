@@ -19,7 +19,6 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
-  ApiHeader,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -45,7 +44,7 @@ import {
   UpdateProductDto,
 } from './dto/product.dto';
 import { CreateBarcodeDto } from './dto/barcode.dto';
-import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 
 /** Editing the catalog is a management job; every member may read it. */
 const CATALOG_EDITORS = [OrgRole.owner, OrgRole.manager];
@@ -261,13 +260,9 @@ export class ProductController {
 
   @Post()
   @Roles(...CATALOG_EDITORS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'A retry with the same key returns the original product instead of creating a duplicate.',
-  })
+  @Idempotent(
+    'A retry with the same key returns the original product instead of creating a duplicate.',
+  )
   @ApiOperation({ summary: 'Create a product with its unit hierarchy' })
   create(@Body() dto: CreateProductDto) {
     return this.products.create(dto);

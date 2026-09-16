@@ -11,18 +11,16 @@ import {
   Patch,
   Post,
   Query,
-  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiHeader,
   ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { ExpenseService } from './expense.service';
 import { ExpenseCategoryService } from './expense-category.service';
 import { CreateExpenseDto, UpdateExpenseDto } from './dto/expense.dto';
@@ -95,8 +93,9 @@ export class ExpenseController {
 
   @Post()
   @Roles(...SPENDERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  @Idempotent(
+    'A retry with the same key returns the original expense instead of recording the spend twice.',
+  )
   @ApiOperation({ summary: 'Record an expense' })
   create(@Body() dto: CreateExpenseDto) {
     return this.expenses.create(dto);

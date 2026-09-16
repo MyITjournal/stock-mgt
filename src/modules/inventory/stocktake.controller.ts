@@ -7,18 +7,16 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
-  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiHeader,
   ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { StocktakeService } from './stocktake.service';
 import { CountLinesDto, CreateStocktakeDto } from './dto/stocktake.dto';
 
@@ -72,8 +70,9 @@ export class StocktakeController {
 
   @Post()
   @Roles(...COUNTERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  @Idempotent(
+    'A retry with the same key returns the original count instead of opening a second one.',
+  )
   @ApiOperation({
     summary: 'Open a count',
     description:
@@ -106,8 +105,9 @@ export class StocktakeController {
 
   @Post(':id/post')
   @Roles(...POSTERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({ name: 'Idempotency-Key', required: false })
+  @Idempotent(
+    'A retry with the same key returns the original outcome instead of posting the corrections twice. Use a fresh key for every count: this route takes no body, so a key reused across two stocktakes matches the first one and silently posts nothing.',
+  )
   @ApiOperation({
     summary: 'Post the count, writing the corrections to the ledger',
     description:

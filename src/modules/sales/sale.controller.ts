@@ -7,18 +7,16 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
-  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiHeader,
   ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { SaleService } from './sale.service';
 import { SaleReturnService } from './sale-return.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
@@ -98,13 +96,9 @@ export class SaleController {
 
   @Post()
   @Roles(...SELLERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'Send a unique key per sale. A retry with the same key returns the original sale instead of selling the goods twice.',
-  })
+  @Idempotent(
+    'Send a unique key per sale. A retry with the same key returns the original sale instead of selling the goods twice.',
+  )
   @ApiOperation({
     summary: 'Record a sale',
     description:
@@ -116,13 +110,9 @@ export class SaleController {
 
   @Post(':id/returns')
   @Roles(...SELLERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'A retry with the same key returns the original outcome instead of restocking the goods twice.',
-  })
+  @Idempotent(
+    'A retry with the same key returns the original outcome instead of restocking the goods twice.',
+  )
   @ApiOperation({
     summary: 'Take goods back',
     description:
