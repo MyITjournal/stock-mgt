@@ -48,7 +48,17 @@ async function bootstrap() {
       'docs',
       app,
       SwaggerModule.createDocument(app, config),
-      { swaggerOptions: { persistAuthorization: true } },
+      {
+        swaggerOptions: {
+          persistAuthorization: true,
+          // Send the httpOnly auth cookies with try-it-out requests. Without
+          // this, Swagger's only credential is the string pasted into the
+          // Authorize box, which nothing renews — so the session dies with the
+          // access token and has to be pasted again. With it, POST
+          // /auth/refresh renews in place: the browser swaps the cookie itself.
+          withCredentials: true,
+        },
+      },
     );
   }
 
