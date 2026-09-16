@@ -971,6 +971,46 @@ accountant. A `sales_rep` carrying buying prices around a market is a commercial
 problem rather than a permissions technicality, and it cannot be undone once it
 has happened. Reps keep the reports that expose no cost: what sold, and to whom.
 
+### Vendor purchase targets: received, paid for, and counted once
+
+Built 2026-09-16, closing most of §15 item 3. A target is the vendor's monthly offtake quota —
+"110 cartons of lotions" — and the question it answers is how far off the pace the month is.
+
+**Progress counts goods received, never orders placed.** There are no purchase orders (§6), and
+an order the vendor has not delivered is precisely what still needs chasing, so it belongs in
+"remaining" rather than in progress. `GoodsReceiptLine` is the row that is summed.
+
+**Quantities come from `quantityPaidFor`, not `quantityReceived`.** "Buy 19, get 1 free" advances
+a 110-case target by 19. The free case is real stock, absorbs into cost per §2 and counts for
+valuation — it simply does not advance a quota the vendor wrote in cases they sold.
+
+**Value comes from `GoodsReceiptLine.totalCost`**, never `costPrice × quantity`, which §2 forbids
+as an input.
+
+**The rollup subtracts rather than sums.** A category target covers only the products in that
+category that carry no target of their own. A vendor quotaing both "lotions" and one lotion SKU
+would otherwise see that SKU's cartons advance both rows, and our number would read comfortably
+ahead of a quota nobody had met. The arithmetic is pure, in
+`src/modules/reports/purchase-target.ts`, beside `period.ts` and `profit.ts`, because the rule
+that is easy to get wrong here is a subtraction rather than a query.
+
+**Quantity converts on write**, with `unitFactor` captured at that moment — the same rule
+receiving follows, so redefining a carton next year cannot silently restate a quota agreed in
+cartons of twenty-four. `displayUnitId` remembers what the owner typed, so "110 cartons" reads
+back as cartons.
+
+**The period is a calendar month in `Organization.timezone`**, snapped through `period.ts`. The
+vendor's scheme runs on months, not a rolling thirty days.
+
+**Targets are not on `GET /reports/dashboard`, deliberately.** `targetValue` is a buying price in
+all but name, so this follows "reps do not see cost" above — but the dashboard is the rep's home
+screen. One payload cannot serve both audiences without stripping fields per role, and a field
+stripped by mistake leaks buying prices into a market. A separate endpoint gets its own gate. The
+web slice can surface targets from it if the home screen wants them.
+
+**A target cannot change what it is set against.** Rewriting a lotions target into a roll-on one
+would silently restate what last month's number meant; delete it and set the one that was agreed.
+
 ---
 
 ## 13. Traps already hit
@@ -993,6 +1033,7 @@ Recorded because each cost real time and none is obvious.
 | **Git Bash converts POSIX paths in *arguments* only** | `node script.mjs /tmp/x.log` arrives as a Windows path, but `/tmp/x.log` hard-coded inside the script does not — Node resolves it to `C:\tmp\`. Cost an afternoon of a verification script reading a file that was not there | Pass paths as arguments, or use `cygpath -w`. `/tmp` here is `C:\Users\USER\AppData\Local\Temp` |
 | **PowerShell 5.1 round-tripping a UTF-8 doc** | `Get-Content -Raw` reads UTF-8 as ANSI, so `Set-Content` writes back mojibake — every `—` becomes `â€"`. Worse, `$` in a `(?m)` regex will not match before a CRLF, so the bulk replacement silently matches nothing *and* corrupts the file. Both happened at once while renumbering this document | Never bulk-edit a tracked text file through PS 5.1. Use the editing tools; `git checkout --` is the recovery |
 | **A leftover watch server keeps port 4000** | The new `nest start --watch` compiles, maps its routes, logs "successfully started", *then* dies on `EADDRINUSE` — leaving the previous process serving **old code** while the log looks healthy | `Get-NetTCPConnection -LocalPort 4000 -State Listen` before starting, and `taskkill /PID <id> /T /F` on the whole tree |
+| **A unique constraint over a nullable column** | `PurchaseTarget` sets exactly one of `categoryId` / `productId`, so `@@unique([org, supplier, periodStart, categoryId, productId])` looks right — and is useless. Postgres treats NULLs as **distinct**, so two identical category targets, both carrying `productId` NULL, do not collide. A duplicate does not error; it silently doubles that target's reported progress, which reads as being ahead of a quota nobody met | Two **partial** unique indexes hand-written in the migration, one per scope, both excluding soft-deleted rows. Prisma cannot express a partial index, so they live in SQL — and `migrate diff` was checked afterwards: it returns an empty migration, so Prisma leaves them alone rather than proposing to drop them |
 | **Hashing a request that has no body** | A command route carries no body, so nothing sets a JSON content type and Express leaves `req.body` **undefined**. `JSON.stringify(undefined)` is the *value* undefined rather than a string, so the hash threw: every request sending an `Idempotency-Key` to `POST /stocktakes/:id/post` answered **500**. Found by `smoke.mjs` the first time a key was ever sent to that route — the unit tests only ever hashed `{}` | `body ?? null` in `hashBody`, and a test for the undefined case |
 | **An idempotency key scoped to the route *pattern*** | `POST /stocktakes/:id/post` hashed identically for every count — the pattern is the same string and the route carries no body — so one key reused across two counts would have matched the first, replayed its response, and **posted nothing** while returning success. In practice it never got that far: the missing-body crash above answered 500 first. Two bugs stacked, and the outer one hid the inner one | The stored `endpoint` is now `method + the concrete URL`. A retry always goes back to the same address, so nothing legitimate is lost by being specific |
 | **Recording an idempotency key *after* the handler** | `tap` fired once the work was done, leaving a window where two overlapping requests both found no key and both executed — precisely the client-times-out-and-retries case the feature exists for. The unique constraint then kept one key row while two sales existed | The key is **claimed before** the handler runs, so the constraint picks one winner; the loser gets a 409 saying the first is still in progress. A handler that throws deletes its claim, or a failed request could never be retried |
@@ -1000,9 +1041,18 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6 done, plus the 6.1 gap-closing pass.** 318 tests across 23 suites, eighteen
-migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 292 checks against a
-running server.
+**Slices 0–6 done, plus the 6.1 gap-closing pass and the first half of 6.5.** 329 tests across
+24 suites, nineteen migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 302
+checks against a running server.
+
+**Vendor purchase targets landed 2026-09-16** — the model, the CRUD and
+`GET /purchase-targets/report`, decided in §12 and closing most of §15 item 3. What remains of
+that item is the **chart**, which can wait for the mobile slice. `PurchaseTarget` lives in
+`src/modules/reports/`, the only writes in a module that is otherwise reads-only, because a
+target is meaningless apart from the report that measures it. The rollup arithmetic is pure, in
+`purchase-target.ts`, with eleven tests on the subtraction alone.
+
+**PDFs are the other half of 6.5 and are not started.**
 
 **Prices and barcodes moved into the product payload on 2026-09-16** — the decision is in §4,
 and it closed §15 item 10. `POST /products/:id/prices` is **gone**; `POST /products/:id/barcodes`
@@ -1257,7 +1307,15 @@ sign in as, so it is covered by construction rather than by demonstration.
    **PDF invoice and customer statement** land with them (§6) — same rendering dependency, and the
    statement is the artifact that makes chasing a debtor over WhatsApp work.
 
-3. **Vendor purchase targets** (model and chart both in the reports slice — moved out of the cut
+3. ~~**Vendor purchase targets**~~ — **model and report done**, 2026-09-16; the **chart is still
+   outstanding** and can land as late as the mobile slice. The decisions below were all
+   implemented as written; what they became is in §12. What is left of this item is the donut or
+   stacked bar, and one thing the build added rather than decided: **category targets cover the
+   named category only, not its children** (owner, 2026-09-16). The owner's targets are leaf
+   categories, and rolling up a tree would mean excluding a product target from every ancestor
+   above it — a second subtraction nobody has asked for. It can be added without a schema change.
+
+   (model and chart both in the reports slice — moved out of the cut
    purchasing slice, and nothing is lost by the wait: progress is summed from `GoodsReceiptLine`,
    which is append-only and accumulating now, so a target created in November still measures
    September correctly). The owner carries a monthly offtake target per vendor — "110 cartons of

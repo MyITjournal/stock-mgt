@@ -1669,7 +1669,125 @@ async function main() {
     finalLevels.reduce((sum, row) => sum + row.quantity, 0),
   );
 
-  step(39, 'Tenancy: a second organization sees none of this');
+  step(39, 'Vendor targets: what the scheme asked for against what arrived');
+  const targetMonth = new Date().toISOString();
+
+  const catTarget = (
+    await api('POST', '/purchase-targets', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        categoryId: category.id,
+        period: targetMonth,
+        targetQuantity: 100,
+        unitId: carton.id,
+        targetValue: 50_000_000,
+      },
+    })
+  ).data;
+  eq('a target quoted in cartons is stored in base units', catTarget.targetQuantity, 2400);
+  eq('and remembers what it was quoted in', catTarget.displayUnit.id, carton.id);
+
+  const targetsOf = async (id) => {
+    const report = (
+      await api('GET', `/purchase-targets/report?supplierId=${supplier.id}`, { token: t })
+    ).data;
+    return report.targets.find((row) => row.id === id).progress;
+  };
+
+  const before = await targetsOf(catTarget.id);
+  check(
+    'the target already counts what this month has delivered',
+    before.achievedQuantity > 0,
+    `${before.achievedQuantity} base units`,
+  );
+
+  // 10 cartons arrive, the invoice charges for 9.
+  await api('POST', '/goods-receipts', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      supplierId: supplier.id,
+      locationId: main.id,
+      invoiceNumber: 'INV-TARGET',
+      lines: [
+        {
+          productId: product.id,
+          unitId: carton.id,
+          quantityReceived: 10,
+          quantityPaidFor: 9,
+          totalCost: 9_000_000,
+          lotCode: 'LOT-TARGET',
+        },
+      ],
+    },
+  });
+
+  const after = await targetsOf(catTarget.id);
+  eq(
+    'free goods do not advance the quota: 9 cartons, not 10',
+    after.achievedQuantity - before.achievedQuantity,
+    216,
+  );
+  eq(
+    'and the value moves by the invoice total',
+    after.achievedValue - before.achievedValue,
+    9_000_000,
+  );
+  check(
+    'progress is reported against the target',
+    after.achievedBps === Math.round((after.achievedQuantity / 2400) * 10000),
+    `${after.achievedBps} bps`,
+  );
+
+  // The rollup rule: give the same product its own target and the category
+  // must stop counting it, or one carton advances both rows.
+  const skuTarget = (
+    await api('POST', '/purchase-targets', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        productId: product.id,
+        period: targetMonth,
+        targetQuantity: 50,
+        unitId: carton.id,
+      },
+    })
+  ).data;
+
+  const splitSku = await targetsOf(skuTarget.id);
+  const splitCat = await targetsOf(catTarget.id);
+  eq('the SKU target counts that product', splitSku.achievedQuantity, after.achievedQuantity);
+  eq('and the category target no longer counts it too', splitCat.achievedQuantity, 0);
+
+  await api('POST', '/purchase-targets', {
+    token: t,
+    expect: 409,
+    body: {
+      supplierId: supplier.id,
+      categoryId: category.id,
+      period: targetMonth,
+      targetQuantity: 10,
+    },
+  });
+  check('a second target for the same vendor, category and month is refused', true);
+
+  await api('POST', '/purchase-targets', {
+    token: t,
+    expect: 400,
+    body: {
+      supplierId: supplier.id,
+      categoryId: category.id,
+      productId: product.id,
+      period: targetMonth,
+      targetQuantity: 10,
+    },
+  });
+  check('a target against both a category and a product is refused', true);
+
+  step(40, 'Tenancy: a second organization sees none of this');
   const other = await signUp('Chidi Provisions');
   eq(
     'no products leak across the tenant boundary',
