@@ -7,18 +7,16 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
-  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiHeader,
   ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { PaymentService } from './payment.service';
 import { ReceivableService } from './receivable.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -76,13 +74,9 @@ export class PaymentController {
 
   @Post()
   @Roles(...MONEY_HANDLERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'A retry with the same key returns the original payment instead of banking it twice.',
-  })
+  @Idempotent(
+    'A retry with the same key returns the original payment instead of banking it twice.',
+  )
   @ApiOperation({
     summary: 'Record a payment',
     description:

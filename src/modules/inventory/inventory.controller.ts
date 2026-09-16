@@ -12,18 +12,16 @@ import {
   Patch,
   Post,
   Query,
-  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiHeader,
   ApiOperation,
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { LocationService } from './location.service';
 import { SupplierService } from './supplier.service';
 import { ReceivingService } from './receiving.service';
@@ -73,13 +71,9 @@ export class LocationController {
 
   @Post()
   @Roles(...INVENTORY_EDITORS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'A retry with the same key returns the original location instead of creating a duplicate.',
-  })
+  @Idempotent(
+    'A retry with the same key returns the original location instead of creating a duplicate.',
+  )
   @ApiOperation({
     summary: 'Create a location',
     description:
@@ -132,13 +126,9 @@ export class SupplierController {
 
   @Post()
   @Roles(...INVENTORY_EDITORS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'A retry with the same key returns the original supplier instead of creating a duplicate.',
-  })
+  @Idempotent(
+    'A retry with the same key returns the original supplier instead of creating a duplicate.',
+  )
   @ApiOperation({ summary: 'Create a supplier' })
   create(@Body() dto: CreateSupplierDto) {
     return this.suppliers.create(dto);
@@ -195,13 +185,9 @@ export class GoodsReceiptController {
 
   @Post()
   @Roles(...STOCK_RECORDERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'A retry with the same key returns the original receipt instead of receiving the delivery twice.',
-  })
+  @Idempotent(
+    'A retry with the same key returns the original receipt instead of receiving the delivery twice.',
+  )
   @ApiOperation({
     summary: 'Receive a delivery',
     description:
@@ -319,13 +305,9 @@ export class StockController {
 
   @Post('adjustments')
   @Roles(...STOCK_RECORDERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'A retry with the same key returns the original movement instead of writing the stock off twice.',
-  })
+  @Idempotent(
+    'A retry with the same key returns the original movement instead of writing the stock off twice.',
+  )
   @ApiOperation({
     summary: 'Adjust stock, with a reason',
     description:
@@ -337,13 +319,9 @@ export class StockController {
 
   @Post('transfers')
   @Roles(...STOCK_RECORDERS)
-  @UseInterceptors(IdempotencyInterceptor)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: false,
-    description:
-      'A retry with the same key returns the original transfer instead of moving the stock twice.',
-  })
+  @Idempotent(
+    'A retry with the same key returns the original transfer instead of moving the stock twice.',
+  )
   @ApiOperation({
     summary: 'Move stock between locations',
     description:
