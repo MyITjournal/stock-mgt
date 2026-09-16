@@ -48,6 +48,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'StockBalance',
   'GoodsReceipt',
   'GoodsReceiptLine',
+  // Vendor purchase targets (Slice 6.5).
+  'PurchaseTarget',
 ]);
 
 /** Reads and writes that select rows through a `where` clause. */

@@ -52,6 +52,7 @@ model Category {
   parent       Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children     Category[]   @relation("CategoryTree")
   products     Product[]
+  purchaseTargets PurchaseTarget[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -147,6 +148,7 @@ model Product {
   stockBalances     StockBalance[]
   goodsReceiptLines GoodsReceiptLine[]
   stocktakeLines    StocktakeLine[]
+  purchaseTargets   PurchaseTarget[]
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -180,6 +182,7 @@ model ProductUnit {
   product           Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
   prices            ProductPrice[]
   barcodes          ProductBarcode[]
+  purchaseTargets   PurchaseTarget[]
   goodsReceiptLines GoodsReceiptLine[]
   saleLines         SaleLine[]
 
@@ -714,6 +717,7 @@ model Organization {
   stockBalances     StockBalance[]
   goodsReceipts     GoodsReceipt[]
   goodsReceiptLines GoodsReceiptLine[]
+  purchaseTargets   PurchaseTarget[]
 
   @@map("organizations")
 }
@@ -901,9 +905,10 @@ model Supplier {
   deletedAt DateTime?
 
   organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  batches       StockBatch[]
-  goodsReceipts GoodsReceipt[]
-  expenses      Expense[]
+  batches         StockBatch[]
+  goodsReceipts   GoodsReceipt[]
+  expenses        Expense[]
+  purchaseTargets PurchaseTarget[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1204,4 +1209,63 @@ enum StockAdjustmentReason {
   count_correction
   opening_balance
   other
+}
+
+/// A monthly offtake quota a vendor sets: "110 cartons of lotions this month".
+///
+/// The owner carries these in their head or on the vendor's sheet, and wants to
+/// know mid-month how far off the pace they are. Progress is counted from goods
+/// **received**, not orders placed — an order the vendor has not delivered is
+/// exactly what still needs chasing, so it belongs in "remaining".
+///
+/// Deliberately *not* a purchase order in a smaller hat. See DECISIONS.md §6.
+model PurchaseTarget {
+  id             String @id @default(uuid())
+  organizationId String
+  /// Whose scheme this is. Targets are always a vendor's, never the shop's own.
+  supplierId     String
+
+  /// Exactly one of these is set, enforced by a CHECK constraint.
+  ///
+  /// A category target covers the products in that category that do **not**
+  /// carry a target of their own — otherwise the same carton advances both, and
+  /// the rollup reads high. Whatever summarises these must subtract, not sum.
+  /// The named category only: children are not included.
+  categoryId String?
+  productId  String?
+
+  /// First instant of the target month, in the organization's timezone. The
+  /// vendor's scheme runs on calendar months, not a rolling thirty days, so
+  /// this is resolved through `period.ts` like every other window.
+  periodStart DateTime
+
+  /// In **base units**, like everything else the ledger counts.
+  targetQuantity Int
+  /// What the owner typed it in — "110 cartons" reads back as cartons even
+  /// though it is stored as pieces.
+  displayUnitId  String?
+  /// The factor at write time, so redefining a carton later cannot silently
+  /// restate a target that was already agreed. Same rule as GoodsReceiptLine.
+  unitFactor     Int    @default(1)
+
+  /// Optional value quota in kobo, for schemes written in money rather than
+  /// cases. Achieved value sums GoodsReceiptLine.totalCost, never
+  /// costPrice x quantity, which §2 forbids as an input.
+  targetValue Int?
+
+  note String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  displayUnit  ProductUnit? @relation(fields: [displayUnitId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, supplierId, periodStart])
+  @@map("purchase_targets")
 }
