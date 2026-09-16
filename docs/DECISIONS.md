@@ -254,6 +254,47 @@ only multiply cannot express it. `Product.basePrice` is the fallback when no tie
 A **PriceTier** is a customer class — Retail, Wholesale, Distributor. Every organization gets a
 default "Retail" tier at registration so pricing always has a home.
 
+### Prices and barcodes are set on the product, not through endpoints of their own
+
+Decided with the owner on 2026-09-16, after the gap in §15 item 10 turned out to be a live
+overcharge rather than a missing convenience.
+
+`POST /products` took `basePrice` and `costPrice` but had no way to set a **carton** price, and
+`POST /products/:id/prices` was a separate call nobody was obliged to make. Meanwhile
+`resolveUnitPrice` falls back to `basePrice × factor`, and `SaleService.resolveTierId` hands every
+walk-in the seeded default tier — so **the fallback was the default path, not an edge case**. A
+product created with piece + carton sold a carton at 24 × the piece price, silently, until
+somebody remembered to post a price row per tier per unit. On the margins in this market that is
+not a rounding difference; it is the whole bulk discount, charged to the customer.
+
+The asymmetry that made it visible is worth keeping in mind when adding any future field:
+`costPrice` was accepted at create and is **display only** per §2, while the carton price — which
+changes every sale — was the one the form would not take. The field that changed no number was
+the one that was easy to supply.
+
+So both now live in the product payload, and `POST /products/:id/prices` is gone:
+
+- **Keyed by unit name, not unit id.** At create time the caller has no unit ids, because the
+  units are being created by the same request. Names are what the caller already typed.
+- **`tierId` is optional**, defaulting to the organization's default tier — which is what a
+  walk-in gets, so it is the answer somebody filling in a product form has in mind.
+- **PATCH upserts what it lists and leaves the rest alone.** Replace-all would let a PATCH naming
+  one unit silently delete the prices of every other: the same shape of silent loss as costing a
+  forced sale at zero, and just as invisible afterwards.
+- **The scaling fallback stays.** It is right for a sachet against a piece, and refusing to price
+  an unpriced unit would break the common case. `GET /products/:id/price` already returns
+  `isTierPrice`, which is how a client marks a number as a guess rather than a decision.
+
+**`POST /products/:id/barcodes` survives**, and this is the asymmetry with prices. A price is
+settled when the product is defined. A barcode is not: a supplier changes packaging, an unbarcoded
+item gets an internal EAN-13 minted later, several codes circulate for one unit while old and new
+packaging are both on the shelf, or somebody is at the counter with a scan gun and a product that
+already exists. Routing that through a whole-product update means reading the product, appending
+to an array and sending it back, to add one code. Barcode validation is shared rather than
+duplicated: `resolveBarcode` in `barcode.ts` is the single verdict both paths reach, because a
+code that scanned one way at the counter and another way through the product form is a difference
+nobody would find until the labels were printed.
+
 ### Product images: two columns, and neither is required
 
 `imageUrl` is what clients render. `imagePublicId` is what lets the previous image actually be
@@ -959,9 +1000,20 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6 done, plus the 6.1 gap-closing pass.** 310 tests across 23 suites, eighteen
-migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 285 checks against a
+**Slices 0–6 done, plus the 6.1 gap-closing pass.** 318 tests across 23 suites, eighteen
+migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 292 checks against a
 running server.
+
+**Prices and barcodes moved into the product payload on 2026-09-16** — the decision is in §4,
+and it closed §15 item 10. `POST /products/:id/prices` is **gone**; `POST /products/:id/barcodes`
+stays. No migration: `ProductPrice` and `ProductBarcode` already existed, so this was DTO and
+service work. `ProductService.create` now runs in a transaction, because the prices and barcodes
+are keyed by unit name and the ids to map them onto are minted by the same statement.
+
+This is the **last breaking change planned before the web dashboard**. It was taken first
+deliberately: a product form written against the old shape would have had to be rewritten, and
+everything else outstanding — vendor targets, PDFs, deployment — is additive to what a client
+already sees.
 
 **Idempotency was rebuilt on 2026-09-16** after three holes turned up while documenting it, all
 recorded in §13. The key is now claimed *before* the handler runs rather than recorded after; its
@@ -1317,7 +1369,12 @@ sign in as, so it is covered by construction rather than by demonstration.
    - ~~No stocktake~~ — **done**, §5.
    - ~~Product images~~ — **done**, §4.
 
-10. **Catalog writes take the whole product, not a resource per field.** Raised by the owner on
+10. ~~**Catalog writes take the whole product, not a resource per field.**~~ — **done**,
+    2026-09-16. The decision and its reasoning moved to §4; what follows is the record of the gap
+    as it was found. The one open question it carried — whether `POST /products/:id/barcodes`
+    survives — was settled in favour of keeping it, for the reasons in §4.
+
+    Raised by the owner on
     2026-09-07 while walking `docs/MANUAL-TESTS.md`, and the sharper half of it is a live
     overcharge, not a preference.
 

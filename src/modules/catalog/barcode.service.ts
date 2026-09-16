@@ -9,13 +9,7 @@ import { BarcodeSymbology } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
-import {
-  detectSymbology,
-  generateInternalCode,
-  hasValidCheckDigit,
-  normaliseCode,
-  requiresCheckDigit,
-} from './barcode';
+import { resolveBarcode } from './barcode';
 import { CreateBarcodeDto } from './dto/barcode.dto';
 
 @Injectable()
@@ -32,24 +26,11 @@ export class BarcodeService {
       );
     }
 
-    // No code supplied means the goods arrived unbarcoded, which is common for
-    // repacks and local products: mint one in the internal range.
-    const generated = !input.code;
-    const code = generated
-      ? generateInternalCode()
-      : normaliseCode(input.code as string);
-
-    const symbology = input.symbology ?? detectSymbology(code);
-
-    if (
-      !generated &&
-      requiresCheckDigit(symbology) &&
-      !hasValidCheckDigit(code)
-    ) {
-      throw new BadRequestException(
-        `"${code}" is not a valid ${symbology}: the check digit does not match. Re-scan or re-key it.`,
-      );
-    }
+    // Shared with creating a product that carries its barcodes inline, so both
+    // routes reach the same verdict on the same code.
+    const resolved = resolveBarcode(input);
+    if ('error' in resolved) throw new BadRequestException(resolved.error);
+    const { code, symbology } = resolved;
 
     try {
       const barcode = await this.prisma.productBarcode.create({
