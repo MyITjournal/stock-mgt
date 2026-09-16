@@ -952,13 +952,37 @@ Recorded because each cost real time and none is obvious.
 | **Git Bash converts POSIX paths in *arguments* only** | `node script.mjs /tmp/x.log` arrives as a Windows path, but `/tmp/x.log` hard-coded inside the script does not — Node resolves it to `C:\tmp\`. Cost an afternoon of a verification script reading a file that was not there | Pass paths as arguments, or use `cygpath -w`. `/tmp` here is `C:\Users\USER\AppData\Local\Temp` |
 | **PowerShell 5.1 round-tripping a UTF-8 doc** | `Get-Content -Raw` reads UTF-8 as ANSI, so `Set-Content` writes back mojibake — every `—` becomes `â€"`. Worse, `$` in a `(?m)` regex will not match before a CRLF, so the bulk replacement silently matches nothing *and* corrupts the file. Both happened at once while renumbering this document | Never bulk-edit a tracked text file through PS 5.1. Use the editing tools; `git checkout --` is the recovery |
 | **A leftover watch server keeps port 4000** | The new `nest start --watch` compiles, maps its routes, logs "successfully started", *then* dies on `EADDRINUSE` — leaving the previous process serving **old code** while the log looks healthy | `Get-NetTCPConnection -LocalPort 4000 -State Listen` before starting, and `taskkill /PID <id> /T /F` on the whole tree |
+| **Hashing a request that has no body** | A command route carries no body, so nothing sets a JSON content type and Express leaves `req.body` **undefined**. `JSON.stringify(undefined)` is the *value* undefined rather than a string, so the hash threw: every request sending an `Idempotency-Key` to `POST /stocktakes/:id/post` answered **500**. Found by `smoke.mjs` the first time a key was ever sent to that route — the unit tests only ever hashed `{}` | `body ?? null` in `hashBody`, and a test for the undefined case |
+| **An idempotency key scoped to the route *pattern*** | `POST /stocktakes/:id/post` hashed identically for every count — the pattern is the same string and the route carries no body — so one key reused across two counts would have matched the first, replayed its response, and **posted nothing** while returning success. In practice it never got that far: the missing-body crash above answered 500 first. Two bugs stacked, and the outer one hid the inner one | The stored `endpoint` is now `method + the concrete URL`. A retry always goes back to the same address, so nothing legitimate is lost by being specific |
+| **Recording an idempotency key *after* the handler** | `tap` fired once the work was done, leaving a window where two overlapping requests both found no key and both executed — precisely the client-times-out-and-retries case the feature exists for. The unique constraint then kept one key row while two sales existed | The key is **claimed before** the handler runs, so the constraint picks one winner; the loser gets a 409 saying the first is still in progress. A handler that throws deletes its claim, or a failed request could never be retried |
 ---
 
 ## 14. Where things stand
 
-**Slices 0–6 done, plus the 6.1 gap-closing pass.** 300 tests across 23 suites, eighteen
-migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 283 checks against a
+**Slices 0–6 done, plus the 6.1 gap-closing pass.** 310 tests across 23 suites, eighteen
+migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 285 checks against a
 running server.
+
+**Idempotency was rebuilt on 2026-09-16** after three holes turned up while documenting it, all
+recorded in §13. The key is now claimed *before* the handler runs rather than recorded after; its
+identity is the concrete URL rather than the route pattern; and `hashBody` no longer throws on a
+request with no body.
+
+Seven tests were added for the interceptor, which until now had none, plus one for `hashBody` —
+the only part that was covered, and only ever with `{}`, so none of the three holes had anything
+watching it. The fake Prisma table in that spec enforces the unique constraint *synchronously* on
+purpose: one that checked after an `await` would let both racers through and prove nothing.
+
+**The third hole is the one worth remembering, because of how it was found.** `smoke.mjs` step 38
+now posts two different counts with one key and expects the second refused. Adding that step sent
+an `Idempotency-Key` to `POST /stocktakes/:id/post` for the first time ever — and got a 500. The
+route had been decorated since Slice 6.1 and documented in Swagger as accepting the header, and
+any client that had taken that at its word would have got a 500 too. Nothing in the unit suite
+could have caught it: the crash needs a real Express request with no content type, and a mocked
+request object always has whatever body the test wrote. That is the case for keeping smoke.
+
+Note also that the second hole was **unreachable behind the third** — the crash fired before the
+replay could. Fixing the visible bug first would have quietly re-armed the silent one.
 
 Slice 6.1 (2026-08-31) closed five of the gaps recorded in §15, in this order:
 
@@ -1373,3 +1397,24 @@ sign in as, so it is covered by construction rather than by demonstration.
     - **Refresh-on-401 belongs to the client, and nothing has implemented it yet.** The mobile app
       and the web dashboard each need an interceptor that retries once through `/auth/refresh`.
       This is the actual missing work, and it is in the app slices, not the backend.
+
+12. **Left open after the 2026-09-16 idempotency fix.** The two holes themselves are closed
+    (§13); these are the deliberate non-goals.
+
+    - **`POST /payments/:id/void` and `POST /stocktakes/:id/cancel` are still not idempotent.**
+      Making them so is now *safe* — the concrete-URL identity is what made it safe — but nobody
+      has asked for those to be replayable, and adding it quietly would be scope the fix did not
+      earn. The decision to take when a client needs it: a rep who voids a payment on a dying
+      connection has no way to know whether it took, and `POST` twice is currently two voids.
+    - **`STALE_CLAIM_MS` is 120 seconds, and that number is a guess.** It is how long a claimed
+      but unfinished request is believed to still be running before another caller takes it over.
+      Too low and a genuinely slow goods receipt is executed twice, which is the thing the whole
+      interceptor exists to prevent. Revisit it with a real measurement of the slowest write,
+      not by intuition — and err high, because the failure it guards against is silent while a
+      key stuck in flight is loud.
+    - **A client that gets the in-flight 409 has no guidance on when to come back.** The message
+      says "retry in a moment". If a real client ends up hammering it, the answer is a
+      `Retry-After` header rather than a shorter stale window.
+    - **The 409 is the same status for two different problems**: "your key handling is wrong"
+      and "wait, it is still running". Only the message distinguishes them. A machine-readable
+      code belongs here the moment a client has to branch on it.

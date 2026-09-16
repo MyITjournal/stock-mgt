@@ -638,14 +638,24 @@ model IdempotencyKey {
 
   /// Client-supplied, from the Idempotency-Key header.
   key         String
-  /// method + path, so the same key on a different endpoint is not a match.
+  /// method + the **concrete** request URL, so the same key aimed at a
+  /// different resource is not a match. This held the route *pattern* until
+  /// 2026-09-16, which made every `POST /stocktakes/:id/post` look identical —
+  /// and since that route has no body, its request hash is identical too. One
+  /// key reused across two counts replayed the first answer and posted
+  /// nothing, silently. See DECISIONS.md §13.
   endpoint    String
   /// Hash of the request body. The same key with different content is a
   /// client bug worth reporting rather than silently replaying the old answer.
   requestHash String
 
-  statusCode   Int
-  responseBody Json
+  /// Null while the request is still running. The row is claimed *before* the
+  /// handler runs, so the unique constraint on (organizationId, key) picks one
+  /// winner among concurrent retries and the losers wait instead of doing the
+  /// work a second time. A handler that throws deletes its own row, because a
+  /// request that failed must stay retryable.
+  statusCode   Int?
+  responseBody Json?
 
   createdAt DateTime @default(now())
   expiresAt DateTime

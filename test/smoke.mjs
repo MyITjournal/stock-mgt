@@ -1544,7 +1544,10 @@ async function main() {
     beforeCount,
   );
 
-  const postedCount = (await api('POST', `/stocktakes/${sheet.id}/post`, { token: t })).data;
+  const postKey = randomUUID();
+  const postedCount = (
+    await api('POST', `/stocktakes/${sheet.id}/post`, { token: t, key: postKey })
+  ).data;
   eq('posting writes one correction', postedCount.corrections, 1);
   eq('and closes the count', postedCount.status, 'posted');
   eq('now the shelf and the ledger agree', await levelAt(t, product.id, main.id), beforeCount - 3);
@@ -1566,8 +1569,28 @@ async function main() {
       lines: [{ productId: product.id, countedQuantity: beforeCount - 1 }],
     },
   });
+  // The same key, aimed at a different count. This route carries no body, so
+  // when the endpoint was matched on the route *pattern* both requests looked
+  // identical: the second replayed the first answer and posted nothing, leaving
+  // the surplus off the shelf with no error to notice.
+  const beforeReuse = await levelAt(t, product.id, main.id);
+  await api('POST', `/stocktakes/${surplusSheet.id}/post`, {
+    token: t,
+    key: postKey,
+    expect: 409,
+  });
+  check('one key cannot post two different counts', true);
+  eq(
+    'and the count it was aimed at is left alone',
+    await levelAt(t, product.id, main.id),
+    beforeReuse,
+  );
+
   const postedSurplus = (
-    await api('POST', `/stocktakes/${surplusSheet.id}/post`, { token: t })
+    await api('POST', `/stocktakes/${surplusSheet.id}/post`, {
+      token: t,
+      key: randomUUID(),
+    })
   ).data;
   eq('a surplus posts too', postedSurplus.corrections, 1);
   eq(
