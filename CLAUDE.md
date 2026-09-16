@@ -35,6 +35,15 @@ sold, and returns — money in: payments with allocations, receivables, customer
 expenses — and reports: a dashboard, profit, sales slices, stock valuation, expiry, movers and
 reorder alerts — plus stocktake, product images, a cash-up, and the no-credit rule.
 
+**Prices and barcodes are set on the product itself** (§4), in the `prices` and `barcodes` arrays
+on `POST /products` and `PATCH /products/:id`, keyed by **unit name** — the units are created by
+the same request, so there are no ids to point at yet. `POST /products/:id/prices` is gone;
+`POST /products/:id/barcodes` stays, because attaching a code to a product that already exists is
+a separate act. **Both arrays upsert and never delete what they do not list**: replace-all would
+let a PATCH naming one unit wipe the prices of the rest. Without a tier row a unit falls back to
+`basePrice × factor`, which is right for a sachet and wrong for a carton — that fallback silently
+overcharging a walk-in is the bug this shape exists to prevent.
+
 Two Slice 3 rules worth knowing before you touch stock: **every movement carries a batch** and
 **quantity is signed** (positive in, negative out). And the negative-stock policy — the ledger
 records everything, while the *write path* refuses an outbound movement it cannot cover with a

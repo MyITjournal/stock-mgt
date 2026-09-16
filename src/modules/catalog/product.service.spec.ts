@@ -79,18 +79,51 @@ describe('generateSku', () => {
 describe('ProductService packaging types', () => {
   let service: ProductService;
   let prisma: {
-    product: { create: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
+    product: {
+      create: jest.Mock;
+      update: jest.Mock;
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+    };
     packagingType: { findFirst: jest.Mock };
+    priceTier: { findFirst: jest.Mock };
+    productPrice: { upsert: jest.Mock };
+    productBarcode: { create: jest.Mock };
+    productUnit: { findMany: jest.Mock };
+    $transaction: jest.Mock;
   };
 
   beforeEach(async () => {
     prisma = {
       product: {
-        create: jest.fn().mockResolvedValue({ id: 'prod-1' }),
-        findFirst: jest.fn().mockResolvedValue(null),
+        // Units come back with ids because that is what create asks for: the
+        // inline prices and barcodes are keyed by name and have to be mapped
+        // onto the ids the same statement just minted.
+        create: jest.fn().mockResolvedValue({
+          id: 'prod-1',
+          units: [
+            { id: 'unit-piece', name: 'piece' },
+            { id: 'unit-carton', name: 'carton' },
+            { id: 'unit-pouch', name: 'pouch' },
+            { id: 'unit-each', name: 'each' },
+          ],
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'prod-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'prod-1', units: [] }),
         findMany: jest.fn().mockResolvedValue([]),
       },
       packagingType: { findFirst: jest.fn().mockResolvedValue(null) },
+      priceTier: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'tier-retail' }),
+      },
+      productPrice: { upsert: jest.fn().mockResolvedValue({}) },
+      productBarcode: { create: jest.fn().mockResolvedValue({}) },
+      productUnit: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'unit-carton', name: 'carton' }]),
+      },
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -190,6 +223,190 @@ describe('ProductService packaging types', () => {
       expect.objectContaining({
         data: expect.objectContaining({ packagingTypeId: null }) as object,
       }),
+    );
+  });
+});
+
+describe('ProductService inline prices and barcodes', () => {
+  let service: ProductService;
+  let prisma: {
+    product: {
+      create: jest.Mock;
+      update: jest.Mock;
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+    };
+    packagingType: { findFirst: jest.Mock };
+    priceTier: { findFirst: jest.Mock };
+    productPrice: { upsert: jest.Mock };
+    productBarcode: { create: jest.Mock };
+    productUnit: { findMany: jest.Mock };
+    $transaction: jest.Mock;
+  };
+
+  const UNITS = [
+    { id: 'unit-piece', name: 'piece' },
+    { id: 'unit-carton', name: 'carton' },
+  ];
+
+  beforeEach(async () => {
+    prisma = {
+      product: {
+        create: jest.fn().mockResolvedValue({ id: 'prod-1', units: UNITS }),
+        update: jest.fn().mockResolvedValue({ id: 'prod-1' }),
+        findFirst: jest.fn().mockResolvedValue({ id: 'prod-1', units: UNITS }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      packagingType: { findFirst: jest.fn().mockResolvedValue(null) },
+      priceTier: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'tier-retail' }),
+      },
+      productPrice: { upsert: jest.fn().mockResolvedValue({}) },
+      productBarcode: { create: jest.fn().mockResolvedValue({}) },
+      productUnit: { findMany: jest.fn().mockResolvedValue(UNITS) },
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductService,
+        { provide: TENANT_PRISMA, useValue: prisma },
+        {
+          provide: CloudinaryService,
+          useValue: {
+            isConfigured: false,
+            assertConfigured: jest.fn(),
+            uploadImage: jest.fn(),
+            deleteImage: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get(ProductService);
+  });
+
+  const asOrg = <T>(fn: () => Promise<T>) =>
+    TenantContext.run({ organizationId: 'org-aaa' }, fn);
+
+  const milo = {
+    name: 'Milo Refill 400g',
+    basePrice: 250000,
+    units: [
+      { name: 'piece', factor: 1, isDefaultSelling: true },
+      { name: 'carton', factor: 24 },
+    ],
+  };
+
+  it('prices a unit named in the same request', async () => {
+    // The whole point: at create time the caller has no unit ids, because the
+    // units are being created by this very statement.
+    await asOrg(() =>
+      service.create({
+        ...milo,
+        prices: [{ unit: 'carton', price: 5400000 }],
+      }),
+    );
+
+    expect(prisma.productPrice.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          unitId: 'unit-carton',
+          tierId: 'tier-retail',
+          price: 5400000,
+        }) as object,
+      }),
+    );
+  });
+
+  it('falls back to the default tier only when none was named', async () => {
+    await asOrg(() =>
+      service.create({
+        ...milo,
+        prices: [{ unit: 'carton', tierId: 'tier-wholesale', price: 5000000 }],
+      }),
+    );
+
+    expect(prisma.priceTier.findFirst).not.toHaveBeenCalled();
+    expect(prisma.productPrice.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ tierId: 'tier-wholesale' }) as object,
+      }),
+    );
+  });
+
+  it('refuses a price for a unit that does not exist', async () => {
+    await expect(
+      asOrg(() =>
+        service.create({ ...milo, prices: [{ unit: 'crate', price: 100 }] }),
+      ),
+    ).rejects.toThrow(/No unit named "crate"/);
+  });
+
+  it('attaches a barcode to the named unit', async () => {
+    await asOrg(() =>
+      service.create({
+        ...milo,
+        barcodes: [{ unit: 'carton', code: '5901234123457' }],
+      }),
+    );
+
+    expect(prisma.productBarcode.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          unitId: 'unit-carton',
+          code: '5901234123457',
+        }) as object,
+      }),
+    );
+  });
+
+  it('rejects a bad check digit before writing anything', async () => {
+    // Validated outside the transaction, so a typo on one line does not roll
+    // back a product that was otherwise fine.
+    await expect(
+      asOrg(() =>
+        service.create({
+          ...milo,
+          barcodes: [{ unit: 'carton', code: '5901234123456' }],
+        }),
+      ),
+    ).rejects.toThrow(/check digit/);
+
+    expect(prisma.product.create).not.toHaveBeenCalled();
+  });
+
+  it('mints an internal code when none is supplied', async () => {
+    await asOrg(() =>
+      service.create({ ...milo, barcodes: [{ unit: 'piece' }] }),
+    );
+
+    const calls = prisma.productBarcode.create.mock.calls as [
+      { data: { code: string } },
+    ][];
+    expect(calls[0][0].data.code).toMatch(/^2\d{12}$/);
+  });
+
+  it('writes nothing extra when neither array is sent', async () => {
+    await asOrg(() => service.create(milo));
+
+    expect(prisma.productPrice.upsert).not.toHaveBeenCalled();
+    expect(prisma.productBarcode.create).not.toHaveBeenCalled();
+    expect(prisma.priceTier.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('upserts on update without touching unlisted prices', async () => {
+    // The trap: replacing the set would let a PATCH naming one unit silently
+    // delete the price of every other.
+    await asOrg(() =>
+      service.update('prod-1', {
+        prices: [{ unit: 'carton', price: 5600000 }],
+      }),
+    );
+
+    expect(prisma.productPrice.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.productPrice.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: { price: 5600000 } }),
     );
   });
 });

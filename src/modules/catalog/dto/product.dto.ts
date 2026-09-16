@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { BarcodeSymbology } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -37,6 +39,71 @@ export class ProductUnitInput {
   @IsOptional()
   @IsBoolean()
   isDefaultSelling?: boolean;
+}
+
+/**
+ * A tier price for one unit, set as the product is created.
+ *
+ * Keyed by unit **name**, not id: the units are being created by the same
+ * request, so the caller has no ids to point at yet.
+ */
+export class ProductPriceInput {
+  @ApiProperty({
+    example: 'carton',
+    description: 'Which unit this price is for, by name, from `units` above.',
+  })
+  @IsString()
+  @MaxLength(40)
+  unit!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Defaults to the organization's default tier, which is what a walk-in gets.",
+  })
+  @IsOptional()
+  @IsUUID()
+  tierId?: string;
+
+  @IsMoney({
+    example: 5400000,
+    // Deliberately not derived from basePrice: a carton is cheaper per piece.
+  })
+  price!: number;
+}
+
+/** A barcode attached as the product is created. Keyed by unit name, as above. */
+export class ProductBarcodeInput {
+  @ApiProperty({
+    example: 'carton',
+    description: 'Which unit carries this code, by name, from `units` above.',
+  })
+  @IsString()
+  @MaxLength(40)
+  unit!: string;
+
+  @ApiPropertyOptional({
+    example: '5901234123457',
+    description:
+      'Omit to generate an internal EAN-13 for goods that arrive without a barcode.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  code?: string;
+
+  @ApiPropertyOptional({
+    enum: BarcodeSymbology,
+    description: 'Detected from the code shape when omitted.',
+  })
+  @IsOptional()
+  @IsEnum(BarcodeSymbology)
+  symbology?: BarcodeSymbology;
+
+  @ApiPropertyOptional({ description: 'Use this code on printed labels.' })
+  @IsOptional()
+  @IsBoolean()
+  isPrimary?: boolean;
 }
 
 export class CreateProductDto {
@@ -138,22 +205,30 @@ export class CreateProductDto {
   @ValidateNested({ each: true })
   @Type(() => ProductUnitInput)
   units!: ProductUnitInput[];
+
+  @ApiPropertyOptional({
+    type: [ProductPriceInput],
+    description:
+      'Tier prices for units that are not priced by scaling the base price. Without one, a unit falls back to `basePrice x factor` — which is right for a sachet against a piece and wrong for a carton, since a carton is cheaper per piece. On PATCH, the listed rows are upserted and unlisted ones are left alone.',
+    example: [{ unit: 'carton', price: 5400000 }],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductPriceInput)
+  prices?: ProductPriceInput[];
+
+  @ApiPropertyOptional({
+    type: [ProductBarcodeInput],
+    description:
+      'Barcodes to attach. Codes belong to units, not products: the carton and the piece scan differently. Use POST /products/:id/barcodes to add one to a product that already exists.',
+    example: [{ unit: 'carton', code: '5901234123457' }],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductBarcodeInput)
+  barcodes?: ProductBarcodeInput[];
 }
 
 export class UpdateProductDto extends PartialType(CreateProductDto) {}
-
-export class SetProductPriceDto {
-  @ApiProperty({ format: 'uuid' })
-  @IsUUID()
-  tierId!: string;
-
-  @ApiProperty({ format: 'uuid' })
-  @IsUUID()
-  unitId!: string;
-
-  @IsMoney({
-    example: 5400000,
-    // Deliberately not derived from basePrice: a carton is cheaper per piece.
-  })
-  price!: number;
-}

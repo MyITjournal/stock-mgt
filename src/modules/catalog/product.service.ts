@@ -10,11 +10,14 @@ import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { splitTaxInclusive } from '../../common/money/money';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { BarcodeSymbology } from '@prisma/client';
+import { resolveBarcode } from './barcode';
 import { resolveUnitPrice } from './pricing';
 import {
   CreateProductDto,
+  ProductBarcodeInput,
+  ProductPriceInput,
   ProductUnitInput,
-  SetProductPriceDto,
   UpdateProductDto,
 } from './dto/product.dto';
 
@@ -23,6 +26,9 @@ const PRODUCT_INCLUDE = {
   packagingType: true,
   units: { orderBy: { factor: 'asc' } },
   prices: { include: { tier: true, unit: true } },
+  // Barcodes ride along because a caller that attached them inline needs to
+  // see what was minted — an omitted code becomes a generated internal EAN-13.
+  barcodes: { include: { unit: true } },
 } as const;
 
 /**
@@ -56,45 +62,80 @@ export class ProductService {
     const sku = input.sku?.trim() || generateSku(input.name);
     const organizationId = TenantContext.requireOrganizationId();
 
+    // Resolved before the transaction opens: both of these read rows the
+    // transaction does not write, and a check-digit rejection should not have
+    // held a write lock while it was being decided.
+    const defaultTierId = await this.resolveDefaultTier(input.prices);
+    const barcodes = resolveBarcodeInputs(input.barcodes);
+
     try {
-      return await this.prisma.product.create({
-        data: {
-          ...(input.id && { id: input.id }),
+      const created = await this.prisma.$transaction(async (tx) => {
+        const product = await tx.product.create({
+          data: this.productData(input, { organizationId, sku }),
+          include: { units: true },
+        });
+
+        const unitIdByName = new Map(
+          product.units.map((unit) => [unit.name, unit.id]),
+        );
+
+        await this.writePrices(tx, {
+          productId: product.id,
           organizationId,
-          sku,
-          name: input.name,
-          description: input.description ?? null,
-          categoryId: input.categoryId ?? null,
-          packagingTypeId: input.packagingTypeId ?? null,
-          basePrice: input.basePrice,
-          costPrice: input.costPrice ?? null,
-          ...(input.taxRateBps !== undefined && {
-            taxRateBps: input.taxRateBps,
-          }),
-          ...(input.trackStock !== undefined && {
-            trackStock: input.trackStock,
-          }),
-          ...(input.reorderPoint !== undefined && {
-            reorderPoint: input.reorderPoint,
-          }),
-          ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
-          units: {
-            create: input.units.map((unit) => ({
-              organizationId,
-              name: unit.name,
-              factor: unit.factor,
-              // The factor-1 unit is the base; assertExactlyOneBaseUnit has
-              // already guaranteed there is exactly one.
-              isBase: unit.factor === 1,
-              isDefaultSelling: unit.isDefaultSelling ?? unit.factor === 1,
-            })),
-          },
-        },
-        include: PRODUCT_INCLUDE,
+          unitIdByName,
+          defaultTierId,
+          prices: input.prices,
+        });
+
+        await this.writeBarcodes(tx, {
+          productId: product.id,
+          organizationId,
+          unitIdByName,
+          barcodes,
+        });
+
+        return product.id;
       });
+
+      return await this.findOneOrFail(created);
     } catch (error) {
       throw translateUniqueViolation(error, sku);
     }
+  }
+
+  /** The scalar columns, shared by create and the transaction above. */
+  private productData(
+    input: CreateProductDto,
+    context: { organizationId: string; sku: string },
+  ) {
+    return {
+      ...(input.id && { id: input.id }),
+      organizationId: context.organizationId,
+      sku: context.sku,
+      name: input.name,
+      description: input.description ?? null,
+      categoryId: input.categoryId ?? null,
+      packagingTypeId: input.packagingTypeId ?? null,
+      basePrice: input.basePrice,
+      costPrice: input.costPrice ?? null,
+      ...(input.taxRateBps !== undefined && { taxRateBps: input.taxRateBps }),
+      ...(input.trackStock !== undefined && { trackStock: input.trackStock }),
+      ...(input.reorderPoint !== undefined && {
+        reorderPoint: input.reorderPoint,
+      }),
+      ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
+      units: {
+        create: input.units.map((unit) => ({
+          organizationId: context.organizationId,
+          name: unit.name,
+          factor: unit.factor,
+          // The factor-1 unit is the base; assertExactlyOneBaseUnit has
+          // already guaranteed there is exactly one.
+          isBase: unit.factor === 1,
+          isDefaultSelling: unit.isDefaultSelling ?? unit.factor === 1,
+        })),
+      },
+    };
   }
 
   findAll(
@@ -151,8 +192,12 @@ export class ProductService {
     }
     if (input.units) assertExactlyOneBaseUnit(input.units);
 
+    const defaultTierId = await this.resolveDefaultTier(input.prices);
+    const barcodes = resolveBarcodeInputs(input.barcodes);
+    const organizationId = TenantContext.requireOrganizationId();
+
     try {
-      return await this.prisma.product.update({
+      await this.prisma.product.update({
         where: { id },
         data: {
           ...(input.sku !== undefined && { sku: input.sku }),
@@ -179,10 +224,153 @@ export class ProductService {
           }),
           ...(input.imageUrl !== undefined && { imageUrl: input.imageUrl }),
         },
-        include: PRODUCT_INCLUDE,
       });
     } catch (error) {
       throw translateUniqueViolation(error, input.sku ?? '');
+    }
+
+    // Prices and barcodes are keyed by unit name, so they need the units as
+    // they stand now rather than as the request described them.
+    if (input.prices?.length || barcodes.length) {
+      const units = await this.prisma.productUnit.findMany({
+        where: { productId: id },
+      });
+      const unitIdByName = new Map(units.map((unit) => [unit.name, unit.id]));
+
+      await this.prisma.$transaction(async (tx) => {
+        await this.writePrices(tx, {
+          productId: id,
+          organizationId,
+          unitIdByName,
+          defaultTierId,
+          prices: input.prices,
+        });
+        await this.writeBarcodes(tx, {
+          productId: id,
+          organizationId,
+          unitIdByName,
+          barcodes,
+        });
+      });
+    }
+
+    return this.findOneOrFail(id);
+  }
+
+  /**
+   * The tier a price with no `tierId` belongs to.
+   *
+   * Looked up once per request rather than per row, and only when something
+   * actually needs it. A tier price is what a walk-in gets, so the default tier
+   * is the sensible answer and the one a caller filling in a product form has
+   * in mind.
+   */
+  private async resolveDefaultTier(
+    prices?: ProductPriceInput[],
+  ): Promise<string | null> {
+    if (!prices?.some((row) => !row.tierId)) return null;
+
+    const tier = await this.prisma.priceTier.findFirst({
+      where: { isDefault: true, deletedAt: null },
+    });
+    if (!tier) {
+      throw new BadRequestException(
+        'This organization has no default price tier, so a price must name its tierId.',
+      );
+    }
+    return tier.id;
+  }
+
+  /**
+   * Upserts the listed prices and leaves every unlisted one alone.
+   *
+   * Replacing the whole set would mean a PATCH that mentions one unit silently
+   * deleting the prices for every other — the same class of silent loss as
+   * costing a forced sale at zero, and just as hard to notice afterwards.
+   */
+  private async writePrices(
+    tx: TransactionClient,
+    args: {
+      productId: string;
+      organizationId: string;
+      unitIdByName: Map<string, string>;
+      defaultTierId: string | null;
+      prices?: ProductPriceInput[];
+    },
+  ): Promise<void> {
+    for (const row of args.prices ?? []) {
+      const unitId = args.unitIdByName.get(row.unit);
+      if (!unitId) {
+        throw new BadRequestException(
+          `No unit named "${row.unit}" on this product. Prices are keyed by unit name, from the units list.`,
+        );
+      }
+
+      const tierId = row.tierId ?? args.defaultTierId;
+      if (!tierId) {
+        throw new BadRequestException(
+          `The price for "${row.unit}" needs a tierId.`,
+        );
+      }
+
+      await tx.productPrice.upsert({
+        where: {
+          organizationId_productId_tierId_unitId: {
+            organizationId: args.organizationId,
+            productId: args.productId,
+            tierId,
+            unitId,
+          },
+        },
+        create: {
+          organizationId: args.organizationId,
+          productId: args.productId,
+          tierId,
+          unitId,
+          price: row.price,
+        },
+        update: { price: row.price },
+      });
+    }
+  }
+
+  /** Attaches the listed barcodes. Codes are already validated by this point. */
+  private async writeBarcodes(
+    tx: TransactionClient,
+    args: {
+      productId: string;
+      organizationId: string;
+      unitIdByName: Map<string, string>;
+      barcodes: ResolvedBarcode[];
+    },
+  ): Promise<void> {
+    for (const row of args.barcodes) {
+      const unitId = args.unitIdByName.get(row.unit);
+      if (!unitId) {
+        throw new BadRequestException(
+          `No unit named "${row.unit}" on this product. Barcodes are keyed by unit name, from the units list.`,
+        );
+      }
+
+      try {
+        await tx.productBarcode.create({
+          data: {
+            organizationId: args.organizationId,
+            productId: args.productId,
+            unitId,
+            code: row.code,
+            symbology: row.symbology,
+            isPrimary: row.isPrimary,
+          },
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new ConflictException(
+            `The barcode "${row.code}" is already assigned to another product in this organization`,
+          );
+        }
+        throw error;
+      }
     }
   }
 
@@ -192,45 +380,6 @@ export class ProductService {
     await this.prisma.product.update({
       where: { id },
       data: { deletedAt: new Date(), isActive: false },
-    });
-  }
-
-  /** Sets the price of one unit of this product for one customer tier. */
-  async setPrice(productId: string, input: SetProductPriceDto) {
-    await this.findOneOrFail(productId);
-
-    const unit = await this.prisma.productUnit.findFirst({
-      where: { id: input.unitId, productId },
-    });
-    if (!unit) {
-      throw new BadRequestException(
-        'That unit does not belong to this product',
-      );
-    }
-
-    const tier = await this.prisma.priceTier.findFirst({
-      where: { id: input.tierId, deletedAt: null },
-    });
-    if (!tier) throw new NotFoundException('Price tier not found');
-
-    return this.prisma.productPrice.upsert({
-      where: {
-        organizationId_productId_tierId_unitId: {
-          organizationId: unit.organizationId,
-          productId,
-          tierId: input.tierId,
-          unitId: input.unitId,
-        },
-      },
-      create: {
-        organizationId: unit.organizationId,
-        productId,
-        tierId: input.tierId,
-        unitId: input.unitId,
-        price: input.price,
-      },
-      update: { price: input.price },
-      include: { tier: true, unit: true },
     });
   }
 
@@ -385,4 +534,49 @@ function translateUniqueViolation(error: unknown, sku: string): Error {
     return new ConflictException(`A product with SKU "${sku}" already exists`);
   }
   return error as Error;
+}
+
+/**
+ * The client handed to a `$transaction` callback: the tenant client minus the
+ * methods that cannot be called from inside one.
+ */
+type TransactionClient = Omit<
+  TenantPrisma,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
+
+interface ResolvedBarcode {
+  unit: string;
+  code: string;
+  symbology: BarcodeSymbology;
+  isPrimary: boolean;
+}
+
+/**
+ * Validates every inline barcode before anything is written.
+ *
+ * Done up front, outside the transaction, so a mistyped check digit on the
+ * third code does not roll back a product that was otherwise fine — and so the
+ * message names which line was wrong rather than just refusing the request.
+ */
+function resolveBarcodeInputs(
+  inputs?: ProductBarcodeInput[],
+): ResolvedBarcode[] {
+  return (inputs ?? []).map((row) => {
+    const resolved = resolveBarcode(row);
+    if ('error' in resolved) {
+      throw new BadRequestException(
+        `Barcode for "${row.unit}": ${resolved.error}`,
+      );
+    }
+    return { unit: row.unit, ...resolved, isPrimary: row.isPrimary ?? false };
+  });
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }

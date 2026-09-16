@@ -38,11 +38,7 @@ import {
   UpdatePackagingTypeDto,
 } from './dto/packaging-type.dto';
 import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
-import {
-  CreateProductDto,
-  SetProductPriceDto,
-  UpdateProductDto,
-} from './dto/product.dto';
+import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 import { CreateBarcodeDto } from './dto/barcode.dto';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 
@@ -268,19 +264,13 @@ export class ProductController {
     return this.products.create(dto);
   }
 
-  @Post(':id/prices')
-  @Roles(...CATALOG_EDITORS)
-  @ApiOperation({ summary: 'Set the price of one unit for one tier' })
-  setPrice(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: SetProductPriceDto,
-  ) {
-    return this.products.setPrice(id, dto);
-  }
-
   @Patch(':id')
   @Roles(...CATALOG_EDITORS)
-  @ApiOperation({ summary: 'Update a product' })
+  @ApiOperation({
+    summary: 'Update a product',
+    description:
+      'Prices and barcodes are set here, in `prices` and `barcodes`, rather than through endpoints of their own. Both upsert what they list and leave the rest alone, so naming one unit does not wipe the others.',
+  })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,

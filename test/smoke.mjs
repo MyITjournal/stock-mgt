@@ -257,9 +257,11 @@ async function main() {
   eq('no tier price yet -> basePrice x 24', fallback.price, 250_000 * 24);
   eq('and isTierPrice is false', fallback.isTierPrice, false);
 
-  await api('POST', `/products/${product.id}/prices`, {
+  // Set through the product itself, keyed by unit name: there is no longer a
+  // prices endpoint, and PATCH upserts what it lists.
+  await api('PATCH', `/products/${product.id}`, {
     token: t,
-    body: { tierId: tier.id, unitId: carton.id, price: 5_400_000 },
+    body: { prices: [{ unit: 'carton', tierId: tier.id, price: 5_400_000 }] },
   });
   const tiered = (
     await api('GET', `/products/${product.id}/price?unitId=${carton.id}&tierId=${tier.id}`, {
@@ -292,6 +294,55 @@ async function main() {
   const scan = (await api('GET', `/scan/${generated.code}`, { token: t })).data;
   eq('scanning the carton code resolves to the carton unit', scan.unit.id, carton.id);
   eq('one scan means 24 base units', scan.baseQuantity, 24);
+
+  // One call: the product, its units, a carton price and a carton barcode.
+  // Prices and barcodes are keyed by unit *name* because the units do not
+  // exist until this same request creates them.
+  const inOneCall = (
+    await api('POST', '/products', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        name: 'Bournvita Refill 500g',
+        categoryId: category.id,
+        basePrice: 300_000,
+        units: [
+          { name: 'piece', factor: 1, isDefaultSelling: true },
+          { name: 'carton', factor: 12 },
+        ],
+        prices: [{ unit: 'carton', tierId: tier.id, price: 3_200_000 }],
+        barcodes: [{ unit: 'carton', code: '5901234123457' }],
+      },
+    })
+  ).data;
+
+  const inlineCarton = inOneCall.units.find((u) => u.factor === 12);
+  eq('a product can be created with its carton price in one call', inOneCall.prices.length, 1);
+  eq('against the unit named in the same request', inOneCall.prices[0].unitId, inlineCarton.id);
+  eq('and its barcode too', inOneCall.barcodes.length, 1);
+  eq('on the same carton', inOneCall.barcodes[0].unitId, inlineCarton.id);
+
+  const inlinePrice = (
+    await api(
+      'GET',
+      `/products/${inOneCall.id}/price?unitId=${inlineCarton.id}&tierId=${tier.id}`,
+      { token: t },
+    )
+  ).data;
+  eq('the inline price is what selling resolves', inlinePrice.price, 3_200_000);
+  eq('and it counts as a tier price, not the scaled fallback', inlinePrice.isTierPrice, true);
+
+  await api('POST', '/products', {
+    token: t,
+    expect: 400,
+    body: {
+      name: 'Nothing To Price',
+      basePrice: 1000,
+      units: [{ name: 'piece', factor: 1 }],
+      prices: [{ unit: 'crate', price: 5000 }],
+    },
+  });
+  check('a price naming a unit the product does not have is rejected (400)', true);
 
   step(6, 'Idempotency: a retried write does not create a second row');
   const key = randomUUID();
