@@ -34,7 +34,7 @@ and a wholesale route have to coexist in the same model rather than one being as
 | 5 | Money in: payments, receivables, expenses | done |
 | 6 | Reports: dashboard, profit, sales, stock valuation, expiry, movers, alerts | done |
 | 6.1 | Gap-closing: sync correctness, cash-up, the no-credit rule, images, stocktake | done |
-| 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | next |
+| 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | done |
 | — | **Deploy to Render** — free tier, once the backend is finished and before the web slice | next |
 | 7 | Web dashboard | |
 | 8 | Mobile app | |
@@ -607,6 +607,69 @@ Three printing needs, and they do not belong in the same place (decided 2026-08-
   *can* be printed; nothing renders a sheet yet, and nothing needs one until there is a screen to
   press the button on.
 
+### PDFs: pdfmake, and why not a browser
+
+Built 2026-09-17 in `src/modules/documents/`: `GET /sales/:id/invoice.pdf` and
+`GET /customers/:id/statement.pdf`.
+
+**`pdfmake`, not Puppeteer.** Puppeteer renders HTML and CSS, so the output would be prettier and
+the templates far pleasanter to write. It also ships Chromium — roughly 300MB, hundreds of
+megabytes of RAM per render, and seconds of start-up. Deployment is Render's free tier, which §15
+already records as having 30–50 second cold starts, so a browser per PDF is the wrong trade on the
+host this is going to. An invoice is a header, a table and a totals block, which is what a
+document-definition library does well, and it handles a long invoice flowing onto a second page
+without being asked.
+
+**Revisit it** if the invoice becomes a branded, designed artifact, or on a host with room for
+Chromium. Hosted HTML-to-PDF APIs were rejected outright: they would mean sending customers'
+invoice data to a third party, which is a decision rather than a detail.
+
+**Two implementation notes worth keeping.** The dependency is pinned to the **0.2 line**; 0.2 is
+the stable Node API that `@types/pdfmake` and every piece of documentation describe. 0.3 is a
+rewrite whose module layout its own published types do not match — `new PdfPrinter()` is not even
+constructable from the documented import. And `@types/pdfmake` only types the *browser* entry
+point, so the four members of the server-side printer are declared by hand in
+`documents/pdfmake-node.d.ts` rather than reaching for `any`.
+
+**Money prints as `NGN 2,500.00`, not `₦2,500.00`.** The 14 built-in PDF fonts carry no ₦ glyph,
+and a missing glyph renders as a blank or a box on a document a customer is meant to pay from.
+Using the built-ins means no font files are shipped or loaded; the cost is Helvetica and the
+currency code.
+
+**The documents recompute nothing.** The invoice reads `SaleService.receipt` and the statement
+reads `ReceivableService.statement`, so a printed document and the screen it was printed from
+cannot disagree — the same rule §12 applies to every other figure.
+
+**VAT prints as "of which", never as an addition.** Prices are stored tax-inclusive (§2), so
+adding the tax line to the total would overstate the bill by 7.5% on the one document where that
+matters most.
+
+**The statement lists payments as well as debts.** A statement showing only what is owed reads as
+an accusation and invites an argument about money that was in fact received; an itemised position
+is answerable, which is the whole point of the artifact over WhatsApp.
+
+**Every active bank account is printed, default first** — a business keeps several precisely so a
+customer can pay into whichever bank they already use (§11), so printing only the default would
+defeat the reason for having them. With none set up, the block is omitted rather than printed
+empty.
+
+### The letterhead is entirely optional
+
+`Organization` gained `address`, `phone`, `email`, `taxId`, `rcNumber` and `logoUrl` on
+2026-09-17, **all nullable**, decided with the owner: *"not everyone is disciplined enough to add
+them."*
+
+That is the right call and worth recording as a principle. A business that never visited a profile
+screen still has to be able to invoice a customer today. Blocking the document on a required field
+would make the feature useless to exactly the people it is for, so the renderer prints what it has
+and silently drops what it does not — verified by a test that renders an invoice for a business
+with nothing filled in and no bank accounts.
+
+`GET /organization` is readable by every member, because a rep issuing an invoice needs what goes
+on it; `PATCH /organization` is owner and manager. **`currency`, `timezone` and `nextSaleNumber`
+are deliberately not editable there**: periods resolve in the timezone (§12), and rewinding the
+invoice counter would hand out a number twice.
+
 ---
 
 ## 7. Identification: barcodes now, RFID later
@@ -1085,14 +1148,24 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6 done, plus the 6.1 gap-closing pass and the first half of 6.5.** 343 tests across
-25 suites, twenty migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 313
-checks against a running server.
+**Slices 0–6.5 done, plus the 6.1 gap-closing pass.** 355 tests across 26 suites, twenty-one
+migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 320 checks against a
+running server.
 
 **Bank accounts landed 2026-09-17** — `BankAccount` and `Payment.bankAccountId`, decided in §11.
 Additive: the column is nullable, so nothing written before it is invalidated. It exists so a bank
 statement can be reconciled against payment rows by joining rather than by eye, and it is also the
 join the planned statement-parser project will need.
+
+**PDFs landed 2026-09-17, which completes Slice 6.5** — `GET /sales/:id/invoice.pdf` and
+`GET /customers/:id/statement.pdf` in `src/modules/documents/`, plus the optional letterhead on
+`Organization` and `GET`/`PATCH /organization` to set it. The decisions are in §6. Bank accounts
+were deliberately built first, because the "pay into" block is most of why a customer wants the
+invoice as a document at all.
+
+**The backend is now feature-complete for v1.** What remains before the web dashboard is
+**deployment** (§15 item 1) — and the targets chart, which §15 item 3 says can wait for the
+mobile slice.
 
 **Vendor purchase targets landed 2026-09-16** — the model, the CRUD and
 `GET /purchase-targets/report`, decided in §12 and closing most of §15 item 3. What remains of

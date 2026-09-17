@@ -691,6 +691,27 @@ model Organization {
   currency String @default("NGN")
   timezone String @default("Africa/Lagos")
 
+  /// The letterhead: what a printed invoice or statement says about the
+  /// business issuing it.
+  ///
+  /// **Every one of these is nullable**, deliberately. A business that has not
+  /// filled in its address still needs to be able to issue an invoice today —
+  /// blocking the document on a profile screen nobody visited would make the
+  /// feature useless to exactly the people it is for. The renderer prints what
+  /// it has and leaves out what it does not.
+  address  String?
+  phone    String?
+  email    String?
+  /// Tax Identification Number. Printed on a VAT invoice where a customer's
+  /// own accounts need it; absent, the invoice is still a valid receipt.
+  taxId    String?
+  /// CAC registration number, conventionally shown as "RC 123456".
+  rcNumber String?
+  /// A logo for the letterhead. A URL rather than an upload, so a business that
+  /// already hosts its brand assets is not forced through our uploader — the
+  /// same reasoning as `Product.imageUrl` in §4.
+  logoUrl  String?
+
   /// The next invoice number to hand out. Incremented inside the same
   /// transaction that writes the sale, which takes a row lock and so
   /// guarantees no gaps and no duplicates. It serialises concurrent sales
