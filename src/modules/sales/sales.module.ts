@@ -3,6 +3,7 @@ import { SaleController } from './sale.controller';
 import { SaleService } from './sale.service';
 import { SaleReturnService } from './sale-return.service';
 import { InventoryModule } from '../inventory/inventory.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 /**
  * Selling. Leans on `InventoryModule` for the stock half — a sale never writes
@@ -10,7 +11,7 @@ import { InventoryModule } from '../inventory/inventory.module';
  * the product the sale has already loaded.
  */
 @Module({
-  imports: [InventoryModule],
+  imports: [InventoryModule, PaymentsModule],
   controllers: [SaleController],
   providers: [SaleService, SaleReturnService],
   exports: [SaleService],

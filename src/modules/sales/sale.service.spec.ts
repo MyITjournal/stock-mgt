@@ -9,6 +9,7 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { LocationService } from '../inventory/location.service';
 import { StockService } from '../inventory/stock.service';
+import { BankAccountService } from '../payments/bank-account.service';
 import { SaleService } from './sale.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 
@@ -108,6 +109,12 @@ describe('SaleService', () => {
         SaleService,
         { provide: TENANT_PRISMA, useValue: prisma },
         { provide: StockService, useValue: stock },
+        // Selling cares that the payment row is written, not which account took
+        // it; the rule lives in BankAccountService and is covered there.
+        {
+          provide: BankAccountService,
+          useValue: { resolveForPayment: jest.fn().mockResolvedValue(null) },
+        },
         {
           provide: LocationService,
           useValue: {

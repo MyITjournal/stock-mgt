@@ -8,6 +8,7 @@ import { OrgRole, PaymentMethod } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { PaymentService } from './payment.service';
+import { BankAccountService } from './bank-account.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 
 const ORG = 'org-aaa';
@@ -56,7 +57,17 @@ describe('PaymentService', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PaymentService, { provide: TENANT_PRISMA, useValue: prisma }],
+      providers: [
+        PaymentService,
+        { provide: TENANT_PRISMA, useValue: prisma },
+        // These cases are about allocation arithmetic, not about which account
+        // took the money. The rule itself is covered in bank-account.spec.ts
+        // and end to end in smoke.
+        {
+          provide: BankAccountService,
+          useValue: { resolveForPayment: jest.fn().mockResolvedValue(null) },
+        },
+      ],
     }).compile();
 
     service = module.get(PaymentService);

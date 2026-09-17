@@ -20,6 +20,7 @@ import {
 import { resolveProductUnit } from '../inventory/base-units';
 import { LocationService } from '../inventory/location.service';
 import { StockService, StockWriter } from '../inventory/stock.service';
+import { BankAccountService } from '../payments/bank-account.service';
 import { resolveUnitPrice } from '../catalog/pricing';
 import { CreateSaleDto, SaleLineDto } from './dto/create-sale.dto';
 import { priceLine, roundCost } from './sale-pricing';
@@ -99,6 +100,7 @@ export class SaleService {
     @Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma,
     private readonly stock: StockService,
     private readonly locations: LocationService,
+    private readonly bankAccounts: BankAccountService,
   ) {}
 
   async create(input: CreateSaleDto) {
@@ -113,6 +115,16 @@ export class SaleService {
       : new Date();
     const organizationId = TenantContext.requireOrganizationId();
     const recordedByUserId = TenantContext.get()?.userId ?? null;
+
+    // Resolved before the transaction opens, because it reads rows the
+    // transaction does not write and can refuse the request outright — a
+    // counter sale paid by transfer still has to say which account took it, or
+    // it is unreconcilable the moment the statement arrives.
+    const paymentMethod = input.payment?.method ?? PaymentMethod.cash;
+    const paymentBankAccountId = await this.bankAccounts.resolveForPayment(
+      paymentMethod,
+      input.payment?.bankAccountId,
+    );
 
     await this.prisma.$transaction(async (tx) => {
       const writer = tx as unknown as StockWriter;
@@ -195,7 +207,8 @@ export class SaleService {
             // cash, so the end-of-shift cash-up needs no extra input.
             locationId,
             amount: paid,
-            method: input.payment?.method ?? PaymentMethod.cash,
+            method: paymentMethod,
+            bankAccountId: paymentBankAccountId,
             reference: input.payment?.reference ?? null,
             occurredAt,
             recordedByUserId,

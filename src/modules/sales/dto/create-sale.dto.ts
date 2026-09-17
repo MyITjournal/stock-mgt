@@ -77,6 +77,15 @@ export class SalePaymentDto {
   @IsString()
   @MaxLength(120)
   reference?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Which account the money landed in. Required when `method` is `transfer` or `pos` — a customer paying by transfer at the counter still has to reconcile against a statement later.',
+  })
+  @IsOptional()
+  @IsUUID()
+  bankAccountId?: string;
 }
 
 export class CreateSaleDto {
