@@ -19,6 +19,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { OrganizationModule } from './modules/organization/organization.module';
+import { DocumentsModule } from './modules/documents/documents.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -39,6 +41,8 @@ import { UsersModule } from './modules/users/users.module';
     PaymentsModule,
     ExpensesModule,
     ReportsModule,
+    OrganizationModule,
+    DocumentsModule,
   ],
   controllers: [AppController],
   providers: [
