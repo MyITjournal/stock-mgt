@@ -1582,3 +1582,28 @@ sign in as, so it is covered by construction rather than by demonstration.
     - **The 409 is the same status for two different problems**: "your key handling is wrong"
       and "wait, it is still running". Only the message distinguishes them. A machine-readable
       code belongs here the moment a client has to branch on it.
+
+13. **Product variants, for the preorder product — and a warning.** Raised 2026-09-17 while
+    assessing `PRD-PREORDER-AND-SHOP.md`; the strategic half is in `MARKET.md` §6.
+
+    The preorder product is planned to run on **this backend**, as a module enabled per
+    organization rather than a separate system talking to it over an API. That decision removes
+    most of the PRD's integration contract: "connected mode" stops being a synchronisation
+    protocol and becomes a flag on the organization, and "one inventory authority per location"
+    enforces itself because there is only one ledger.
+
+    It needs one thing the catalog does not have: **variants**.
+
+    **A variant is not a unit, and conflating them would break §4.** A `ProductUnit` is a
+    packaging multiple of the *same item* — twenty-four pieces make a carton, stock is recorded
+    in the factor-1 base unit, and the entire ledger rests on that. A variant is a *different
+    item* that shares a name: size 39 and size 41 are not multiples of one another, and neither
+    is a base unit of the other. They coexist — "Nike Air Max, size 39, sold in pairs" has both.
+    The PRD's own terminology table lists a variant as "size, colour, style, **or unit**"; that
+    last word is the trap.
+
+    The open choice, to be made before anything points at it: a variant is its own `Product`
+    under a shared grouping, or a new `ProductVariant` between `Product` and `ProductUnit`. The
+    first is cheap and leaves every existing foreign key alone; the second is tidier and touches
+    every table that references a product. **Decide it before building**, because it is the kind
+    of model change that is nearly free on day one and a migration across a dozen tables later.
