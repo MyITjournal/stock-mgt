@@ -73,6 +73,15 @@ export class CreatePaymentDto {
   method?: PaymentMethod;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Which of your accounts the money landed in. **Required** for `transfer` and `pos`, and refused for `cash`, which never reached a bank. This is what lets a bank statement be reconciled against these rows directly instead of matched by amount and date.',
+  })
+  @IsOptional()
+  @IsUUID()
+  bankAccountId?: string;
+
+  @ApiPropertyOptional({
     example: 'FT26083012345',
     description: 'Transfer or POS slip number, or the cheque number.',
   })

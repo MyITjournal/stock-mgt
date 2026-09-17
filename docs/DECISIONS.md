@@ -818,6 +818,50 @@ because a statement excludes voided rows (they remain on `GET /payments`).
 feeding it. They sit in the same file deliberately — spread across four `include` blocks, the
 fourth is the one that gets forgotten.
 
+### A payment knows which account it landed in
+
+Added 2026-09-17, raised by the owner. `PaymentMethod` already said *how* the money moved —
+`cash`, `transfer`, `pos`, `cheque` — and `reference` held the slip number. Neither says **where**
+it went, so reconciling against a bank statement meant matching on amount and date and hoping.
+
+`BankAccount` is the set of accounts the business is paid into, and `Payment.bankAccountId` says
+which one took each payment. Reconciliation is then a join: pull one account's statement, lay it
+beside the payments recorded against that account over the same dates, and the two either agree or
+name their difference.
+
+**Several accounts is the normal case, not the exception.** The owner reports businesses running
+as many as five — one per bank their customers already use, so a transfer is free and instant for
+the payer, plus a separate account for POS settlement. So this is a collection with a default
+rather than a field on `Organization`.
+
+**`transfer` and `pos` must name an account; `cash` must not.** A POS terminal settles into a
+specific account, so it reconciles exactly as a transfer does. Cash never touched a bank, and
+letting it claim an account would put money in a statement line that will never exist. A cheque is
+left optional — it is written today and banked whenever, so the account is not known when the row
+is recorded.
+
+**The account is never defaulted for a caller who did not choose one.** Silently picking the
+default would record money into an account it may never have reached, and the error only surfaces
+at reconciliation, by which time nobody remembers which transfer it was. A 400 that names how many
+accounts there are to choose from is cheaper than a mismatch found a month later.
+
+**The consequence is that a business must set its accounts up before recording its first
+transfer.** Taken deliberately: if you are accepting transfers, you have an account. The error
+names `POST /bank-accounts` so the fix is obvious.
+
+**An account with payments against it cannot be deleted**, only marked inactive. Deleting it would
+leave those payments unable to say where the money went, which is the single question the model
+exists to answer. `isActive` already stops it being offered for new money.
+
+`GET /reports/collections` gains a **per-account breakdown** alongside the per-location one. The
+location grouping is the end-of-shift cash-up; this one is the reconciliation view. Cash gets its
+own row rather than being dropped, for the same reason payments with no location do.
+
+Worth noting for later: **Paystack and other gateways are not this.** Adding one to the enum would
+be one line and misleading — a gateway deducts a fee, settles a day or two later, and should
+create the payment itself from a webhook rather than being typed in. Recording `paystack` as a
+label is honest; an integration is its own slice.
+
 ### A payment knows which counter took it
 
 `Payment.locationId`, set automatically when a sale banks its own payment — the counter that rang
@@ -1041,9 +1085,14 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6 done, plus the 6.1 gap-closing pass and the first half of 6.5.** 329 tests across
-24 suites, nineteen migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 302
+**Slices 0–6 done, plus the 6.1 gap-closing pass and the first half of 6.5.** 343 tests across
+25 suites, twenty migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 313
 checks against a running server.
+
+**Bank accounts landed 2026-09-17** — `BankAccount` and `Payment.bankAccountId`, decided in §11.
+Additive: the column is nullable, so nothing written before it is invalidated. It exists so a bank
+statement can be reconciled against payment rows by joining rather than by eye, and it is also the
+join the planned statement-parser project will need.
 
 **Vendor purchase targets landed 2026-09-16** — the model, the CRUD and
 `GET /purchase-targets/report`, decided in §12 and closing most of §15 item 3. What remains of
@@ -1533,3 +1582,28 @@ sign in as, so it is covered by construction rather than by demonstration.
     - **The 409 is the same status for two different problems**: "your key handling is wrong"
       and "wait, it is still running". Only the message distinguishes them. A machine-readable
       code belongs here the moment a client has to branch on it.
+
+13. **Product variants, for the preorder product — and a warning.** Raised 2026-09-17 while
+    assessing `PRD-PREORDER-AND-SHOP.md`; the strategic half is in `MARKET.md` §6.
+
+    The preorder product is planned to run on **this backend**, as a module enabled per
+    organization rather than a separate system talking to it over an API. That decision removes
+    most of the PRD's integration contract: "connected mode" stops being a synchronisation
+    protocol and becomes a flag on the organization, and "one inventory authority per location"
+    enforces itself because there is only one ledger.
+
+    It needs one thing the catalog does not have: **variants**.
+
+    **A variant is not a unit, and conflating them would break §4.** A `ProductUnit` is a
+    packaging multiple of the *same item* — twenty-four pieces make a carton, stock is recorded
+    in the factor-1 base unit, and the entire ledger rests on that. A variant is a *different
+    item* that shares a name: size 39 and size 41 are not multiples of one another, and neither
+    is a base unit of the other. They coexist — "Nike Air Max, size 39, sold in pairs" has both.
+    The PRD's own terminology table lists a variant as "size, colour, style, **or unit**"; that
+    last word is the trap.
+
+    The open choice, to be made before anything points at it: a variant is its own `Product`
+    under a shared grouping, or a new `ProductVariant` between `Product` and `ProductUnit`. The
+    first is cheap and leaves every existing foreign key alone; the second is tidier and touches
+    every table that references a product. **Decide it before building**, because it is the kind
+    of model change that is nearly free on day one and a migration across a dozen tables later.

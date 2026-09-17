@@ -394,6 +394,51 @@ async function main() {
   check('the van and a supplier created', !!van.id && !!supplier.id);
   eq('the van did not steal the default flag', van.isDefault, false);
 
+  // The accounts customers pay into. A business commonly keeps several, so
+  // that a customer can transfer into whichever bank they already use.
+  const gtb = (
+    await api('POST', '/bank-accounts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        bankName: 'Guaranty Trust Bank',
+        accountName: 'Adebayo Stores Limited',
+        accountNumber: '0123 4567-89',
+        bankCode: '058',
+        isDefault: true,
+      },
+    })
+  ).data;
+  eq('the account number is stored digits-only', gtb.accountNumber, '0123456789');
+
+  const zenith = (
+    await api('POST', '/bank-accounts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        bankName: 'Zenith Bank',
+        accountName: 'Adebayo Stores Limited',
+        accountNumber: '1010101010',
+        isDefault: true,
+      },
+    })
+  ).data;
+  const accounts = (await api('GET', '/bank-accounts', { token: t })).data;
+  eq('both accounts are on file', accounts.length, 2);
+  eq('and the newest default won', accounts[0].id, zenith.id);
+  eq('so the old one stopped being default', accounts.find((a) => a.id === gtb.id).isDefault, false);
+
+  await api('POST', '/bank-accounts', {
+    token: t,
+    expect: 409,
+    body: {
+      bankName: 'Zenith Bank',
+      accountName: 'Adebayo Stores Limited',
+      accountNumber: '1010101010',
+    },
+  });
+  check('the same account at the same bank is refused twice', true);
+
   step(8, 'Receiving: invoice totals in, unit cost out');
   // 10 cartons arrive, the invoice charges for 9. The two free cartons pull the
   // cost of every unit down: 240 tins for NGN 90,000 is NGN 375.00 each.
@@ -868,6 +913,7 @@ async function main() {
         customerId: shopkeeper.id,
         amount: 6_200_000,
         method: 'transfer',
+        bankAccountId: gtb.id,
         reference: 'FT26083012345',
         note: 'Part payment, balance on Friday.',
       },
@@ -894,6 +940,7 @@ async function main() {
         customerId: shopkeeper.id,
         amount: 6_200_000,
         method: 'transfer',
+        bankAccountId: gtb.id,
         reference: 'FT26083012345',
         note: 'Part payment, balance on Friday.',
       },
@@ -1140,6 +1187,42 @@ async function main() {
     cashUp.byLocation.reduce((sum, l) => sum + l.total, 0),
     cashUp.total,
   );
+
+  // The reconciliation view: one row per account, to lay beside that account's
+  // statement for the same dates.
+  const intoGtb = cashUp.byBankAccount.find((row) => row.bankAccountId === gtb.id);
+  check('collections are broken down per bank account', !!intoGtb, JSON.stringify(cashUp.byBankAccount));
+  const unbanked = cashUp.byBankAccount.find((row) => row.bankAccountId === null);
+  check('and cash is its own row rather than dropped', !!unbanked);
+  eq(
+    'every account adds back up to the total collected',
+    cashUp.byBankAccount.reduce((sum, row) => sum + row.total, 0),
+    cashUp.total,
+  );
+
+  // A transfer that does not say where it landed is unreconcilable, so it is
+  // refused rather than recorded and puzzled over later.
+  await api('POST', '/payments', {
+    token: t,
+    expect: 400,
+    body: { customerId: shopkeeper.id, amount: 1_000_000, method: 'transfer' },
+  });
+  check('a transfer with no account named is refused', true);
+
+  await api('POST', '/payments', {
+    token: t,
+    expect: 400,
+    body: {
+      customerId: shopkeeper.id,
+      amount: 1_000_000,
+      method: 'cash',
+      bankAccountId: gtb.id,
+    },
+  });
+  check('and cash cannot claim to have reached a bank', true);
+
+  await api('DELETE', `/bank-accounts/${gtb.id}`, { token: t, expect: 409 });
+  check('an account money was banked into cannot be deleted', true);
 
   step(27, 'Expenses: the other half of the profit subtraction');
   const categories = (await api('GET', '/expense-categories', { token: t })).data;
