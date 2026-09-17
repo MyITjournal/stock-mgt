@@ -19,6 +19,7 @@ import { User } from '../entities/user.entity';
 const PUBLIC_USER_SELECT = {
   id: true,
   email: true,
+  username: true,
   firstName: true,
   lastName: true,
   bio: true,
@@ -38,7 +39,8 @@ export const PUBLIC_USER_SELECT_KEYS: string[] =
 /** What login needs and nothing else may ask for. */
 export interface UserCredentials {
   id: string;
-  email: string;
+  email: string | null;
+  username: string | null;
   password: string | null;
   isVerified: boolean;
   deletedAt: Date | null;
@@ -85,13 +87,18 @@ export class UserModelAction {
   /**
    * The password hash, for signing in — the one caller that legitimately needs
    * it, named so that any other use stands out in a review.
+   *
+   * Takes an email **or** a username, because a cashier has only the second.
    */
-  async getCredentials(email: string): Promise<UserCredentials | null> {
+  async getCredentials(
+    identifier: { email: string } | { username: string },
+  ): Promise<UserCredentials | null> {
     const user = await this.prisma.user.findUnique({
-      where: { email },
+      where: identifier,
       select: {
         id: true,
         email: true,
+        username: true,
         password: true,
         isVerified: true,
         deletedAt: true,

@@ -10,7 +10,8 @@ import { OrgRole, UserRole } from '@prisma/client';
  */
 export interface AuthenticatedUser {
   sub: string;
-  email: string;
+  /** Null for staff who sign in with a username and have no address. */
+  email: string | null;
   role: UserRole;
   organizationId: string;
   orgRole: OrgRole;

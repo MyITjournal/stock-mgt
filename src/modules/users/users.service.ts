@@ -98,8 +98,8 @@ export class UsersService {
    * actually needed. Every other read goes through a `select` that cannot
    * return it at all.
    */
-  findCredentials(email: string) {
-    return this.userModelAction.getCredentials(email);
+  findCredentials(identifier: { email: string } | { username: string }) {
+    return this.userModelAction.getCredentials(identifier);
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {

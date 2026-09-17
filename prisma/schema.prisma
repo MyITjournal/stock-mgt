@@ -691,6 +691,19 @@ model Organization {
   currency String @default("NGN")
   timezone String @default("Africa/Lagos")
 
+  /// How many people may hold an **active** membership here.
+  ///
+  /// A column rather than a constant because it is a pricing lever: the basic
+  /// tier is one owner and four cashiers, and moving that line later must not
+  /// need a migration or a deploy. Billing (slice 9) will set it per plan; a
+  /// pilot customer can be granted more without touching code.
+  ///
+  /// Checked when somebody is **added or reactivated, never when they sign in**.
+  /// A business that ends up over its limit keeps working — locking cashiers out
+  /// of a live shop over a subscription is how a customer is lost in an
+  /// afternoon. Suspended members do not hold a seat.
+  maxUsers Int @default(5)
+
   /// The letterhead: what a printed invoice or statement says about the
   /// business issuing it.
   ///
@@ -800,8 +813,21 @@ model RefreshToken {
 }
 
 model User {
-  id       String  @id @default(uuid())
-  email    String  @unique
+  id String @id @default(uuid())
+
+  /// Where password resets and receipts go. **Nullable**, because most cashiers
+  /// in this market do not have a working email address, and requiring one meant
+  /// the owner inventing `amina@shop.local` — which made password reset
+  /// permanently impossible for exactly the accounts most likely to need it.
+  ///
+  /// Owners have one; staff usually do not.
+  email    String? @unique
+  /// What a staff member signs in with, when they have no email.
+  ///
+  /// Stored qualified by the organization slug — `amina@adebayo-stores` — so it
+  /// is globally unique for free, and two shops can each have an Amina. It is a
+  /// login name, never an address: nothing is ever sent to it.
+  username String? @unique
   password String?
 
   firstName String?

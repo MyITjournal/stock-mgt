@@ -9,7 +9,12 @@ import { env } from '../../config/env';
 
 export interface AccessTokenPayload {
   sub: string;
-  email: string;
+  /**
+   * Null for staff who sign in with a username. Kept as a claim rather than
+   * filled with the username, because a token that says `email` and carries
+   * something else will eventually be believed by something that sends mail.
+   */
+  email: string | null;
   organizationId: string;
   orgRole: OrgRole;
 }
