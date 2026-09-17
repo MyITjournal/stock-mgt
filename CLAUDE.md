@@ -127,7 +127,19 @@ carton advances two rows. That subtraction is pure, in `purchase-target.ts`. Tar
 deliberately **not** on `GET /reports/dashboard`: `targetValue` is a buying price and reps see the
 dashboard.
 
-**Next: the rest of Slice 6.5 — the PDF invoice and statement, and the targets chart.** Then **deploy to Render** on the free
+**Payments name the account they landed in** (§11). `BankAccount` is the set of accounts the
+business is paid into — several is normal, five is not unusual — and `Payment.bankAccountId` says
+which took each payment, so a statement reconciles by joining rather than by eye. **`transfer` and
+`pos` must name one; `cash` must not**, and it is **never defaulted** for a caller who did not
+choose, because a wrong account only surfaces at reconciliation. An account with payments against
+it cannot be deleted, only deactivated. `GET /reports/collections` breaks down per account as well
+as per location. Gateways like Paystack are deliberately *not* modelled as a method: one deducts a
+fee and settles later, and belongs in its own slice.
+
+**Next: the rest of Slice 6.5 — the PDF invoice and statement, and the targets chart.** The PDF
+work will use **pdfmake**, not Puppeteer: Puppeteer ships Chromium (~300MB, heavy memory, slow
+cold start) and Render's free tier already has 30–50s cold starts. An invoice prints the bank
+accounts to pay into, which is why those were built first. Then **deploy to Render** on the free
 tier — deliberately scheduled once the backend is finished and immediately before the web slice,
 so what gets deployed is not a moving target. The Render plan is §15, including that
 `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is

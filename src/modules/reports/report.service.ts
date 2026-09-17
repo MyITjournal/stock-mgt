@@ -406,11 +406,18 @@ export class ReportService {
         amount: true,
         method: true,
         location: { select: { id: true, name: true } },
+        bankAccount: {
+          select: { id: true, bankName: true, accountNumber: true },
+        },
       },
     });
 
     const byMethod = new Map<string, Minor>();
     const byLocation = new Map<
+      string,
+      { label: string; total: Minor; count: number }
+    >();
+    const byBankAccount = new Map<
       string,
       { label: string; total: Minor; count: number }
     >();
@@ -420,6 +427,22 @@ export class ReportService {
         payment.method,
         (byMethod.get(payment.method) ?? 0) + payment.amount,
       );
+
+      // The reconciliation view: one row per account, to lay beside the
+      // statement for that account over the same dates. Cash has no account
+      // and is a real category rather than a gap, so it gets its own row
+      // instead of being dropped.
+      const bankKey = payment.bankAccount?.id ?? 'unbanked';
+      const bankRow = byBankAccount.get(bankKey) ?? {
+        label: payment.bankAccount
+          ? `${payment.bankAccount.bankName} — ${payment.bankAccount.accountNumber}`
+          : 'Not into a bank account',
+        total: 0,
+        count: 0,
+      };
+      bankRow.total += payment.amount;
+      bankRow.count += 1;
+      byBankAccount.set(bankKey, bankRow);
 
       const key = payment.location?.id ?? 'unassigned';
       const row = byLocation.get(key) ?? {
@@ -441,6 +464,12 @@ export class ReportService {
       })),
       byLocation: [...byLocation.entries()]
         .map(([locationId, row]) => ({ locationId, ...row }))
+        .sort((a, b) => b.total - a.total),
+      byBankAccount: [...byBankAccount.entries()]
+        .map(([bankAccountId, row]) => ({
+          bankAccountId: bankAccountId === 'unbanked' ? null : bankAccountId,
+          ...row,
+        }))
         .sort((a, b) => b.total - a.total),
     };
   }
