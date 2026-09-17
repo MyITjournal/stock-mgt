@@ -21,6 +21,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { OrganizationModule } from './modules/organization/organization.module';
+import { StaffModule } from './modules/staff/staff.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { UsersModule } from './modules/users/users.module';
 
@@ -43,6 +44,7 @@ import { UsersModule } from './modules/users/users.module';
     ExpensesModule,
     ReportsModule,
     OrganizationModule,
+    StaffModule,
     DocumentsModule,
   ],
   controllers: [AppController],
