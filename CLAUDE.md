@@ -163,6 +163,17 @@ by hand** in `list()` and `findOneVisibleTo()`; an outsider gets a 404, not a 40
 *every* response in the run for an argon2 hash. **`OTP_OVERRIDE` is ignored in production**, and
 `SWAGGER_ENABLED` defaults to off.
 
+**Rate limiting counts people, not addresses** (§9). `PerUserThrottlerGuard` keys on the signed-in
+user and falls back to IP for anyone not signed in, so brute-force protection on login is
+unchanged while four cashiers behind one shop router no longer share a single allowance. **This
+depends on `JwtAuthGuard` being registered before the throttler** in `AppModule`; reordering them
+silently reverts it to counting a whole shop as one client.
+
+**There is no seat cap and no way to add staff yet.** A `Membership` is only ever created by
+registration, which makes the owner of a *new* business — so the app is single-user until staff
+management lands. Removing someone, by contrast, already works instantly: `JwtStrategy.validate`
+re-reads membership status on every request.
+
 **The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1, and
 §15 item 14 records nine dependency advisories left for after the first deploy (**do not run
 `npm audit fix --force`**: it would downgrade Prisma 7 to 6). Then **deploy to Render** on the free
