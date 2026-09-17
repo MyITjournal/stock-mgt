@@ -10,6 +10,7 @@ import { PaymentMethod } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { BankAccountService } from './bank-account.service';
 import {
   SYNC_LAG_MS,
   decodeCursor,
@@ -42,6 +43,14 @@ const PAYMENT_INCLUDE = {
     select: { id: true, firstName: true, lastName: true, phone: true },
   },
   location: { select: { id: true, name: true } },
+  bankAccount: {
+    select: {
+      id: true,
+      bankName: true,
+      accountName: true,
+      accountNumber: true,
+    },
+  },
   recordedBy: { select: { id: true, firstName: true, lastName: true } },
   voidedBy: { select: { id: true, firstName: true, lastName: true } },
   // Unfiltered on purpose: a voided payment still shows what it *had* claimed,
@@ -66,7 +75,10 @@ const PAYMENT_INCLUDE = {
  */
 @Injectable()
 export class PaymentService {
-  constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
+  constructor(
+    @Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma,
+    private readonly bankAccounts: BankAccountService,
+  ) {}
 
   async create(input: CreatePaymentDto) {
     if (input.amount === 0) {
@@ -74,6 +86,12 @@ export class PaymentService {
     }
     if (input.customerId) await this.assertCustomerExists(input.customerId);
     if (input.locationId) await this.assertLocationExists(input.locationId);
+
+    const method = input.method ?? PaymentMethod.cash;
+    const bankAccountId = await this.bankAccounts.resolveForPayment(
+      method,
+      input.bankAccountId,
+    );
 
     const paymentId = input.id ?? randomUUID();
     const occurredAt = input.occurredAt
@@ -117,7 +135,8 @@ export class PaymentService {
           customerId: input.customerId ?? null,
           locationId: input.locationId ?? null,
           amount: input.amount,
-          method: input.method ?? PaymentMethod.cash,
+          method,
+          bankAccountId,
           reference: input.reference ?? null,
           note: input.note ?? null,
           occurredAt,

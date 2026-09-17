@@ -479,6 +479,17 @@ model Payment {
 
   method PaymentMethod @default(cash)
 
+  /// Which of the business's accounts the money landed in.
+  ///
+  /// Required for `transfer` and `pos`, forbidden for `cash` — cash never
+  /// touched a bank, and saying it did would be a lie that a reconciliation
+  /// later has to unpick. This is the column that lets a bank statement be laid
+  /// beside these rows and matched, rather than eyeballed on amount and date.
+  ///
+  /// Nullable in the database rather than required, because payments recorded
+  /// before this existed have no account and are still true.
+  bankAccountId String?
+
   /// The transfer or POS slip number, or the cheque number. What someone quotes
   /// when they say "I paid on Tuesday".
   reference String?
@@ -507,6 +518,7 @@ model Payment {
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customer     Customer?           @relation(fields: [customerId], references: [id])
   location     Location?           @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  bankAccount  BankAccount?        @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
   recordedBy   User?               @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
   voidedBy     User?               @relation("PaymentVoidedBy", fields: [voidedByUserId], references: [id], onDelete: SetNull)
   allocations  PaymentAllocation[]
@@ -718,6 +730,7 @@ model Organization {
   goodsReceipts     GoodsReceipt[]
   goodsReceiptLines GoodsReceiptLine[]
   purchaseTargets   PurchaseTarget[]
+  bankAccounts      BankAccount[]
 
   @@map("organizations")
 }
@@ -1268,4 +1281,54 @@ model PurchaseTarget {
   @@index([organizationId])
   @@index([organizationId, supplierId, periodStart])
   @@map("purchase_targets")
+}
+
+/// A bank account the business is paid into.
+///
+/// Set up by the owner, and there are usually several — five is not unusual,
+/// because a business spreads collections across banks so a customer can pay
+/// into whichever they already bank with, and keeps POS settlement separate
+/// from transfers.
+///
+/// This exists so reconciliation is a join rather than a guess: pull the
+/// statement for one account, lay it beside the payments recorded against that
+/// account for the same dates, and the two either agree or name their
+/// difference. Without it a transfer says only that money arrived somewhere.
+model BankAccount {
+  id             String @id @default(uuid())
+  organizationId String
+
+  /// As the customer would recognise it — "Guaranty Trust Bank".
+  bankName      String
+  /// The name on the account, which a customer transferring money must match.
+  accountName   String
+  accountNumber String
+
+  /// The bank's own code, where the owner knows it. Free text rather than an
+  /// enum: the list changes with mergers, and a wrong enum blocks a real
+  /// account. It earns its place when a statement is pulled through a bank API
+  /// and has to be matched back to one of these rows.
+  bankCode String?
+
+  /// Pre-selected when recording a payment, and printed first on an invoice.
+  isDefault Boolean @default(false)
+  /// A closed account stops being offered without vanishing from history.
+  isActive  Boolean @default(true)
+  /// Display order in pickers; ties break on bank name.
+  sortOrder Int     @default(0)
+
+  note String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments     Payment[]
+
+  /// One row per account number at a bank. The same number at two different
+  /// banks is a different account, so both columns are in the key.
+  @@unique([organizationId, bankName, accountNumber])
+  @@index([organizationId])
+  @@map("bank_accounts")
 }
