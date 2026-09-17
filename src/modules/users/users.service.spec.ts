@@ -4,6 +4,7 @@ jest.mock('uuid', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService, EMAIL_ALREADY_EXISTS } from './users.service';
 import { UserModelAction } from './actions/user.action';
 import { ResetPasswordModelAction } from './actions/reset-password.action';
@@ -43,6 +44,11 @@ describe('UsersService', () => {
         UsersService,
         { provide: UserModelAction, useValue: mockAction },
         { provide: ResetPasswordModelAction, useValue: {} },
+        // Only reached by findOneVisibleTo, which this suite does not cover.
+        {
+          provide: PrismaService,
+          useValue: { membership: { count: jest.fn().mockResolvedValue(0) } },
+        },
       ],
     }).compile();
 

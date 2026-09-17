@@ -7,6 +7,8 @@ import {
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { v7 as uuidv7 } from 'uuid';
+import { PrismaService } from '../../prisma/prisma.service';
+import { TenantContext } from '../../common/tenancy/tenant-context';
 import { UserModelAction } from './actions/user.action';
 import { ResetPasswordModelAction } from './actions/reset-password.action';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -27,6 +29,7 @@ export class UsersService {
   constructor(
     private readonly userModelAction: UserModelAction,
     private readonly resetPasswordAction: ResetPasswordModelAction,
+    private readonly prisma: PrismaService,
   ) {}
 
   async create(dto: CreateUserDto): Promise<User> {
@@ -50,6 +53,8 @@ export class UsersService {
     return this.userModelAction.list({
       paginationPayload: { page: pagination.page!, limit: pagination.limit! },
       order: { createdAt: 'DESC' },
+      // Platform admins aside, a listing is always one business's members.
+      organizationId: TenantContext.get()?.organizationId,
     });
   }
 
@@ -61,8 +66,40 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * One user, readable only by somebody who shares an organization with them.
+   *
+   * Without this the route was open to every authenticated caller in every
+   * business: a rep at one shop could read the record of an owner at another.
+   * A **404 rather than a 403** for an outsider, so the endpoint cannot be used
+   * to discover which user ids exist.
+   */
+  async findOneVisibleTo(id: string, viewerId: string): Promise<User> {
+    const user = await this.findOne(id);
+    if (id === viewerId) return user;
+
+    const organizationId = TenantContext.requireOrganizationId();
+    const shared = await this.prisma.membership.count({
+      where: { userId: id, organizationId, status: 'active' },
+    });
+    if (shared === 0) throw new NotFoundException(`User ${id} not found`);
+
+    return user;
+  }
+
   findByEmail(email: string): Promise<User | null> {
     return this.userModelAction.findByEmail(email);
+  }
+
+  /**
+   * The password hash, for signing in.
+   *
+   * Separate from `findByEmail` so that the hash is fetched only where it is
+   * actually needed. Every other read goes through a `select` that cannot
+   * return it at all.
+   */
+  findCredentials(email: string) {
+    return this.userModelAction.getCredentials(email);
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {
