@@ -169,10 +169,19 @@ unchanged while four cashiers behind one shop router no longer share a single al
 depends on `JwtAuthGuard` being registered before the throttler** in `AppModule`; reordering them
 silently reverts it to counting a whole shop as one client.
 
-**There is no seat cap and no way to add staff yet.** A `Membership` is only ever created by
-registration, which makes the owner of a *new* business — so the app is single-user until staff
-management lands. Removing someone, by contrast, already works instantly: `JwtStrategy.validate`
-re-reads membership status on every request.
+**Staff, and why a cashier has no email** (§9). Most cashiers in this market have no working
+address, so `User.email` is **nullable** and `User.username` sits beside it — stored qualified by
+the org slug (`amina@adebayo-stores`), which makes it globally unique for free. Login takes
+either. The token's `email` claim is nullable and deliberately does *not* fall back to the
+username. Owners add staff through `/staff`, **owner-only for writes**; accounts are created
+**pre-verified** because a code would never arrive, and the owner can reset a staff password since
+self-service reset can never reach them.
+
+**`Organization.maxUsers` (default 5) is the pricing lever** — a column, not a constant, so the
+tier line moves without a migration. Checked **on adding and reactivating, never on signing in**:
+a business over its limit keeps working. Only active members hold a seat. The last owner cannot be
+demoted or suspended, and nobody can change their own role. Removal is **suspension**, effective on
+their next request.
 
 **The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1, and
 §15 item 14 records nine dependency advisories left for after the first deploy (**do not run

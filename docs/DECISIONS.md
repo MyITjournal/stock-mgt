@@ -795,6 +795,80 @@ warning since Slice 6; a warning is not a control, and "test instance" has a way
 becoming production. `auth.service.ts` now ignores it when `NODE_ENV === 'production'` and logs an
 error naming it, so a copied env file fails loudly instead of opening every account.
 
+### A cashier signs in with a username, because they have no email
+
+Decided with the owner on 2026-09-17, building staff management. The prompt was a plain
+observation about this market: **most cashiers do not have a working email address.**
+
+Requiring one meant the owner inventing `amina@shop.local`, which had two consequences. The
+verification code would never arrive, so the account could never be used. And password reset would
+be permanently impossible for exactly the accounts most likely to need it.
+
+The mistake was using one column for two jobs. **A login identifier** must be unique and typable
+by somebody in a hurry. **A contact address** is where resets and receipts go. Owners have both.
+Cashiers have only the first.
+
+So `User.email` is now **nullable** and `User.username` sits beside it, with a CHECK constraint
+that a row must carry at least one. Login accepts either; the failure message is identical for
+both, so it cannot be used to discover which names exist.
+
+**The username is stored qualified by the organization slug** — the owner types `amina`, the
+system stores `amina@adebayo-stores`. The slug is already globally unique, so the username column
+is globally unique for free and two shops can each have an Amina without anybody coordinating.
+
+**Rejected: issuing real mailboxes on our own domain.** It was considered. Running mail means MX
+records, deliverability reputation, spam filtering, storage and abuse handling — an infrastructure
+project larger than the feature it serves — and it buys nothing, because a cashier does not need
+to *receive* anything. They need to sign in. Synthetic addresses that look like email but never
+deliver were rejected for a smaller reason: something would eventually try to send to one.
+
+`AccessTokenPayload.email` is nullable for the same reason, and deliberately does **not** fall
+back to the username. A claim named `email` carrying something else will eventually be believed by
+something that sends mail.
+
+### Staff are added by the owner, and seats are the pricing lever
+
+Same day. Until this, a `Membership` was only ever created by registration, which makes the
+*owner* of a *new* business — so the app was effectively single-user. A cashier could only
+register a separate business with its own empty stock.
+
+**The owner creates the account outright**, rather than sending an invite. Invites need email
+delivery, which is the thing these staff do not have. The owner sets the password and tells them;
+the account is created **pre-verified**, because the owner standing next to them is the
+verification and a code would never arrive. The owner can also reset a staff password, which is
+not a convenience: without it the first forgotten password is unrecoverable.
+
+**Writes are owner-only.** A manager is a staff role like any other — they post stocktakes and
+override credit sales, but hiring, firing and handing out roles is the owner's.
+
+**`Organization.maxUsers` is a column, defaulting to 5** — one owner and four cashiers. It is a
+column rather than a constant because it is a **pricing lever**: the basic tier's line will move,
+and moving it must not need a migration or a deploy. Billing (slice 9) will set it per plan, and a
+pilot customer can be granted more without touching code.
+
+Three rules about it matter more than the number:
+
+- **Checked on adding and reactivating, never on signing in.** A business that ends up over its
+  limit keeps working. Locking cashiers out of a live shop over a subscription is how a customer
+  is lost in an afternoon.
+- **Only active members hold a seat**, so suspending somebody who left frees it immediately.
+- **The number is a guess until there are customers.** If the median shop runs six people, five
+  reads as punitive rather than as a natural upgrade; if it runs three, the lever never fires.
+  The first ten businesses will say, and the column means you can move it when they do.
+
+**Two guards keep a business reachable.** The last active owner cannot be demoted or suspended, and
+nobody can change their own role or suspend themselves — otherwise one wrong tap leaves a business
+with nobody able to manage staff. `owner` is grantable precisely so there is a way out.
+
+**Removal is suspension, never deletion.** Their name is on sales, payments and stock movements.
+It takes effect on their **next request**, because `JwtStrategy.validate` re-reads membership
+status every time — not when their token expires.
+
+**Deferred: a person who works at two shops.** An email or username already in use is refused
+rather than attached to a second business. Quietly adding somebody to an organization is both a
+consent problem and a way to test whether an address exists. Doing it properly needs an invite the
+person accepts, which needs email, which is what this whole decision works around.
+
 ### Rate limiting counts people, not addresses
 
 Changed 2026-09-17, found while answering "how many staff can be logged in at once".
@@ -1216,9 +1290,9 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6.5 done, plus the 6.1 gap-closing pass and a security hardening pass.** 366 tests
-across 28 suites, twenty-one migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke`
-green at 327 checks against a running server.
+**Slices 0–6.5 done, plus the 6.1 gap-closing pass, a security hardening pass and staff
+management.** 378 tests across 29 suites, twenty-two migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke`
+green at 339 checks against a running server.
 
 **There is no cap on how many people may be signed in**, per user or per organization — nothing in
 the code counts seats or concurrent sessions, and `RefreshToken` is indexed on `userId` rather
@@ -1226,14 +1300,12 @@ than unique, so one person may hold several sessions at once, on a phone and a t
 Sessions end only on logout, a password change, or refresh-token reuse detection. The practical
 ceiling is the database connection pool, not sessions.
 
-**There is also no way to add a second person to an organization.** A `Membership` is created in
-exactly two places, registration by email and registration through Google, and both make the
-*owner* of a *new* business. So the app is effectively single-user today: a cashier could only
-register their own separate business with its own empty stock. `MembershipStatus`
-(`active | invited | suspended`) and the per-request membership check in `JwtStrategy.validate`
-mean **removing someone already works instantly** once there is an endpoint to press — the model
-is right, the screen is missing. Staff management is the next branch, and it blocks real use more
-than anything else outstanding.
+**Staff management landed 2026-09-17** and closed what had been the largest gap: until then a
+`Membership` was only ever created by registration, so the app was effectively single-user.
+`/staff` now lets an owner add, re-role, suspend and restore people, and reset their passwords.
+The decisions are in §9 — the ones worth knowing are that **a cashier signs in with a username
+because they have no email**, and that `Organization.maxUsers` (default 5) is a **column, not a
+constant**, because it is the subscription's pricing lever.
 
 **A pre-deployment security review on 2026-09-17 found one serious defect and four smaller ones**,
 all fixed on `fix/security-hardening`; the decisions are in §9 and the one deferred item is §15
