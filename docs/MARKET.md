@@ -109,69 +109,41 @@ A friend reported that SEO writing made Claude suggest his product, and credited
 
 ## 6. Where the preorder product fits
 
-Assessed 2026-09-17 against `PRD-PREORDER-AND-SHOP.md`. The PRD is sound — its principles are
-real constraints rather than slogans, and several are the same discipline this backend already
-runs on. "Demand is not inventory" is "stock is an append-only ledger" wearing a different hat;
-"every important correction is auditable" is void-not-delete.
+Assessed 2026-09-17 against `PRD-PREORDER-AND-SHOP.md`. The PRD is sound — its principles are real constraints rather than slogans, and several are the same discipline this backend already runs on. "Demand is not inventory" is "stock is an append-only ledger" wearing a different hat; "every important correction is auditable" is void-not-delete.
 
 ### One backend, two products
 
-**Roughly 70% of the preorder product already exists here**: tenancy, auth, roles, customers,
-catalog, the inventory ledger, goods receipts, locations, idempotency, reports — and above all
-**payments with allocations**, which is structurally the same problem as allocating arrivals to
-preorders. One payment answering three invoices and twelve arriving units answering ten preorders
-are the same shape.
+**Roughly 70% of the preorder product already exists here**: tenancy, auth, roles, customers, catalog, the inventory ledger, goods receipts, locations, idempotency, reports — and above all **payments with allocations**, which is structurally the same problem as allocating arrivals to preorders. One payment answering three invoices and twelve arriving units answering ten preorders are the same shape.
 
-Genuinely new: drops, variants, interest-versus-preorder, allocation on arrival, pickup state, a
-public customer form, notifications. Call it 30%.
+Genuinely new: drops, variants, interest-versus-preorder, allocation on arrival, pickup state, a public customer form, notifications. Call it 30%.
 
-**So: the same codebase and deployment, a module enabled per organization, and two separate
-product surfaces.** Two landing pages, two names, two sales motions. An FMCG distributor never
-sees drops; a shoe vendor never sees FEFO or vendor purchase targets.
+**So: the same codebase and deployment, a module enabled per organization, and two separate product surfaces.** Two landing pages, two names, two sales motions. An FMCG distributor never sees drops; a shoe vendor never sees FEFO or vendor purchase targets.
 
-- *Not two codebases*: that means rebuilding auth, tenancy, payments and idempotency, then
-  securing and deploying two systems on one person's time.
-- *Not one merged product*: the buyers differ, and something aimed at both is compelling to
-  neither.
+- *Not two codebases*: that means rebuilding auth, tenancy, payments and idempotency, then securing and deploying two systems on one person's time.
+- *Not one merged product*: the buyers differ, and something aimed at both is compelling to neither.
 
 ### The finding that saves the most work
 
-**Section 9 of the PRD — the integration contract — is its most expensive part, and choosing one
-backend deletes most of it.**
+**Section 9 of the PRD — the integration contract — is its most expensive part, and choosing one backend deletes most of it.**
 
-Product mapping, customer upsert, idempotent sync, retry handling, failure visibility, "must not
-create competing stock ledgers": that is weeks of work and a permanent bug source. It exists only
-because the PRD allows preorder to be a *separate system talking to* the shop backend.
+Product mapping, customer upsert, idempotent sync, retry handling, failure visibility, "must not create competing stock ledgers": that is weeks of work and a permanent bug source. It exists only because the PRD allows preorder to be a *separate system talking to* the shop backend.
 
-On one backend, "connected mode" is not a protocol — it is the same database. Standalone versus
-connected becomes a flag on the organization (*does this org record goods receipts?*) rather than
-a synchronisation layer, and the principle "one inventory authority per location" enforces itself
-because there is only one ledger.
+On one backend, "connected mode" is not a protocol — it is the same database. Standalone versus connected becomes a flag on the organization (*does this org record goods receipts?*) rather than a synchronisation layer, and the principle "one inventory authority per location" enforces itself because there is only one ledger.
 
 ### One real model gap: a variant is not a unit
 
-The PRD's terminology defines a variant as "size, colour, style, **or unit**". Those must stay
-separate, or an invariant this backend depends on breaks.
+The PRD's terminology defines a variant as "size, colour, style, **or unit**". Those must stay separate, or an invariant this backend depends on breaks.
 
-- A **unit** is a packaging multiple of the *same item* — 24 pieces make a carton. Stock is
-  recorded in the base unit, and the whole ledger rests on that.
-- A **variant** is a *different item* sharing a name — size 39 and size 41 are not multiples of
-  each other.
+- A **unit** is a packaging multiple of the *same item* — 24 pieces make a carton. Stock is recorded in the base unit, and the whole ledger rests on that.
+- A **variant** is a *different item* sharing a name — size 39 and size 41 are not multiples of each other.
 
-They coexist: "Nike Air Max, size 39, sold in pairs" has both. The catalog today has units and no
-variants, so **variants are the one genuinely new piece of catalog modelling** the preorder work
-needs. Decide early whether a variant is its own `Product` under a shared group or a new
-`ProductVariant` — it touches every table that points at a product. Recorded in §15 of
-`DECISIONS.md` as well, since it lands in this codebase.
+They coexist: "Nike Air Max, size 39, sold in pairs" has both. The catalog today has units and no variants, so **variants are the one genuinely new piece of catalog modelling** the preorder work needs. Decide early whether a variant is its own `Product` under a shared group or a new `ProductVariant` — it touches every table that points at a product. Recorded in §15 of `DECISIONS.md` as well, since it lands in this codebase.
 
 ### Sequencing
 
-Finish stock-mgt v1 (PDFs, then deploy), then build preorder on this backend, **then stop and
-sell**. The deployment work is shared — the preorder product would need it regardless.
+Finish stock-mgt v1 (PDFs, then deploy), then build preorder on this backend, **then stop and sell**. The deployment work is shared — the preorder product would need it regardless.
 
-**The risk worth naming**: four things are in flight — stock-mgt at ~90%, this PRD, the statement
-parser, the loan app. Every one is a decent idea. Building all four before any has a paying
-customer is the ordinary way good ideas die, and one developer's time is the binding constraint.
+**The risk worth naming**: four things are in flight — stock-mgt at ~90%, this PRD, the statement parser, the loan app. Every one is a decent idea. Building all four before any has a paying customer is the ordinary way good ideas die, and one developer's time is the binding constraint.
 
 ## 7. Re-check before launch
 
