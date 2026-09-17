@@ -42,9 +42,16 @@ export class UsersController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a user by id' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.usersService.findOne(id);
+  @ApiOperation({
+    summary: 'Get a user by id',
+    description:
+      'Your own record, or a colleague in the same organization. Anyone else is a **404 rather than a 403**, so this cannot be used to discover which user ids exist.',
+  })
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') viewerId: string,
+  ) {
+    return this.usersService.findOneVisibleTo(id, viewerId);
   }
 
   @Patch('me/profile')

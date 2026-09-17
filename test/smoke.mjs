@@ -71,6 +71,14 @@ async function raw(method, path, token) {
   };
 }
 
+/**
+ * Set by `api` the first time any response body contains something shaped like
+ * a password hash. A blunt net, deliberately: the endpoint that leaked one was
+ * never suspected, so the check that finds the next one must not depend on
+ * guessing which endpoint it will be.
+ */
+let seenHash = null;
+
 /** Every call goes through here, so an unexpected status is never swallowed. */
 async function api(method, path, { body, token, key, expect = [200, 201] } = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -84,6 +92,9 @@ async function api(method, path, { body, token, key, expect = [200, 201] } = {})
   });
 
   const text = await res.text();
+  if (!seenHash && /\$argon2|\$2[aby]\$/.test(text)) {
+    seenHash = `${method} ${path}`;
+  }
   const data = text ? JSON.parse(text) : null;
   const wanted = Array.isArray(expect) ? expect : [expect];
 
@@ -2007,6 +2018,30 @@ async function main() {
   check("fetching the other org's product by id is 404", true);
   await api('GET', `/sales/${credit.id}`, { token: other.token, expect: 404 });
   check("and neither is the other org's invoice", true);
+
+  // The leak this suite failed to notice for six slices: GET /users/:id had no
+  // guard and no tenancy filter, and returned the argon2 password hash to any
+  // authenticated caller in any business.
+  const viewer = (await api('GET', '/auth/me', { token: t })).data;
+  const ownRecord = (await api('GET', `/users/${viewer.sub}`, { token: t })).data;
+  check(
+    'a user can read their own record',
+    ownRecord.id === viewer.sub,
+    JSON.stringify(Object.keys(ownRecord)),
+  );
+  for (const secret of ['password', 'otpHash', 'otpExpiresAt', 'lastLoginIp']) {
+    check(`and it never carries ${secret}`, !(secret in ownRecord));
+  }
+
+  await api('GET', `/users/${viewer.sub}`, { token: other.token, expect: 404 });
+  check('another organization cannot read that user at all', true);
+
+  // The catch-all: no response anywhere in this run may contain an argon2 hash.
+  check(
+    'no response in this run leaked a password hash',
+    !seenHash,
+    seenHash ?? '',
+  );
 
   const verdict = failures.length ? `${RED}FAILED` : `${GREEN}PASSED`;
   console.log(`\n${BOLD}${verdict}${OFF}  ${passed} checks passed, ${failures.length} failed.`);

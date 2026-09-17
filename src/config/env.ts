@@ -25,9 +25,14 @@ const envSchema = z.object({
     .string()
     .default('http://localhost:3000,http://localhost:5173')
     .transform((val) => val.split(',').map((v) => v.trim())),
+  /**
+   * Off unless asked for. Swagger is a complete map of the API, and a default
+   * of `true` means a deploy that simply forgets to set it publishes that map.
+   * Defaults should fail closed; `.env.example` turns it on for development.
+   */
   SWAGGER_ENABLED: z
     .enum(['true', 'false'])
-    .default('true')
+    .default('false')
     .transform((value) => value === 'true'),
 
   // --- Slice 1: auth ---

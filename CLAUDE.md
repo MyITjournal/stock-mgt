@@ -152,7 +152,20 @@ invoice today, so the renderer prints what it has. `GET /organization` is open t
 `PATCH /organization` is owner/manager and **cannot** change currency, timezone or invoice
 numbering.
 
-**The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1. Then **deploy to Render** on the free
+**Secrets leave the database only where something asks for them by name** (§9). A pre-deployment
+review found `GET /users/:id` returning **argon2 password hashes to any authenticated caller in any
+organization** — the `@Exclude()` decorators that looked like protection were inert, because
+`ClassSerializerInterceptor` was never registered. The rule now is **select, never exclude**:
+`PUBLIC_USER_SELECT` in `user.action.ts` is an allow-list, so a new column is invisible until
+someone adds it deliberately. The hash is reachable only through `getCredentials`. `User` cannot
+join `TENANT_SCOPED_MODELS` — a person may belong to several businesses — so **scoping is applied
+by hand** in `list()` and `findOneVisibleTo()`; an outsider gets a 404, not a 403. Smoke scans
+*every* response in the run for an argon2 hash. **`OTP_OVERRIDE` is ignored in production**, and
+`SWAGGER_ENABLED` defaults to off.
+
+**The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1, and
+§15 item 14 records nine dependency advisories left for after the first deploy (**do not run
+`npm audit fix --force`**: it would downgrade Prisma 7 to 6). Then **deploy to Render** on the free
 tier — deliberately scheduled once the backend is finished and immediately before the web slice,
 so what gets deployed is not a moving target. The Render plan is §15, including that
 `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is
