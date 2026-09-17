@@ -1812,7 +1812,85 @@ async function main() {
     finalLevels.reduce((sum, row) => sum + row.quantity, 0),
   );
 
-  step(39, 'Vendor targets: what the scheme asked for against what arrived');
+  step(39, 'Staff: an owner adds a cashier who has no email address');
+  const ownerMe = (await api('GET', '/auth/me', { token: t })).data;
+  const cashier = (
+    await api('POST', '/staff', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        firstName: 'Amina',
+        lastName: 'Bello',
+        username: 'amina',
+        password: 'first-password-change-it',
+        role: 'sales_rep',
+      },
+    })
+  ).data;
+  eq('the username is qualified by the shop', cashier.user.username.split('@')[1] !== undefined, true);
+  eq('and she has no email at all', cashier.user.email, null);
+  check('created already verified, since no code could ever reach her', cashier.user.isVerified);
+
+  // The point of the whole feature: she can actually sign in.
+  const aminaLogin = (
+    await api('POST', '/auth/login', {
+      body: { username: cashier.user.username, password: 'first-password-change-it' },
+    })
+  ).data;
+  const aminaToken = aminaLogin.accessToken ?? aminaLogin.tokens?.accessToken;
+  check('a cashier with no email can sign in with her username', !!aminaToken);
+
+  const aminaMe = (await api('GET', '/auth/me', { token: aminaToken })).data;
+  eq('and she lands in her employer’s business', aminaMe.organizationId, ownerMe.organizationId);
+  eq('with the role she was given', aminaMe.orgRole, 'sales_rep');
+
+  // A rep may sell but not see what the goods cost (§12).
+  await api('GET', '/reports/profit?period=today', { token: aminaToken, expect: 403 });
+  check('her role is enforced: no cost reports', true);
+
+  // Owner-only writes.
+  await api('POST', '/staff', {
+    token: aminaToken,
+    expect: 403,
+    body: { firstName: 'Sneaky', username: 'sneaky', password: 'password123', role: 'owner' },
+  });
+  check('and she cannot hire anybody', true);
+
+  await api('POST', '/staff', {
+    token: t,
+    expect: 409,
+    body: { firstName: 'Amina', username: 'amina', password: 'password123', role: 'sales_rep' },
+  });
+  check('the same username twice in one shop is refused', true);
+
+  // The seat cap. One owner plus Amina, on a five-seat plan: three left.
+  for (const name of ['bola', 'chidi', 'dele']) {
+    await api('POST', '/staff', {
+      token: t,
+      key: randomUUID(),
+      body: { firstName: name, username: name, password: 'password123', role: 'sales_rep' },
+    });
+  }
+  await api('POST', '/staff', {
+    token: t,
+    expect: 409,
+    body: { firstName: 'Sixth', username: 'sixth', password: 'password123', role: 'sales_rep' },
+  });
+  check('a sixth active person is refused on a five-seat plan', true);
+
+  // Suspension frees a seat, and locks her out on the very next request.
+  await api('DELETE', `/staff/${cashier.user.id}`, { token: t });
+  await api('GET', '/products', { token: aminaToken, expect: 401 });
+  check('a suspended cashier is locked out immediately, not when her token expires', true);
+
+  await api('POST', '/staff', {
+    token: t,
+    key: randomUUID(),
+    body: { firstName: 'Sixth', username: 'sixth', password: 'password123', role: 'sales_rep' },
+  });
+  check('and her seat is free for somebody else', true);
+
+  step(40, 'Vendor targets: what the scheme asked for against what arrived');
   const targetMonth = new Date().toISOString();
 
   const catTarget = (
@@ -1930,7 +2008,7 @@ async function main() {
   });
   check('a target against both a category and a product is refused', true);
 
-  step(40, 'Tenancy: a second organization sees none of this');
+  step(41, 'Tenancy: a second organization sees none of this');
   const other = await signUp('Chidi Provisions');
   eq(
     'no products leak across the tenant boundary',

@@ -201,14 +201,28 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, context: TokenContext = {}): Promise<TokenPair> {
+    // Exactly one identifier. Stated here rather than in the DTO because "send
+    // one of these two" reads better as a message than as a validator.
+    if (!dto.email === !dto.username) {
+      throw new BadRequestException(
+        'Sign in with either an email or a username, not both and not neither.',
+      );
+    }
+
+    const identifier = dto.email
+      ? { email: dto.email.toLowerCase() }
+      : { username: dto.username!.toLowerCase() };
+
     // The one read that asks for the password hash, and it asks explicitly.
-    const user = await this.users.findCredentials(dto.email.toLowerCase());
+    const user = await this.users.findCredentials(identifier);
     if (!user?.password) {
-      throw new UnauthorizedException('Invalid email or password');
+      // Deliberately the same message either way, so this cannot be used to
+      // find out which usernames or addresses exist.
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     if (!(await argon2.verify(user.password, dto.password))) {
-      throw new UnauthorizedException('Invalid email or password');
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     if (!user.isVerified) {
