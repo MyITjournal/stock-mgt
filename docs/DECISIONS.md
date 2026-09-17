@@ -795,6 +795,33 @@ warning since Slice 6; a warning is not a control, and "test instance" has a way
 becoming production. `auth.service.ts` now ignores it when `NODE_ENV === 'production'` and logs an
 error naming it, so a copied env file fails loudly instead of opening every account.
 
+### Rate limiting counts people, not addresses
+
+Changed 2026-09-17, found while answering "how many staff can be logged in at once".
+
+The default `ThrottlerGuard` counts by IP. That is wrong for this product, and the reason is the
+shape of the customer rather than anything about the code: **a shop has one router**. Four
+cashiers on one counter share a public address and therefore one allowance of 120 requests a
+minute, and recording a sale is several requests. A busy hour would start returning 429s that look
+to staff like the app randomly breaking. Nigerian mobile networks make it worse — carriers put
+many subscribers behind one address, so two reps in different towns can throttle each other.
+
+`PerUserThrottlerGuard` keys on the signed-in user and falls back to the IP for anyone who is not
+signed in. **Brute-force protection is untouched**: login, register, resend-otp and reset have no
+authenticated user by definition, so they keep exactly the per-address limits they had.
+
+Verified against a running server: one user was throttled at request 121 while a second user on
+the same machine and address was unaffected. Under the old guard the second user would have been
+blocked by the first one's traffic.
+
+**This depends on guard order.** `JwtAuthGuard` is registered before the throttler in
+`AppModule`, so `request.user` exists by the time the tracker runs. Registering the throttler
+first would silently revert it to counting whole shops as one client — the comment in
+`app.module.ts` says so, because nothing else would catch it.
+
+Keys are prefixed `user:` and `ip:` so a user id shaped like an address cannot share a bucket
+with a real one.
+
 ### Swagger defaults to off
 
 `SWAGGER_ENABLED` defaulted to `true`, so a deploy that simply forgot the variable would publish a
@@ -1189,9 +1216,24 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6.5 done, plus the 6.1 gap-closing pass and a security hardening pass.** 361 tests
-across 27 suites, twenty-one migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke`
+**Slices 0–6.5 done, plus the 6.1 gap-closing pass and a security hardening pass.** 366 tests
+across 28 suites, twenty-one migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke`
 green at 327 checks against a running server.
+
+**There is no cap on how many people may be signed in**, per user or per organization — nothing in
+the code counts seats or concurrent sessions, and `RefreshToken` is indexed on `userId` rather
+than unique, so one person may hold several sessions at once, on a phone and a tablet and the web.
+Sessions end only on logout, a password change, or refresh-token reuse detection. The practical
+ceiling is the database connection pool, not sessions.
+
+**There is also no way to add a second person to an organization.** A `Membership` is created in
+exactly two places, registration by email and registration through Google, and both make the
+*owner* of a *new* business. So the app is effectively single-user today: a cashier could only
+register their own separate business with its own empty stock. `MembershipStatus`
+(`active | invited | suspended`) and the per-request membership check in `JwtStrategy.validate`
+mean **removing someone already works instantly** once there is an endpoint to press — the model
+is right, the screen is missing. Staff management is the next branch, and it blocks real use more
+than anything else outstanding.
 
 **A pre-deployment security review on 2026-09-17 found one serious defect and four smaller ones**,
 all fixed on `fix/security-hardening`; the decisions are in §9 and the one deferred item is §15

@@ -1,7 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -11,6 +11,7 @@ import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { MailModule } from './modules/mail/mail.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { PerUserThrottlerGuard } from './common/throttling/per-user.throttler';
 import { OrgRolesGuard } from './modules/auth/guards/org-roles.guard';
 import { CustomerModule } from './modules/customers/customer.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
@@ -47,10 +48,13 @@ import { UsersModule } from './modules/users/users.module';
   controllers: [AppController],
   providers: [
     AppService,
-    // Order matters: authenticate, then check the role, then rate-limit.
+    // Order matters, and the throttler depends on it: authenticate first so
+    // PerUserThrottlerGuard can count per person, then the role, then the rate
+    // limit. Moving the throttler above JwtAuthGuard would silently revert it
+    // to counting whole shops as one client.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: OrgRolesGuard },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: PerUserThrottlerGuard },
   ],
 })
 export class AppModule implements NestModule {
