@@ -760,6 +760,47 @@ That is why getting the *payment* feed right is what makes the sale's balance ri
 
 ## 9. Auth
 
+### Secrets leave the database only where something asks for them by name
+
+Added 2026-09-17 after a pre-deployment review, and this is the most serious defect the project
+has had. **`GET /users/:id` had no role guard and no tenancy filter**, and returned the full user
+row — argon2 **password hash**, OTP hash, last login IP — to any authenticated caller in any
+organization. Reproduced against a running server before it was fixed.
+
+**Why nothing caught it.** `User` carries `@Exclude()` on exactly those fields, so the code read as
+protected. It was inert: `@Exclude()` needs `ClassSerializerInterceptor`, which was never
+registered, and the rows were plain Prisma objects rather than class instances in any case. A
+protection that is present in the source and absent at runtime is worse than none, because it
+stops anybody looking again.
+
+**The rule now: select, never exclude.** `PUBLIC_USER_SELECT` in `user.action.ts` is an allow-list.
+A column added to the schema is invisible until somebody puts it on that list deliberately — the
+opposite of how the old arrangement failed. The password hash is reachable only through
+`getCredentials`, named so any second caller stands out in review. `User` cannot join
+`TENANT_SCOPED_MODELS`, because a person may belong to several businesses, so scoping is applied
+by hand in `list()` and `findOneVisibleTo()`.
+
+An outsider gets **404, not 403**, so the endpoint cannot be used to discover which user ids exist.
+
+**What guards it now**: a unit test asserting no secret is ever on the allow-list, and a smoke
+check that scans **every response in the whole run** for an argon2 hash. The blunt net is the point
+— the endpoint that leaked was never suspected, so the check that finds the next one must not
+depend on guessing where to look.
+
+### OTP_OVERRIDE is refused in production, not merely discouraged
+
+Same review. `OTP_OVERRIDE` lets `npm run smoke` run unattended against a deployed test instance
+with no mailbox to read, and it is also a master key into every account. §15 had recorded that as a
+warning since Slice 6; a warning is not a control, and "test instance" has a way of quietly
+becoming production. `auth.service.ts` now ignores it when `NODE_ENV === 'production'` and logs an
+error naming it, so a copied env file fails loudly instead of opening every account.
+
+### Swagger defaults to off
+
+`SWAGGER_ENABLED` defaulted to `true`, so a deploy that simply forgot the variable would publish a
+complete map of the API. Defaults fail closed now; `.env.example` and the local `.env` turn it on
+for development.
+
 JWT access tokens plus refresh tokens with **rotation and reuse detection**: replaying an
 already-rotated token revokes the whole token family, so a stolen copy cannot keep renewing
 alongside the real user. Refresh tokens are stored as selector + hash so a row can be found
@@ -1148,9 +1189,14 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6.5 done, plus the 6.1 gap-closing pass.** 355 tests across 26 suites, twenty-one
-migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke` green at 320 checks against a
-running server.
+**Slices 0–6.5 done, plus the 6.1 gap-closing pass and a security hardening pass.** 361 tests
+across 27 suites, twenty-one migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke`
+green at 327 checks against a running server.
+
+**A pre-deployment security review on 2026-09-17 found one serious defect and four smaller ones**,
+all fixed on `fix/security-hardening`; the decisions are in §9 and the one deferred item is §15
+item 14. The serious one — `GET /users/:id` returning password hashes to any caller in any
+organization — is the reason §9 now says **select, never exclude**.
 
 **Bank accounts landed 2026-09-17** — `BankAccount` and `Payment.bankAccountId`, decided in §11.
 Additive: the column is nullable, so nothing written before it is invalidated. It exists so a bank
@@ -1680,3 +1726,21 @@ sign in as, so it is covered by construction rather than by demonstration.
     first is cheap and leaves every existing foreign key alone; the second is tidier and touches
     every table that references a product. **Decide it before building**, because it is the kind
     of model change that is nearly free on day one and a migration across a dozen tables later.
+
+14. **Nine dependency advisories that need a major upgrade.** Left open deliberately on
+    2026-09-17. `npm audit fix` took the non-breaking ones; what remains all requires a major
+    version bump, and doing that inside a security branch — untested, days before a first
+    deployment — trades a known small risk for an unknown larger one.
+
+    - **NestJS 11 → 12** would clear `@nestjs/core`, `@nestjs/platform-express` (and `multer`
+      under it), `@nestjs/schedule` and `@nestjs/swagger`. A framework major is its own branch
+      with the full suite and a smoke run behind it.
+    - **Prisma is the awkward one.** npm proposes "fixing" `@prisma/config`, `deepmerge-ts` and
+      `mysql2` by installing `prisma@6.19.3` — a **downgrade** from the 7.8.0 this project runs
+      on, which would undo the §13 datasource arrangement. **Do not run `npm audit fix --force`.**
+      Wait for a 7.x release that carries the fix.
+    - `mysql2` arrives through Prisma and is never loaded: this project is PostgreSQL only.
+
+    The realistic exposure is denial of service rather than data loss, on an API that is
+    authenticated everywhere except `/health` and the auth routes, all of which are rate limited.
+    Revisit immediately after the first deployment is stable, not before it exists.

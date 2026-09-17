@@ -201,7 +201,8 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, context: TokenContext = {}): Promise<TokenPair> {
-    const user = await this.users.findByEmail(dto.email.toLowerCase());
+    // The one read that asks for the password hash, and it asks explicitly.
+    const user = await this.users.findCredentials(dto.email.toLowerCase());
     if (!user?.password) {
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -389,7 +390,20 @@ export class AuthService {
   }
 
   private async otpMatches(userId: string, code: string): Promise<boolean> {
-    if (env.OTP_OVERRIDE && code === env.OTP_OVERRIDE) {
+    // Refused outright in production, rather than merely discouraged there.
+    //
+    // This exists so `npm run smoke` can run unattended against a deployed test
+    // instance with no mailbox to read. It is also a master key into every
+    // account in the system, and "test instance" has a way of quietly becoming
+    // production — a copied env file, a debug session nobody undid. §15 has
+    // recorded that risk as a note since Slice 6; a note is not a control.
+    if (env.NODE_ENV === 'production') {
+      if (env.OTP_OVERRIDE) {
+        this.logger.error(
+          'OTP_OVERRIDE is set on a production instance and is being ignored. Remove it: it is a master key into every account.',
+        );
+      }
+    } else if (env.OTP_OVERRIDE && code === env.OTP_OVERRIDE) {
       this.logger.warn(`OTP override used for user ${userId}`);
       return true;
     }
