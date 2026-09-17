@@ -136,10 +136,23 @@ it cannot be deleted, only deactivated. `GET /reports/collections` breaks down p
 as per location. Gateways like Paystack are deliberately *not* modelled as a method: one deducts a
 fee and settles later, and belongs in its own slice.
 
-**Next: the rest of Slice 6.5 — the PDF invoice and statement, and the targets chart.** The PDF
-work will use **pdfmake**, not Puppeteer: Puppeteer ships Chromium (~300MB, heavy memory, slow
-cold start) and Render's free tier already has 30–50s cold starts. An invoice prints the bank
-accounts to pay into, which is why those were built first. Then **deploy to Render** on the free
+**PDF invoices and statements are built** (§6), in `src/modules/documents/`:
+`GET /sales/:id/invoice.pdf` and `GET /customers/:id/statement.pdf`. **`pdfmake`, pinned to the
+0.2 line** — 0.3 is a rewrite its own types do not match, and `@types/pdfmake` covers only the
+browser API, so the server printer is declared in `documents/pdfmake-node.d.ts`. Not Puppeteer:
+Chromium is ~300MB and Render's free tier already has 30–50s cold starts. Four rules: the
+documents **recompute nothing** (they read `SaleService.receipt` and `ReceivableService.statement`,
+so print and screen cannot disagree); **VAT prints as "of which"**, never added on top, because
+prices are tax-inclusive; money prints as `NGN 2,500.00` because the built-in fonts have no ₦
+glyph; and **every active bank account is printed, default first**.
+
+`Organization` carries an optional letterhead — address, phone, email, taxId, rcNumber, logoUrl —
+**all nullable on purpose**: a business that never opened the profile screen must still be able to
+invoice today, so the renderer prints what it has. `GET /organization` is open to every member;
+`PATCH /organization` is owner/manager and **cannot** change currency, timezone or invoice
+numbering.
+
+**The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1. Then **deploy to Render** on the free
 tier — deliberately scheduled once the backend is finished and immediately before the web slice,
 so what gets deployed is not a moving target. The Render plan is §15, including that
 `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is

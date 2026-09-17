@@ -52,6 +52,25 @@ function step(n, title) {
   console.log(`\n${BOLD}${n}. ${title}${OFF}`);
 }
 
+/**
+ * For responses that are not JSON. `api` parses the body as JSON, which a PDF
+ * is not, so binary documents come through here instead.
+ */
+async function raw(method, path, token) {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status !== 200) {
+    throw new Error(`${method} ${path} -> ${res.status} (wanted 200)`);
+  }
+  return {
+    type: res.headers.get('content-type'),
+    disposition: res.headers.get('content-disposition') ?? '',
+    body: Buffer.from(await res.arrayBuffer()),
+  };
+}
+
 /** Every call goes through here, so an unexpected status is never swallowed. */
 async function api(method, path, { body, token, key, expect = [200, 201] } = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -1308,6 +1327,36 @@ async function main() {
   check('the lines read as descriptions, not ids', !!receipt.lines[0].description);
   check('cost of goods sold never reaches the customer', receipt.costTotal === undefined);
   check('and neither does the tier', receipt.tier === undefined);
+
+  // The letterhead a printed document carries. Every field is nullable, so the
+  // PDF below is also rendered once with none of it filled in.
+  const profile = (
+    await api('PATCH', '/organization', {
+      token: t,
+      body: {
+        address: '12 Oba Akran Avenue, Ikeja, Lagos',
+        phone: '+2348012345678',
+        email: 'sales@adebayostores.ng',
+        taxId: '01234567-0001',
+        rcNumber: 'RC 1234567',
+      },
+    })
+  ).data;
+  eq('the business details are stored', profile.rcNumber, 'RC 1234567');
+  check('and the timezone is not editable here', profile.timezone === 'Africa/Lagos');
+
+  const invoicePdf = await raw('GET', `/sales/${credit.id}/invoice.pdf`, t);
+  eq('the invoice is served as a PDF', invoicePdf.type, 'application/pdf');
+  check('and it really is one', invoicePdf.body.subarray(0, 5).toString() === '%PDF-');
+  check(
+    'named after the invoice it prints',
+    invoicePdf.disposition.includes('invoice-INV-0001.pdf'),
+    invoicePdf.disposition,
+  );
+
+  const statementPdf = await raw('GET', `/customers/${shopkeeper.id}/statement.pdf`, t);
+  eq('the statement is a PDF too', statementPdf.type, 'application/pdf');
+  check('and really one', statementPdf.body.subarray(0, 5).toString() === '%PDF-');
 
   // -- Slice 6: reports ----------------------------------------------------
   step(29, 'Reports reconcile with the rows they summarise');
