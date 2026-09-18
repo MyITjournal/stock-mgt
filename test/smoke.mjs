@@ -1831,6 +1831,19 @@ async function main() {
   eq('and she has no email at all', cashier.user.email, null);
   check('created already verified, since no code could ever reach her', cashier.user.isVerified);
 
+  // Open the shop for the whole day before any cashier tries to sign in.
+  //
+  // A new organization defaults to 08:00-19:00 and non-owners are refused a
+  // session outside that window, so everything below here used to pass only
+  // when the run itself happened during business hours — an evening run died
+  // on a 403 that was the feature working exactly as intended. The working
+  // hours section further down shuts the shop explicitly to test the refusal,
+  // so starting open weakens nothing.
+  await api('PATCH', '/organization', {
+    token: t,
+    body: { opensAt: 0, closesAt: 1440 },
+  });
+
   // The point of the whole feature: she can actually sign in.
   const aminaLogin = (
     await api('POST', '/auth/login', {

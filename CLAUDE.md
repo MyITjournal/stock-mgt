@@ -163,6 +163,30 @@ by hand** in `list()` and `findOneVisibleTo()`; an outsider gets a 404, not a 40
 *every* response in the run for an argon2 hash. **`OTP_OVERRIDE` is ignored in production**, and
 `SWAGGER_ENABLED` defaults to off.
 
+**Cost is redacted in one place, and reads are guarded like writes** (§9). A second pre-deployment
+sweep on 2026-09-18 found no way in from outside — auth, tenancy and the tenant extension all held
+— but nine endpoints enforced a role on the write and nothing on the `GET` beside it. Buying prices
+were closed on `GET /reports/profit` and open on `GET /products`, `GET /sales`, `GET /stock/levels`,
+`GET /goods-receipts` and `GET /reports/sales`, which is the same margin grouped by product.
+`SEES_COST` and `redactCost` now live in `src/common/authz/cost-visibility.ts` — **use them for any
+new field that reveals what goods cost.** Two rules about redaction: it happens at the **read edge**
+(`findAll`, `findOne`) and never in a shared `include`, because `SaleReturnService` reads the real
+`costOfGoodsSold` and would compute `NaN` against a redacted row; and a field is **removed, not
+zeroed**, because a zero reads as "free goods" to anything that sums it.
+
+Four more rules from that pass: **a negative payment needs the same authority as a void** (owner,
+manager, accountant — a cashier could otherwise cover a till shortage with a refund); **resetting a
+staff password or suspending someone revokes their sessions**, since the owner believes they have
+just locked that person out; **`switchOrganization` is the third path that mints a session and
+checks working hours** — a fourth would need the same line; and **`RESEND_API_KEY` and `MAIL_FROM`
+are required in production**, because the log fallback writes OTPs and reset links in plaintext.
+`npm audit` is at **0 vulnerabilities**: the nine deferred advisories were all transitive and closed
+with `overrides`, keeping Prisma 7 and NestJS 11 — **still never run `npm audit fix --force`**.
+
+**`forbidNonWhitelisted: true` on the global `ValidationPipe` is a security control**, not tidiness.
+The tenant extension does not rewrite `update.data`, so what actually stops a row being moved to
+another organization is that pipe rejecting an unknown `organizationId` property first.
+
 **Rate limiting counts people, not addresses** (§9). `PerUserThrottlerGuard` keys on the signed-in
 user and falls back to IP for anyone not signed in, so brute-force protection on login is
 unchanged while four cashiers behind one shop router no longer share a single allowance. **This
@@ -197,10 +221,15 @@ night shifts a real change later. The arithmetic is pure, in `staff/working-hour
 attempts a minute per address and the staff step spends them. That is the rate limiter working;
 wait a minute.
 
-**The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1, and
-§15 item 14 records nine dependency advisories left for after the first deploy (**do not run
-`npm audit fix --force`**: it would downgrade Prisma 7 to 6). Then **deploy to Render** on the free
-tier — deliberately scheduled once the backend is finished and immediately before the web slice,
+Smoke also used to fail after 7pm, on a 403 from the staff sign-in: a new org defaults to
+08:00–19:00 and every cashier login in the script inherits it. The staff section now opens the shop
+for the whole day first — the working-hours section further down still shuts it explicitly to test
+the refusal — so a run at any hour is green.
+
+**The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1. (§15
+item 14's nine dependency advisories are **closed**, not deferred; **do not run
+`npm audit fix --force`**, which would still downgrade Prisma 7 to 6.) Then **deploy to Render** on
+the free tier — deliberately scheduled once the backend is finished and immediately before the web slice,
 so what gets deployed is not a moving target. The Render plan is §15, including that
 `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is
 test-instance-only.

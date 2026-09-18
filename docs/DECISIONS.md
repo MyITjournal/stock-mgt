@@ -956,7 +956,113 @@ The JWT strategy re-checks membership per request, so revoking access takes effe
 rather than at token expiry.
 
 Passwords use argon2. Login is rate-limited. Mail (Resend) falls back to logging codes when
-unconfigured, so OTP and password-reset flows are testable without a verified sender domain.
+unconfigured, so OTP and password-reset flows are testable without a verified sender domain —
+**in development only**, see below.
+
+### The second pre-deployment review, 2026-09-18
+
+A sweep of the whole surface rather than of a diff, on `fix/pre-deploy-hardening`. The 2026-09-17
+review looked at what had just changed; this one asked what a signed-in **cashier** can reach,
+which is a different question and found a different class of problem. Nothing here was a way in
+from outside — authentication, tenancy and the tenant Prisma extension all held. Every finding was
+an **authenticated** caller reading or doing more than their role should allow.
+
+**The shape of it: writes were guarded, reads were not.** Nine endpoints enforced a role on
+`POST`/`PATCH` and none on `GET` beside them. That is a natural way for an API to drift — a role
+gets added when a write is written, and a read added later inherits nothing — which is why the
+fix is a shared constant rather than nine more decorators.
+
+- **Cost is now redacted in one place: `src/common/authz/cost-visibility.ts`.** `SEES_COST` had
+  been spelled out privately in `report.controller.ts`, so it held on `GET /reports/profit` and
+  nowhere else. The same buying prices were reachable through `GET /products` (`costPrice`),
+  `GET /sales` (per-line `costOfGoodsSold`), `GET /stock/levels?includeBatches=true` (per-lot
+  cost), `GET /goods-receipts` (`totalCost` — the vendor's invoice itself) and `GET /reports/sales`
+  (`cogs`, `grossProfit` and `marginBps` per row, which is `/reports/profit` grouped by product
+  and was open to everybody). A rep who can read those can price against the house or carry them
+  to a competitor, and it cannot be undone once it has happened.
+
+  **Redaction lives at the read edge — `findAll`, `findOne` — never in the shared `include`.**
+  That is load-bearing: `SaleReturnService` reads the real `costOfGoodsSold` to apportion cost
+  onto returned goods and would compute against `undefined` on a redacted row. It runs its own
+  query, so the presentation edge cannot reach it. A field is **removed, not zeroed**: a zero
+  reads as "these goods were free" to anything that sums the column.
+
+  **Lists stay readable, money comes off them.** The expiry list and goods receipts are withheld
+  from nobody — a storekeeper walking the shelves needs to know which lots to push, and whoever
+  recorded a delivery has to be able to check the quantities they typed. Only the money goes.
+
+- **A negative payment now needs the same authority as a void** (`HANDS_MONEY_BACK`, owner,
+  manager, accountant). §11 keeps a refund as an ordinary payment row with a negative amount
+  rather than a second table, which is right — but it means the *route* cannot tell taking money
+  in from handing it back, so the sign is checked in the service. Voiding already required those
+  three; recording the negative that cancels the same invoice required nothing, so a cashier short
+  in the till could balance it with a refund nobody approved.
+
+- **A colleague sees names and roles; an owner or manager sees the record.** `GET /staff` is
+  deliberately open to every member — a rep needs to know who to hand a sale to — but it was
+  returning `username`, which in this product is **half of a credential**: staff sign in with a
+  username because they have no address, and an owner can set their password directly. Contact
+  details and each person's hours went with it. `COLLEAGUE_SELECT` is an allow-list, per the
+  select-never-exclude rule above.
+
+- **Resetting a staff password now ends their sessions**, and so does suspending them. The
+  self-service path in `AuthService.resetPassword` had always revoked; the path an owner actually
+  uses had not — and most staff can never use the other one. An owner resetting a departing
+  cashier's password believes they have just locked that person out, and the refresh token issued
+  under the old password went on renewing for seven days. Suspension was already effective (the
+  JWT strategy re-reads membership per request) but is revoked too, because a suspended person
+  holding a live credential is a state worth not having.
+
+  This needed `StaffService` to reach `TokenService`, and `AuthModule` already imported
+  `StaffModule` for the hours check — so `WorkingHoursService` moved into its own
+  `WorkingHoursModule`. **Preferred to `forwardRef`:** the cycle was real, and a module that two
+  others share is the honest description of it.
+
+- **`switchOrganization` was a third session-issuing path with no hours check.** §9 says both
+  `issueForUser` and `TokenService.rotate` must call `assertWithinHours`; this one minted a pair
+  directly. Somebody working for two businesses could sign into the open one and switch into the
+  closed one. **If a fourth path to `issuePair` is ever added, it needs the same line.**
+
+- **Mail must be configured in production, and never logs the secret there.** The fallback that
+  makes OTP flows testable writes the verification code and the password-reset URL into the log in
+  plaintext. On a developer machine that is the point; on Render it is a full account-takeover
+  path for anyone who can read the platform log, which is a wider group than it looks.
+  `RESEND_API_KEY` and `MAIL_FROM` are now **required when `NODE_ENV=production`** — refused at
+  boot, the same treatment `OTP_OVERRIDE` gets, because a note is not a control — and
+  `MailService` logs the fact without the contents there regardless, so the guard does not depend
+  on the other guard having held.
+
+- **Moving a customer between price lists is owner and manager.** `PATCH /customers/:id` had no
+  role at all, and its own summary says it is "chiefly how a customer is moved onto another price
+  list, which is what decides the prices on their next sale". Creating and editing customers stays
+  open — a rep meeting a new shop has to write them down — but the tier is a pricing decision
+  wearing a contact-details hat, and left open a rep could move a customer to the cheapest tier,
+  sell, and move them back with nothing on the record. Checked against the *current* value, so
+  re-sending the same tier with a phone number change is not treated as a change.
+
+- **Google sign-in now requires a verified address.** `googleLogin` matches on the address alone
+  and links an existing password account to the Google identity, so an unverified address — which
+  a Workspace domain can present — was enough to take over the matching account. Google marks it
+  on the profile and nothing was reading it. Absent is treated as unverified.
+
+- **Bounds that were simply missing.** Client-supplied `occurredAt` is essential to §8 and was
+  entirely unbounded, while every report in §12 filters on it: a sale dated 2087 sits outside
+  every window forever. Now within a day ahead and a year behind, with `createdAt` still recording
+  when the row really arrived, so a date moved *within* that window stays auditable by comparing
+  the two. Line arrays had `@ArrayMinSize(1)` and no ceiling. Money had `Min(0)` and no `Max`, and
+  `unitPrice × quantity` could exceed `int4` from two individually valid inputs — caught where the
+  multiplication happens, so it is a 400 naming the line rather than a 500 carrying a driver
+  error. `helmet` added for HSTS and `nosniff`; CSP is off because the only HTML served is Swagger.
+
+**What was already right, and should stay that way.** The tenant Prisma extension throws rather
+than leaking when there is no organization in context; `PUBLIC_USER_SELECT` is a real allow-list;
+refresh rotation revokes the whole family on reuse; the idempotency interceptor claims before it
+executes and is organization-scoped. One of these is quieter than it looks: the extension does
+**not** rewrite `update.data`, so nothing stops a row being moved to another organization by
+passing `organizationId` in a body — what stops it is `forbidNonWhitelisted: true` on the global
+`ValidationPipe`, which rejects the unknown property first. **That pipe setting is a security
+control, not a tidiness preference.** The same is true of nested writes: the extension only
+rewrites top-level operations, and there are none in the codebase today.
 
 ---
 
@@ -1328,17 +1434,32 @@ Recorded because each cost real time and none is obvious.
 | **Hashing a request that has no body** | A command route carries no body, so nothing sets a JSON content type and Express leaves `req.body` **undefined**. `JSON.stringify(undefined)` is the *value* undefined rather than a string, so the hash threw: every request sending an `Idempotency-Key` to `POST /stocktakes/:id/post` answered **500**. Found by `smoke.mjs` the first time a key was ever sent to that route — the unit tests only ever hashed `{}` | `body ?? null` in `hashBody`, and a test for the undefined case |
 | **An idempotency key scoped to the route *pattern*** | `POST /stocktakes/:id/post` hashed identically for every count — the pattern is the same string and the route carries no body — so one key reused across two counts would have matched the first, replayed its response, and **posted nothing** while returning success. In practice it never got that far: the missing-body crash above answered 500 first. Two bugs stacked, and the outer one hid the inner one | The stored `endpoint` is now `method + the concrete URL`. A retry always goes back to the same address, so nothing legitimate is lost by being specific |
 | **Recording an idempotency key *after* the handler** | `tap` fired once the work was done, leaving a window where two overlapping requests both found no key and both executed — precisely the client-times-out-and-retries case the feature exists for. The unique constraint then kept one key row while two sales existed | The key is **claimed before** the handler runs, so the constraint picks one winner; the loser gets a 409 saying the first is still in progress. A handler that throws deletes its claim, or a failed request could never be retried |
+| **`npm audit fix --force` is not the only tool** | Every advisory left open in §15 item 14 was against a **transitive** package, and the item concluded they needed a NestJS major and a Prisma release. They did not: `npm audit fix --force` can only bump the *parent*, which is why it proposed NestJS 12 and a Prisma **downgrade**. npm `overrides` pins the transitive package directly and left both majors alone. Nine advisories had been deferred on reasoning that was careful and simply reached for the wrong instrument | Three lines of `overrides` in `package.json` took the audit to **0 vulnerabilities** on Prisma 7 and NestJS 11. When an advisory is transitive, try `overrides` before concluding a major upgrade is required |
+| **Redacting a field the write path still reads** | Removing `costOfGoodsSold` from a sale looks like a `select` change — until `SaleReturnService` reads it off a sale line to work out how much cost comes back with returned goods. Done in the shared `include`, every return would have apportioned cost against `undefined` and written `NaN`, silently, on a path no test covered | Redact at the **read edge** (`findAll`, `findOne`) and never in the `include`. Internal callers run their own queries, so the presentation edge cannot reach them. The same reasoning says remove the field rather than zero it: a zero is read as "free goods" by anything that sums it |
+| **A smoke suite that only passes during business hours** | `npm run smoke` died at step 39 on a 403 from `POST /auth/login` — the **working-hours rule doing exactly its job**. A new organization defaults to 08:00–19:00, and every cashier sign-in after that point in the script inherits it, so an evening run failed on a feature that was working. The abort message named the window, which is the only reason it took minutes rather than an hour | The staff section now PATCHes the org to `opensAt: 0, closesAt: 1440` before the first cashier signs in. Nothing is weakened: the working-hours section further down still shuts the shop explicitly to test the refusal |
 ---
 
 ## 14. Where things stand
 
-**Slices 0–6.5 done, plus the 6.1 gap-closing pass, a security hardening pass and staff
-management and working hours.** 391 tests across 31 suites, twenty-three migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke`
-green at 347 checks against a running server.
+**Slices 0–6.5 done, plus the 6.1 gap-closing pass, two security passes, and staff
+management and working hours.** 407 tests across 31 suites, twenty-three migrations,
+`typecheck`/`lint`/`build` clean, `npm audit` at **0 vulnerabilities**, and `npm run smoke` green
+at 347 checks against a running server.
 
 **One thing about running smoke twice.** Login is throttled at five attempts a minute per address
 and the staff step spends all five. Running smoke again inside that minute fails with a 429 on
 login — the rate limiter working, not a flaky suite. Wait a minute between runs.
+
+**A second pre-deployment review on 2026-09-18 swept the whole surface**, on
+`fix/pre-deploy-hardening`, and closed everything it found. The decisions are in §9; the summary is
+that nothing let an outsider in — authentication, tenancy and the tenant extension all held — and
+**every finding was an authenticated cashier reading or doing more than their role allowed**. The
+pattern was one thing repeated: **writes were guarded and the reads beside them were not**, on nine
+endpoints. Buying prices in particular were closed on `GET /reports/profit` and open on five other
+routes, including `GET /reports/sales`, which is the same margin figure grouped by product. Cost
+redaction now lives in one shared place, `src/common/authz/cost-visibility.ts`, so the next report
+written cannot quietly disagree with the last. §15 item 14's nine dependency advisories were closed
+in the same pass, with `overrides` rather than the major upgrades that item had assumed.
 
 **There is no cap on how many people may be signed in**, per user or per organization — nothing in
 the code counts seats or concurrent sessions, and `RefreshToken` is indexed on `userId` rather
@@ -1608,6 +1729,18 @@ sign in as, so it is covered by construction rather than by demonstration.
 ---
 
 ## 15. Next
+
+0. **Rate-limit state is in memory, and that becomes wrong the moment there are two instances.**
+   The only finding from the 2026-09-18 review left unfixed, because there is no fix worth making
+   yet. `ThrottlerModule` keeps its counters in the process, so limits reset on every restart —
+   which on Render's free tier means every cold start after idle — and two instances would each
+   allow the full five login attempts a minute. On one free-tier instance this is close to
+   harmless and a Redis dependency to solve it would be the largest piece of infrastructure in the
+   project.
+
+   **Revisit when the service is scaled past one instance, and treat that as a blocker for
+   scaling rather than a follow-up.** `@nestjs/throttler` takes a storage adapter, so the change
+   is a provider and a connection string, not a rewrite.
 
 1. **Deploy to Render**, free tier, decided 2026-08-30 — before buying a domain, since
    `*.onrender.com` is a working URL and a domain is a rename rather than a prerequisite. Planned
@@ -1887,20 +2020,35 @@ sign in as, so it is covered by construction rather than by demonstration.
     every table that references a product. **Decide it before building**, because it is the kind
     of model change that is nearly free on day one and a migration across a dozen tables later.
 
-14. **Nine dependency advisories that need a major upgrade.** Left open deliberately on
-    2026-09-17. `npm audit fix` took the non-breaking ones; what remains all requires a major
-    version bump, and doing that inside a security branch — untested, days before a first
-    deployment — trades a known small risk for an unknown larger one.
+14. ~~**Nine dependency advisories that need a major upgrade.**~~ — **closed 2026-09-18, and
+    without the major upgrade.** `npm audit` now reports **0 vulnerabilities** on Prisma 7 and
+    NestJS 11.
 
-    - **NestJS 11 → 12** would clear `@nestjs/core`, `@nestjs/platform-express` (and `multer`
-      under it), `@nestjs/schedule` and `@nestjs/swagger`. A framework major is its own branch
-      with the full suite and a smoke run behind it.
-    - **Prisma is the awkward one.** npm proposes "fixing" `@prisma/config`, `deepmerge-ts` and
-      `mysql2` by installing `prisma@6.19.3` — a **downgrade** from the 7.8.0 this project runs
-      on, which would undo the §13 datasource arrangement. **Do not run `npm audit fix --force`.**
-      Wait for a 7.x release that carries the fix.
-    - `mysql2` arrives through Prisma and is never loaded: this project is PostgreSQL only.
+    The 2026-09-17 reasoning below was sound but reached for the wrong instrument. Every remaining
+    advisory was against a **transitive** package, and npm `overrides` pins a transitive dependency
+    without touching the direct one — which `npm audit fix --force` cannot do, because it only
+    knows how to bump the parent. Three lines in `package.json`:
 
-    The realistic exposure is denial of service rather than data loss, on an API that is
-    authenticated everywhere except `/health` and the auth routes, all of which are rate limited.
-    Revisit immediately after the first deployment is stable, not before it exists.
+    ```json
+    "overrides": { "multer": "^2.4.0", "deepmerge-ts": "^8.0.2", "mysql2": "^3.24.4" }
+    ```
+
+    - **`multer` was the one that actually mattered**, and the reason this moved ahead of the
+      deploy rather than after it. `@nestjs/platform-express` 11 pins 2.2.0, which carries four
+      high advisories — DoS via crafted multipart field names, DoS via oversized array indices, a
+      file-descriptor leak on aborted uploads, and a `fileFilter` race that bypasses the size
+      limit. `POST /products/:id/image` is a live multipart route, so this was reachable rather
+      than theoretical. 2.4.0 is the same major and fixes all four. The five `@nestjs/*`
+      advisories were only ever this one showing through the dependency tree, and they cleared
+      with it — no framework major needed.
+    - **Prisma stays on 7.** `deepmerge-ts` and `mysql2` are pinned forward directly instead of
+      letting npm drag `prisma` back to 6.19.3. `npx prisma -v` and the full suite were checked
+      after: CLI 7.10.0, client 7.8.0, migrations untouched. **The warning stands — never run
+      `npm audit fix --force` here** — but the advisories no longer justify waiting for a 7.x
+      release that carries the fix.
+    - `mysql2` still arrives through Prisma and is still never loaded: this project is PostgreSQL
+      only. It is pinned anyway, because an unloaded vulnerable package is noise in every future
+      audit and noise is how a real finding gets skimmed past.
+
+    **The lesson worth keeping:** when an advisory is transitive, reach for `overrides` before
+    concluding that the fix requires a major upgrade. The whole of this item was avoidable.
