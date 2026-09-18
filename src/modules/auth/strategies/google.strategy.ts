@@ -20,15 +20,38 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     });
   }
 
+  /**
+   * Turns a Google profile into the three fields `AuthService` needs.
+   *
+   * The verified check is load-bearing, not ceremony. `googleLogin` matches on
+   * the address alone: an existing password account with that address is linked
+   * to the Google identity and signed straight in. So if Google were ever to
+   * hand over an address it had not confirmed — which a Workspace domain can do
+   * — presenting it would be enough to take over the matching account. Google
+   * marks this on the profile; nothing was reading it.
+   */
   validate(
     _accessToken: string,
     _refreshToken: string,
     profile: Profile,
     done: VerifyCallback,
   ): void {
-    const email = profile.emails?.[0]?.value;
+    const primary = profile.emails?.[0];
+    const email = primary?.value;
     if (!email) {
       done(new Error('Google account has no email address'), false);
+      return;
+    }
+
+    // `verified` arrives as a boolean or the string "true" depending on the
+    // payload, and is absent on some profiles. Absent is treated as unverified:
+    // this is the direction that fails closed.
+    const verified = (primary as { verified?: boolean | string }).verified;
+    if (verified !== true && verified !== 'true') {
+      done(
+        new Error('Google has not verified this account’s email address'),
+        false,
+      );
       return;
     }
 
