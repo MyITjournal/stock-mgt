@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MembershipStatus, OrgRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { TokenService } from '../auth/token.service';
 import { StaffService } from './staff.service';
 
 jest.mock('argon2', () => ({ hash: jest.fn().mockResolvedValue('hashed') }));
@@ -24,6 +25,7 @@ describe('StaffService', () => {
     user: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
     $transaction: jest.Mock;
   };
+  let tokens: { revokeAllForUser: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -53,8 +55,14 @@ describe('StaffService', () => {
       $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
     };
 
+    tokens = { revokeAllForUser: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [StaffService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        StaffService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: TokenService, useValue: tokens },
+      ],
     }).compile();
 
     service = module.get(StaffService);
@@ -213,5 +221,31 @@ describe('StaffService', () => {
         }) as object,
       }),
     );
+  });
+
+  describe('ending the sessions a change was meant to end', () => {
+    it('revokes every token when an owner resets a password', async () => {
+      await asOwner(() =>
+        service.resetPassword('user-x', { password: 'new-password' }),
+      );
+
+      // Without this the new password only stops the *next* sign-in, while the
+      // refresh token issued under the old one keeps renewing for a week — and
+      // an owner resetting a cashier's password believes they have just locked
+      // that person out.
+      expect(tokens.revokeAllForUser).toHaveBeenCalledWith('user-x');
+    });
+
+    it('revokes every token when somebody is suspended', async () => {
+      await asOwner(() => service.suspend('user-x', OWNER));
+
+      expect(tokens.revokeAllForUser).toHaveBeenCalledWith('user-x');
+    });
+
+    it('leaves sessions alone for an edit that is not either of those', async () => {
+      await asOwner(() => service.update('user-x', { opensAt: 480 }, OWNER));
+
+      expect(tokens.revokeAllForUser).not.toHaveBeenCalled();
+    });
   });
 });

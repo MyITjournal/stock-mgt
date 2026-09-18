@@ -26,7 +26,9 @@ import {
  * **Writes are owner-only.** A manager is a staff role like any other: they may
  * post a stocktake and override a credit sale, but hiring, firing and handing
  * out roles is the owner's. Reading the list is open to every member, because a
- * rep needs to know who to hand a sale over to.
+ * rep needs to know who to hand a sale over to — but a colleague sees names and
+ * roles only. Usernames, addresses and each person's hours are owner and
+ * manager, since a username is half of a login here.
  */
 @ApiTags('staff')
 @ApiBearerAuth('JWT')
@@ -35,7 +37,11 @@ export class StaffController {
   constructor(private readonly staff: StaffService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Everyone who works in this business' })
+  @ApiOperation({
+    summary: 'Everyone who works in this business',
+    description:
+      'Names, roles and status for any member. An owner or manager also sees usernames, contact details and each person’s working hours.',
+  })
   list() {
     return this.staff.list();
   }
