@@ -12,6 +12,7 @@ import {
   Min,
   NotEquals,
 } from 'class-validator';
+import { IsPlausibleOccurrence } from '../../../common/validation/is-occurrence.validator';
 import { IsMoney } from '../../../common/money/is-money.validator';
 
 export class CreateAdjustmentDto {
@@ -105,6 +106,7 @@ export class CreateAdjustmentDto {
   })
   @IsOptional()
   @IsDateString()
+  @IsPlausibleOccurrence()
   occurredAt?: string;
 
   @ApiPropertyOptional({
@@ -167,6 +169,7 @@ export class CreateTransferDto {
   @ApiPropertyOptional({ format: 'date-time' })
   @IsOptional()
   @IsDateString()
+  @IsPlausibleOccurrence()
   occurredAt?: string;
 
   @ApiPropertyOptional({

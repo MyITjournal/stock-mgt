@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { PaymentMethod } from '@prisma/client';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -15,6 +16,8 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsPlausibleOccurrence } from '../../../common/validation/is-occurrence.validator';
+import { MAX_LINES_PER_REQUEST } from '../../../common/pagination/request-limits';
 import { IsMoney } from '../../../common/money/is-money.validator';
 
 export class SaleLineDto {
@@ -139,11 +142,13 @@ export class CreateSaleDto {
   })
   @IsOptional()
   @IsDateString()
+  @IsPlausibleOccurrence()
   occurredAt?: string;
 
   @ApiProperty({ type: [SaleLineDto] })
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_LINES_PER_REQUEST)
   @ValidateNested({ each: true })
   @Type(() => SaleLineDto)
   lines!: SaleLineDto[];

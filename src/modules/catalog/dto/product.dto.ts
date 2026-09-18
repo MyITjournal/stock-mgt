@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { BarcodeSymbology } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -13,6 +14,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { MAX_PRODUCT_CHILDREN } from '../../../common/pagination/request-limits';
 import { IsUUID } from 'class-validator';
 import { IsMoney } from '../../../common/money/is-money.validator';
 
@@ -202,6 +204,7 @@ export class CreateProductDto {
   })
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_PRODUCT_CHILDREN)
   @ValidateNested({ each: true })
   @Type(() => ProductUnitInput)
   units!: ProductUnitInput[];
@@ -214,6 +217,7 @@ export class CreateProductDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_PRODUCT_CHILDREN)
   @ValidateNested({ each: true })
   @Type(() => ProductPriceInput)
   prices?: ProductPriceInput[];
@@ -226,6 +230,7 @@ export class CreateProductDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_PRODUCT_CHILDREN)
   @ValidateNested({ each: true })
   @Type(() => ProductBarcodeInput)
   barcodes?: ProductBarcodeInput[];

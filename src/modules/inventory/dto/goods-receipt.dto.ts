@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsDateString,
@@ -12,7 +13,9 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsPlausibleOccurrence } from '../../../common/validation/is-occurrence.validator';
 import { IsMoney } from '../../../common/money/is-money.validator';
+import { MAX_LINES_PER_REQUEST } from '../../../common/pagination/request-limits';
 
 export class GoodsReceiptLineDto {
   @ApiPropertyOptional({ format: 'uuid' })
@@ -115,6 +118,7 @@ export class CreateGoodsReceiptDto {
   })
   @IsOptional()
   @IsDateString()
+  @IsPlausibleOccurrence()
   receivedAt?: string;
 
   @ApiPropertyOptional({ example: 'Two cartons dented, accepted anyway.' })
@@ -126,6 +130,7 @@ export class CreateGoodsReceiptDto {
   @ApiProperty({ type: [GoodsReceiptLineDto] })
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_LINES_PER_REQUEST)
   @ValidateNested({ each: true })
   @Type(() => GoodsReceiptLineDto)
   lines!: GoodsReceiptLineDto[];
