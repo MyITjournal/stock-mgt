@@ -25,6 +25,12 @@ import { VoidPaymentDto } from './dto/void-payment.dto';
 /**
  * Taking money is the counter's job and the rep's on the route; reconciling it
  * is the accountant's. This is the first slice where that role does anything.
+ *
+ * The reads carry the same list. A rep genuinely needs the payment feed — an
+ * offline client computes an invoice's balance from the payments and returns it
+ * has synced, so closing it would break sync rather than tighten anything — but
+ * a storekeeper has no business in it, and the endpoints were open to every
+ * member including them.
  */
 const MONEY_HANDLERS = [
   OrgRole.owner,
@@ -40,6 +46,7 @@ export class PaymentController {
   constructor(private readonly payments: PaymentService) {}
 
   @Get()
+  @Roles(...MONEY_HANDLERS)
   @ApiQuery({ name: 'customerId', required: false })
   @ApiQuery({ name: 'since', required: false, description: 'ISO date-time.' })
   @ApiQuery({ name: 'cursor', required: false })
@@ -64,6 +71,7 @@ export class PaymentController {
   }
 
   @Get(':id')
+  @Roles(...MONEY_HANDLERS)
   @ApiOperation({
     summary: 'Get a payment',
     description: 'With what it settled, and anything left over as credit.',
@@ -108,6 +116,7 @@ export class ReceivableController {
   constructor(private readonly receivables: ReceivableService) {}
 
   @Get('receivables')
+  @Roles(...MONEY_HANDLERS)
   @ApiQuery({ name: 'customerId', required: false })
   @ApiOperation({
     summary: 'Who owes me',
@@ -119,6 +128,7 @@ export class ReceivableController {
   }
 
   @Get('customers/:id/statement')
+  @Roles(...MONEY_HANDLERS)
   @ApiOperation({
     summary: 'One customer’s position',
     description:
