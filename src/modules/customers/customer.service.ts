@@ -1,4 +1,10 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { OrgRole } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -7,12 +13,28 @@ import {
   UpdateCustomerDto,
 } from './dto/create-customer.dto';
 
+/**
+ * Who may decide which price list a customer buys on.
+ *
+ * The same two roles that edit the tiers themselves in `catalog.controller.ts`,
+ * and for the same reason: the tier *is* the price. Creating and editing
+ * customers stays open to everybody — a rep meeting a new shop on the route has
+ * to be able to write them down — but moving one onto the wholesale list is a
+ * pricing decision wearing a contact-details hat. Left open, a rep could move a
+ * customer to the cheapest tier, sell to them, and move them back, with no
+ * override and nothing on the record.
+ */
+const SETS_CUSTOMER_TIER: OrgRole[] = [OrgRole.owner, OrgRole.manager];
+
 @Injectable()
 export class CustomerService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
   async create(input: CreateCustomerDto) {
-    if (input.priceTierId) await this.assertTierExists(input.priceTierId);
+    if (input.priceTierId) {
+      this.assertMaySetTier();
+      await this.assertTierExists(input.priceTierId);
+    }
 
     return this.prisma.customer.create({
       data: {
@@ -33,8 +55,17 @@ export class CustomerService {
    * buyer who grows into a wholesale one.
    */
   async update(id: string, input: UpdateCustomerDto) {
-    await this.findOne(id);
-    if (input.priceTierId) await this.assertTierExists(input.priceTierId);
+    const existing = await this.findOne(id);
+
+    // Checked against what it currently is, so re-sending the same tier with a
+    // phone number change is not treated as a pricing decision.
+    if (
+      input.priceTierId !== undefined &&
+      input.priceTierId !== existing.priceTierId
+    ) {
+      this.assertMaySetTier();
+      if (input.priceTierId) await this.assertTierExists(input.priceTierId);
+    }
 
     return this.prisma.customer.update({
       where: { id },
@@ -49,6 +80,15 @@ export class CustomerService {
         }),
       },
     });
+  }
+
+  private assertMaySetTier() {
+    const orgRole = TenantContext.get()?.orgRole;
+    if (!orgRole || !SETS_CUSTOMER_TIER.includes(orgRole)) {
+      throw new ForbiddenException(
+        'Only an owner or manager can put a customer on a different price list.',
+      );
+    }
   }
 
   private async assertTierExists(priceTierId: string) {

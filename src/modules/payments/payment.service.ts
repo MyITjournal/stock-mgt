@@ -1,12 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { PaymentMethod } from '@prisma/client';
+import { OrgRole, PaymentMethod } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -26,6 +27,19 @@ import {
 import { LIVE_ALLOCATIONS, saleBalance } from './balance';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
+
+/**
+ * Who may record money leaving the till.
+ *
+ * The same three who can void a payment. Taking money in is the counter's job
+ * and the rep's on the route; handing it back is a decision, and it is made by
+ * the people accountable for the till rather than the person standing at it.
+ */
+const HANDS_MONEY_BACK: OrgRole[] = [
+  OrgRole.owner,
+  OrgRole.manager,
+  OrgRole.accountant,
+];
 
 /** How many payments one page returns when the caller does not say. */
 const DEFAULT_PAGE = 100;
@@ -84,6 +98,7 @@ export class PaymentService {
     if (input.amount === 0) {
       throw new BadRequestException('A payment of zero records nothing');
     }
+    if (input.amount < 0) this.assertMayHandMoneyBack();
     if (input.customerId) await this.assertCustomerExists(input.customerId);
     if (input.locationId) await this.assertLocationExists(input.locationId);
 
@@ -273,6 +288,26 @@ export class PaymentService {
     });
 
     return this.findOne(id);
+  }
+
+  /**
+   * Money leaving the till needs the same authority as unsaying that it ever
+   * arrived.
+   *
+   * A negative payment is a refund or a bounced cheque — §11 keeps it as an
+   * ordinary payment row rather than a second table, which is right, but it
+   * means the *route* cannot tell the two apart and the sign has to be checked
+   * here. Voiding already required an owner, manager or accountant; recording
+   * the negative that cancels the same invoice required nothing, so a cashier
+   * short in the till could balance it with a refund nobody approved.
+   */
+  private assertMayHandMoneyBack() {
+    const orgRole = TenantContext.get()?.orgRole;
+    if (!orgRole || !HANDS_MONEY_BACK.includes(orgRole)) {
+      throw new ForbiddenException(
+        'Only an owner, manager or accountant can record money handed back. Ask one of them to record the refund.',
+      );
+    }
   }
 
   private async assertCustomerExists(id: string) {

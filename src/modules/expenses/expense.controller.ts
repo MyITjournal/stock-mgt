@@ -29,7 +29,13 @@ import {
   UpdateExpenseCategoryDto,
 } from './dto/expense-category.dto';
 
-/** Spending money, and saying what it was for. */
+/**
+ * Spending money, and saying what it was for.
+ *
+ * Reads carry the same list as writes. What a business pays in rent, salaries
+ * and transport is not a rep's or a storekeeper's business, and `GET /expenses`
+ * was returning all of it — with a per-category breakdown — to any member.
+ */
 const SPENDERS = [OrgRole.owner, OrgRole.manager, OrgRole.accountant];
 
 @ApiTags('expenses')
@@ -39,6 +45,7 @@ export class ExpenseController {
   constructor(private readonly expenses: ExpenseService) {}
 
   @Get()
+  @Roles(...SPENDERS)
   @ApiQuery({ name: 'categoryId', required: false })
   @ApiQuery({ name: 'from', required: false, description: 'ISO date-time.' })
   @ApiQuery({ name: 'to', required: false, description: 'ISO date-time.' })
@@ -86,6 +93,7 @@ export class ExpenseController {
   }
 
   @Get(':id')
+  @Roles(...SPENDERS)
   @ApiOperation({ summary: 'Get an expense' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.expenses.findOne(id);
@@ -131,6 +139,7 @@ export class ExpenseCategoryController {
   constructor(private readonly categories: ExpenseCategoryService) {}
 
   @Get()
+  @Roles(...SPENDERS)
   @ApiOperation({
     summary: 'List expense categories',
     description:
@@ -141,6 +150,7 @@ export class ExpenseCategoryController {
   }
 
   @Get(':id')
+  @Roles(...SPENDERS)
   @ApiOperation({ summary: 'Get an expense category' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.categories.findOne(id);
