@@ -4,6 +4,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { TokenService } from './token.service';
+import { WorkingHoursService } from '../staff/working-hours.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const PAYLOAD = {
@@ -41,6 +42,13 @@ describe('TokenService', () => {
         TokenService,
         { provide: PrismaService, useValue: prisma },
         { provide: JwtService, useValue: jwt },
+        // Rotation refuses a renewal outside opening hours. These cases are
+        // about token mechanics; the hours rule is covered in
+        // working-hours.spec.ts and end to end in smoke.
+        {
+          provide: WorkingHoursService,
+          useValue: { assertWithinHours: jest.fn() },
+        },
       ],
     }).compile();
 

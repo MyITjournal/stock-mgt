@@ -22,6 +22,10 @@ import { defaultPackagingTypeRows } from '../catalog/packaging-type.service';
 import { defaultLocationRow } from '../inventory/location.service';
 import { defaultExpenseCategoryRows } from '../expenses/expense-category.service';
 import { TokenContext, TokenPair, TokenService } from './token.service';
+import {
+  HOURS_INCLUDE,
+  WorkingHoursService,
+} from '../staff/working-hours.service';
 import { env } from '../../config/env';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -52,6 +56,7 @@ export class AuthService {
     private readonly users: UsersService,
     private readonly tokens: TokenService,
     private readonly mail: MailService,
+    private readonly hours: WorkingHoursService,
   ) {}
 
   /**
@@ -381,7 +386,7 @@ export class AuthService {
   ): Promise<TokenPair> {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, status: MembershipStatus.active },
-      include: { user: true },
+      include: { user: true, ...HOURS_INCLUDE },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -391,6 +396,12 @@ export class AuthService {
 
     const active =
       memberships.find((m) => m.role === OrgRole.owner) ?? memberships[0];
+
+    // Outside opening hours, no session is issued at all. Checked here rather
+    // than on every request: a cashier halfway through recording a sale at one
+    // minute to seven must not be cut off mid-transaction, and a rule that
+    // interrupts work is a rule people find ways around.
+    this.hours.assertWithinHours(active);
 
     return this.tokens.issuePair(
       {

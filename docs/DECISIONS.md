@@ -869,6 +869,48 @@ rather than attached to a second business. Quietly adding somebody to an organiz
 consent problem and a way to test whether an address exists. Doing it properly needs an invite the
 person accepts, which needs email, which is what this whole decision works around.
 
+### Working hours are the shop's, and a person's only when they differ
+
+Decided with the owner on 2026-09-18: staff should only be able to use the app during business
+hours, and somebody who leaves should stop being able to at all.
+
+**Held on the business, overridden per person** — not per person alone. Per-person-only needs a
+default for a new employee and both answers are wrong: "any time" quietly exempts the newest and
+least-known member of staff, "never" stops them working on their first morning. A shop sets
+08:00–19:00 once and everybody inherits it, including whoever is hired next week. `opensAt` and
+`closesAt` are nullable on `Membership`, and null means inherit; an empty `workingDays` inherits
+for the same reason, so "same hours, Saturdays only" is `[6]`.
+
+**Times are minutes past midnight**, resolved in `Organization.timezone`. Not a `time` column,
+which would invite somebody to store an instant and bring back the 1am problem from §12.
+
+**A window never crosses midnight**, enforced by a CHECK in the database and a friendlier message
+in the service. There is no night shift yet, and that constraint is what keeps the check a single
+comparison rather than two ranges — which is also why adding night shifts later is a real change
+rather than a flag.
+
+**8am–7pm is already an eleven-hour cap.** A separate maximum-duration rule was considered and
+rejected: it would have to track when a session began and cut somebody off part-way through, which
+is the failure mode the whole design avoids. If a genuine fatigue rule is ever wanted, it is a
+different feature with a different answer to "what happens mid-sale".
+
+**Checked when a session is issued or renewed, never on an ordinary request.** This is the
+load-bearing decision. Access tokens last fifteen minutes, so somebody is locked out within a
+quarter of an hour of closing and **never in the middle of recording a sale** — a half-written sale
+is worse than the problem being solved, and a rule that interrupts work is a rule people route
+around. Both `AuthService.issueForUser` and `TokenService.rotate` call
+`WorkingHoursService.assertWithinHours`, because enforcing it at login alone would let a cashier
+sign in at five to seven and work all night.
+
+**The owner is never locked out** of their own business — they will check the day's figures at ten
+at night. Everyone else, managers included, is subject to hours, with a per-person
+`ignoresWorkingHours` flag for the month-end stocktake and the lorry that arrives late. That reuses
+the per-person mechanism rather than inventing a second one.
+
+The arithmetic is pure, in `staff/working-hours.ts`, beside `period.ts` and `purchase-target.ts` —
+a comparison and a fallback, both easy to get subtly wrong in a timezone and both worth testing
+without a database.
+
 ### Rate limiting counts people, not addresses
 
 Changed 2026-09-17, found while answering "how many staff can be logged in at once".
@@ -1291,8 +1333,12 @@ Recorded because each cost real time and none is obvious.
 ## 14. Where things stand
 
 **Slices 0–6.5 done, plus the 6.1 gap-closing pass, a security hardening pass and staff
-management.** 378 tests across 29 suites, twenty-two migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke`
-green at 339 checks against a running server.
+management and working hours.** 391 tests across 31 suites, twenty-three migrations, `typecheck`/`lint`/`build` clean, and `npm run smoke`
+green at 347 checks against a running server.
+
+**One thing about running smoke twice.** Login is throttled at five attempts a minute per address
+and the staff step spends all five. Running smoke again inside that minute fails with a 429 on
+login — the rate limiter working, not a flaky suite. Wait a minute between runs.
 
 **There is no cap on how many people may be signed in**, per user or per organization — nothing in
 the code counts seats or concurrent sessions, and `RefreshToken` is indexed on `userId` rather

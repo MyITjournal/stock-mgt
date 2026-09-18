@@ -5,6 +5,10 @@ import { OrgRole } from '@prisma/client';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  HOURS_INCLUDE,
+  WorkingHoursService,
+} from '../staff/working-hours.service';
 import { env } from '../../config/env';
 
 export interface AccessTokenPayload {
@@ -56,6 +60,7 @@ export class TokenService {
   constructor(
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
+    private readonly hours: WorkingHoursService,
   ) {}
 
   /**
@@ -140,11 +145,15 @@ export class TokenService {
         organizationId: stored.organizationId ?? undefined,
         status: 'active',
       },
-      include: { user: true },
+      include: { user: true, ...HOURS_INCLUDE },
     });
     if (!membership) {
       throw new UnauthorizedException('Membership is no longer active');
     }
+
+    // Checked on renewal as well as on login: enforced only at sign-in, a
+    // cashier could start a session at five to seven and work all night.
+    this.hours.assertWithinHours(membership);
 
     const pair = await this.issuePair(
       {

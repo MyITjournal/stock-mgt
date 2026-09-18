@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { UpdateOrganizationDto } from './dto/organization.dto';
@@ -27,7 +31,18 @@ export class OrganizationService {
 
   async update(input: UpdateOrganizationDto) {
     const id = TenantContext.requireOrganizationId();
-    await this.current();
+    const existing = await this.current();
+
+    // Caught here as well as by the database CHECK, so the message explains the
+    // rule instead of naming a constraint. Either time may be sent alone, so
+    // the comparison is against what the other one currently is.
+    const opensAt = input.opensAt ?? existing.opensAt;
+    const closesAt = input.closesAt ?? existing.closesAt;
+    if (closesAt <= opensAt) {
+      throw new BadRequestException(
+        'Closing time must be later than opening time. Shifts that run past midnight are not supported yet.',
+      );
+    }
 
     return this.prisma.organization.update({
       where: { id },
@@ -41,6 +56,11 @@ export class OrganizationService {
           rcNumber: input.rcNumber || null,
         }),
         ...(input.logoUrl !== undefined && { logoUrl: input.logoUrl || null }),
+        ...(input.opensAt !== undefined && { opensAt: input.opensAt }),
+        ...(input.closesAt !== undefined && { closesAt: input.closesAt }),
+        ...(input.workingDays !== undefined && {
+          workingDays: input.workingDays,
+        }),
       },
       select: ORGANIZATION_FIELDS,
     });
@@ -63,6 +83,9 @@ const ORGANIZATION_FIELDS = {
   taxId: true,
   rcNumber: true,
   logoUrl: true,
+  opensAt: true,
+  closesAt: true,
+  workingDays: true,
   createdAt: true,
   updatedAt: true,
 } as const;

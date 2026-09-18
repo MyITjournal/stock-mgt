@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { StaffController } from './staff.controller';
 import { StaffService } from './staff.service';
+import { WorkingHoursService } from './working-hours.service';
 
 /**
  * The people who work in one business, and the seat cap that bounds them.
@@ -11,6 +12,7 @@ import { StaffService } from './staff.service';
  */
 @Module({
   controllers: [StaffController],
-  providers: [StaffService],
+  providers: [StaffService, WorkingHoursService],
+  exports: [WorkingHoursService],
 })
 export class StaffModule {}
