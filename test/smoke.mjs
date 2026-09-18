@@ -1890,6 +1890,76 @@ async function main() {
   });
   check('and her seat is free for somebody else', true);
 
+  // -- Working hours ------------------------------------------------------
+  // Bola works here and is not an owner, so the shop's hours apply to her.
+  const bola = (await api('GET', '/staff', { token: t })).data.find(
+    (m) => m.user.username?.startsWith('bola@'),
+  );
+  const signInAsBola = (expect) =>
+    api('POST', '/auth/login', {
+      expect,
+      body: { username: bola.user.username, password: 'password123' },
+    });
+
+  const openNow = (await signInAsBola([200, 201])).data;
+  const bolaToken = openNow.accessToken ?? openNow.tokens?.accessToken;
+  check('a cashier can sign in during opening hours', !!bolaToken);
+
+  // Close the shop by moving the window into the past hour.
+  const nowMinutes = (() => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Lagos', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+    const get = (t) => Number(parts.find((p) => p.type === t).value);
+    return (get('hour') % 24) * 60 + get('minute');
+  })();
+  const shut = { opensAt: Math.max(0, nowMinutes - 120), closesAt: Math.max(1, nowMinutes - 60) };
+  await api('PATCH', '/organization', { token: t, body: shut });
+
+  await signInAsBola(403);
+  check('and is refused once the shop has closed', true);
+
+  // The owner is never locked out of their own business.
+  const ownerLogin = await api('POST', '/auth/login', {
+    body: { email: org.email, password: 'correct-horse-battery' },
+  });
+  check('while the owner can still sign in after hours', ownerLogin.status === 200 || ownerLogin.status === 201);
+
+  // The token she already holds keeps working: hours are checked when a session
+  // is issued, never on an ordinary request, so nobody is cut off mid-sale.
+  await api('GET', '/products', { token: bolaToken });
+  check('a cashier already working is not cut off mid-request', true);
+
+  // An exemption puts her back in.
+  await api('PATCH', `/staff/${bola.user.id}`, {
+    token: t,
+    body: { ignoresWorkingHours: true },
+  });
+  await signInAsBola([200, 201]);
+  check('an exempt member of staff can sign in at any hour', true);
+
+  // Her own hours are checked through the record rather than another sign-in:
+  // login is throttled at five a minute per address, and this step has already
+  // spent them. The override itself is covered in working-hours.spec.ts.
+  const withOwnHours = (
+    await api('PATCH', `/staff/${bola.user.id}`, {
+      token: t,
+      body: { ignoresWorkingHours: false, opensAt: 0, closesAt: 1440 },
+    })
+  ).data;
+  eq('her own hours are stored against her', withOwnHours.opensAt, 0);
+  eq('and the exemption is cleared again', withOwnHours.ignoresWorkingHours, false);
+
+  await api('PATCH', '/organization', {
+    token: t,
+    expect: 400,
+    body: { opensAt: 1200, closesAt: 600 },
+  });
+  check('closing before opening is refused: no shift crosses midnight yet', true);
+
+  // Put the shop back, so later steps are unaffected.
+  await api('PATCH', '/organization', { token: t, body: { opensAt: 0, closesAt: 1440 } });
+
   step(40, 'Vendor targets: what the scheme asked for against what arrived');
   const targetMonth = new Date().toISOString();
 

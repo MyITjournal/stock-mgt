@@ -183,6 +183,20 @@ a business over its limit keeps working. Only active members hold a seat. The la
 demoted or suspended, and nobody can change their own role. Removal is **suspension**, effective on
 their next request.
 
+**Working hours gate signing in, not working** (§9). The business sets `opensAt`/`closesAt`
+(minutes past midnight, org timezone) and `workingDays`; a `Membership` overrides them only when
+that person differs, and **null means inherit** so a new hire is covered without anybody
+remembering. **Checked when a session is issued or renewed — never on an ordinary request** — so
+somebody is locked out within 15 minutes of closing and never mid-sale. Both
+`AuthService.issueForUser` and `TokenService.rotate` must call it, or signing in at 18:55 would buy
+the whole night. **Owners are never locked out**; anyone else can be exempted with
+`ignoresWorkingHours`. No window crosses midnight — a CHECK enforces it, and that is what makes
+night shifts a real change later. The arithmetic is pure, in `staff/working-hours.ts`.
+
+**Running `npm run smoke` twice inside a minute fails** with a 429 on login: login allows five
+attempts a minute per address and the staff step spends them. That is the rate limiter working;
+wait a minute.
+
 **The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1, and
 §15 item 14 records nine dependency advisories left for after the first deploy (**do not run
 `npm audit fix --force`**: it would downgrade Prisma 7 to 6). Then **deploy to Render** on the free

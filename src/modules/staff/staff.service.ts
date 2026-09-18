@@ -18,6 +18,10 @@ const MEMBER_SELECT = {
   id: true,
   role: true,
   status: true,
+  opensAt: true,
+  closesAt: true,
+  workingDays: true,
+  ignoresWorkingHours: true,
   createdAt: true,
   user: {
     select: {
@@ -154,11 +158,32 @@ export class StaffService {
       await this.assertSeatAvailable(organizationId, organization.maxUsers);
     }
 
+    // Either time may arrive alone, so the pair is compared as it will end up.
+    // Caught here as well as by the database CHECK so the message explains the
+    // rule rather than naming a constraint.
+    const opensAt =
+      input.opensAt !== undefined ? input.opensAt : membership.opensAt;
+    const closesAt =
+      input.closesAt !== undefined ? input.closesAt : membership.closesAt;
+    if (opensAt !== null && closesAt !== null && closesAt <= opensAt) {
+      throw new BadRequestException(
+        'Their closing time must be later than their opening time. Shifts that run past midnight are not supported yet.',
+      );
+    }
+
     return this.prisma.membership.update({
       where: { id: membership.id },
       data: {
         ...(input.role && { role: input.role }),
         ...(input.status && { status: input.status }),
+        ...(input.opensAt !== undefined && { opensAt: input.opensAt }),
+        ...(input.closesAt !== undefined && { closesAt: input.closesAt }),
+        ...(input.workingDays !== undefined && {
+          workingDays: input.workingDays,
+        }),
+        ...(input.ignoresWorkingHours !== undefined && {
+          ignoresWorkingHours: input.ignoresWorkingHours,
+        }),
       },
       select: MEMBER_SELECT,
     });

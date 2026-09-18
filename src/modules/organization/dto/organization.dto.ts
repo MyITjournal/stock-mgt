@@ -1,5 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 /**
  * The letterhead, and nothing else.
@@ -62,4 +71,43 @@ export class UpdateOrganizationDto {
   @IsString()
   @MaxLength(2000)
   logoUrl?: string;
+
+  @ApiPropertyOptional({
+    example: 480,
+    minimum: 0,
+    maximum: 1440,
+    description:
+      'When staff may sign in, as minutes past midnight in your timezone. 480 is 08:00. Owners are never locked out.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1440)
+  opensAt?: number;
+
+  @ApiPropertyOptional({
+    example: 1140,
+    minimum: 0,
+    maximum: 1440,
+    description:
+      'Must be later than `opensAt` — no window crosses midnight, because there is no night shift yet. 1140 is 19:00.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1440)
+  closesAt?: number;
+
+  @ApiPropertyOptional({
+    example: [1, 2, 3, 4, 5, 6],
+    description:
+      'Which days you open, 0 = Sunday. All seven by default; drop 0 if you close on Sundays.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  workingDays?: number[];
 }

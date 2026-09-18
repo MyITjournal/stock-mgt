@@ -704,6 +704,24 @@ model Organization {
   /// afternoon. Suspended members do not hold a seat.
   maxUsers Int @default(5)
 
+  /// When staff may sign in, as **minutes past midnight** in this business's
+  /// timezone: 480 is 08:00, 1140 is 19:00.
+  ///
+  /// Minutes rather than a time type because the comparison is arithmetic and
+  /// the timezone already lives in `timezone` — a `time` column would invite
+  /// somebody to store an instant and reintroduce the 1am problem from §12.
+  ///
+  /// `closesAt` must be **after** `opensAt`: no window crosses midnight, because
+  /// there is no night shift yet. That constraint is what keeps the check a
+  /// single comparison rather than two ranges, and it is what makes adding
+  /// night shifts a real change later rather than a tweak.
+  opensAt  Int @default(480)
+  closesAt Int @default(1140)
+
+  /// Which days the business opens, 0 = Sunday. All seven by default, because
+  /// that is what was asked for; a shop that closes on Sunday drops the 0.
+  workingDays Int[] @default([0, 1, 2, 3, 4, 5, 6])
+
   /// The letterhead: what a printed invoice or statement says about the
   /// business issuing it.
   ///
@@ -776,8 +794,28 @@ model Membership {
   organizationId String
   role           OrgRole          @default(sales_rep)
   status         MembershipStatus @default(active)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+
+  /// This person's own hours, when they differ from the shop's.
+  ///
+  /// **Null means inherit**, which is the point: a business sets 08:00–19:00
+  /// once and everybody follows it, including whoever is hired next week. Hours
+  /// held only per person would need a default for a new starter, and both
+  /// answers are wrong — "any time" quietly exempts the newest employee, "never"
+  /// stops them working on their first morning.
+  ///
+  /// An empty `workingDays` inherits for the same reason; a person who works
+  /// only Saturdays has `[6]`.
+  opensAt     Int?
+  closesAt    Int?
+  workingDays Int[] @default([])
+
+  /// Exempt from hours entirely. The owner is always exempt without this; it is
+  /// here for the manager doing a month-end stocktake and the storekeeper
+  /// receiving a lorry that arrived at nine at night.
+  ignoresWorkingHours Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

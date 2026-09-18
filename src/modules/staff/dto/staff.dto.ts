@@ -1,12 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { MembershipStatus, OrgRole } from '@prisma/client';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
   IsEmail,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -66,7 +72,53 @@ export class CreateStaffDto {
   role!: OrgRole;
 }
 
-export class UpdateStaffDto {
+export class StaffHoursDto {
+  @ApiPropertyOptional({
+    example: 360,
+    description:
+      'This person’s own start time, in minutes past midnight. **Null clears it**, and they go back to following the business hours.',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1440)
+  opensAt?: number | null;
+
+  @ApiPropertyOptional({
+    example: 720,
+    description: 'Their own finish time. Must be later than `opensAt`.',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1440)
+  closesAt?: number | null;
+
+  @ApiPropertyOptional({
+    example: [6],
+    description:
+      'Days this person works, 0 = Sunday. An **empty array** means they follow the business. `[6]` is Saturdays only.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  workingDays?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'Exempt from hours entirely — the manager doing a month-end count, or the storekeeper meeting a lorry at nine at night. Owners are exempt without this.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  ignoresWorkingHours?: boolean;
+}
+
+export class UpdateStaffDto extends StaffHoursDto {
   @ApiPropertyOptional({ enum: OrgRole })
   @IsOptional()
   @IsEnum(OrgRole)
