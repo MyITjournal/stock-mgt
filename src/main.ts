@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { env } from './config/env';
 
@@ -10,6 +11,27 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.setGlobalPrefix(env.API_PREFIX);
+
+  /**
+   * Response security headers.
+   *
+   * Mostly belt-and-braces for a JSON API, but two of them earn their place on
+   * Render: HSTS, so a client that reaches the API over http is told never to
+   * do it again, and `nosniff`, so a stored filename or note can never be
+   * sniffed into something executable by a browser that fetched it directly.
+   *
+   * `contentSecurityPolicy` is off because the only HTML this server serves is
+   * Swagger, whose UI needs inline scripts and styles; a policy tight enough to
+   * be worth having would break it, and Swagger is off in production anyway.
+   * `crossOriginResourcePolicy` is relaxed for the same reason the CORS block
+   * below exists: the dashboard is served from another origin.
+   */
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
   // Auth tokens are also delivered as httpOnly cookies for the web dashboard.
   app.use(cookieParser());
