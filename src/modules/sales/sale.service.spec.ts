@@ -82,9 +82,13 @@ describe('SaleService', () => {
       },
       priceTier: { findFirst: jest.fn().mockResolvedValue({ id: RETAIL }) },
       sale: {
+        // Stands in for a `SALE_INCLUDE` read, so it carries the relations one
+        // always returns — `lines` among them, which the cost redaction on the
+        // way out walks.
         findFirst: jest.fn().mockResolvedValue({
           id: 'sale-1',
           total: 0,
+          lines: [],
           allocations: [],
           returns: [],
         }),
@@ -524,6 +528,58 @@ describe('SaleService', () => {
 
       expect(tx.sale.findMany).not.toHaveBeenCalled();
       expect(tx.sale.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('what a sale shows about margin', () => {
+    const soldSale = () => {
+      prisma.sale.findFirst.mockResolvedValue({
+        id: 'sale-1',
+        total: 1_080_000,
+        lines: [
+          {
+            id: 'line-1',
+            unitPrice: 540_000,
+            lineTotal: 1_080_000,
+            costOfGoodsSold: 900_000,
+            costIsEstimated: false,
+          },
+        ],
+        allocations: [],
+        returns: [{ id: 'ret-1', refundAmount: 100_000, costAmount: 83_000 }],
+      });
+    };
+
+    it('shows cost of goods sold to an owner', async () => {
+      soldSale();
+
+      const sale = await TenantContext.run(
+        { organizationId: ORG, orgRole: OrgRole.owner, userId: 'user-1' },
+        () => service.findOne('sale-1'),
+      );
+
+      expect(sale.lines[0].costOfGoodsSold).toBe(900_000);
+      expect(sale.returns[0].costAmount).toBe(83_000);
+    });
+
+    it('withholds it from a rep, who keeps the rest of the invoice', async () => {
+      soldSale();
+
+      const sale = await TenantContext.run(
+        { organizationId: ORG, orgRole: OrgRole.sales_rep, userId: 'user-1' },
+        () => service.findOne('sale-1'),
+      );
+
+      // §12 closes the cost-bearing reports to a rep. `GET /sales` handed over
+      // the same figures a line at a time, which is the margin on the invoice.
+      expect(sale.lines[0]).not.toHaveProperty('costOfGoodsSold');
+      expect(sale.lines[0]).not.toHaveProperty('costIsEstimated');
+      expect(sale.returns[0]).not.toHaveProperty('costAmount');
+
+      // What they sold it for is theirs to see — they negotiated it.
+      expect(sale.lines[0].unitPrice).toBe(540_000);
+      expect(sale.total).toBe(1_080_000);
+      expect(sale.balance).toBe(980_000);
     });
   });
 });

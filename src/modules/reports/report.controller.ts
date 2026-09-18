@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { SEES_COST } from '../../common/authz/cost-visibility';
 import { DashboardService } from './dashboard.service';
 import { ReportService } from './report.service';
 import {
@@ -11,18 +11,6 @@ import {
   SalesReportQueryDto,
   ValuationQueryDto,
 } from './dto/report-query.dto';
-
-/**
- * Who may see what the goods cost.
- *
- * Margin, cost of goods sold and stock valuation are restricted to the people
- * who set prices. A `sales_rep` carrying buying prices around a market is a
- * commercial problem, not a permissions technicality — and it is the kind of
- * leak that cannot be undone once it has happened.
- *
- * Reps keep the reports that do not expose cost: what sold, and to whom.
- */
-const SEES_COST = [OrgRole.owner, OrgRole.manager, OrgRole.accountant];
 
 @ApiTags('reports')
 @ApiBearerAuth('JWT')
@@ -69,10 +57,11 @@ export class ReportController {
   }
 
   @Get('collections')
+  @Roles(...SEES_COST)
   @ApiOperation({
     summary: 'Money actually received in the period',
     description:
-      'Deliberately not the same number as sales. Voided payments are excluded.',
+      'Deliberately not the same number as sales. Voided payments are excluded. Owner, manager and accountant: this is the end-of-shift cash-up, broken down per till and per bank account, and it is what a shortfall would show up in.',
   })
   async collections(@Query() query: PeriodQueryDto) {
     const period = await this.reports.resolve(toPeriodQuery(query));

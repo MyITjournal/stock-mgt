@@ -8,6 +8,7 @@ import {
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { redactCost, redactCostAll } from '../../common/authz/cost-visibility';
 import { splitTaxInclusive } from '../../common/money/money';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { BarcodeSymbology } from '@prisma/client';
@@ -30,6 +31,9 @@ const PRODUCT_INCLUDE = {
   // see what was minted — an omitted code becomes a generated internal EAN-13.
   barcodes: { include: { unit: true } },
 } as const;
+
+/** What a product costs the business. Owner, manager and accountant only. */
+const PRODUCT_COST_FIELDS = ['costPrice'] as const;
 
 /**
  * One uploaded file, typed structurally.
@@ -138,14 +142,14 @@ export class ProductService {
     };
   }
 
-  findAll(
+  async findAll(
     options: {
       categoryId?: string;
       packagingTypeId?: string;
       search?: string;
     } = {},
   ) {
-    return this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({
       where: {
         deletedAt: null,
         ...(options.categoryId && { categoryId: options.categoryId }),
@@ -164,6 +168,8 @@ export class ProductService {
       include: PRODUCT_INCLUDE,
       orderBy: { name: 'asc' },
     });
+
+    return redactCostAll(products, PRODUCT_COST_FIELDS);
   }
 
   findOne(id: string) {
@@ -462,13 +468,21 @@ export class ProductService {
     return updated;
   }
 
+  /**
+   * Every read of a product goes through here, which is why the cost redaction
+   * sits here rather than at each of the seven call sites.
+   *
+   * `costPrice` is written by create and update and read by nothing — §2
+   * forbids it as an input to valuation, so no report wants it — which makes
+   * dropping it for a rep free of consequences anywhere else.
+   */
   private async findOneOrFail(id: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
       include: PRODUCT_INCLUDE,
     });
     if (!product) throw new NotFoundException('Product not found');
-    return product;
+    return redactCost(product, PRODUCT_COST_FIELDS);
   }
 
   private async assertCategoryExists(categoryId: string) {

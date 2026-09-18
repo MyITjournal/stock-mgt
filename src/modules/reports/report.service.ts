@@ -3,6 +3,7 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { Minor } from '../../common/money/money';
+import { callerSeesCost, redactCost } from '../../common/authz/cost-visibility';
 import { LIVE_ALLOCATIONS, saleBalance } from '../payments/balance';
 import {
   Period,
@@ -20,6 +21,12 @@ const FALLBACK_TIMEZONE = 'Africa/Lagos';
 
 /** How many rows a "top N" list returns when the caller does not say. */
 const TOP_N = 10;
+
+/** What a lot on the expiry list is worth — a buying price, so role-gated. */
+const EXPIRY_COST_FIELDS = ['value'] as const;
+
+/** The margin columns on a sales slice. Everything else on the row is turnover. */
+const SALES_GROUP_COST_FIELDS = ['cogs', 'grossProfit', 'marginBps'] as const;
 
 export type SalesGrouping =
   | 'day'
@@ -202,17 +209,28 @@ export class ReportService {
     const rows = [...groups.values()].map(finishGroup);
     const totals = await this.profit(period);
 
+    // This report is open to a rep on purpose — what sold, and to whom, is the
+    // one slice they need — but each row carried `cogs`, `grossProfit` and
+    // `marginBps` alongside it, which is the whole of the margin a row at a
+    // time. `GET /reports/profit` has always been closed to them; this returned
+    // the same answer grouped by product to anybody who asked.
+    const seesCost = callerSeesCost();
+
     return {
       period: describe(period),
       groupBy,
-      rows: sortRows(rows, groupBy),
+      rows: sortRows(rows, groupBy).map((row) =>
+        redactCost(row, SALES_GROUP_COST_FIELDS),
+      ),
       totals: {
         grossSales: totals.grossSales,
         revenue: totals.revenue,
         returned: totals.returned,
-        cogs: totals.cogs,
-        grossProfit: totals.grossProfit,
-        marginBps: totals.marginBps,
+        ...(seesCost && {
+          cogs: totals.cogs,
+          grossProfit: totals.grossProfit,
+          marginBps: totals.marginBps,
+        }),
         invoices: rows.reduce((sum, row) => sum + row.invoices, 0),
       },
     };
@@ -584,10 +602,16 @@ export class ReportService {
         : null,
     }));
 
+    // The list stays open to everyone — knowing which lots to push before they
+    // turn is a shelf question, not a cost one — but the money on it does not.
+    const seesCost = callerSeesCost();
+
     return {
       withinDays,
-      batches,
-      valueAtRisk: batches.reduce((sum, batch) => sum + batch.value, 0),
+      batches: batches.map((batch) => redactCost(batch, EXPIRY_COST_FIELDS)),
+      ...(seesCost && {
+        valueAtRisk: batches.reduce((sum, batch) => sum + batch.value, 0),
+      }),
       /** Already past their date and still on the shelf. */
       expired: batches.filter(
         (batch) => batch.daysToExpiry !== null && batch.daysToExpiry < 0,

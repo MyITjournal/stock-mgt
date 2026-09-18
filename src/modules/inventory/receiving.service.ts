@@ -3,6 +3,7 @@ import { StockMovementType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { redactCost, redactCostAll } from '../../common/authz/cost-visibility';
 import { LocationService } from './location.service';
 import { SupplierService } from './supplier.service';
 import { StockService } from './stock.service';
@@ -11,6 +12,15 @@ import {
   GoodsReceiptLineDto,
 } from './dto/goods-receipt.dto';
 import { resolveProductUnit } from './base-units';
+
+/** What the vendor charged for a line, as it is stored. */
+const RECEIPT_LINE_COST_FIELDS = ['totalCost'] as const;
+
+/** The same, plus the rate `findOne` derives from it on the way out. */
+const RECEIPT_LINE_READ_COST_FIELDS = ['totalCost', 'unitCost'] as const;
+
+/** The same invoice total, as it sits on the lot the line created. */
+const BATCH_COST_FIELDS = ['totalCost'] as const;
 
 /** What one line resolved to once the catalog had been consulted. */
 interface ResolvedLine {
@@ -138,8 +148,18 @@ export class ReceivingService {
     return this.findOne(receiptId);
   }
 
-  findAll(filter: { supplierId?: string; locationId?: string } = {}) {
-    return this.prisma.goodsReceipt.findMany({
+  /**
+   * Deliveries, newest first.
+   *
+   * A goods receipt *is* the vendor's invoice — `totalCost` per line is the
+   * price the business negotiated — so the money on it follows the same rule as
+   * every other buying price and is withheld from a role that may not see cost.
+   * The receipt itself stays readable: a storekeeper who recorded a delivery
+   * has to be able to check what they entered, and quantities are the part of
+   * it they entered.
+   */
+  async findAll(filter: { supplierId?: string; locationId?: string } = {}) {
+    const receipts = await this.prisma.goodsReceipt.findMany({
       where: {
         ...(filter.supplierId && { supplierId: filter.supplierId }),
         ...(filter.locationId && { locationId: filter.locationId }),
@@ -153,6 +173,11 @@ export class ReceivingService {
         },
       },
     });
+
+    return receipts.map((receipt) => ({
+      ...receipt,
+      lines: redactCostAll(receipt.lines, RECEIPT_LINE_COST_FIELDS),
+    }));
   }
 
   async findOne(id: string) {
@@ -175,15 +200,23 @@ export class ReceivingService {
 
     return {
       ...receipt,
-      lines: receipt.lines.map((line) => ({
-        ...line,
-        /**
-         * Output, never input. Divided by what *arrived*, not what was paid
-         * for, so free goods pull the cost of every unit down — which is the
-         * whole point of them.
-         */
-        unitCost: line.totalCost / line.quantityReceived,
-      })),
+      lines: receipt.lines.map((line) =>
+        redactCost(
+          {
+            ...line,
+            // The lot behind the line carries the same invoice total, so it is
+            // redacted with it rather than left as the way round the front door.
+            batch: redactCost(line.batch, BATCH_COST_FIELDS),
+            /**
+             * Output, never input. Divided by what *arrived*, not what was paid
+             * for, so free goods pull the cost of every unit down — which is the
+             * whole point of them.
+             */
+            unitCost: line.totalCost / line.quantityReceived,
+          },
+          RECEIPT_LINE_READ_COST_FIELDS,
+        ),
+      ),
     };
   }
 

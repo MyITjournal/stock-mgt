@@ -248,10 +248,30 @@ describe('ReceivingService', () => {
       lines: [{ totalCost: INVOICE_TOTAL, quantityReceived: 480 }],
     });
 
-    const receipt = await TenantContext.run({ organizationId: ORG }, () =>
-      service.findOne('receipt-1'),
+    const receipt = await TenantContext.run(
+      { organizationId: ORG, orgRole: OrgRole.owner },
+      () => service.findOne('receipt-1'),
     );
 
     expect(receipt.lines[0].unitCost).toBeCloseTo(INVOICE_TOTAL / 480, 6);
+  });
+
+  it('withholds what the delivery cost from a rep', async () => {
+    prisma.goodsReceipt.findFirst.mockResolvedValue({
+      id: 'receipt-1',
+      lines: [{ totalCost: INVOICE_TOTAL, quantityReceived: 480 }],
+    });
+
+    const receipt = await TenantContext.run(
+      { organizationId: ORG, orgRole: OrgRole.sales_rep },
+      () => service.findOne('receipt-1'),
+    );
+
+    // A goods receipt is the vendor's invoice. The quantities stay — whoever
+    // recorded the delivery has to be able to check them — but the price the
+    // business negotiated is not theirs to read.
+    expect(receipt.lines[0].quantityReceived).toBe(480);
+    expect(receipt.lines[0]).not.toHaveProperty('totalCost');
+    expect(receipt.lines[0]).not.toHaveProperty('unitCost');
   });
 });
