@@ -29,6 +29,8 @@ import {
   saleBalance,
   withBalance,
 } from '../payments/balance';
+import type { SaleBalanceInput } from '../payments/balance';
+import { redactCost } from '../../common/authz/cost-visibility';
 
 /**
  * Who may extend further credit to a customer who already owes.
@@ -373,7 +375,7 @@ export class SaleService {
     const last = rows.at(-1);
 
     return {
-      sales: rows.map(withBalance),
+      sales: rows.map((row) => forReading(row)),
       nextCursor:
         rows.length === limit && last
           ? encodeCursor({ at: last.createdAt, id: last.id })
@@ -389,7 +391,7 @@ export class SaleService {
       include: SALE_INCLUDE,
     });
     if (!sale) throw new NotFoundException('Sale not found');
-    return withBalance(sale);
+    return forReading(sale);
   }
 
   /**
@@ -516,4 +518,47 @@ interface LineToWrite {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
+}
+
+/** What these goods cost the business, carried on every sold line. */
+const SALE_LINE_COST_FIELDS = ['costOfGoodsSold', 'costIsEstimated'] as const;
+
+/** The share of that cost which came back with returned goods. */
+const SALE_RETURN_COST_FIELDS = ['costAmount'] as const;
+
+/**
+ * The one seam every sale passes through on its way out of the API: the derived
+ * balance attached, and cost removed for anyone whose role may not see it.
+ *
+ * §12 closes the cost-bearing *reports* to a rep, and `GET /sales` was handing
+ * over the same figures a line at a time — `costOfGoodsSold` per line and
+ * `costAmount` per return are the margin on the invoice. Both are snapshots
+ * taken at the time of sale, so nothing downstream recomputes them.
+ *
+ * Deliberately not folded into `SALE_INCLUDE`: `SaleReturnService` reads the
+ * real `costOfGoodsSold` to apportion cost onto goods handed back, and a
+ * redacted row would leave it computing against `undefined`. It runs its own
+ * query, so redacting at the presentation edge cannot reach it.
+ */
+// `returns` is restated rather than intersected onto `SaleBalanceInput`:
+// intersecting two array types leaves TypeScript indexing only the first, so
+// `costAmount` would vanish from the element type it infers here.
+function forReading<
+  T extends Omit<SaleBalanceInput, 'returns'> & {
+    lines: readonly {
+      costOfGoodsSold: number;
+      costIsEstimated: boolean;
+    }[];
+    returns: readonly { costAmount: number; refundAmount: number }[];
+  },
+>(sale: T) {
+  const row = withBalance(sale);
+
+  return {
+    ...row,
+    lines: row.lines.map((line) => redactCost(line, SALE_LINE_COST_FIELDS)),
+    returns: row.returns.map((entry) =>
+      redactCost(entry, SALE_RETURN_COST_FIELDS),
+    ),
+  };
 }

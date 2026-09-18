@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { callerSeesCost } from '../../common/authz/cost-visibility';
 
 export interface LevelFilter {
   productId?: string;
@@ -50,6 +51,10 @@ export class StockLevelService {
       orderBy: [{ productId: 'asc' }, { locationId: 'asc' }],
     });
 
+    // Asked once for the whole page rather than per batch: the role cannot
+    // change halfway through a request.
+    const seesCost = callerSeesCost();
+
     const grouped = new Map<
       string,
       {
@@ -61,8 +66,13 @@ export class StockLevelService {
           quantity: number;
           lotCode: string | null;
           expiryDate: Date | null;
-          /** Exact, from the invoice. The ratio is the derived figure. */
-          unitCost: number | null;
+          /**
+           * Exact, from the invoice. The ratio is the derived figure.
+           *
+           * Absent entirely for a role that may not see cost — this is a buying
+           * price, and `includeBatches=true` was handing it to any member.
+           */
+          unitCost?: number | null;
         }[];
       }
     >();
@@ -82,10 +92,12 @@ export class StockLevelService {
         quantity: balance.quantity,
         lotCode: balance.batch.lotCode,
         expiryDate: balance.batch.expiryDate,
-        unitCost:
-          balance.batch.quantityReceived > 0
-            ? balance.batch.totalCost / balance.batch.quantityReceived
-            : null,
+        ...(seesCost && {
+          unitCost:
+            balance.batch.quantityReceived > 0
+              ? balance.batch.totalCost / balance.batch.quantityReceived
+              : null,
+        }),
       });
 
       grouped.set(key, row);
@@ -126,6 +138,8 @@ export class StockLevelService {
       },
     });
 
+    const seesCost = callerSeesCost();
+
     return balances
       .map((balance) => ({
         product: balance.product,
@@ -134,14 +148,21 @@ export class StockLevelService {
         lotCode: balance.batch.lotCode,
         expiryDate: balance.batch.expiryDate,
         quantity: balance.quantity,
-        /** What walks out of the door if this is not sold in time. */
-        valueAtRisk:
-          balance.batch.quantityReceived > 0
-            ? Math.round(
-                (balance.batch.totalCost / balance.batch.quantityReceived) *
-                  balance.quantity,
-              )
-            : 0,
+        /**
+         * What walks out of the door if this is not sold in time — a cost, so
+         * it is withheld from a role that may not see cost. The list itself
+         * stays open: a storekeeper walking the shelves needs to know which
+         * lots to push, and that is not a cost question.
+         */
+        ...(seesCost && {
+          valueAtRisk:
+            balance.batch.quantityReceived > 0
+              ? Math.round(
+                  (balance.batch.totalCost / balance.batch.quantityReceived) *
+                    balance.quantity,
+                )
+              : 0,
+        }),
       }))
       .sort(
         (a, b) =>
