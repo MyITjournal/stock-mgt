@@ -250,7 +250,15 @@ export class AuthService {
     return { message: 'Signed out.' };
   }
 
-  /** Re-issues tokens against a different organization the user belongs to. */
+  /**
+   * Re-issues tokens against a different organization the user belongs to.
+   *
+   * The third path that mints a session, and therefore the third that has to
+   * ask about opening hours — the other two being `issueForUser` and
+   * `TokenService.rotate`. Without it, somebody who works for two businesses
+   * could sign into the one that is open and switch into the one that is
+   * closed, which is the whole rule undone by a single request.
+   */
   async switchOrganization(
     userId: string,
     organizationId: string,
@@ -258,11 +266,13 @@ export class AuthService {
   ): Promise<TokenPair> {
     const membership = await this.prisma.membership.findFirst({
       where: { userId, organizationId, status: MembershipStatus.active },
-      include: { user: true },
+      include: { user: true, ...HOURS_INCLUDE },
     });
     if (!membership) {
       throw new ForbiddenException('You are not a member of that organization');
     }
+
+    this.hours.assertWithinHours(membership);
 
     return this.tokens.issuePair(
       {

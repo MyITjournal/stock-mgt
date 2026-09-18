@@ -8,15 +8,15 @@ import { TokenService } from './token.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { UsersModule } from '../users/users.module';
-import { StaffModule } from '../staff/staff.module';
+import { WorkingHoursModule } from '../staff/working-hours.module';
 import { env } from '../../config/env';
 
 @Module({
   imports: [
     UsersModule,
-    // For WorkingHoursService: a session is refused outside opening hours, and
-    // both issuing and renewing one go through here.
-    StaffModule,
+    // A session is refused outside opening hours, and all three paths that
+    // mint one — login, refresh, and switching organization — go through here.
+    WorkingHoursModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
       secret: env.JWT_ACCESS_SECRET,

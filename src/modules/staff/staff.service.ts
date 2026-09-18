@@ -4,10 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MembershipStatus, OrgRole } from '@prisma/client';
+import { MembershipStatus, OrgRole, Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { TokenService } from '../auth/token.service';
 import {
   CreateStaffDto,
   ResetStaffPasswordDto,
@@ -36,6 +37,31 @@ const MEMBER_SELECT = {
 } as const;
 
 /**
+ * The same list as a colleague sees it: who works here and what they do.
+ *
+ * Reading the list is open to every member on purpose — a rep needs to know who
+ * to hand a sale over to — but that purpose is served by names and roles.
+ * `MEMBER_SELECT` also carries `username`, which is *half of a credential* in
+ * this product: staff sign in with a username because most have no address, and
+ * an owner can set their password directly. Handing every cashier the login
+ * name of every colleague, the owner included, is the part that had no reason
+ * to be there. Contact details and each person's hours go with it.
+ *
+ * An allow-list rather than an omission, for the reason §9 gives: a column
+ * added later is invisible here until somebody puts it in deliberately.
+ */
+const COLLEAGUE_SELECT = {
+  id: true,
+  role: true,
+  status: true,
+  createdAt: true,
+  user: { select: { id: true, firstName: true, lastName: true } },
+} as const;
+
+/** Who sees the full staff record, contact details and hours included. */
+const SEES_FULL_STAFF_RECORD: OrgRole[] = [OrgRole.owner, OrgRole.manager];
+
+/**
  * The people who work in one business.
  *
  * Reached through the raw client rather than the tenant-scoped one, because
@@ -45,12 +71,18 @@ const MEMBER_SELECT = {
  */
 @Injectable()
 export class StaffService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tokens: TokenService,
+  ) {}
 
   list() {
+    const orgRole = TenantContext.get()?.orgRole;
+    const full = Boolean(orgRole && SEES_FULL_STAFF_RECORD.includes(orgRole));
+
     return this.prisma.membership.findMany({
       where: { organizationId: TenantContext.requireOrganizationId() },
-      select: MEMBER_SELECT,
+      select: full ? MEMBER_SELECT : COLLEAGUE_SELECT,
       orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
     });
   }
@@ -78,8 +110,6 @@ export class StaffService {
     });
     if (!organization) throw new NotFoundException('Organization not found');
 
-    await this.assertSeatAvailable(organizationId, organization.maxUsers);
-
     // Qualified by the shop, so two businesses can each have an "amina" and the
     // globally unique column stays globally unique without anybody thinking
     // about it.
@@ -92,29 +122,43 @@ export class StaffService {
 
     const password = await argon2.hash(input.password);
 
-    return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          email,
-          username,
-          password,
-          firstName: input.firstName,
-          lastName: input.lastName ?? null,
-          // The owner is standing next to them. There is no address to confirm.
-          isVerified: true,
-        },
-      });
-
-      return tx.membership.create({
-        data: {
-          userId: user.id,
+    // The seat count is taken *inside* the transaction, and the transaction is
+    // serializable. Counted outside, two requests arriving together both read
+    // "four of five in use" and both insert, which is how a business ends up
+    // with six people on a five-person plan — the cap is the pricing lever, so
+    // a race in it is revenue rather than a rounding error.
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.assertSeatAvailable(
           organizationId,
-          role: input.role,
-          status: MembershipStatus.active,
-        },
-        select: MEMBER_SELECT,
-      });
-    });
+          organization.maxUsers,
+          tx,
+        );
+
+        const user = await tx.user.create({
+          data: {
+            email,
+            username,
+            password,
+            firstName: input.firstName,
+            lastName: input.lastName ?? null,
+            // The owner is standing next to them. No address to confirm.
+            isVerified: true,
+          },
+        });
+
+        return tx.membership.create({
+          data: {
+            userId: user.id,
+            organizationId,
+            role: input.role,
+            status: MembershipStatus.active,
+          },
+          select: MEMBER_SELECT,
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   async update(userId: string, input: UpdateStaffDto, actingUserId: string) {
@@ -171,7 +215,7 @@ export class StaffService {
       );
     }
 
-    return this.prisma.membership.update({
+    const updated = await this.prisma.membership.update({
       where: { id: membership.id },
       data: {
         ...(input.role && { role: input.role }),
@@ -187,6 +231,20 @@ export class StaffService {
       },
       select: MEMBER_SELECT,
     });
+
+    // `JwtStrategy` re-reads the membership on every request, so a suspension
+    // already bites on their next tap without this. Revoking as well closes the
+    // refresh token that would otherwise sit valid for a week — a suspended
+    // person holding a live credential is a state worth not having, even when
+    // nothing currently accepts it.
+    if (
+      input.status === MembershipStatus.suspended &&
+      membership.status !== MembershipStatus.suspended
+    ) {
+      await this.tokens.revokeAllForUser(userId);
+    }
+
+    return updated;
   }
 
   /**
@@ -221,12 +279,29 @@ export class StaffService {
       data: { password: await argon2.hash(input.password) },
     });
 
+    // The owner doing this believes they have just locked somebody out, and
+    // until now they had not: the new password stops the *next* sign-in, while
+    // the refresh token issued before it goes on renewing for up to seven days.
+    // `AuthService.resetPassword` has always revoked on the self-service path;
+    // this is the same rule on the path an owner actually uses, because most
+    // staff have no address and can never use the other one.
+    await this.tokens.revokeAllForUser(userId);
+
     return { message: 'Password updated. Tell them the new one.' };
   }
 
-  /** Active members only: a suspended person does not hold a seat. */
-  private async assertSeatAvailable(organizationId: string, maxUsers: number) {
-    const active = await this.prisma.membership.count({
+  /**
+   * Active members only: a suspended person does not hold a seat.
+   *
+   * Takes the client to count with, so the caller can hand in a transaction and
+   * have the count and the insert decided together.
+   */
+  private async assertSeatAvailable(
+    organizationId: string,
+    maxUsers: number,
+    db: Pick<PrismaService, 'membership'> = this.prisma,
+  ) {
+    const active = await db.membership.count({
       where: { organizationId, status: MembershipStatus.active },
     });
 
