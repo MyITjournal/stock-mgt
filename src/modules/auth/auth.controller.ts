@@ -121,6 +121,9 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  // Higher than login: a legitimate client renews every fifteen minutes, and
+  // several devices in one shop share an address until they are signed in.
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({ summary: 'Rotate a refresh token for a new pair' })
   async refresh(
     @Body() dto: RefreshDto,
@@ -195,6 +198,11 @@ export class AuthController {
   @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
+  // The token is a 32-hex selector plus a 64-hex verifier, so guessing it is
+  // not the threat. The limit is here because every other unauthenticated write
+  // has one, and an endpoint that hashes an argon2 verifier on each call is one
+  // somebody can make expensive.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Set a new password using a reset token' })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.auth.resetPassword(dto.token, dto.password);

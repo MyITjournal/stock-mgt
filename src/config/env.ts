@@ -75,8 +75,37 @@ function withoutEmptyStrings(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   );
 }
 
+/**
+ * Rules that only bite on a real deployment.
+ *
+ * Kept out of the field definitions above because they are conditional: mail is
+ * genuinely optional on a developer machine, where `MailService` falling back
+ * to the log is the whole point. In production that same fallback writes every
+ * verification code and every password-reset URL into the platform log in
+ * plaintext — a full account-takeover path for anyone who can read it, which on
+ * a hosted dashboard is a wider group than it looks.
+ *
+ * Refused at boot rather than warned about, for the same reason `OTP_OVERRIDE`
+ * is refused at boot: a note is not a control, and the failure is silent until
+ * somebody has already been locked out of their own business.
+ */
+const productionSchema = envSchema.superRefine((value, ctx) => {
+  if (value.NODE_ENV !== 'production') return;
+
+  for (const key of ['RESEND_API_KEY', 'MAIL_FROM'] as const) {
+    if (!value[key]) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [key],
+        message:
+          'required in production — without it, verification codes and password-reset links are written to the log instead of being sent',
+      });
+    }
+  }
+});
+
 function loadEnv(): z.infer<typeof envSchema> {
-  const parsed = envSchema.safeParse(withoutEmptyStrings(process.env));
+  const parsed = productionSchema.safeParse(withoutEmptyStrings(process.env));
 
   if (!parsed.success) {
     const issues = parsed.error.issues

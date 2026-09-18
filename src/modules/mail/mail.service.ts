@@ -18,6 +18,21 @@ export class MailService {
 
   private async send(to: string, subject: string, html: string, plain: string) {
     if (!this.resend || !env.MAIL_FROM) {
+      // `plain` carries the secret itself — the six-digit code, or a reset URL
+      // with a live token in it. Logging that is a development convenience and
+      // nothing else, so production gets the fact without the contents.
+      //
+      // `env.ts` refuses to boot a production instance with mail unconfigured,
+      // which means this branch should be unreachable there. It is written
+      // defensively anyway: this is the line that would leak, and it must not
+      // depend on a check somewhere else having held.
+      if (env.NODE_ENV === 'production') {
+        this.logger.error(
+          `Mail is not configured, so "${subject}" could not be delivered. The contents are deliberately not logged.`,
+        );
+        return;
+      }
+
       this.logger.warn(
         `[mail not configured] to=${to} subject="${subject}" :: ${plain}`,
       );
