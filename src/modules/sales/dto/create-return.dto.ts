@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
@@ -13,6 +14,8 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { IsPlausibleOccurrence } from '../../../common/validation/is-occurrence.validator';
+import { MAX_LINES_PER_REQUEST } from '../../../common/pagination/request-limits';
 
 export class ReturnLineDto {
   @ApiPropertyOptional({ format: 'uuid' })
@@ -84,11 +87,13 @@ export class CreateReturnDto {
   })
   @IsOptional()
   @IsDateString()
+  @IsPlausibleOccurrence()
   occurredAt?: string;
 
   @ApiProperty({ type: [ReturnLineDto] })
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_LINES_PER_REQUEST)
   @ValidateNested({ each: true })
   @Type(() => ReturnLineDto)
   lines!: ReturnLineDto[];

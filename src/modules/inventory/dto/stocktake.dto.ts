@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsInt,
@@ -11,6 +12,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { MAX_COUNT_LINES_PER_REQUEST } from '../../../common/pagination/request-limits';
 
 export class CreateStocktakeDto {
   @ApiPropertyOptional({
@@ -67,6 +69,7 @@ export class CountLinesDto {
   })
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_COUNT_LINES_PER_REQUEST)
   @ValidateNested({ each: true })
   @Type(() => CountLineDto)
   lines!: CountLineDto[];

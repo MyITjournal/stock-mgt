@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { PaymentMethod } from '@prisma/client';
 import {
+  ArrayMaxSize,
   IsArray,
   IsDateString,
   IsEnum,
@@ -13,6 +14,8 @@ import {
   NotEquals,
   ValidateNested,
 } from 'class-validator';
+import { IsPlausibleOccurrence } from '../../../common/validation/is-occurrence.validator';
+import { MAX_LINES_PER_REQUEST } from '../../../common/pagination/request-limits';
 import { IsMoney } from '../../../common/money/is-money.validator';
 
 export class PaymentAllocationDto {
@@ -103,6 +106,7 @@ export class CreatePaymentDto {
   })
   @IsOptional()
   @IsDateString()
+  @IsPlausibleOccurrence()
   occurredAt?: string;
 
   @ApiPropertyOptional({
@@ -112,6 +116,7 @@ export class CreatePaymentDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(MAX_LINES_PER_REQUEST)
   @ValidateNested({ each: true })
   @Type(() => PaymentAllocationDto)
   allocations?: PaymentAllocationDto[];

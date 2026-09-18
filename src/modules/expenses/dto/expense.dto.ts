@@ -8,6 +8,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { IsPlausibleOccurrence } from '../../../common/validation/is-occurrence.validator';
 import { IsMoney } from '../../../common/money/is-money.validator';
 
 export class CreateExpenseDto {
@@ -58,6 +59,7 @@ export class CreateExpenseDto {
   })
   @IsOptional()
   @IsDateString()
+  @IsPlausibleOccurrence()
   occurredAt?: string;
 }
 

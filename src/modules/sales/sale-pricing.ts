@@ -12,7 +12,9 @@
  *   each contribute an exact fraction; rounding per batch and summing would let
  *   the error compound with every extra lot a sale touches.
  */
+import { BadRequestException } from '@nestjs/common';
 import { Minor, multiply, splitTaxInclusive } from '../../common/money/money';
+import { MAX_MINOR_UNITS } from '../../common/money/is-money.validator';
 
 export interface PricedLine {
   /** Tax-inclusive price of one selling unit, in kobo. */
@@ -38,6 +40,18 @@ export function priceLine(
   taxRateBps: number,
 ): PricedLine {
   const lineTotal = multiply(unitPrice, quantity);
+
+  // Both inputs are individually bounded by their validators, and their product
+  // still is not: a price and a quantity that are each acceptable can multiply
+  // past what an `int4` column holds. Caught here, where the multiplication
+  // happens, so the caller gets a 400 naming the line instead of a 500 carrying
+  // a Postgres range error up from the driver.
+  if (lineTotal > MAX_MINOR_UNITS) {
+    throw new BadRequestException(
+      `A line of ${quantity} at ${unitPrice} comes to ${lineTotal}, which is more than this system can record on one line (${MAX_MINOR_UNITS}). Split it across several lines.`,
+    );
+  }
+
   const { tax } = splitTaxInclusive(lineTotal, taxRateBps);
 
   return { unitPrice, lineTotal, taxRateBps, taxAmount: tax };
