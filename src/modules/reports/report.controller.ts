@@ -56,6 +56,18 @@ export class ReportController {
     return { period: period, ...(await this.reports.profit(period)) };
   }
 
+  @Get('purchases')
+  @Roles(...SEES_COST)
+  @ApiOperation({
+    summary: 'What I bought in the period, and from whom',
+    description:
+      'The buying-side counterpart of `/reports/sales`, summed from goods receipts. Value is the exact invoice total per line, never `costPrice × quantity`. Quantities are reported as both received and paid for — the gap between them is free goods, which is also why a vendor target counts the second figure and not the first.',
+  })
+  async purchases(@Query() query: PeriodQueryDto) {
+    const period = await this.reports.resolve(toPeriodQuery(query));
+    return this.reports.purchases(period);
+  }
+
   @Get('collections')
   @Roles(...SEES_COST)
   @ApiOperation({
