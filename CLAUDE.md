@@ -26,7 +26,7 @@ These are load-bearing. Breaking one is a data-integrity bug, not a style choice
 
 ## Where things stand
 
-**Slices 0–6 are done, plus a 6.1 gap-closing pass**: rails, tenancy + auth, catalog (products,
+**Slices 0–6.6 are done, plus a 6.1 gap-closing pass**: rails, tenancy + auth, catalog (products,
 units, tier pricing, barcodes, money in kobo), write idempotency, packaging types, the inventory
 ledger — `StockMovement`
 (append-only), locations, suppliers, batches with expiry, receiving, FEFO picking, adjustments
@@ -127,6 +127,43 @@ carton advances two rows. That subtraction is pure, in `purchase-target.ts`. Tar
 deliberately **not** on `GET /reports/dashboard`: `targetValue` is a buying price and reps see the
 dashboard.
 
+**Money owed to vendors is Slice 6.6** (§16), in `src/modules/payables/`. `GET /payables` is the
+mirror of `GET /receivables` — bills with money still on them, longest-owed first, grouped per
+vendor, with `total` as the headline figure the dashboard shows and the list behind it as what a
+click opens. Six rules are load-bearing:
+
+- **Receipt is goods, bill is money.** `GoodsReceipt` stays the record of what physically arrived;
+  `SupplierBill` is what the vendor is owed for it. Separate because an **opening balance has no
+  receipt** — and an opening balance must never create stock, since the goods behind it arrived and
+  probably sold long ago, and inventing movements would break the invariant smoke exists to check.
+- **Every delivery raises a bill**, whether or not anyone asked. A delivery nobody paid for *is* a
+  debt, and a receipt that raised no bill would be money owed that never appears on `/payables`.
+  Paid in full at the door is no exception: the bill opens and the payment closes it in the same
+  transaction.
+- **`amountDue` is stored, not derived.** It defaults to the sum of the goods lines but is its own
+  column, because a vendor invoice routinely carries a delivery charge or a settlement discount
+  that no stock line can hold. It deliberately does **not** feed inventory cost — §2 still values
+  stock from `GoodsReceiptLine.totalCost`.
+- **One payment settles exactly one bill.** No allocation table, unlike the customer side: vendors
+  here are paid on delivery or against one specific supply. Lump sums across several deliveries
+  would need allocations, and that is a migration on the day somebody actually does one.
+- **A supplier payment is never an `Expense`.** Buying stock already reaches profit through cost of
+  goods sold; logging vendor payments as expenses would count the same money twice and understate
+  every margin. This is the trap worth remembering.
+- **Void, but no negative payments.** A mis-key is voided and the bill goes back to owing. Money
+  genuinely coming back from a vendor is not a case this business has — the column is ready for it,
+  the write path is not.
+
+`GET /reports/purchases` is the buying-side counterpart of `/reports/sales`, summed from
+`GoodsReceiptLine`, so it is correct for months that happened long before it was written. Value is
+the exact invoice total, never `costPrice × quantity`; quantities report **both** received and paid
+for, and the gap is free goods.
+
+All of it is buying-price data and closed to `sales_rep`. Both halves reach
+`GET /reports/dashboard` under `purchasing`, which was safe to do because **that endpoint has
+always been `@Roles(...SEES_COST)`** — the older note saying targets were kept off it because
+"reps see the dashboard" described a risk the route had already closed.
+
 **Payments name the account they landed in** (§11). `BankAccount` is the set of accounts the
 business is paid into — several is normal, five is not unusual — and `Payment.bankAccountId` says
 which took each payment, so a statement reconciles by joining rather than by eye. **`transfer` and
@@ -226,10 +263,23 @@ Smoke also used to fail after 7pm, on a 403 from the staff sign-in: a new org de
 for the whole day first — the working-hours section further down still shuts it explicitly to test
 the refusal — so a run at any hour is green.
 
-**The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1. (§15
-item 14's nine dependency advisories are **closed**, not deferred; **do not run
-`npm audit fix --force`**, which would still downgrade Prisma 7 to 6.) Then **deploy to Render** on
-the free tier — deliberately scheduled once the backend is finished and immediately before the web slice,
+**The backend is feature-complete. Next: the web dashboard, then deploy.** v1 was redefined on
+2026-09-19 as **backend + web dashboard, then deploy** — the dashboard used to sit after
+deployment, which ships a URL rather than a product. **v2 is scoped in
+[docs/PRD-V2.md](docs/PRD-V2.md)**: variants, reservations and orders taken over WhatsApp, bank
+statement import, then pre-order. Each step has a gate, and the gates are the point — `MARKET.md`
+§6 names one developer's time as the binding constraint.
+
+Three v2 decisions are already made and worth knowing before touching the catalog or the ledger:
+**a variant is an optional sub-identity, not another product** (nullable `variantId`, so FMCG is
+untouched — and adding it to the `StockBalance` unique key will hit the §13 nullable-unique trap);
+**a reservation is not a stock movement** but a claim on a future one, since the ledger is
+append-only; and **a bank statement importer proposes, a person confirms** — nothing writes a
+payment on its own.
+
+(§15 item 14's nine dependency advisories are **closed**, not deferred; **do not run
+`npm audit fix --force`**, which would still downgrade Prisma 7 to 6.) The **deploy to Render** plan
+is §15 item 1, on the free tier — deliberately scheduled once the backend is finished and immediately before the web slice,
 so what gets deployed is not a moving target. The Render plan is §15, including that
 `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is
 test-instance-only.

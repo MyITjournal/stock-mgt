@@ -783,6 +783,8 @@ model Organization {
   goodsReceiptLines GoodsReceiptLine[]
   purchaseTargets   PurchaseTarget[]
   bankAccounts      BankAccount[]
+  supplierBills     SupplierBill[]
+  supplierPayments  SupplierPayment[]
 
   @@map("organizations")
 }
@@ -896,6 +898,9 @@ model User {
   saleReturns    SaleReturn[]
   payments       Payment[]      @relation("PaymentRecordedBy")
   voidedPayments Payment[]      @relation("PaymentVoidedBy")
+  supplierBills          SupplierBill[]    @relation("SupplierBillRecordedBy")
+  supplierPayments       SupplierPayment[] @relation("SupplierPaymentRecordedBy")
+  voidedSupplierPayments SupplierPayment[] @relation("SupplierPaymentVoidedBy")
   stocktakesStarted Stocktake[]     @relation("StocktakeStartedBy")
   stocktakesPosted  Stocktake[]     @relation("StocktakePostedBy")
   stocktakeLines    StocktakeLine[]
@@ -1007,6 +1012,8 @@ model Supplier {
   goodsReceipts   GoodsReceipt[]
   expenses        Expense[]
   purchaseTargets PurchaseTarget[]
+  bills           SupplierBill[]
+  payments        SupplierPayment[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1156,6 +1163,7 @@ model GoodsReceipt {
   location     Location           @relation(fields: [locationId], references: [id], onDelete: Restrict)
   recordedBy   User?              @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
   lines        GoodsReceiptLine[]
+  bill         SupplierBill?
 
   @@index([organizationId])
   @@index([organizationId, receivedAt])
@@ -1408,12 +1416,162 @@ model BankAccount {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  payments     Payment[]
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments        Payment[]
+  supplierPayments SupplierPayment[]
 
   /// One row per account number at a bank. The same number at two different
   /// banks is a different account, so both columns are in the key.
   @@unique([organizationId, bankName, accountNumber])
   @@index([organizationId])
   @@map("bank_accounts")
+}
+
+/// What the business owes a vendor for goods already received.
+///
+/// The mirror of a `Sale` on the money-out side, and the reason §6 allowed
+/// vendor bills back: "what do I owe this supplier" became a question somebody
+/// actually asked. It is **not** the purchasing slice that was cut — there is
+/// no order to raise and no order to close out. A bill is a record of a debt
+/// that already exists because the goods are already on the shelf.
+///
+/// **Receipt is goods, bill is money.** `GoodsReceipt` stays the record of what
+/// physically arrived and what its lines cost; this row is what the vendor is
+/// owed for it. They are separate for the same reason a sale and its payment
+/// are separate, and because an opening balance has no receipt at all.
+model SupplierBill {
+  id             String @id @default(uuid())
+  organizationId String
+  supplierId     String
+
+  /// The delivery this bill is for, when there is one.
+  ///
+  /// **Null for an opening balance** — what was already owed on the day the
+  /// business started using this system. Those must not create a goods
+  /// receipt: the stock they brought in was received (and probably sold) long
+  /// before, and inventing movements for it would break the one invariant the
+  /// smoke suite exists to protect, that every movement sums to the stock
+  /// levels.
+  goodsReceiptId String? @unique
+
+  /// The vendor's own invoice number, as printed on their paperwork. What
+  /// somebody quotes on the phone when they ring about payment.
+  invoiceNumber String?
+
+  /// What the vendor is owed, in minor units (kobo).
+  ///
+  /// Defaults to the sum of the receipt's line totals but is stored in its own
+  /// right, because a vendor invoice routinely carries amounts that cannot be
+  /// a stock line — a delivery charge, a settlement discount. Without this the
+  /// figure here would drift from the vendor's own statement, and a payables
+  /// total nobody can reconcile is worse than none.
+  ///
+  /// Deliberately does **not** feed inventory cost. What the goods cost comes
+  /// from `GoodsReceiptLine.totalCost` per §2, and a delivery charge is not
+  /// part of what a carton cost.
+  amountDue Int
+
+  /// When the vendor supplied the goods, which is the date their statement
+  /// will show. Not `createdAt`: an opening balance is entered today for a
+  /// delivery that happened weeks ago.
+  issuedAt DateTime @default(now())
+
+  /// When the business intends to settle, if it has said.
+  ///
+  /// Nullable on purpose. Owners here name a date and move it; a required
+  /// field would make everyone type a lie. The list sorts on how long a bill
+  /// has been outstanding, which is a fact, exactly as §11 decided for
+  /// receivables — buckets and overdue flags can follow the day somebody asks
+  /// to read them.
+  dueDate DateTime?
+
+  note             String?
+  recordedByUserId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  goodsReceipt GoodsReceipt?     @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+  recordedBy   User?             @relation("SupplierBillRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  payments     SupplierPayment[]
+
+  @@index([organizationId])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, issuedAt])
+  /// Delta sync pages on `updatedAt`: a bill is mutable, because paying it
+  /// changes what it owes. See `keyset-cursor.ts`.
+  @@index([organizationId, updatedAt, id])
+  @@map("supplier_bills")
+}
+
+/// Money paid out to a vendor.
+///
+/// **One payment settles exactly one bill.** The customer side carries a
+/// separate allocation table because a single transfer routinely settles three
+/// invoices there; this side does not work that way — payment is either on
+/// delivery or against one specific supply — so a `billId` column says it
+/// directly. Adding allocations later is a migration, and a table nobody needs
+/// is a join every query pays for. Same reasoning as §11's refusal to build
+/// 30/60/90 buckets before anyone asked to read them.
+model SupplierPayment {
+  id             String @id @default(uuid())
+  organizationId String
+  billId         String
+
+  /// Denormalised from the bill so "what have I paid this vendor" does not
+  /// need a join, and so a payment keeps naming its vendor if a bill is ever
+  /// corrected. Always equal to `bill.supplierId`; the service sets both.
+  supplierId String
+
+  /// In minor units (kobo). **Unsigned, unlike `Payment.amount`.** Money coming
+  /// back from a vendor is not something this business does — a mis-key is
+  /// corrected by voiding, which says the payment never happened. If vendor
+  /// refunds ever become real, they arrive as a negative amount here and this
+  /// comment is the note explaining why the column was ready for it.
+  amount Int
+
+  method PaymentMethod @default(cash)
+
+  /// Which of the business's accounts the money left from.
+  ///
+  /// Required for `transfer` and `pos`, forbidden for `cash`, and never
+  /// defaulted — the same rule as `Payment.bankAccountId` and enforced by the
+  /// same `BankAccountService.resolveForPayment`, because a wrong account only
+  /// surfaces at reconciliation.
+  bankAccountId String?
+
+  reference String?
+  note      String?
+
+  occurredAt DateTime @default(now())
+
+  recordedByUserId String?
+
+  /// Set when this payment should never have been recorded. The row is kept
+  /// and excluded from every balance, so the mistake and its correction are
+  /// both on the record.
+  voidedAt       DateTime?
+  voidedReason   String?
+  voidedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bill         SupplierBill @relation(fields: [billId], references: [id], onDelete: Restrict)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  bankAccount  BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  recordedBy   User?        @relation("SupplierPaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  voidedBy     User?        @relation("SupplierPaymentVoidedBy", fields: [voidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([billId])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, occurredAt])
+  /// Delta sync pages on `updatedAt`, because voiding mutates the row.
+  @@index([organizationId, updatedAt, id])
+  @@map("supplier_payments")
 }
