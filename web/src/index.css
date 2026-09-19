@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+
+/*
+ * Tailwind v4 needs no config file: the theme lives in CSS and the Vite plugin
+ * scans the source for class names. Project-wide tokens would go in an
+ * `@theme` block here rather than in a `tailwind.config.js`.
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
