@@ -16,6 +16,7 @@ import {
 import { IsPlausibleOccurrence } from '../../../common/validation/is-occurrence.validator';
 import { IsMoney } from '../../../common/money/is-money.validator';
 import { MAX_LINES_PER_REQUEST } from '../../../common/pagination/request-limits';
+import { DeliveryPaymentDto } from '../../payables/dto/supplier-payment.dto';
 
 export class GoodsReceiptLineDto {
   @ApiPropertyOptional({ format: 'uuid' })
@@ -126,6 +127,58 @@ export class CreateGoodsReceiptDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+
+  /**
+   * What the vendor's invoice actually comes to, when it is not the sum of the
+   * goods lines.
+   *
+   * Every delivery raises a bill on `GET /payables`; this is the figure it
+   * carries. Left out, it is the line totals added up, which is right for most
+   * deliveries. Pass it when the invoice carries something no stock line can
+   * hold — a delivery charge, a settlement discount — so that what you owe
+   * matches what the vendor's own statement says.
+   *
+   * It does **not** change what the goods cost. Inventory is valued from the
+   * line totals per §2, and a delivery charge is not part of what a carton cost.
+   */
+  @ApiPropertyOptional({
+    example: 19_980_000,
+    description:
+      'The vendor’s invoice total, if it differs from the sum of the lines. Owner, manager or accountant only.',
+  })
+  @IsOptional()
+  @IsMoney({ example: 19_980_000, optional: true })
+  amountDue?: number;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    description:
+      'When you intend to settle this delivery. Optional, and moving it later is expected.',
+  })
+  @IsOptional()
+  @IsDateString()
+  dueDate?: string;
+
+  /**
+   * Money handed over there and then.
+   *
+   * "They delivered ₦199,800 of goods and I gave them ₦71,800 on the spot" is
+   * one request, not two — the same reason a counter sale banks its own payment
+   * (§6). Somebody standing at a delivery with no signal cannot be asked to
+   * make two requests that must both land.
+   *
+   * Omitted, the delivery is recorded as unpaid and the whole amount shows on
+   * `GET /payables`. Owner, manager or accountant only.
+   */
+  @ApiPropertyOptional({
+    type: () => DeliveryPaymentDto,
+    description:
+      'What you paid at the delivery, if anything. Cannot exceed what the delivery is worth.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeliveryPaymentDto)
+  payment?: DeliveryPaymentDto;
 
   @ApiProperty({ type: [GoodsReceiptLineDto] })
   @IsArray()

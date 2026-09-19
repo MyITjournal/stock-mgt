@@ -6,6 +6,8 @@ import { ReceivingService } from './receiving.service';
 import { LocationService } from './location.service';
 import { SupplierService } from './supplier.service';
 import { StockService } from './stock.service';
+import { BankAccountService } from '../payments/bank-account.service';
+import { SupplierPaymentService } from '../payables/supplier-payment.service';
 
 const ORG = 'org-aaa';
 const PRODUCT = 'product-1';
@@ -23,11 +25,13 @@ const INVOICE_TOTAL = 94944900;
 describe('ReceivingService', () => {
   let service: ReceivingService;
   let stock: { recordInbound: jest.Mock };
+  let supplierPayments: { recordForDelivery: jest.Mock };
   let tx: {
     goodsReceipt: { create: jest.Mock };
     goodsReceiptLine: { create: jest.Mock };
     stockBatch: { create: jest.Mock };
     product: { update: jest.Mock };
+    supplierBill: { create: jest.Mock };
   };
   let prisma: {
     product: { findFirst: jest.Mock };
@@ -43,6 +47,9 @@ describe('ReceivingService', () => {
       goodsReceiptLine: { create: jest.fn().mockResolvedValue({}) },
       stockBatch: { create: jest.fn().mockResolvedValue({ id: 'batch-1' }) },
       product: { update: jest.fn().mockResolvedValue({}) },
+      // Every delivery now raises the bill for it, whether or not anything was
+      // paid: an unpaid delivery is a debt, and GET /payables has to see it.
+      supplierBill: { create: jest.fn().mockResolvedValue({ id: 'bill-1' }) },
     };
 
     prisma = {
@@ -70,6 +77,10 @@ describe('ReceivingService', () => {
       recordInbound: jest.fn().mockResolvedValue({ id: 'movement-1' }),
     };
 
+    supplierPayments = {
+      recordForDelivery: jest.fn().mockResolvedValue({ id: 'sp-1' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReceivingService,
@@ -85,6 +96,17 @@ describe('ReceivingService', () => {
         {
           provide: SupplierService,
           useValue: { assertExists: jest.fn().mockResolvedValue(undefined) },
+        },
+        // A delivery raises the bill for it, and may bank the money handed over
+        // at the door. Which account that money left from is BankAccountService's
+        // rule and is covered there.
+        {
+          provide: BankAccountService,
+          useValue: { resolveForPayment: jest.fn().mockResolvedValue(null) },
+        },
+        {
+          provide: SupplierPaymentService,
+          useValue: { recordForDelivery: supplierPayments.recordForDelivery },
         },
       ],
     }).compile();
