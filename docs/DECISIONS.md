@@ -36,7 +36,7 @@ and a wholesale route have to coexist in the same model rather than one being as
 | 6.1 | Gap-closing: sync correctness, cash-up, the no-credit rule, images, stocktake | done |
 | 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | done |
 | 6.6 | **Vendor payables**: what I owe, supplier payments, purchases summary | done |
-| 7 | **Web dashboard** — v1 does not ship without it | next |
+| 7 | **Web dashboard** — v1 does not ship without it; planned in §17 as 7.0–7.6 | next |
 | — | **Deploy to Render** — free tier, once the dashboard exists | after 7 |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
@@ -1785,8 +1785,17 @@ sign in as, so it is covered by construction rather than by demonstration.
      read a `server.log` that lives on someone else's machine. ⚠️ **It is also a backdoor into any
      account.** Long random value, test instance only, and never on an instance holding real data.
      "Test instance" has a way of quietly becoming production.
-   - **Free tier means ~30–50s cold starts** after idle and a database that expires under Render's
-     terms. Smoke needs a warm-up request first, and no real business data goes on it.
+   - ~~**Free tier means ~30–50s cold starts**~~ — **superseded 2026-09-19: deployment will be on
+     a paid tier.** That removes cold starts, the expiring free database, and the warm-up request
+     smoke would otherwise need. It also removed the original argument for the dashboard being a
+     static site, which is why §17 records the framework choice on its remaining merits rather than
+     on hosting cost. Everything else in this item still applies — `NODE_VERSION` pinned,
+     `?connection_limit=5`, migrations on boot, `/api/v1/health` as the health check.
+
+     Two things change with a paid tier and are worth deciding at deploy time: the plan named
+     **Frankfurt** as the region closest to Lagos, which is worth re-checking now that cost is not
+     the constraint; and `OTP_OVERRIDE` remains **test-instance only** regardless of tier, because
+     it is a master key into every account and paying for the instance does not change that.
 
 2. **Slice 6.5 — vendor purchase targets and PDFs.** The targets are the spec below: a new model
    with the rollup rules, which is why they were split out of Slice 6 rather than bolted on. The
@@ -2204,3 +2213,96 @@ stale one costs more than no comment, because it argues against a change that is
 - **No rep-facing home screen.** Raised while scoping this — staff cannot reach the dashboard at
   all — but it is a screen that does not exist rather than one that needs trimming, and it belongs
   with the mobile slice.
+
+---
+
+## 17. The web dashboard
+
+Planned 2026-09-19. Slice 7, and the last thing between here and v1 — decided in §15 that v1 does
+not ship without it, because an API with no interface has no users.
+
+### Who it is for
+
+**Owners and managers, plus the counter.** Two audiences, one application:
+
+- **Back office** — catalog, customers, money in and out, stock, reports, staff.
+- **The till** — recording sales over the counter, on web *and* on mobile.
+
+The till was nearly left out. The reasoning that put it back is worth keeping: the dashboard was
+first scoped as back-office-only on the grounds that selling happens on the counter or on the
+mobile app — but **mobile is slice 8, after v1**. So v1 would have shipped with no way to record a
+sale anywhere except Swagger. Scope decided by audience rather than by workflow will do that.
+
+Reps are still not a web audience. They get the mobile app in slice 8, and building rep views on
+web would duplicate it.
+
+### Stack
+
+**Vite + React + TypeScript**, with React Router, TanStack Query and Tailwind. In `web/`, a sibling
+of `src/`.
+
+**Not a monorepo restructure.** Moving `src/` under `apps/api/` would touch `nest-cli.json`, both
+tsconfigs, the jest config, `prisma.config.ts`, the migration paths and every path written into
+this document — large churn against a backend that works, for no functional gain. `web/` beside it
+costs nothing. If a second front end ever appears (v2 plans two product surfaces), one folder can
+move then.
+
+**Not Next.js**, and the reasoning changed once during the discussion, which is why it is recorded
+rather than assumed. The first argument was hosting cost — a static site is free on Render and
+never sleeps, while a Next service sleeps on the free tier. **That argument died when the decision
+was made to deploy on a paid tier**, and the remaining one is narrower:
+
+Auth here is httpOnly cookies on a *different origin* to the app. Next's headline feature is
+server-side data fetching, which in that arrangement means forwarding cookies from the Next server
+to the API by hand, and makes refresh-token rotation ambiguous about who sets the new cookie. The
+usual outcome is fetching client-side anyway — an SPA with extra machinery.
+
+The real cost of this choice is deferred, not avoided: **v2's preorder drops need public shareable
+links, and WhatsApp link previews require OpenGraph tags in the initial HTML**, which an SPA cannot
+produce. That surface gets its own small server-rendered app when it exists. It is gated behind a
+customer asking for it and may never be built.
+
+### Rules fixed before the first screen
+
+Each of these is cheap now and miserable to retrofit across twenty screens.
+
+- **Types are generated from the OpenAPI document**, never imported from Prisma. The API already
+  carries full Swagger decorators; `openapi-typescript` against `/docs-json` produces the client
+  types, regenerated by an npm script. The UI must not couple to the database schema.
+- **Cookie auth, and no token in JavaScript-readable storage.** §15 item 11 records that this path
+  is already complete on the server. Do not re-litigate it into `localStorage`.
+- **Money is displayed, never computed** — with one bounded exception, below.
+- **Cost fields may be *absent*, not null.** `redactCost` removes keys rather than nulling them
+  (§9), so a shared `<Money>` renders an em dash for a missing value. A component that assumes the
+  key exists prints `NaN` to a rep.
+- **Every write carries a client-generated id and an `Idempotency-Key`.** On a till, a double-click
+  is a double sale.
+- **No offline queue on web.** That is the mobile app's job (§8). The ids above still make a retry
+  safe.
+
+### The till, specifically
+
+**A barcode scanner is a keyboard.** USB scanners type the code and press Enter, so the till needs
+one always-focused input with `GET /scan/:code` behind it. That is most of "fast" for free.
+
+**Client-side totals are a preview; the server's figures are the truth.** The till has to show a
+running total as lines are added, which looks like it breaks the money rule. It does not, and the
+reason is §2: prices are stored **tax-inclusive**, so a line preview is `unitPrice × quantity` —
+exact integer multiplication, with no tax arithmetic and no rounding. VAT, cost of goods sold and
+the invoice total all come back from `POST /sales`, and **the receipt always renders server
+figures**. A preview that disagrees with the receipt is a bug, not a rounding difference.
+
+### Slices
+
+| Slice | What | Done when |
+|---|---|---|
+| 7.0 | Foundation: `web/`, routing, generated types, cookie auth, role guards, `<Money>`, one table and one form pattern | Somebody can sign in and out |
+| 7.1 | Home — the single `GET /reports/dashboard` call | The stack is proven end to end |
+| 7.2 | The till — scan or search, cart, units, price override, payment, receipt | A sale can be rung up |
+| 7.3 | Sales history, returns, customers, statements, PDFs | |
+| 7.4 | Money — receivables, payables, supplier bills and payments, expenses, bank accounts | |
+| 7.5 | Stock and catalog — products, units, prices, barcodes, goods receipts, levels, adjustments, transfers, stocktake | |
+| 7.6 | Reports and settings — every report screen, organization letterhead, staff, working hours | v1 is closed |
+
+Each is independently deployable. After 7.2 the application is genuinely usable, which is the
+earliest point worth putting in front of a real shop.

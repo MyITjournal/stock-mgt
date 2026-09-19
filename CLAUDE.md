@@ -263,7 +263,14 @@ Smoke also used to fail after 7pm, on a 403 from the staff sign-in: a new org de
 for the whole day first — the working-hours section further down still shuts it explicitly to test
 the refusal — so a run at any hour is green.
 
-**The backend is feature-complete. Next: the web dashboard, then deploy.** v1 was redefined on
+**The backend is feature-complete. Next: the web dashboard (§17), then deploy.** It is planned as
+slices 7.0–7.6 in `web/`, a sibling of `src/` — **Vite + React + TypeScript**, not Next.js and not
+a monorepo restructure. Four rules are fixed before the first screen: types are **generated from
+the OpenAPI document**, never imported from Prisma; auth is the **httpOnly cookies already built**,
+never a token in JavaScript; **cost fields may be absent rather than null**, because `redactCost`
+removes keys; and every write carries a client id and an `Idempotency-Key`, because on a till a
+double-click is a double sale. The dashboard serves owners, managers **and the counter** — sales
+are rung up on web as well as mobile. v1 was redefined on
 2026-09-19 as **backend + web dashboard, then deploy** — the dashboard used to sit after
 deployment, which ships a URL rather than a product. **v2 is scoped in
 [docs/PRD-V2.md](docs/PRD-V2.md)**: variants, reservations and orders taken over WhatsApp, bank
