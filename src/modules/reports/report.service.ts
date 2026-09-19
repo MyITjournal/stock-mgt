@@ -669,6 +669,98 @@ export class ReportService {
    * Movements that someone had to decide about: adjustments, damage, and the
    * forced overrides of §5. The discipline report.
    */
+  /**
+   * What the business bought in a window, and from whom.
+   *
+   * The buying-side counterpart of `sales()`. Everything here is summed from
+   * `GoodsReceiptLine`, which is append-only and has been accumulating since
+   * Slice 3 — so this report is correct for months that happened long before
+   * anybody asked for it.
+   *
+   * **Value is `totalCost`, never `costPrice × quantity`** (§2): the second is a
+   * rounded average and would drift from the invoices by a few kobo per line,
+   * which is exactly the drift that makes a vendor dispute unwinnable.
+   *
+   * Quantities are reported both ways on purpose. `quantityReceived` is what
+   * came off the lorry; `quantityPaidFor` is what the invoice charged for, and
+   * the gap between them is free goods. A purchases summary that showed only
+   * one of them would either overstate what was bought or hide what was given.
+   */
+  async purchases(period: Period) {
+    const lines = await this.prisma.goodsReceiptLine.findMany({
+      where: {
+        receipt: { receivedAt: { gte: period.from, lt: period.to } },
+      },
+      select: {
+        quantityReceived: true,
+        quantityPaidFor: true,
+        totalCost: true,
+        receipt: {
+          select: {
+            id: true,
+            receivedAt: true,
+            supplier: { select: { id: true, name: true } },
+          },
+        },
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            category: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    const bySupplier = new Map<string, PurchaseGroup>();
+    const byProduct = new Map<string, PurchaseGroup>();
+    const byCategory = new Map<string, PurchaseGroup>();
+    const receipts = new Set<string>();
+
+    for (const line of lines) {
+      receipts.add(line.receipt.id);
+
+      accumulate(bySupplier, line.receipt.supplier.id, {
+        label: line.receipt.supplier.name,
+        line,
+      });
+      accumulate(byProduct, line.product.id, {
+        label: line.product.name,
+        line,
+      });
+      accumulate(byCategory, line.product.category?.id ?? 'uncategorised', {
+        label: line.product.category?.name ?? 'Uncategorised',
+        line,
+      });
+    }
+
+    const total = lines.reduce((sum, line) => sum + line.totalCost, 0);
+
+    return {
+      period: describe(period),
+      /** What the month's deliveries cost, at invoice totals. */
+      total,
+      /** How many separate deliveries arrived. */
+      deliveries: receipts.size,
+      /** How many vendors supplied anything. */
+      suppliers: bySupplier.size,
+      /** Base units received, and how many of those were not charged for. */
+      unitsReceived: lines.reduce(
+        (sum, line) => sum + line.quantityReceived,
+        0,
+      ),
+      unitsFree: lines.reduce(
+        (sum, line) =>
+          sum + Math.max(0, line.quantityReceived - line.quantityPaidFor),
+        0,
+      ),
+      bySupplier: rank(bySupplier),
+      byCategory: rank(byCategory),
+      topProducts: rank(byProduct).slice(0, TOP_N),
+    };
+  }
+
   async stockAudit(period: Period) {
     const movements = await this.prisma.stockMovement.findMany({
       where: {
@@ -1028,4 +1120,50 @@ export function describe(period: Period) {
     from: period.from,
     to: period.to,
   };
+}
+
+/** One row of a purchases breakdown, whichever dimension it is grouped by. */
+export interface PurchaseGroup {
+  key: string;
+  label: string;
+  /** Invoice totals, in kobo. */
+  value: Minor;
+  /** Base units that arrived. */
+  quantityReceived: number;
+  /** Base units the invoice charged for. The gap is free goods. */
+  quantityPaidFor: number;
+  lines: number;
+}
+
+function accumulate(
+  groups: Map<string, PurchaseGroup>,
+  key: string,
+  entry: {
+    label: string;
+    line: {
+      quantityReceived: number;
+      quantityPaidFor: number;
+      totalCost: Minor;
+    };
+  },
+): void {
+  const row = groups.get(key) ?? {
+    key,
+    label: entry.label,
+    value: 0,
+    quantityReceived: 0,
+    quantityPaidFor: 0,
+    lines: 0,
+  };
+
+  row.value += entry.line.totalCost;
+  row.quantityReceived += entry.line.quantityReceived;
+  row.quantityPaidFor += entry.line.quantityPaidFor;
+  row.lines += 1;
+  groups.set(key, row);
+}
+
+/** Biggest spend first: a purchases breakdown is read to see where money went. */
+function rank(groups: Map<string, PurchaseGroup>): PurchaseGroup[] {
+  return [...groups.values()].sort((a, b) => b.value - a.value);
 }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ReceivableService } from '../payments/receivable.service';
+import { PayableService } from '../payables/payable.service';
 import { resolvePeriod } from './period';
 import { ReportService, describe } from './report.service';
 
@@ -27,6 +28,7 @@ export class DashboardService {
   constructor(
     private readonly reports: ReportService,
     private readonly receivables: ReceivableService,
+    private readonly payables: PayableService,
   ) {}
 
   async build() {
@@ -50,6 +52,8 @@ export class DashboardService {
       movers,
       daily,
       audit,
+      owedToVendors,
+      monthPurchases,
     ] = await Promise.all([
       this.reports.profit(today),
       this.reports.profit(month),
@@ -62,6 +66,8 @@ export class DashboardService {
       this.reports.products(month),
       this.reports.dailySales(trend),
       this.reports.stockAudit(month),
+      this.payables.outstanding(),
+      this.reports.purchases(month),
     ]);
 
     return {
@@ -131,6 +137,42 @@ export class DashboardService {
         topByUnits: movers.topByUnits.slice(0, GLANCE),
         deadStock: movers.deadStock.slice(0, GLANCE),
         deadStockCount: movers.deadStock.length,
+      },
+
+      /**
+       * 7. What did I buy, and what do I still owe for it?
+       *
+       * The buying half of the morning, and the half a retail shop asks about
+       * first — a distributor watches its vendor targets, a shop watches what it
+       * owes. `payables.total` is the headline: one figure, and the web
+       * dashboard drills into `topVendors` or the full `GET /payables` list.
+       *
+       * Safe to put here because this endpoint is already owner, manager and
+       * accountant only. The note in DECISIONS.md §12 keeping targets off the
+       * dashboard — "targetValue is a buying price and reps see the dashboard"
+       * — described a risk that had already been closed by the role on the
+       * route; reps cannot reach this at all.
+       */
+      purchasing: {
+        payables: {
+          total: owedToVendors.total,
+          bills: owedToVendors.bills.length,
+          suppliers: owedToVendors.suppliers,
+          oldestDays: owedToVendors.oldestDays ?? 0,
+          /** Past the date the business said it would pay, where it said one. */
+          overdue: owedToVendors.overdue,
+          topVendors: owedToVendors.bySupplier.slice(0, GLANCE),
+        },
+        purchases: {
+          month: monthPurchases.total,
+          deliveries: monthPurchases.deliveries,
+          suppliers: monthPurchases.suppliers,
+          unitsReceived: monthPurchases.unitsReceived,
+          /** Units that arrived without being charged for. */
+          unitsFree: monthPurchases.unitsFree,
+          topVendors: monthPurchases.bySupplier.slice(0, GLANCE),
+          topCategories: monthPurchases.byCategory.slice(0, GLANCE),
+        },
       },
 
       trend: { days: daily },
