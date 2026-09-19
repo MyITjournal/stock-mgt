@@ -26,7 +26,7 @@ These are load-bearing. Breaking one is a data-integrity bug, not a style choice
 
 ## Where things stand
 
-**Slices 0–7 are done, plus a 6.1 gap-closing pass**: rails, tenancy + auth, catalog (products,
+**Slices 0–6.6 are done, plus a 6.1 gap-closing pass**: rails, tenancy + auth, catalog (products,
 units, tier pricing, barcodes, money in kobo), write idempotency, packaging types, the inventory
 ledger — `StockMovement`
 (append-only), locations, suppliers, batches with expiry, receiving, FEFO picking, adjustments
@@ -127,7 +127,7 @@ carton advances two rows. That subtraction is pure, in `purchase-target.ts`. Tar
 deliberately **not** on `GET /reports/dashboard`: `targetValue` is a buying price and reps see the
 dashboard.
 
-**Money owed to vendors is Slice 7** (§16), in `src/modules/payables/`. `GET /payables` is the
+**Money owed to vendors is Slice 6.6** (§16), in `src/modules/payables/`. `GET /payables` is the
 mirror of `GET /receivables` — bills with money still on them, longest-owed first, grouped per
 vendor, with `total` as the headline figure the dashboard shows and the list behind it as what a
 click opens. Six rules are load-bearing:
@@ -263,10 +263,23 @@ Smoke also used to fail after 7pm, on a 403 from the staff sign-in: a new org de
 for the whole day first — the working-hours section further down still shuts it explicitly to test
 the refusal — so a run at any hour is green.
 
-**The backend is feature-complete for v1. Next: deploy to Render** — the plan is §15 item 1. (§15
-item 14's nine dependency advisories are **closed**, not deferred; **do not run
-`npm audit fix --force`**, which would still downgrade Prisma 7 to 6.) Then **deploy to Render** on
-the free tier — deliberately scheduled once the backend is finished and immediately before the web slice,
+**The backend is feature-complete. Next: the web dashboard, then deploy.** v1 was redefined on
+2026-09-19 as **backend + web dashboard, then deploy** — the dashboard used to sit after
+deployment, which ships a URL rather than a product. **v2 is scoped in
+[docs/PRD-V2.md](docs/PRD-V2.md)**: variants, reservations and orders taken over WhatsApp, bank
+statement import, then pre-order. Each step has a gate, and the gates are the point — `MARKET.md`
+§6 names one developer's time as the binding constraint.
+
+Three v2 decisions are already made and worth knowing before touching the catalog or the ledger:
+**a variant is an optional sub-identity, not another product** (nullable `variantId`, so FMCG is
+untouched — and adding it to the `StockBalance` unique key will hit the §13 nullable-unique trap);
+**a reservation is not a stock movement** but a claim on a future one, since the ledger is
+append-only; and **a bank statement importer proposes, a person confirms** — nothing writes a
+payment on its own.
+
+(§15 item 14's nine dependency advisories are **closed**, not deferred; **do not run
+`npm audit fix --force`**, which would still downgrade Prisma 7 to 6.) The **deploy to Render** plan
+is §15 item 1, on the free tier — deliberately scheduled once the backend is finished and immediately before the web slice,
 so what gets deployed is not a moving target. The Render plan is §15, including that
 `OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is
 test-instance-only.
