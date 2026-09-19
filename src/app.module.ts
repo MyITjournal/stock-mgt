@@ -18,6 +18,7 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { PayablesModule } from './modules/payables/payables.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { OrganizationModule } from './modules/organization/organization.module';
@@ -41,6 +42,7 @@ import { UsersModule } from './modules/users/users.module';
     InventoryModule,
     SalesModule,
     PaymentsModule,
+    PayablesModule,
     ExpensesModule,
     ReportsModule,
     OrganizationModule,

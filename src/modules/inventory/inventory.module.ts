@@ -14,8 +14,13 @@ import { ReceivingService } from './receiving.service';
 import { SyncService } from './sync.service';
 import { StocktakeService } from './stocktake.service';
 import { StocktakeController } from './stocktake.controller';
+import { PayablesModule } from '../payables/payables.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
+  // A delivery raises the bill for it and can bank the money handed over at
+  // the door, so receiving reaches into payables. Neither imports back.
+  imports: [PayablesModule, PaymentsModule],
   controllers: [
     LocationController,
     SupplierController,
