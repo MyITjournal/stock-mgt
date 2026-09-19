@@ -2296,7 +2296,7 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 
 | Slice | What | Done when |
 |---|---|---|
-| 7.0 | Foundation: `web/`, routing, generated types, cookie auth, role guards, `<Money>`, one table and one form pattern | Somebody can sign in and out |
+| 7.0 | Foundation: `web/`, routing, generated types, cookie auth, role guards, `<Money>`, one table and one form pattern | **done 2026-09-19** |
 | 7.1 | Home — the single `GET /reports/dashboard` call | The stack is proven end to end |
 | 7.2 | The till — scan or search, cart, units, price override, payment, receipt | A sale can be rung up |
 | 7.3 | Sales history, returns, customers, statements, PDFs | |
@@ -2306,3 +2306,32 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 
 Each is independently deployable. After 7.2 the application is genuinely usable, which is the
 earliest point worth putting in front of a real shop.
+
+### 7.0, and the two things it had to fix first
+
+Built 2026-09-19.
+
+**The root configs had to be scoped before `web/` could exist.** `tsconfig.json` carried no
+`include`, so `tsc --noEmit` swept the whole working directory — the moment a `.tsx` file appeared
+it would have tried to typecheck JSX under the API's `nodenext` module settings. The jest config
+had no `roots`, so its `.spec.ts` pattern reached anywhere too. Both now name `src` and `test`
+explicitly. This is the sort of thing that looks like an unrelated failure an hour later; it cost
+nothing to fix first and would have cost an afternoon to diagnose second.
+
+**TypeScript 6 versus `openapi-typescript`.** The Vite template installs TypeScript 6, which
+`openapi-typescript@7` refuses as a peer. Pinned `web/` to TypeScript 5 rather than passing
+`--legacy-peer-deps`, which matches the API and treats the incompatibility as real instead of
+hiding it.
+
+**One shared refresh, and why it is not a micro-optimisation.** Several requests failing with 401
+at once is the ordinary case on a dashboard that loads six panels. If each started its own
+`POST /auth/refresh`, they would rotate the same token family repeatedly, and the second rotation
+presents a token the first already replaced — which the server correctly treats as a leaked token
+and revokes the entire family (§9). The result would be that loading a busy screen signs the
+person out. The client therefore keeps a single in-flight refresh that every 401 awaits.
+
+**Verified against the running API rather than assumed.** Login sets both cookies with
+`Access-Control-Allow-Credentials` for the Vite origin; `GET /auth/me` returns the session from the
+cookie alone; `POST /auth/refresh` rotates from the cookie alone; the session survives it. The
+cookie path had been complete on the server since §15 item 11, but nothing had ever exercised it
+from another origin.

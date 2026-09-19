@@ -319,6 +319,29 @@ short version; that one is authoritative.
   not match a CRLF line ending, so the replacement silently does nothing while the file is
   corrupted anyway. Use the editing tools.
 
+## The web dashboard (`web/`)
+
+Slice 7, planned in §17 and started 2026-09-19. **Vite + React + TypeScript**, with its own
+`package.json` — run `npm install` and `npm run dev` from inside `web/`. It reaches the API over
+HTTP at `VITE_API_URL` and shares no code with it.
+
+- **Types are generated, never hand-written.** `npm run api:types` in `web/` regenerates
+  `src/api/schema.d.ts` from the running server's `/docs-json`. **Re-run it whenever an endpoint or
+  DTO changes**, or the UI types against yesterday's contract and nothing says so. Nothing in
+  `web/` may import from Prisma.
+- **Every request goes through `src/api/client.ts`.** It sends cookies, retries once behind a
+  *single shared* refresh, and puts an `Idempotency-Key` on every write. Do not call `fetch`
+  directly — concurrent refreshes trip the server's token-reuse detection and log the person out.
+- **Every amount renders through `<Money>`.** A cost field may be **absent rather than null**,
+  because `redactCost` removes keys for roles that may not see them; a component that assumes the
+  key exists prints `NaN` to a rep.
+- **Money is displayed, never computed.** The one exception is the till's running total, which is
+  exact only because prices are tax-inclusive — see `lib/money.ts`.
+- **Role checks in the UI are navigation, not security.** The server enforces every one of them.
+
+The root `tsconfig.json` and the jest config are scoped to `src` and `test` so `web/` cannot break
+`npm run typecheck` or `npx jest` at the root. Keep it that way.
+
 ## Commands
 
 ```bash
