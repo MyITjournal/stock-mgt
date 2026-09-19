@@ -52,6 +52,9 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'PurchaseTarget',
   // The accounts a business is paid into.
   'BankAccount',
+  // Money owed to vendors, and what has been paid against it (Slice 7).
+  'SupplierBill',
+  'SupplierPayment',
 ]);
 
 /** Reads and writes that select rows through a `where` clause. */
