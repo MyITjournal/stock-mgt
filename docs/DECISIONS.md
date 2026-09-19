@@ -1399,11 +1399,20 @@ back as cartons.
 **The period is a calendar month in `Organization.timezone`**, snapped through `period.ts`. The
 vendor's scheme runs on months, not a rolling thirty days.
 
-**Targets are not on `GET /reports/dashboard`, deliberately.** `targetValue` is a buying price in
-all but name, so this follows "reps do not see cost" above — but the dashboard is the rep's home
-screen. One payload cannot serve both audiences without stripping fields per role, and a field
-stripped by mistake leaks buying prices into a market. A separate endpoint gets its own gate. The
-web slice can surface targets from it if the home screen wants them.
+**~~Targets are not on `GET /reports/dashboard`, deliberately.~~** — **the premise was wrong, and
+this was corrected on 2026-09-19.** `targetValue` is a buying price in all but name, which is
+right; the rest of the reasoning said the dashboard is the rep's home screen and so one payload
+could not serve both audiences without stripping fields per role.
+
+**The dashboard has been `@Roles(...SEES_COST)` for some time.** Reps cannot reach it at all, so
+there were never two audiences to serve and nothing needed stripping. The rationale had outlived
+the condition that produced it, and while it stood it argued against a change that was in fact
+safe — which is how §16 came to put payables and purchases straight onto the dashboard with no new
+mechanism.
+
+Worth keeping as a general lesson: **a stale rationale costs more than no comment**, because it is
+read as a decision somebody already thought through. When a comment explains why something is
+unsafe, check the condition still holds before building around it.
 
 **A target cannot change what it is set against.** Rewriting a lotions target into a roll-on one
 would silently restate what last month's number meant; delete it and set the one that was agreed.
@@ -1441,10 +1450,20 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–6.5 done, plus the 6.1 gap-closing pass, two security passes, and staff
-management and working hours.** 407 tests across 31 suites, twenty-three migrations,
+**Slices 0–7 done, plus the 6.1 gap-closing pass, two security passes, and staff
+management and working hours.** 424 tests across 33 suites, twenty-four migrations,
 `typecheck`/`lint`/`build` clean, `npm audit` at **0 vulnerabilities**, and `npm run smoke` green
-at 347 checks against a running server.
+at 369 checks against a running server.
+
+**Slice 7 — vendor payables — landed 2026-09-19**, decided and recorded in §16. It is the door §6
+left open: "what do I owe this supplier" became a question the owner actually asked, so vendor
+bills came back *beside receivables* rather than as the purchasing slice that was cut. `GET
+/payables` mirrors `GET /receivables`, one total that a click drills into. Two things about it are
+easy to get wrong later: **an opening balance must never create stock** — the goods behind it were
+received and largely sold before the row was typed, and movements for them would break the
+ledger-sums-to-levels invariant — and **a supplier payment must never be recorded as an `Expense`**,
+because stock already reaches profit through cost of goods sold and logging it twice understates
+every margin.
 
 **One thing about running smoke twice.** Login is throttled at five attempts a minute per address
 and the staff step spends all five. Running smoke again inside that minute fails with a 429 on
@@ -2052,3 +2071,117 @@ sign in as, so it is covered by construction rather than by demonstration.
 
     **The lesson worth keeping:** when an advisory is transitive, reach for `overrides` before
     concluding that the fix requires a major upgrade. The whole of this item was avoidable.
+
+---
+
+## 16. Money out: what I owe my vendors
+
+Built 2026-09-19, as Slice 7. §6 cut the purchasing slice and left one door open:
+
+> Vendor bills come back only if "what do I owe this supplier" becomes a question someone actually
+> asks, and then they belong **beside receivables**, not in a slice of their own.
+
+The owner asked it. This is that, built to that instruction — the money-out mirror of §11, not a
+purchasing slice in a smaller hat. There is still no purchase order, nothing to raise before goods
+arrive and nothing to close out afterwards. A bill records a debt that **already exists** because
+the goods are already on the shelf.
+
+### Receipt is goods, bill is money
+
+`GoodsReceipt` stays exactly what §6 said it was: the record of a delivery. `SupplierBill` is what
+the vendor is owed for it. They are separate rows for the same reason a sale and its payment are
+separate, and for one more that settles the argument: **an opening balance has no receipt at all.**
+
+That is not a modelling nicety. The business is owed-from on deliveries that happened before it
+started using this system — the owner's own example runs 02/09, 04/09 and 17/09, entered on 19/09.
+Recording those as goods receipts would add stock to the ledger that was received and very largely
+sold weeks earlier, which breaks the one invariant `smoke.mjs` is built around: that the sum of
+every movement equals the sum of the stock levels. **An opening balance moves money and nothing
+else**, and there is a smoke check asserting exactly that.
+
+### Every delivery raises a bill
+
+Not only the ones somebody remembers to mark unpaid. A delivery that has not been paid for *is* a
+debt, and the entire value of a payables total is that it is trustworthy without anyone having
+remembered anything. A receipt that raised no bill would be money owed that never appears on
+`GET /payables`, which is the failure mode this feature exists to prevent.
+
+Paid in full at the door is not an exception: the bill opens and the payment closes it inside one
+transaction, leaving a zero balance that drops off the payables list and stays in the history.
+
+### `amountDue` is stored, not derived
+
+The obvious design is to sum the goods lines. It is wrong, and the reason is worth keeping.
+
+A vendor invoice routinely carries amounts that cannot be a stock line — a delivery charge, a
+settlement discount — and `GoodsReceiptLine` deliberately cannot hold them, because §2 makes those
+lines the exact cost of goods. Summing the lines would give a payables total that drifts from the
+vendor's own statement, and **a payable nobody can reconcile against the vendor's paperwork is
+worse than none**: it turns every phone call into an argument about whose number is right.
+
+So `amountDue` defaults to the line sum and is stored in its own right. It explicitly does **not**
+feed inventory cost. Stock is still valued from `GoodsReceiptLine.totalCost` per §2, and a delivery
+charge is not part of what a carton cost. Two different questions, two different figures, and the
+schema says so.
+
+### One payment settles exactly one bill
+
+The customer side carries `PaymentAllocation` because a single transfer routinely settles three
+invoices there. Asked directly, the owner does not pay vendors that way: payment is on delivery, or
+against one specific supply. So `SupplierPayment.billId` names the bill and there is no join table.
+
+§11's rule survives in the form that matters — **which debt a payment answered is recorded, never
+inferred.** What was dropped is machinery for a case that does not exist, which is the same call
+§11 itself made in refusing 30/60/90 buckets before anyone asked to read them. A lump sum across
+several deliveries is a migration on the day somebody actually makes one, and the schema comment
+says so.
+
+### Void, but no negative payments
+
+§11 draws the line: correcting a **mistake** is a void, correcting **reality** is a negative
+payment. Both exist on the customer side because both cases are real there.
+
+Only the first is real here. A mis-keyed vendor payment happens and is voided — the row is kept,
+stops counting, and the bill goes back to owing. Money genuinely coming back from a vendor is not
+something this business does; when a vendor takes goods back they issue a credit note, which is a
+change to what is owed and is recorded by correcting `amountDue`. `SupplierPayment.amount` is
+therefore unsigned, with the schema comment explaining what would change if that stopped being
+true.
+
+### A supplier payment is not an expense
+
+The trap, and the one most likely to be walked into by someone adding a feature later.
+
+`computeProfit` subtracts `Expense` rows. The cost of stock already reaches profit through cost of
+goods sold, so recording a vendor payment as an expense counts the same money **twice** and
+understates every margin in the system — silently, on a 2–3% product, which is the whole signal.
+Payables have their own tables and their own module for exactly this reason, and `PayablesModule`
+shares nothing with `ExpensesModule`.
+
+### Purchases, and the dashboard
+
+`GET /reports/purchases` is the buying-side counterpart of `/reports/sales`, summed from
+`GoodsReceiptLine` — append-only and accumulating since Slice 3, so the report is correct for
+months that happened long before it was written. Value is the exact invoice total per line, never
+`costPrice × quantity`, per §2. Quantities are reported **both** as received and as paid for,
+because the gap between them is free goods: showing one alone either overstates what was bought or
+hides what was given.
+
+Both halves land on `GET /reports/dashboard` under `purchasing`, which required no new mechanism.
+**The note in §12 saying targets were kept off the dashboard because "reps see the dashboard" was
+stale** — that route has been `@Roles(...SEES_COST)` for some time, so reps cannot reach it at all.
+The risk it described had already been closed by the role on the route; the doc had not caught up.
+Worth recording as a small lesson: a rationale can outlive the condition that produced it, and a
+stale one costs more than no comment, because it argues against a change that is actually safe.
+
+### What is deliberately not here
+
+- **No lump-sum payments** across several bills. See above.
+- **No vendor credit notes** as their own row. Correcting `amountDue` covers it.
+- **No 30/60/90 ageing buckets.** `daysOutstanding` is a sort, and §11 made this call already.
+- **No `dueDate` enforcement.** It is nullable and nothing acts on it beyond reporting `overdue`
+  for bills that were given one. The owner named a date and immediately said it might change; a
+  required field would make everyone type a lie.
+- **No rep-facing home screen.** Raised while scoping this — staff cannot reach the dashboard at
+  all — but it is a screen that does not exist rather than one that needs trimming, and it belongs
+  with the mobile slice.

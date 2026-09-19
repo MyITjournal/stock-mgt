@@ -2091,7 +2091,143 @@ async function main() {
   });
   check('a target against both a category and a product is refused', true);
 
-  step(41, 'Tenancy: a second organization sees none of this');
+  // -- Payables -------------------------------------------------------------
+  // The owner's own worked example, in kobo: ₦199,800 supplied with ₦71,800
+  // handed over on the spot, ₦32,000 supplied and untouched, ₦64,000 supplied
+  // and untouched. The total owed should read ₦224,000.
+  step(41, 'Payables: what I owe my vendors');
+
+  const owedBefore = (await api('GET', '/payables', { token: t })).data.total;
+
+  // A delivery that is part-paid at the door, in one request.
+  const partPaid = (
+    await api('POST', '/goods-receipts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        locationId: main.id,
+        invoiceNumber: 'DN-199800',
+        lines: [
+          {
+            productId: product.id,
+            unitId: carton.id,
+            quantityReceived: 4,
+            totalCost: 19_980_000,
+            lotCode: 'LOT-PAYABLE-1',
+          },
+        ],
+        payment: { amount: 7_180_000, method: 'cash' },
+      },
+    })
+  ).data;
+  check('a delivery can be part-paid at the door in one request', !!partPaid.id);
+
+  const billOf = async (receiptId) => {
+    const bills = (await api('GET', '/supplier-bills', { token: t })).data;
+    return bills.find((row) => row.goodsReceipt?.id === receiptId);
+  };
+
+  const firstBill = await billOf(partPaid.id);
+  eq('the delivery raised a bill for the invoice total', firstBill.amountDue, 19_980_000);
+  eq('the money handed over is already against it', firstBill.paid, 7_180_000);
+  eq('leaving the balance the owner would expect', firstBill.balance, 12_800_000);
+
+  // Two opening balances: what was already owed before any of this existed.
+  const opening = async (amount, daysAgo, invoiceNumber) =>
+    (
+      await api('POST', '/supplier-bills', {
+        token: t,
+        key: randomUUID(),
+        body: {
+          supplierId: supplier.id,
+          amountDue: amount,
+          invoiceNumber,
+          issuedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
+        },
+      })
+    ).data;
+
+  const stockBefore = (await api('GET', '/stock/levels', { token: t })).data.length;
+  const older = await opening(3_200_000, 17, 'OPEN-32000');
+  await opening(6_400_000, 2, 'OPEN-64000');
+  const stockAfter = (await api('GET', '/stock/levels', { token: t })).data.length;
+
+  // The load-bearing property of an opening balance: it is money, not goods.
+  eq('an opening balance moves no stock at all', stockAfter, stockBefore);
+  eq('and it carries no goods receipt', older.goodsReceipt, null);
+
+  const owedNow = (await api('GET', '/payables', { token: t })).data;
+  eq(
+    'the three unpaid supplies come to ₦224,000 above where we started',
+    owedNow.total - owedBefore,
+    22_400_000,
+  );
+  check('and the list behind the total is what a click opens', owedNow.bills.length >= 3);
+  check('grouped per vendor, biggest debt first', owedNow.bySupplier.length >= 1);
+  check('with the longest-owed reported', owedNow.oldestDays >= 17, `${owedNow.oldestDays} days`);
+
+  // Paying the rest of the part-paid delivery.
+  const settle = (
+    await api('POST', '/supplier-payments', {
+      token: t,
+      key: randomUUID(),
+      body: { billId: firstBill.id, amount: 12_800_000, method: 'cash' },
+    })
+  ).data;
+  check('the balance of a delivery can be settled later', !!settle.id);
+
+  const clearedBill = await billOf(partPaid.id);
+  eq('which clears that bill', clearedBill.balance, 0);
+
+  // Overpaying is refused: the vendor is not owed it.
+  await api('POST', '/supplier-payments', {
+    token: t,
+    key: randomUUID(),
+    expect: 409,
+    body: { billId: firstBill.id, amount: 100, method: 'cash' },
+  });
+  check('paying a vendor more than they are owed is refused', true);
+
+  // Voiding says the money never moved, so the debt comes back.
+  await api('POST', `/supplier-payments/${settle.id}/void`, {
+    token: t,
+    body: { reason: 'Keyed against the wrong delivery.' },
+  });
+  const reopened = await billOf(partPaid.id);
+  eq('voiding a payment puts the bill back to owing', reopened.balance, 12_800_000);
+
+  // What was bought this month, from the same receipts.
+  const purchases = (await api('GET', '/reports/purchases?period=month', { token: t })).data;
+  check('the purchases summary knows the month cost something', purchases.total > 0);
+  check('across several deliveries', purchases.deliveries >= 2);
+  check('broken down per vendor', purchases.bySupplier.length >= 1);
+  check(
+    'and it counts the free goods that arrived without being charged for',
+    purchases.unitsFree > 0,
+    `${purchases.unitsFree} base units`,
+  );
+
+  // Both halves reach the dashboard, which is owner-only already.
+  const board = (await api('GET', '/reports/dashboard', { token: t })).data;
+  eq(
+    'the dashboard total matches the payables list exactly',
+    board.purchasing.payables.total,
+    (await api('GET', '/payables', { token: t })).data.total,
+  );
+  eq(
+    'and the month purchases match the report',
+    board.purchasing.purchases.month,
+    purchases.total,
+  );
+
+  // A rep must never see any of it: this is buying-price data.
+  await api('GET', '/payables', { token: bolaToken, expect: 403 });
+  check('a rep cannot see what the business owes its vendors', true);
+  await api('GET', '/reports/purchases?period=month', { token: bolaToken, expect: 403 });
+  check('nor what it spent buying stock', true);
+
+  step(42, 'Tenancy: a second organization sees none of this');
   const other = await signUp('Chidi Provisions');
   eq(
     'no products leak across the tenant boundary',

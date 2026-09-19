@@ -26,7 +26,7 @@ These are load-bearing. Breaking one is a data-integrity bug, not a style choice
 
 ## Where things stand
 
-**Slices 0–6 are done, plus a 6.1 gap-closing pass**: rails, tenancy + auth, catalog (products,
+**Slices 0–7 are done, plus a 6.1 gap-closing pass**: rails, tenancy + auth, catalog (products,
 units, tier pricing, barcodes, money in kobo), write idempotency, packaging types, the inventory
 ledger — `StockMovement`
 (append-only), locations, suppliers, batches with expiry, receiving, FEFO picking, adjustments
@@ -126,6 +126,43 @@ advance a quota; value comes from `GoodsReceiptLine.totalCost`, never `costPrice
 carton advances two rows. That subtraction is pure, in `purchase-target.ts`. Targets are
 deliberately **not** on `GET /reports/dashboard`: `targetValue` is a buying price and reps see the
 dashboard.
+
+**Money owed to vendors is Slice 7** (§16), in `src/modules/payables/`. `GET /payables` is the
+mirror of `GET /receivables` — bills with money still on them, longest-owed first, grouped per
+vendor, with `total` as the headline figure the dashboard shows and the list behind it as what a
+click opens. Six rules are load-bearing:
+
+- **Receipt is goods, bill is money.** `GoodsReceipt` stays the record of what physically arrived;
+  `SupplierBill` is what the vendor is owed for it. Separate because an **opening balance has no
+  receipt** — and an opening balance must never create stock, since the goods behind it arrived and
+  probably sold long ago, and inventing movements would break the invariant smoke exists to check.
+- **Every delivery raises a bill**, whether or not anyone asked. A delivery nobody paid for *is* a
+  debt, and a receipt that raised no bill would be money owed that never appears on `/payables`.
+  Paid in full at the door is no exception: the bill opens and the payment closes it in the same
+  transaction.
+- **`amountDue` is stored, not derived.** It defaults to the sum of the goods lines but is its own
+  column, because a vendor invoice routinely carries a delivery charge or a settlement discount
+  that no stock line can hold. It deliberately does **not** feed inventory cost — §2 still values
+  stock from `GoodsReceiptLine.totalCost`.
+- **One payment settles exactly one bill.** No allocation table, unlike the customer side: vendors
+  here are paid on delivery or against one specific supply. Lump sums across several deliveries
+  would need allocations, and that is a migration on the day somebody actually does one.
+- **A supplier payment is never an `Expense`.** Buying stock already reaches profit through cost of
+  goods sold; logging vendor payments as expenses would count the same money twice and understate
+  every margin. This is the trap worth remembering.
+- **Void, but no negative payments.** A mis-key is voided and the bill goes back to owing. Money
+  genuinely coming back from a vendor is not a case this business has — the column is ready for it,
+  the write path is not.
+
+`GET /reports/purchases` is the buying-side counterpart of `/reports/sales`, summed from
+`GoodsReceiptLine`, so it is correct for months that happened long before it was written. Value is
+the exact invoice total, never `costPrice × quantity`; quantities report **both** received and paid
+for, and the gap is free goods.
+
+All of it is buying-price data and closed to `sales_rep`. Both halves reach
+`GET /reports/dashboard` under `purchasing`, which was safe to do because **that endpoint has
+always been `@Roles(...SEES_COST)`** — the older note saying targets were kept off it because
+"reps see the dashboard" described a risk the route had already closed.
 
 **Payments name the account they landed in** (§11). `BankAccount` is the set of accounts the
 business is paid into — several is normal, five is not unusual — and `Payment.bankAccountId` says
