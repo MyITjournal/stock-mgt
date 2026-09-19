@@ -35,11 +35,17 @@ and a wholesale route have to coexist in the same model rather than one being as
 | 6 | Reports: dashboard, profit, sales, stock valuation, expiry, movers, alerts | done |
 | 6.1 | Gap-closing: sync correctness, cash-up, the no-credit rule, images, stocktake | done |
 | 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | done |
-| — | **Deploy to Render** — free tier, once the backend is finished and before the web slice | next |
-| 7 | Web dashboard | |
+| 6.6 | **Vendor payables**: what I owe, supplier payments, purchases summary | done |
+| 7 | **Web dashboard** — v1 does not ship without it | next |
+| — | **Deploy to Render** — free tier, once the dashboard exists | after 7 |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
 | 10 | Telegram bot | |
+
+**v1 = backend + web dashboard, then deploy** (2026-09-19). The dashboard used to sit *after*
+deployment, which ships a URL rather than a product: an API with no interface has no users and
+nothing to sell, and MARKET.md §6 ends "then stop and sell". v2 is scoped in
+[PRD-V2.md](PRD-V2.md) and starts only once a real user has touched v1.
 
 Mobile sits **ahead of** Telegram: it is the primary tool for field reps, and Telegram is the
 fallback for people who will not install an app.
@@ -1450,12 +1456,12 @@ Recorded because each cost real time and none is obvious.
 
 ## 14. Where things stand
 
-**Slices 0–7 done, plus the 6.1 gap-closing pass, two security passes, and staff
+**Slices 0–6.6 done, plus the 6.1 gap-closing pass, two security passes, and staff
 management and working hours.** 424 tests across 33 suites, twenty-four migrations,
 `typecheck`/`lint`/`build` clean, `npm audit` at **0 vulnerabilities**, and `npm run smoke` green
 at 369 checks against a running server.
 
-**Slice 7 — vendor payables — landed 2026-09-19**, decided and recorded in §16. It is the door §6
+**Slice 6.6 — vendor payables — landed 2026-09-19**, decided and recorded in §16. It is the door §6
 left open: "what do I owe this supplier" became a question the owner actually asked, so vendor
 bills came back *beside receivables* rather than as the purchasing slice that was cut. `GET
 /payables` mirrors `GET /receivables`, one total that a click drills into. Two things about it are
@@ -2033,11 +2039,24 @@ sign in as, so it is covered by construction rather than by demonstration.
     The PRD's own terminology table lists a variant as "size, colour, style, **or unit**"; that
     last word is the trap.
 
-    The open choice, to be made before anything points at it: a variant is its own `Product`
-    under a shared grouping, or a new `ProductVariant` between `Product` and `ProductUnit`. The
-    first is cheap and leaves every existing foreign key alone; the second is tidier and touches
-    every table that references a product. **Decide it before building**, because it is the kind
-    of model change that is nearly free on day one and a migration across a dozen tables later.
+    **Decided 2026-09-19 — see [PRD-V2.md](PRD-V2.md) §2.** Neither of the two options first
+    considered. The owner’s framing was better than the question: units and variants are
+    *different axes that rarely both matter*. FMCG has units and no variants; shoes and phones
+    have variants and one trivial unit.
+
+    So a variant is an **optional sub-identity**: a `ProductVariant` table, and a **nullable**
+    `variantId` on every table carrying stock or money for a product. Null means the product has
+    no variants, which is every FMCG product, and nothing about their behaviour changes.
+
+    Rejecting "a variant is its own `Product`" was the owner’s call and is right: it would make
+    "Nike Air Max" a grouping rather than a thing, copy category and tax across every size, and
+    turn "how many do I have" into a sum over rows that only convention relates.
+
+    Because the columns are nullable and additive, this is now **safe to build in v2** rather
+    than now — the decision was what had to be made early, not the migration. One warning
+    carried forward into the PRD: adding `variantId` to the `StockBalance` unique key **will**
+    hit the nullable-unique-column trap in §13, the same one `PurchaseTarget` hit. Two partial
+    unique indexes, hand-written, from the start.
 
 14. ~~**Nine dependency advisories that need a major upgrade.**~~ — **closed 2026-09-18, and
     without the major upgrade.** `npm audit` now reports **0 vulnerabilities** on Prisma 7 and
@@ -2076,7 +2095,7 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ## 16. Money out: what I owe my vendors
 
-Built 2026-09-19, as Slice 7. §6 cut the purchasing slice and left one door open:
+Built 2026-09-19, as Slice 6.6 — numbered beside 6.5 because slice 7 in the roadmap table is the web dashboard. §6 cut the purchasing slice and left one door open:
 
 > Vendor bills come back only if "what do I owe this supplier" becomes a question someone actually
 > asks, and then they belong **beside receivables**, not in a slice of their own.
