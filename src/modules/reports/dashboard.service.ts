@@ -3,6 +3,7 @@ import { ReceivableService } from '../payments/receivable.service';
 import { PayableService } from '../payables/payable.service';
 import { resolvePeriod } from './period';
 import { ReportService, describe } from './report.service';
+import { DashboardView } from './dto/dashboard.response';
 
 /** How many rows each attention list shows before it stops being a glance. */
 const GLANCE = 5;
@@ -31,7 +32,7 @@ export class DashboardService {
     private readonly payables: PayableService,
   ) {}
 
-  async build() {
+  async build(): Promise<DashboardView> {
     const timezone = await this.reports.timezone();
     const now = new Date();
 

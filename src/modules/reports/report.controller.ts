@@ -1,8 +1,14 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { SEES_COST } from '../../common/authz/cost-visibility';
 import { DashboardService } from './dashboard.service';
+import { DashboardView } from './dto/dashboard.response';
 import { ReportService } from './report.service';
 import {
   ExpiryQueryDto,
@@ -23,6 +29,7 @@ export class ReportController {
 
   @Get('dashboard')
   @Roles(...SEES_COST)
+  @ApiOkResponse({ type: DashboardView })
   @ApiOperation({
     summary: 'Everything the home screen needs, in one call',
     description:

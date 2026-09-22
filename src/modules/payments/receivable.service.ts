@@ -106,17 +106,38 @@ export class ReceivableService {
   }
 }
 
+/**
+ * Who an unpaid invoice belongs to. Null on a walk-in, which has no account.
+ *
+ * `phone` is here because chasing a debt is a phone call — the whole point of
+ * the list is to act on it — and because the `select` above already fetches it.
+ */
+interface DebtorCustomer {
+  id: string;
+  firstName: string;
+  lastName: string | null;
+  phone: string | null;
+}
+
+export interface DebtorGroup {
+  customer: DebtorCustomer | null;
+  balance: number;
+  invoices: number;
+  oldestDays: number;
+}
+
 function groupByCustomer(
   invoices: {
-    customer: { id: string; firstName: string; lastName: string | null } | null;
+    customer: DebtorCustomer | null;
     balance: number;
     daysOutstanding: number;
   }[],
-) {
-  const grouped = new Map<
-    string,
-    { customer: unknown; balance: number; invoices: number; oldestDays: number }
-  >();
+): DebtorGroup[] {
+  // `customer` was typed `unknown` here until the dashboard declared a response
+  // type and the compiler objected. It was never genuinely unknown — the select
+  // above says exactly what it is — and widening it meant every caller either
+  // re-narrowed it or, more often, quietly gave up on knowing.
+  const grouped = new Map<string, DebtorGroup>();
 
   for (const invoice of invoices) {
     // Walk-ins share one bucket: they have no account to chase, but a walk-in
