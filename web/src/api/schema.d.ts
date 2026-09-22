@@ -3058,6 +3058,214 @@ export interface components {
              */
             sortOrder?: number;
         };
+        PeriodView: {
+            /** @example month */
+            name: string;
+            /** @example Africa/Lagos */
+            timezone: string;
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+        };
+        PeriodsView: {
+            today: components["schemas"]["PeriodView"];
+            month: components["schemas"]["PeriodView"];
+        };
+        SalesSummary: {
+            /** @description Tax-exclusive revenue today, in kobo. */
+            today: number;
+            /** @description Tax-inclusive turnover today. */
+            todayGross: number;
+            month: number;
+            monthGross: number;
+            lastMonth: number;
+            /** @description Change on last month in basis points; 2500 is up 25%. Zero when last month sold nothing, because no percentage exists. */
+            changeBps: number;
+        };
+        MethodTotal: {
+            /** @example cash */
+            method: string;
+            total: number;
+        };
+        CollectionsSummary: {
+            today: number;
+            month: number;
+            byMethod: components["schemas"]["MethodTotal"][];
+            /** @description Sold this month and not yet collected. Deliberately separate from sales: on a credit route the two diverge, and the gap is the cash position. */
+            uncollectedThisMonth: number;
+        };
+        DebtorCustomer: {
+            id: string;
+            firstName: string;
+            lastName: string | null;
+            /** @description Chasing a debt is a phone call, so the list carries the number. */
+            phone: string | null;
+        };
+        DebtorRow: {
+            /** @description Null for walk-in sales, which carry no customer row. */
+            customer: components["schemas"]["DebtorCustomer"] | null;
+            balance: number;
+            invoices: number;
+            oldestDays: number;
+        };
+        ReceivablesSummary: {
+            /** @description Everything still owed to the business, in kobo. */
+            total: number;
+            invoices: number;
+            oldestDays: number;
+            topDebtors: components["schemas"]["DebtorRow"][];
+        };
+        ProfitSummary: {
+            /** @description Tax-exclusive. VAT was never the business’s money. */
+            revenue: number;
+            cogs: number;
+            grossProfit: number;
+            expenses: number;
+            operatingProfit: number;
+            marginBps: number;
+            /** @description How much of the month’s cost rests on a guess, because goods sold before their delivery was recorded. */
+            estimatedCost: number;
+            estimatedLines: number;
+            lastMonthOperating: number;
+        };
+        NamedRef: {
+            id: string;
+            name: string;
+        };
+        ExpiringBatchRow: {
+            batchId: string;
+            lotCode: string | null;
+            /** Format: date-time */
+            expiryDate: string | null;
+            product: components["schemas"]["NamedRef"];
+            location: components["schemas"]["NamedRef"];
+            quantity: number;
+            /** @description What walks out of the door if this is not sold in time. Always present here, because this endpoint is closed to roles that may not see cost. */
+            value?: number;
+            daysToExpiry: number | null;
+        };
+        StockAlertRow: {
+            id: string;
+            name: string;
+            sku: string;
+            reorderPoint: number | null;
+            /** @description Summed across locations, in base units. */
+            quantity: number;
+        };
+        AttentionSummary: {
+            expiringSoon: components["schemas"]["ExpiringBatchRow"][];
+            expiringCount: number;
+            valueAtRisk?: number;
+            /** @description Already past their date and still on the shelf. */
+            expired: number;
+            outOfStock: components["schemas"]["StockAlertRow"][];
+            outOfStockCount: number;
+            lowStock: components["schemas"]["StockAlertRow"][];
+            lowStockCount: number;
+            negativeStock: components["schemas"]["StockAlertRow"][];
+            productsWithoutReorderPoint: number;
+            /** @description Movements an owner or manager pushed through a shortfall. */
+            forcedMovements: number;
+        };
+        MoverRow: {
+            key: string;
+            label: string;
+            grossSales: number;
+            revenue: number;
+            returned: number;
+            cogs: number;
+            grossProfit: number;
+            marginBps: number;
+            /** @description Base units sold, net of what came back. */
+            units: number;
+            invoices: number;
+        };
+        DeadStockProduct: {
+            id: string;
+            name?: string;
+            sku?: string;
+        };
+        DeadStockRow: {
+            product: components["schemas"]["DeadStockProduct"];
+            quantity: number;
+        };
+        MoversSummary: {
+            topByRevenue: components["schemas"]["MoverRow"][];
+            topByUnits: components["schemas"]["MoverRow"][];
+            deadStock: components["schemas"]["DeadStockRow"][];
+            deadStockCount: number;
+        };
+        VendorRef: {
+            id: string;
+            name: string;
+            phone: string | null;
+        };
+        OwedVendorRow: {
+            supplier: components["schemas"]["VendorRef"];
+            balance: number;
+            bills: number;
+            oldestDays: number;
+        };
+        PayablesSummary: {
+            /** @description Everything still owed to every vendor, in kobo. */
+            total: number;
+            bills: number;
+            suppliers: number;
+            oldestDays: number;
+            /** @description Past the date the business said it would pay, counting only bills that were given one. */
+            overdue: number;
+            topVendors: components["schemas"]["OwedVendorRow"][];
+        };
+        PurchaseGroupRow: {
+            key: string;
+            label: string;
+            /** @description Invoice totals, in kobo. */
+            value: number;
+            quantityReceived: number;
+            /** @description The gap against quantityReceived is free goods. */
+            quantityPaidFor: number;
+            lines: number;
+        };
+        PurchasesSummary: {
+            month: number;
+            deliveries: number;
+            suppliers: number;
+            unitsReceived: number;
+            /** @description Units that arrived without being charged for. */
+            unitsFree: number;
+            topVendors: components["schemas"]["PurchaseGroupRow"][];
+            topCategories: components["schemas"]["PurchaseGroupRow"][];
+        };
+        PurchasingSummary: {
+            payables: components["schemas"]["PayablesSummary"];
+            purchases: components["schemas"]["PurchasesSummary"];
+        };
+        TrendDay: {
+            /** @example 2026-09-19 */
+            date: string;
+            grossSales: number;
+            revenue: number;
+            invoices: number;
+        };
+        TrendSummary: {
+            days: components["schemas"]["TrendDay"][];
+        };
+        DashboardView: {
+            /** Format: date-time */
+            generatedAt: string;
+            /** @example Africa/Lagos */
+            timezone: string;
+            periods: components["schemas"]["PeriodsView"];
+            sales: components["schemas"]["SalesSummary"];
+            collections: components["schemas"]["CollectionsSummary"];
+            receivables: components["schemas"]["ReceivablesSummary"];
+            profit: components["schemas"]["ProfitSummary"];
+            attention: components["schemas"]["AttentionSummary"];
+            movers: components["schemas"]["MoversSummary"];
+            purchasing: components["schemas"]["PurchasingSummary"];
+            trend: components["schemas"]["TrendSummary"];
+        };
         CreatePurchaseTargetDto: {
             /**
              * Format: uuid
@@ -5684,7 +5892,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DashboardView"];
+                };
             };
         };
     };

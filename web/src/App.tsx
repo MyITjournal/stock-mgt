@@ -5,6 +5,7 @@ import { RequireAuth } from './auth/RequireAuth';
 import { SignInPage } from './auth/SignInPage';
 import { Layout, Page } from './components/Layout';
 import { ApiError } from './api/client';
+import { HomePage } from './home/HomePage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,7 +40,7 @@ export default function App() {
 
             <Route element={<RequireAuth />}>
               <Route element={<Layout />}>
-                <Route index element={<ComingSoon title="Home" slice="7.1" />} />
+                <Route index element={<HomePage />} />
                 <Route
                   path="till"
                   element={<ComingSoon title="Till" slice="7.2" />}

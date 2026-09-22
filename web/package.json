@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "api:types": "openapi-typescript ${API_DOCS_URL:-http://localhost:4000/docs-json} -o src/api/schema.d.ts"
+    "api:types": "node scripts/generate-api-types.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.103.1",
