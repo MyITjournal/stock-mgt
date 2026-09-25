@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -25,6 +26,7 @@ import {
   CreateBankAccountDto,
   UpdateBankAccountDto,
 } from './dto/bank-account.dto';
+import { BankAccountView } from './dto/bank-account.response';
 
 /**
  * Anyone who can take money has to be able to pick the account it went into,
@@ -63,6 +65,7 @@ export class BankAccountController {
     description:
       'Default first, then by sort order. A business commonly keeps several — one per bank its customers already use, and often a separate one for POS settlement.',
   })
+  @ApiOkResponse({ type: [BankAccountView] })
   findAll(@Query('includeInactive') includeInactive?: string) {
     return this.accounts.findAll({
       includeInactive: includeInactive === 'true',

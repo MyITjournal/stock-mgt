@@ -14,6 +14,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { BarcodeSymbology } from '@prisma/client';
 import { resolveBarcode } from './barcode';
 import { resolveUnitPrice } from './pricing';
+import { ProductView, ResolvedUnitPrice } from './dto/product.response';
 import {
   CreateProductDto,
   ProductBarcodeInput,
@@ -148,7 +149,7 @@ export class ProductService {
       packagingTypeId?: string;
       search?: string;
     } = {},
-  ) {
+  ): Promise<ProductView[]> {
     const products = await this.prisma.product.findMany({
       where: {
         deletedAt: null,
@@ -396,7 +397,11 @@ export class ProductService {
    * The fallback is a convenience, not a rule: a real carton price is normally
    * *below* factor x base, which is exactly why ProductPrice is keyed by unit.
    */
-  async resolvePrice(productId: string, unitId: string, tierId?: string) {
+  async resolvePrice(
+    productId: string,
+    unitId: string,
+    tierId?: string,
+  ): Promise<ResolvedUnitPrice> {
     const product = await this.findOneOrFail(productId);
     const unit = product.units.find((u) => u.id === unitId);
     if (!unit) {

@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -21,6 +23,7 @@ import { SaleService } from './sale.service';
 import { SaleReturnService } from './sale-return.service';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { CreateReturnDto } from './dto/create-return.dto';
+import { SaleListView, SaleReceiptView, SaleView } from './dto/sale.response';
 
 /** Selling is the sales rep's daily work, and the storekeeper counters too. */
 const SELLERS = [
@@ -58,6 +61,7 @@ export class SaleController {
     description:
       'Keyset paging over (createdAt, id), the same shape the stock ledger uses. The window stops a second short of now so a sale still committing cannot be stepped over.',
   })
+  @ApiOkResponse({ type: SaleListView })
   findAll(
     @Query('customerId') customerId?: string,
     @Query('locationId') locationId?: string,
@@ -80,6 +84,7 @@ export class SaleController {
     description:
       'With its lines, anything returned against it, and the derived balance still owed.',
   })
+  @ApiOkResponse({ type: SaleView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.sales.findOne(id);
   }
@@ -90,6 +95,7 @@ export class SaleController {
     description:
       'A deliberately narrow payload: what the customer is handed, and nothing else. Kept separate from the sale itself so the shape a printer depends on does not shift every time the sale model grows.',
   })
+  @ApiOkResponse({ type: SaleReceiptView })
   receipt(@Param('id', ParseUUIDPipe) id: string) {
     return this.sales.receipt(id);
   }
@@ -104,6 +110,7 @@ export class SaleController {
     description:
       'Prices each line from the customer’s tier unless the seller names the price agreed, and takes the stock through the ledger — FEFO, so the batch that expires first leaves first. A sale the stock cannot cover is refused with a 409 naming the shortfall; an owner or manager may force it with a reason.',
   })
+  @ApiCreatedResponse({ type: SaleView })
   create(@Body() dto: CreateSaleDto) {
     return this.sales.create(dto);
   }

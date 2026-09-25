@@ -9,6 +9,7 @@ import { PaymentMethod } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { BankAccountView } from './dto/bank-account.response';
 import {
   CreateBankAccountDto,
   UpdateBankAccountDto,
@@ -56,7 +57,9 @@ export class BankAccountService {
     }
   }
 
-  findAll(options: { includeInactive?: boolean } = {}) {
+  findAll(
+    options: { includeInactive?: boolean } = {},
+  ): Promise<BankAccountView[]> {
     return this.prisma.bankAccount.findMany({
       where: {
         deletedAt: null,

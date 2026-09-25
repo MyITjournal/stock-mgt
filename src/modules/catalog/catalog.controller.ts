@@ -19,6 +19,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -40,6 +41,12 @@ import {
 import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 import { CreateBarcodeDto } from './dto/barcode.dto';
+import { ScanResult } from './dto/scan.response';
+import {
+  PriceTierView,
+  ProductView,
+  ResolvedUnitPrice,
+} from './dto/product.response';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 
 /** Editing the catalog is a management job; every member may read it. */
@@ -166,6 +173,7 @@ export class PriceTierController {
 
   @Get()
   @ApiOperation({ summary: 'List price tiers' })
+  @ApiOkResponse({ type: [PriceTierView] })
   findAll() {
     return this.tiers.findAll();
   }
@@ -224,6 +232,7 @@ export class ProductController {
     description: 'Matches name or SKU',
   })
   @ApiOperation({ summary: 'List products with their units and tier prices' })
+  @ApiOkResponse({ type: [ProductView] })
   findAll(
     @Query('categoryId') categoryId?: string,
     @Query('packagingTypeId') packagingTypeId?: string,
@@ -246,6 +255,7 @@ export class ProductController {
     description:
       'Falls back to basePrice x unit factor when the tier has no explicit price for that unit.',
   })
+  @ApiOkResponse({ type: ResolvedUnitPrice })
   resolvePrice(
     @Param('id', ParseUUIDPipe) id: string,
     @Query('unitId', ParseUUIDPipe) unitId: string,
@@ -372,6 +382,7 @@ export class ScanController {
     description:
       'The single entry point for scanning. `baseQuantity` is how many base units one scan represents, so a carton code resolves to its full piece count.',
   })
+  @ApiOkResponse({ type: ScanResult })
   resolve(@Param('code') code: string, @Query('tierId') tierId?: string) {
     return this.scans.resolve(code, tierId);
   }
