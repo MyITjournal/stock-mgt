@@ -1457,10 +1457,16 @@ Recorded because each cost real time and none is obvious.
 ## 14. Where things stand
 
 **Slices 0–6.6 done, plus the 6.1 gap-closing pass, two security passes, and staff
-management and working hours. On the web side, 7.0, 7.1 and 7.2 are done — a sale can be rung
-up in a browser.** 424 tests across 33 suites, twenty-four migrations,
-`typecheck`/`lint`/`build` clean in both trees, `npm audit` at **0 vulnerabilities**, and
-`npm run smoke` green at 369 checks against a running server.
+management and working hours. On the web side, 7.0 through 7.3 are done — a sale can be rung up
+in a browser, and the sales, returns, customer and statement screens are live.** 433 tests across
+34 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
+**0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
+
+**Slice 7.3 landed 2026-09-25**, recorded in §17. The one API change it needed is worth knowing
+here: **`GET /sales` serves two readers now**, a syncing client walking forward and a person
+browsing backward, split by `order` which defaults to the sync behaviour. The till's other lesson
+repeats — the fiddly rule in this slice is that a **damaged return refunds money but writes no
+stock movement**, so crushed goods never become sellable again.
 
 **Slice 7.2 — the till — landed 2026-09-25**, decided and recorded in §17. Scan or search into a
 cart, unit and price editing, customer, payment, receipt, and dialogs for both overridable 409s.
@@ -1770,9 +1776,17 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ## 15. Next
 
-**The immediate next thing is slice 7.3** — sales history, returns, customers, statements and the
-PDFs — then 7.4 through 7.6, then the deploy at item 1 below. The slice table and what each one
-owes are in §17; this list is everything that sits outside it.
+**The immediate next thing is slice 7.4** — receivables, payables, supplier bills and payments,
+expenses and bank accounts — then 7.5 and 7.6, then the deploy at item 1 below. The slice table and
+what each one owes are in §17; this list is everything that sits outside it.
+
+Left behind by 7.3, neither blocking:
+
+- **`DebtorGroup` and the dashboard's `DebtorRow` describe the same rows.** Compiler-checked
+  against each other, so they cannot drift silently; collapse them when 7.6 touches reports.
+- **Sale detail re-fetches the whole sale after a return.** The response already carries it, and
+  it does get used — but the receivables and sales caches are invalidated by key rather than
+  updated, so a busy list refetches. Fine at a shop's scale.
 
 Two small things 7.2 left behind, neither blocking:
 
@@ -2329,7 +2343,7 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 | 7.0 | Foundation: `web/`, routing, generated types, cookie auth, role guards, `<Money>`, one table and one form pattern | **done 2026-09-19** |
 | 7.1 | Home — the single `GET /reports/dashboard` call | **done 2026-09-22** |
 | 7.2 | The till — scan or search, cart, units, price override, payment, receipt | **done 2026-09-25** |
-| 7.3 | Sales history, returns, customers, statements, PDFs | |
+| 7.3 | Sales history, returns, customers, statements, PDFs | **done 2026-09-25** |
 | 7.4 | Money — receivables, payables, supplier bills and payments, expenses, bank accounts | |
 | 7.5 | Stock and catalog — products, units, prices, barcodes, goods receipts, levels, adjustments, transfers, stocktake | |
 | 7.6 | Reports and settings — every report screen, organization letterhead, staff, working hours | v1 is closed |
@@ -2462,3 +2476,54 @@ with a reason. `npm run smoke` passed 369 checks afterwards, so the ledger still
 
 **Not verified in a browser.** There is no Playwright or headless Chromium in this environment, so
 the rendering is unchecked — the wiring, the arithmetic and the refusals are not.
+
+### 7.3, and teaching one endpoint to serve two readers
+
+Built 2026-09-25. Sales history, sale detail, returns, customers, statements and both PDFs.
+
+**`GET /sales` now browses as well as syncs**, via `order=desc` and an `until` bound. This was a
+real gap rather than a UI preference: the endpoint ordered `createdAt ASC` because that is what a
+syncing client needs — it walks forward from the oldest row it has not seen, and since its cursor
+only moves forward, a skipped row is skipped forever. A person opening a sales list wants today at
+the top and pages *backward*. Reversing on the client cannot do that; it reverses one page, not the
+sequence.
+
+`keysetWhereCreatedDesc` is the mirror walk, and `order` defaults to `asc` so every existing sync
+client is untouched. The two differ in one more way worth knowing: walking forward, `since` is a
+*starting position* and a cursor overrides it; walking backward, `since` and `until` are ordinary
+filters applied *alongside* the cursor, because the starting position is the newest row. Nine tests
+on the cursor helpers, including one asserting the backward walk is not a copy of the forward one —
+getting the direction wrong pages away from the rows the reader wants while still returning
+plausible results.
+
+**Date bounds filter `createdAt`, not `occurredAt`**, so the screen is a ledger of what was
+*recorded* rather than a period report. They are the same moment for anything rung up on the web;
+they diverge for a sale synced from a device that was offline. Reports deliberately use
+`occurredAt` in `period.ts` (§6), and the two answer different questions.
+
+**PDFs are fetched as blobs through `client.ts`, not linked at.** A plain
+`<a href="{API}/sales/:id/invoice.pdf">` is simpler and subtly broken: a raw navigation cannot run
+the refresh interceptor, so once the 15-minute access token expires the shop gets a JSON 401 where
+an invoice should be — intermittently, looking like a server fault. `api.document` refreshes once
+through the same shared promise as everything else and hands back an object URL, revoked on a timer
+because revoking it immediately races the new tab's own fetch. Still opened in a tab rather than
+downloaded, because the server sends them `inline` for forwarding over WhatsApp (§6).
+
+**Damaged goods are the rule the return dialog exists to force.** A return refunds a share of what
+was actually charged either way, but `restocked: false` writes no movement at all, so crushed stock
+never becomes sellable again. Defaulting it silently would either resell a crushed carton or lose
+good stock, and neither is visible afterwards. Verified end to end: selling 10 took 10 off the
+shelf, returning 4 restocked put exactly 4 back, returning 3 damaged moved the shelf not at all,
+and both still credited the invoice.
+
+**A note on the demo organization.** The 7.2 and 7.3 walkthroughs forced sales past the ledger to
+exercise the shortfall override, which left several products deeply negative — correct behaviour,
+unusable demo. It was put right with a **goods receipt**, not by editing rows: the ledger is
+append-only and a receipt is what a real delivery does, so the history stays truthful. Worth
+remembering when a demo org looks wrong: add the movement that fixes it rather than deleting the
+one that broke it.
+
+**One duplication left deliberately.** `DebtorGroup` now exists as a response class, and the
+dashboard's `DebtorRow` describes the same rows. Both sit on declared return types over the same
+value, so the compiler checks them against each other and they cannot drift silently. Collapsing
+them is a tidy-up for whenever §17's reports slice touches that file.
