@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
+import { PriceTierView } from './dto/product.response';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
 
@@ -34,7 +35,7 @@ export class PriceTierService {
     }
   }
 
-  findAll() {
+  findAll(): Promise<PriceTierView[]> {
     return this.prisma.priceTier.findMany({
       where: { deletedAt: null },
       orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],

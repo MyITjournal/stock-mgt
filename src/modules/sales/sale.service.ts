@@ -23,6 +23,7 @@ import { StockService, StockWriter } from '../inventory/stock.service';
 import { BankAccountService } from '../payments/bank-account.service';
 import { resolveUnitPrice } from '../catalog/pricing';
 import { CreateSaleDto, SaleLineDto } from './dto/create-sale.dto';
+import { SaleListView, SaleReceiptView, SaleView } from './dto/sale.response';
 import { priceLine, roundCost } from './sale-pricing';
 import {
   LIVE_ALLOCATIONS,
@@ -105,7 +106,7 @@ export class SaleService {
     private readonly bankAccounts: BankAccountService,
   ) {}
 
-  async create(input: CreateSaleDto) {
+  async create(input: CreateSaleDto): Promise<SaleView> {
     const locationId =
       input.locationId ?? (await this.locations.resolveDefaultId());
     await this.locations.assertExists(locationId);
@@ -353,7 +354,7 @@ export class SaleService {
    * where it stopped. Same shape and the same one-second safety lag as the
    * stock ledger's delta sync.
    */
-  async findAll(query: SaleQuery = {}) {
+  async findAll(query: SaleQuery = {}): Promise<SaleListView> {
     const limit = Math.min(query.limit ?? DEFAULT_PAGE, MAX_PAGE);
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
     const syncedThrough = new Date(Date.now() - SYNC_LAG_MS);
@@ -385,7 +386,7 @@ export class SaleService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<SaleView> {
     const sale = await this.prisma.sale.findFirst({
       where: { id },
       include: SALE_INCLUDE,
@@ -463,7 +464,7 @@ export class SaleService {
    * shape while the sale model underneath keeps growing. Deliberately narrow:
    * no ids beyond the invoice number, no cost of goods sold, no tier name.
    */
-  async receipt(id: string) {
+  async receipt(id: string): Promise<SaleReceiptView> {
     const sale = await this.findOne(id);
 
     return {
@@ -527,13 +528,32 @@ const SALE_LINE_COST_FIELDS = ['costOfGoodsSold', 'costIsEstimated'] as const;
 const SALE_RETURN_COST_FIELDS = ['costAmount'] as const;
 
 /**
+ * The same cost again, summed onto the invoice header.
+ *
+ * Redacting the lines and leaving this was the whole of the leak: `costTotal`
+ * is the sum of exactly the `costOfGoodsSold` figures removed directly below
+ * it, so a rep who could not read a single line's cost could read all of them
+ * added up, beside the `total` they were sold for. That is the margin on the
+ * invoice, which is the one number §9 closes to a rep.
+ *
+ * Found while declaring this endpoint's response type for the till (§17), which
+ * is the argument for declaring them: the shape had to be written down field by
+ * field before anybody noticed one of the fields should not be there.
+ */
+const SALE_COST_FIELDS = ['costTotal'] as const;
+
+/**
  * The one seam every sale passes through on its way out of the API: the derived
  * balance attached, and cost removed for anyone whose role may not see it.
  *
  * §12 closes the cost-bearing *reports* to a rep, and `GET /sales` was handing
  * over the same figures a line at a time — `costOfGoodsSold` per line and
- * `costAmount` per return are the margin on the invoice. Both are snapshots
- * taken at the time of sale, so nothing downstream recomputes them.
+ * `costAmount` per return are the margin on the invoice. All of them are
+ * snapshots taken at the time of sale, so nothing downstream recomputes them.
+ *
+ * Three fields, not two: the invoice header's `costTotal` is the same money
+ * summed, and it went out in full for a year while the lines beneath it were
+ * being carefully removed.
  *
  * Deliberately not folded into `SALE_INCLUDE`: `SaleReturnService` reads the
  * real `costOfGoodsSold` to apportion cost onto goods handed back, and a
@@ -545,6 +565,7 @@ const SALE_RETURN_COST_FIELDS = ['costAmount'] as const;
 // `costAmount` would vanish from the element type it infers here.
 function forReading<
   T extends Omit<SaleBalanceInput, 'returns'> & {
+    costTotal: number;
     lines: readonly {
       costOfGoodsSold: number;
       costIsEstimated: boolean;
@@ -552,7 +573,10 @@ function forReading<
     returns: readonly { costAmount: number; refundAmount: number }[];
   },
 >(sale: T) {
-  const row = withBalance(sale);
+  // Header first, then the lines and returns inside it. All three carry the
+  // same number at different resolutions, and leaving any one of them is
+  // enough to hand over the margin.
+  const row = redactCost(withBalance(sale), SALE_COST_FIELDS);
 
   return {
     ...row,

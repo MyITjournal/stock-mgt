@@ -8,6 +8,7 @@ import { OrgRole } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { CustomerView } from './dto/customer.response';
 import {
   CreateCustomerDto,
   UpdateCustomerDto,
@@ -98,7 +99,7 @@ export class CustomerService {
     if (!tier) throw new NotFoundException('Price tier not found');
   }
 
-  findAll() {
+  findAll(): Promise<CustomerView[]> {
     return this.prisma.customer.findMany({ where: { deletedAt: null } });
   }
 
