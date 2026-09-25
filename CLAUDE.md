@@ -333,10 +333,11 @@ Slice 7, planned in §17. **Vite + React + TypeScript**, with its own `package.j
 `npm install` and `npm run dev` from inside `web/`. It reaches the API over HTTP at `VITE_API_URL`
 and shares no code with it.
 
-**Where it has got to: 7.0 (foundation, sign-in), 7.1 (home) and 7.2 (the till) are done — a sale
-can be rung up in a browser. 7.3 is next**: sales history, returns, customers, statements, PDFs.
-The slice table is in §17. Both servers have to be running to work on this: the API on 4000, then
-`npm run dev` in `web/` on 5173, which `CORS_ORIGINS` already allows.
+**Where it has got to: 7.0 (foundation, sign-in), 7.1 (home), 7.2 (the till) and 7.3 (sales,
+returns, customers, statements, PDFs) are done. 7.4 is next**: receivables, payables, supplier
+bills and payments, expenses, bank accounts. The slice table is in §17. Both servers have to be
+running to work on this: the API on 4000, then `npm run dev` in `web/` on 5173, which
+`CORS_ORIGINS` already allows.
 
 - **Types are generated, never hand-written.** `npm run api:types` in `web/` regenerates
   `src/api/schema.d.ts` from the running server's `/docs-json`. **Re-run it whenever an endpoint or
@@ -374,6 +375,24 @@ Four more from the till (7.2), all in `web/src/till/`:
 - **A 409 is a rule, not an error.** Not enough stock and "this customer still owes" both come back
   as refusals an owner or manager overrides with a reason, and **supplying the reason is the
   override**. A cashier sees the refusal and no dialog.
+
+And three from 7.3:
+
+- **`GET /sales` serves two readers.** `order=desc` plus `since`/`until` is the browsing half;
+  `asc` is the sync default and must stay that way. Walking forward, `since` is a starting position
+  a cursor overrides; walking backward, `since`/`until` are plain filters applied beside the cursor.
+  The date bounds filter `createdAt`, so the screen is a ledger of what was *recorded* — reports use
+  `occurredAt` and answer a different question.
+- **PDFs go through `api.document`, never a plain link.** A raw navigation cannot run the refresh,
+  so a link shows a JSON 401 instead of an invoice once the 15-minute token expires. Revoke the
+  object URL on a timer, not immediately — immediately races the new tab.
+- **A damaged return refunds money and writes no stock movement.** `restocked: false` means crushed
+  goods never become sellable again, so the till must ask rather than default it.
+
+**When a demo org looks wrong, add the movement that fixes it.** The slice walkthroughs force sales
+past the ledger to test the override, which leaves stock negative. Put it right with a **goods
+receipt**, not by editing rows — the ledger is append-only and `npm run smoke` checks that
+movements still sum to levels.
 
 The root `tsconfig.json` and the jest config are scoped to `src` and `test` so `web/` cannot break
 `npm run typecheck` or `npx jest` at the root. Keep it that way.
