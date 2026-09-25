@@ -6,6 +6,7 @@ import { SignInPage } from './auth/SignInPage';
 import { Layout, Page } from './components/Layout';
 import { ApiError } from './api/client';
 import { HomePage } from './home/HomePage';
+import { TillPage } from './till/TillPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,11 +25,11 @@ const queryClient = new QueryClient({
 });
 
 /**
- * Routes for slice 7.0.
+ * Routes through slice 7.2.
  *
- * Only signing in and a placeholder home are real here — the rest of the map is
- * laid out so the navigation is honest about what is coming, and so each later
- * slice drops its screens into a route that already exists.
+ * Signing in, home and the till are real; the rest of the map is laid out so
+ * the navigation is honest about what is coming, and so each later slice drops
+ * its screens into a route that already exists.
  */
 export default function App() {
   return (
@@ -41,10 +42,7 @@ export default function App() {
             <Route element={<RequireAuth />}>
               <Route element={<Layout />}>
                 <Route index element={<HomePage />} />
-                <Route
-                  path="till"
-                  element={<ComingSoon title="Till" slice="7.2" />}
-                />
+                <Route path="till" element={<TillPage />} />
                 <Route
                   path="sales"
                   element={<ComingSoon title="Sales" slice="7.3" />}
