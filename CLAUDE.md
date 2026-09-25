@@ -286,10 +286,11 @@ payment on its own.
 
 (§15 item 14's nine dependency advisories are **closed**, not deferred; **do not run
 `npm audit fix --force`**, which would still downgrade Prisma 7 to 6.) The **deploy to Render** plan
-is §15 item 1, on the free tier — deliberately scheduled once the backend is finished and immediately before the web slice,
-so what gets deployed is not a moving target. The Render plan is §15, including that
-`OTP_OVERRIDE` makes smoke run unattended *and* is a backdoor into any account, so it is
-test-instance-only.
+is §15 item 1, and it comes **after** the dashboard, not before it — v1 was redefined on 2026-09-19
+so that what ships is something a shop owner can open. It is on a **paid tier**, which supersedes
+that item's free-tier assumptions: no cold starts, no expiring database, no warm-up request before
+smoke. `OTP_OVERRIDE` stays **test-instance-only regardless of tier**, because paying for the
+instance does not stop it being a master key into every account.
 
 On printing generally: thermal receipts (Bluetooth ESC/POS) are the mobile app's job — the server
 cannot reach a paired printer — and `GET /sales/:id/receipt` is already the stable payload for
@@ -321,9 +322,14 @@ short version; that one is authoritative.
 
 ## The web dashboard (`web/`)
 
-Slice 7, planned in §17 and started 2026-09-19. **Vite + React + TypeScript**, with its own
-`package.json` — run `npm install` and `npm run dev` from inside `web/`. It reaches the API over
-HTTP at `VITE_API_URL` and shares no code with it.
+Slice 7, planned in §17. **Vite + React + TypeScript**, with its own `package.json` — run
+`npm install` and `npm run dev` from inside `web/`. It reaches the API over HTTP at `VITE_API_URL`
+and shares no code with it.
+
+**Where it has got to: 7.0 (foundation, sign-in) and 7.1 (home) are done. 7.2 is the till** — scan
+or search, cart, units, price override, payment, receipt. The slice table and the two till rules
+worth fixing before writing it are in §17. Both servers have to be running to work on this: the API
+on 4000, then `npm run dev` in `web/` on 5173, which `CORS_ORIGINS` already allows.
 
 - **Types are generated, never hand-written.** `npm run api:types` in `web/` regenerates
   `src/api/schema.d.ts` from the running server's `/docs-json`. **Re-run it whenever an endpoint or
