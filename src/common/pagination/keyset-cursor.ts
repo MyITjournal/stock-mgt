@@ -98,6 +98,34 @@ export function keysetWhereCreated(cursor?: KeysetCursor, since?: Date) {
 }
 
 /**
+ * The same walk **backwards**, newest row first, for a person browsing rather
+ * than a client syncing.
+ *
+ * Syncing and browsing want opposite orders and the difference is not
+ * cosmetic. A sync must start at the oldest row it has not seen and walk
+ * forward, because the cursor only moves forward and skipping is permanent. A
+ * person opening a sales list wants today at the top, and will page *back* into
+ * last week. Reversing the rows on the client cannot do this: it would reverse
+ * one page, not the sequence.
+ *
+ * Note what is missing here that `keysetWhereCreated` has: no `since`. Walking
+ * backwards, the lower bound is an ordinary filter applied alongside this
+ * rather than a starting position, because the starting position is the newest
+ * row. The caller applies both bounds itself.
+ */
+export function keysetWhereCreatedDesc(cursor?: KeysetCursor) {
+  if (!cursor) return [];
+  return [
+    {
+      OR: [
+        { createdAt: { lt: cursor.at } },
+        { createdAt: cursor.at, id: { lt: cursor.id } },
+      ],
+    },
+  ];
+}
+
+/**
  * The same walk over a **mutable** feed, ordered by `updatedAt` so that a row
  * edited after the client last synced is sent again.
  *

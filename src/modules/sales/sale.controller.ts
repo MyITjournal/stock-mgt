@@ -55,17 +55,32 @@ export class SaleController {
     required: false,
     description: 'The nextCursor from the previous page, passed back verbatim.',
   })
+  @ApiQuery({
+    name: 'until',
+    required: false,
+    description:
+      'ISO date-time upper bound. Browsing only — a sync has no reason to stop early.',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['asc', 'desc'],
+    description:
+      '`asc` (the default) is the sync order. `desc` is for a person reading a list, newest first.',
+  })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiOperation({
-    summary: 'List sales, paged for delta sync',
+    summary: 'List sales, for delta sync or for reading',
     description:
-      'Keyset paging over (createdAt, id), the same shape the stock ledger uses. The window stops a second short of now so a sale still committing cannot be stepped over.',
+      'Keyset paging over (createdAt, id), the same shape the stock ledger uses. The window stops a second short of now so a sale still committing cannot be stepped over. Two readers, one endpoint: a syncing client walks forward from where it stopped, and a person browsing walks backward from today with `order=desc` and a date range.',
   })
   @ApiOkResponse({ type: SaleListView })
   findAll(
     @Query('customerId') customerId?: string,
     @Query('locationId') locationId?: string,
     @Query('since') since?: string,
+    @Query('until') until?: string,
+    @Query('order') order?: string,
     @Query('cursor') cursor?: string,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -73,6 +88,8 @@ export class SaleController {
       customerId,
       locationId,
       since: since ? new Date(since) : undefined,
+      until: until ? new Date(until) : undefined,
+      order: order === 'desc' ? 'desc' : undefined,
       cursor,
       limit,
     });
@@ -125,6 +142,7 @@ export class SaleController {
     description:
       'Refunds a share of what was actually charged and puts the stock back into the lot it came from, so a returned carton keeps its expiry date. Goods that came back broken are refunded with `restocked: false` and never re-enter sellable stock.',
   })
+  @ApiCreatedResponse({ type: SaleView })
   createReturn(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateReturnDto,
