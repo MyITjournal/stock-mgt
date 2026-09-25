@@ -7,8 +7,14 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CustomerService } from './customer.service';
+import { CustomerView } from './dto/customer.response';
 import {
   CreateCustomerDto,
   UpdateCustomerDto,
@@ -22,6 +28,7 @@ export class CustomerController {
 
   @Get()
   @ApiOperation({ summary: 'List customers' })
+  @ApiOkResponse({ type: [CustomerView] })
   findAll() {
     return this.svc.findAll();
   }

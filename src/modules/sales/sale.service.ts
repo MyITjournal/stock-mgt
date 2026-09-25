@@ -23,6 +23,7 @@ import { StockService, StockWriter } from '../inventory/stock.service';
 import { BankAccountService } from '../payments/bank-account.service';
 import { resolveUnitPrice } from '../catalog/pricing';
 import { CreateSaleDto, SaleLineDto } from './dto/create-sale.dto';
+import { SaleListView, SaleReceiptView, SaleView } from './dto/sale.response';
 import { priceLine, roundCost } from './sale-pricing';
 import {
   LIVE_ALLOCATIONS,
@@ -105,7 +106,7 @@ export class SaleService {
     private readonly bankAccounts: BankAccountService,
   ) {}
 
-  async create(input: CreateSaleDto) {
+  async create(input: CreateSaleDto): Promise<SaleView> {
     const locationId =
       input.locationId ?? (await this.locations.resolveDefaultId());
     await this.locations.assertExists(locationId);
@@ -353,7 +354,7 @@ export class SaleService {
    * where it stopped. Same shape and the same one-second safety lag as the
    * stock ledger's delta sync.
    */
-  async findAll(query: SaleQuery = {}) {
+  async findAll(query: SaleQuery = {}): Promise<SaleListView> {
     const limit = Math.min(query.limit ?? DEFAULT_PAGE, MAX_PAGE);
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
     const syncedThrough = new Date(Date.now() - SYNC_LAG_MS);
@@ -385,7 +386,7 @@ export class SaleService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<SaleView> {
     const sale = await this.prisma.sale.findFirst({
       where: { id },
       include: SALE_INCLUDE,
@@ -463,7 +464,7 @@ export class SaleService {
    * shape while the sale model underneath keeps growing. Deliberately narrow:
    * no ids beyond the invoice number, no cost of goods sold, no tier name.
    */
-  async receipt(id: string) {
+  async receipt(id: string): Promise<SaleReceiptView> {
     const sale = await this.findOne(id);
 
     return {
@@ -534,6 +535,10 @@ const SALE_RETURN_COST_FIELDS = ['costAmount'] as const;
  * it, so a rep who could not read a single line's cost could read all of them
  * added up, beside the `total` they were sold for. That is the margin on the
  * invoice, which is the one number §9 closes to a rep.
+ *
+ * Found while declaring this endpoint's response type for the till (§17), which
+ * is the argument for declaring them: the shape had to be written down field by
+ * field before anybody noticed one of the fields should not be there.
  */
 const SALE_COST_FIELDS = ['costTotal'] as const;
 
