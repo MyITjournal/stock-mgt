@@ -101,7 +101,8 @@ class DebtorCustomer {
   @ApiProperty({
     nullable: true,
     type: String,
-    description: 'Chasing a debt is a phone call, so the list carries the number.',
+    description:
+      'Chasing a debt is a phone call, so the list carries the number.',
   })
   phone!: string | null;
 }
@@ -125,7 +126,9 @@ class DebtorRow {
 }
 
 class ReceivablesSummary {
-  @ApiProperty({ description: 'Everything still owed to the business, in kobo.' })
+  @ApiProperty({
+    description: 'Everything still owed to the business, in kobo.',
+  })
   total!: number;
 
   @ApiProperty()
@@ -139,7 +142,9 @@ class ReceivablesSummary {
 }
 
 class ProfitSummary {
-  @ApiProperty({ description: 'Tax-exclusive. VAT was never the business’s money.' })
+  @ApiProperty({
+    description: 'Tax-exclusive. VAT was never the business’s money.',
+  })
   revenue!: number;
 
   @ApiProperty()
@@ -234,7 +239,9 @@ class AttentionSummary {
   @ApiPropertyOptional()
   valueAtRisk?: number;
 
-  @ApiProperty({ description: 'Already past their date and still on the shelf.' })
+  @ApiProperty({
+    description: 'Already past their date and still on the shelf.',
+  })
   expired!: number;
 
   @ApiProperty({ type: () => [StockAlertRow] })
@@ -352,7 +359,9 @@ class OwedVendorRow {
 }
 
 class PayablesSummary {
-  @ApiProperty({ description: 'Everything still owed to every vendor, in kobo.' })
+  @ApiProperty({
+    description: 'Everything still owed to every vendor, in kobo.',
+  })
   total!: number;
 
   @ApiProperty()
@@ -387,7 +396,9 @@ class PurchaseGroupRow {
   @ApiProperty()
   quantityReceived!: number;
 
-  @ApiProperty({ description: 'The gap against quantityReceived is free goods.' })
+  @ApiProperty({
+    description: 'The gap against quantityReceived is free goods.',
+  })
   quantityPaidFor!: number;
 
   @ApiProperty()
