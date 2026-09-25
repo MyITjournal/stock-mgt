@@ -171,9 +171,59 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return body as T;
 }
 
+/**
+ * Fetches a binary document — a PDF — through the same session handling as
+ * everything else.
+ *
+ * **Why not just link to it.** `<a href="{API}/sales/:id/invoice.pdf">` looks
+ * simpler and is subtly broken: a raw navigation cannot run the refresh above,
+ * so once the 15-minute access token expires the shop gets a JSON 401 where an
+ * invoice should be — intermittently, and looking like the server is faulty.
+ * Going through here means an expired session refreshes once, shared with every
+ * other in-flight request, and the document opens.
+ *
+ * The caller gets an object URL to open or download, and **must revoke it**:
+ * the blob is held in memory until it does.
+ */
+async function document(path: string): Promise<{ url: string; name: string }> {
+  const fetchOnce = (retrying: boolean) =>
+    fetch(`${BASE_URL}${path}`, { method: 'GET', credentials: 'include' }).then(
+      async (response) => {
+        if (response.status === 401 && !retrying) return null;
+        if (!response.ok) {
+          throw errorFrom(response.status, await parseBody(response));
+        }
+        return response;
+      },
+    );
+
+  let response = await fetchOnce(false);
+  if (!response) {
+    const refreshed = await attemptRefresh();
+    if (!refreshed) {
+      onSessionLost?.();
+      throw new ApiError(401, 'Your session has expired. Sign in again.');
+    }
+    response = await fetchOnce(true);
+    if (!response) throw new ApiError(401, 'Your session has expired.');
+  }
+
+  // The server sends `inline` with a filename, because these get opened on a
+  // phone and forwarded over WhatsApp rather than filed.
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const matched = /filename="?([^";]+)"?/.exec(disposition);
+
+  return {
+    url: URL.createObjectURL(await response.blob()),
+    name: matched?.[1] ?? path.split('/').pop() ?? 'document.pdf',
+  };
+}
+
 export const api = {
   get: <T>(path: string, signal?: AbortSignal) =>
     request<T>(path, { method: 'GET', signal }),
+
+  document,
 
   post: <T>(path: string, body?: unknown, idempotencyKey?: string) =>
     request<T>(path, { method: 'POST', body, idempotencyKey }),

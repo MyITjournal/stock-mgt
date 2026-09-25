@@ -7,6 +7,10 @@ import { Layout, Page } from './components/Layout';
 import { ApiError } from './api/client';
 import { HomePage } from './home/HomePage';
 import { TillPage } from './till/TillPage';
+import { SalesPage } from './sales/SalesPage';
+import { SaleDetailPage } from './sales/SaleDetailPage';
+import { CustomersPage } from './customers/CustomersPage';
+import { CustomerDetailPage } from './customers/CustomerDetailPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,11 +29,11 @@ const queryClient = new QueryClient({
 });
 
 /**
- * Routes through slice 7.2.
+ * Routes through slice 7.3.
  *
- * Signing in, home and the till are real; the rest of the map is laid out so
- * the navigation is honest about what is coming, and so each later slice drops
- * its screens into a route that already exists.
+ * Signing in, home, the till, sales and customers are real; the rest of the map
+ * is laid out so the navigation is honest about what is coming, and so each
+ * later slice drops its screens into a route that already exists.
  */
 export default function App() {
   return (
@@ -43,14 +47,10 @@ export default function App() {
               <Route element={<Layout />}>
                 <Route index element={<HomePage />} />
                 <Route path="till" element={<TillPage />} />
-                <Route
-                  path="sales"
-                  element={<ComingSoon title="Sales" slice="7.3" />}
-                />
-                <Route
-                  path="customers"
-                  element={<ComingSoon title="Customers" slice="7.3" />}
-                />
+                <Route path="sales" element={<SalesPage />} />
+                <Route path="sales/:id" element={<SaleDetailPage />} />
+                <Route path="customers" element={<CustomersPage />} />
+                <Route path="customers/:id" element={<CustomerDetailPage />} />
                 <Route
                   path="money"
                   element={<ComingSoon title="Money" slice="7.4" />}
