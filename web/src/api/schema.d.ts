@@ -2979,6 +2979,121 @@ export interface components {
             /** @example Keyed against the wrong vendor. */
             reason: string;
         };
+        /** @enum {string} */
+        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
+        PaidByCustomer: {
+            /** Format: uuid */
+            id: string;
+            /** @example Ngozi */
+            firstName: string;
+            lastName: string | null;
+            phone: string | null;
+        };
+        NamedRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        BankedInto: {
+            /** Format: uuid */
+            id: string;
+            /** @example GTBank */
+            bankName: string;
+            accountName: string;
+            accountNumber: string;
+        };
+        PersonRef: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+        };
+        SettledSale: {
+            /** Format: uuid */
+            id: string;
+            /** @example INV-0001 */
+            number: string;
+            total: number;
+        };
+        PaymentAllocationView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            paymentId: string;
+            /** Format: uuid */
+            saleId: string;
+            /** @description Signed, following the payment it belongs to. */
+            amount: number;
+            /** Format: date-time */
+            createdAt: string;
+            sale: components["schemas"]["SettledSale"];
+        };
+        PaymentView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /**
+             * Format: uuid
+             * @description Null for a walk-in refund, which names its sale instead.
+             */
+            customerId: string | null;
+            /**
+             * Format: uuid
+             * @description Set automatically by a counter sale, and what `GET /reports/collections` groups on for the end-of-shift cash-up (§11).
+             */
+            locationId: string | null;
+            /**
+             * @description Signed: positive in, negative back out. A refund is a negative payment, which needs the same authority as a void.
+             * @example 1080000
+             */
+            amount: number;
+            method: components["schemas"]["PaymentMethod"];
+            /**
+             * Format: uuid
+             * @description `transfer` and `pos` must name one, `cash` must not, and it is never defaulted for a caller who did not choose — a wrong account only surfaces at reconciliation (§11).
+             */
+            bankAccountId: string | null;
+            /** @example FT26083012345 */
+            reference: string | null;
+            note: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /**
+             * Format: date-time
+             * @description Set when this payment is declared a mistake that never happened. The row and its allocations are kept so the error and its correction stay legible; `LIVE_ALLOCATIONS` drops it out of every balance, so the invoices it had settled go back to owing.
+             */
+            voidedAt: string | null;
+            voidedReason: string | null;
+            /** Format: uuid */
+            voidedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            customer: components["schemas"]["PaidByCustomer"] | null;
+            location: components["schemas"]["NamedRef"] | null;
+            bankAccount: components["schemas"]["BankedInto"] | null;
+            recordedBy: components["schemas"]["PersonRef"] | null;
+            voidedBy: components["schemas"]["PersonRef"] | null;
+            /** @description Unfiltered on purpose: a voided payment still shows what it *had* claimed, which is the point of keeping the row. */
+            allocations: components["schemas"]["PaymentAllocationView"][];
+            /** @description The sum of the allocations above. */
+            allocated: number;
+            /** @description Money on this payment that no invoice has claimed. It stays as credit on the customer rather than being spread cleverly (§5). */
+            unallocated: number;
+        };
+        PaymentListView: {
+            payments: components["schemas"]["PaymentView"][];
+            nextCursor: string | null;
+            /** Format: date-time */
+            syncedThrough: string;
+            hasMore: boolean;
+        };
         PaymentAllocationDto: {
             /** Format: uuid */
             saleId: string;
@@ -3086,8 +3201,6 @@ export interface components {
             /** @description Owed **to** the business. Money owed back to a customer is excluded rather than netted off — the two are different problems and summing them hides both. */
             totalOutstanding: number;
         };
-        /** @enum {string} */
-        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
         StatementAllocation: {
             amount: number;
         };
@@ -3237,12 +3350,6 @@ export interface components {
             lastName: string | null;
             /** @example +2348030000000 */
             phone: string | null;
-        };
-        NamedRef: {
-            /** Format: uuid */
-            id: string;
-            /** @example Main shop */
-            name: string;
         };
         RecordedByView: {
             /** Format: uuid */
@@ -5986,7 +6093,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaymentListView"];
+                };
             };
         };
     };
@@ -6010,7 +6119,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaymentView"];
+                };
             };
         };
     };
@@ -6029,7 +6140,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaymentView"];
+                };
             };
         };
     };
@@ -6052,7 +6165,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaymentView"];
+                };
             };
         };
     };
