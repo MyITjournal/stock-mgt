@@ -16,6 +16,7 @@ import {
   decodeCursor,
   encodeCursor,
   keysetWhereCreated,
+  keysetWhereCreatedDesc,
 } from '../../common/pagination/keyset-cursor';
 import { resolveProductUnit } from '../inventory/base-units';
 import { LocationService } from '../inventory/location.service';
@@ -49,8 +50,22 @@ const MAX_PAGE = 500;
 export interface SaleQuery {
   customerId?: string;
   locationId?: string;
-  /** Everything recorded after this point. Ignored when `cursor` is given. */
+  /**
+   * Everything recorded after this point.
+   *
+   * Syncing (`order: 'asc'`): a starting position, ignored when `cursor` is
+   * given, because a cursor is more precise and mixing the two re-sends rows.
+   * Browsing (`order: 'desc'`): an ordinary lower bound, applied alongside the
+   * cursor, because the starting position is the newest row instead.
+   */
   since?: Date;
+  /** Upper bound. Browsing only — a sync has no reason to stop early. */
+  until?: Date;
+  /**
+   * `asc` is the sync order and the default, so existing clients are
+   * unaffected. `desc` is for a person reading a list, who wants today first.
+   */
+  order?: 'asc' | 'desc';
   cursor?: string;
   limit?: number;
 }
@@ -359,16 +374,32 @@ export class SaleService {
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
     const syncedThrough = new Date(Date.now() - SYNC_LAG_MS);
 
+    const browsing = query.order === 'desc';
+
     const rows = await this.prisma.sale.findMany({
       where: {
         ...(query.customerId && { customerId: query.customerId }),
         ...(query.locationId && { locationId: query.locationId }),
         AND: [
+          // The one-second lag applies to both orders. It is there so a sync
+          // cannot step over a row still committing, and while a browser has
+          // no cursor to corrupt, letting the two disagree about what exists
+          // would be a confusing thing to explain later.
           { createdAt: { lte: syncedThrough } },
-          ...keysetWhereCreated(cursor, query.since),
+          ...(browsing
+            ? [
+                // Both bounds are plain filters here; the cursor only says how
+                // far back this reader has walked.
+                ...(query.since ? [{ createdAt: { gte: query.since } }] : []),
+                ...(query.until ? [{ createdAt: { lte: query.until } }] : []),
+                ...keysetWhereCreatedDesc(cursor),
+              ]
+            : keysetWhereCreated(cursor, query.since)),
         ],
       },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      orderBy: browsing
+        ? [{ createdAt: 'desc' }, { id: 'desc' }]
+        : [{ createdAt: 'asc' }, { id: 'asc' }],
       take: limit,
       include: SALE_INCLUDE,
     });
