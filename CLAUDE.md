@@ -389,6 +389,12 @@ And three from 7.3:
 - **A damaged return refunds money and writes no stock movement.** `restocked: false` means crushed
   goods never become sellable again, so the till must ask rather than default it.
 
+**Quantities are integers everywhere, and half a carton is six pieces.** Typing `0.5` is refused at
+three layers on purpose. Stock lives in base units, so a fraction of a bigger unit is a whole
+number of smaller ones — switch the unit. Divisible goods (rice, oil) want a *finer base unit*, not
+a decimal column; making `quantity` decimal is a migration across five tables that puts a
+non-integer into the ledger smoke's sum-check depends on. Full reasoning in §15.
+
 **When a demo org looks wrong, add the movement that fixes it.** The slice walkthroughs force sales
 past the ledger to test the override, which leaves stock negative. Put it right with a **goods
 receipt**, not by editing rows — the ledger is append-only and `npm run smoke` checks that

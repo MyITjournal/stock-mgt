@@ -1780,6 +1780,36 @@ sign in as, so it is covered by construction rather than by demonstration.
 expenses and bank accounts — then 7.5 and 7.6, then the deploy at item 1 below. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
+**A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
+2026-09-26: typing `0.5` into the quantity field is refused, at three layers — `step=1` in the UI,
+`@IsInt() @Min(1)` on the DTO, and `quantity Int` in the schema. `POST /sales` answers 400.
+
+**That is the right answer for a packaged product and the wrong one for a divisible one**, and the
+difference is worth stating before anybody reaches for a migration:
+
+- **A 12-pack carton is already half-sellable.** Stock lives in base units (§2), so half that
+  carton is exactly six pieces — switch the unit on the line and enter 6. The unit picker is the
+  mechanism, and nothing needs to change but making that obvious on the screen.
+- **What the unit switch does not settle is the price**, which is the real question hiding in the
+  request. Six pieces at the piece price is *not* half the carton price, because a carton is
+  cheaper per piece — that is the entire reason `ProductPrice` is keyed by unit (§4). So "half a
+  carton" is ambiguous about what to charge, and the price override is how a seller answers it.
+- **Genuinely divisible goods are a catalog question, not a schema one.** Rice by the kilo, oil by
+  the litre: define the base unit as the kilo and the bag as a unit with `factor: 25`. Half a bag
+  is then 12.5 kg, which is still not an integer — but 12500 g is, and choosing the base unit
+  fine enough is the cheap, correct answer.
+
+**Making `quantity` decimal is the expensive answer and probably the wrong one.** It is a migration
+across `SaleLine`, `StockMovement`, `GoodsReceiptLine`, `SaleReturn` and the stocktake tables, it
+puts a non-integer into the ledger the smoke suite's sum-check relies on, and it invites
+floating-point into a codebase that has kept money and quantities integral on purpose. Revisit only
+if a real shop sells something no base unit can express.
+
+**What to actually build, when it is worth a slice:** let the till accept a fraction in a
+non-base unit, convert it to base units itself, and say what it did — "0.5 carton = 6 pieces at the
+piece price" — refusing the ones that do not land on a whole base unit. That is a till change, not
+a data change.
+
 Left behind by 7.3, neither blocking:
 
 - **`DebtorGroup` and the dashboard's `DebtorRow` describe the same rows.** Compiler-checked
