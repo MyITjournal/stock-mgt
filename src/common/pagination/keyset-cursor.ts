@@ -145,3 +145,24 @@ export function keysetWhereUpdated(cursor?: KeysetCursor, since?: Date) {
   }
   return since ? [{ updatedAt: { gt: since } }] : [];
 }
+
+/**
+ * The backward walk over a **mutable** feed, for a person reading a list.
+ *
+ * The `Created` pair and this one differ only in the column, but both pairs are
+ * needed: which column a feed walks is decided by whether its rows can change
+ * after they are written, and which *direction* is decided by whether the
+ * reader is syncing or browsing. Those are independent questions, which is why
+ * there are four functions rather than two.
+ */
+export function keysetWhereUpdatedDesc(cursor?: KeysetCursor) {
+  if (!cursor) return [];
+  return [
+    {
+      OR: [
+        { updatedAt: { lt: cursor.at } },
+        { updatedAt: cursor.at, id: { lt: cursor.id } },
+      ],
+    },
+  ];
+}

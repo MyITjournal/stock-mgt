@@ -5,6 +5,7 @@ import {
   keysetWhereCreated,
   keysetWhereCreatedDesc,
   keysetWhereUpdated,
+  keysetWhereUpdatedDesc,
 } from './keyset-cursor';
 
 const AT = new Date('2026-09-25T10:00:00.000Z');
@@ -85,5 +86,29 @@ describe('walking a mutable feed', () => {
         OR: [{ updatedAt: { gt: AT } }, { updatedAt: AT, id: { gt: 'row-5' } }],
       },
     ]);
+  });
+
+  it('walks backward on the same column for a person reading', () => {
+    expect(keysetWhereUpdatedDesc(CURSOR)).toEqual([
+      {
+        OR: [{ updatedAt: { lt: AT } }, { updatedAt: AT, id: { lt: 'row-5' } }],
+      },
+    ]);
+  });
+
+  /**
+   * Four functions, not two, because which *column* a feed walks and which
+   * *direction* it walks are independent questions: the column follows from
+   * whether rows can change after they are written, the direction from whether
+   * the reader is syncing or browsing.
+   */
+  it('keeps the column and the direction independent', () => {
+    expect(JSON.stringify(keysetWhereUpdatedDesc(CURSOR))).toContain(
+      'updatedAt',
+    );
+    expect(JSON.stringify(keysetWhereCreatedDesc(CURSOR))).toContain(
+      'createdAt',
+    );
+    expect(keysetWhereUpdatedDesc(undefined)).toEqual([]);
   });
 });

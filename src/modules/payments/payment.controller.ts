@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -23,6 +24,7 @@ import { ReceivableService } from './receivable.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 import { ReceivablesView, StatementView } from './dto/receivable.response';
+import { PaymentListView, PaymentView } from './dto/payment.response';
 
 /**
  * Taking money is the counter's job and the rep's on the route; reconciling it
@@ -56,17 +58,27 @@ export class PaymentController {
   @ApiOperation({
     summary: 'List payments, paged for delta sync',
     description:
-      'Keyset paging over (createdAt, id), the same shape sales and the stock ledger use.',
+      'Keyset paging over (updatedAt, id) — payments are mutable, because a void must reach a client that already synced the row. Two readers, one endpoint: a syncing client walks forward with the default `asc`, and a person browsing walks backward from today with `order=desc`.',
   })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['asc', 'desc'],
+    description:
+      '`asc` (the default) is the sync order. `desc` is for a person reading a list, newest first, and skips the one-second sync lag.',
+  })
+  @ApiOkResponse({ type: PaymentListView })
   findAll(
     @Query('customerId') customerId?: string,
     @Query('since') since?: string,
+    @Query('order') order?: string,
     @Query('cursor') cursor?: string,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
     return this.payments.findAll({
       customerId,
       since: since ? new Date(since) : undefined,
+      order: order === 'desc' ? 'desc' : undefined,
       cursor,
       limit,
     });
@@ -78,6 +90,7 @@ export class PaymentController {
     summary: 'Get a payment',
     description: 'With what it settled, and anything left over as credit.',
   })
+  @ApiOkResponse({ type: PaymentView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.payments.findOne(id);
   }
@@ -92,6 +105,7 @@ export class PaymentController {
     description:
       'One row per thing that happened: a single transfer settling three invoices is one payment with three allocations, so it still matches the bank statement. Omit `allocations` to settle the oldest invoices first; anything not allocated stays as credit on the customer. A negative amount is money handed back.',
   })
+  @ApiCreatedResponse({ type: PaymentView })
   create(@Body() dto: CreatePaymentDto) {
     return this.payments.create(dto);
   }
@@ -103,6 +117,7 @@ export class PaymentController {
     description:
       'For a data-entry mistake — a mis-keyed amount, a collection booked against the wrong customer. **Not** for a refund: money genuinely handed back is a negative payment, because it happened. The row is kept with its reason and whoever voided it, and stops counting toward any balance, so the invoices it had settled go back to being owed. A sales rep cannot void; correcting a collection is a supervisor’s call.',
   })
+  @ApiCreatedResponse({ type: PaymentView })
   voidPayment(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: VoidPaymentDto,
