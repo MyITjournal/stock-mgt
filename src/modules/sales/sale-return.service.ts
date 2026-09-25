@@ -10,6 +10,7 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { StockService, StockWriter } from '../inventory/stock.service';
+import { SaleView } from './dto/sale.response';
 import { CreateReturnDto } from './dto/create-return.dto';
 import { proportionOfLine } from './sale-pricing';
 import { SaleService } from './sale.service';
@@ -35,7 +36,7 @@ export class SaleReturnService {
     private readonly sales: SaleService,
   ) {}
 
-  async create(saleId: string, input: CreateReturnDto) {
+  async create(saleId: string, input: CreateReturnDto): Promise<SaleView> {
     const sale = await this.prisma.sale.findFirst({
       where: { id: saleId },
       include: { lines: true, returns: true },

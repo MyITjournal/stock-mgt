@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -21,6 +22,7 @@ import { PaymentService } from './payment.service';
 import { ReceivableService } from './receivable.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
+import { ReceivablesView, StatementView } from './dto/receivable.response';
 
 /**
  * Taking money is the counter's job and the rep's on the route; reconciling it
@@ -123,6 +125,7 @@ export class ReceivableController {
     description:
       'Every invoice with money still on it, longest outstanding first, with a total per customer. A list rather than 30/60/90 buckets — the question people actually ask is who has owed longest.',
   })
+  @ApiOkResponse({ type: ReceivablesView })
   outstanding(@Query('customerId') customerId?: string) {
     return this.receivables.outstanding({ customerId });
   }
@@ -134,6 +137,7 @@ export class ReceivableController {
     description:
       'Their outstanding invoices, their payments, and any credit from money no invoice has claimed yet.',
   })
+  @ApiOkResponse({ type: StatementView })
   statement(@Param('id', ParseUUIDPipe) id: string) {
     return this.receivables.statement(id);
   }
