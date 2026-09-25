@@ -536,6 +536,10 @@ describe('SaleService', () => {
       prisma.sale.findFirst.mockResolvedValue({
         id: 'sale-1',
         total: 1_080_000,
+        // The header sum. Absent from this fixture originally, which is why
+        // the leak below went unnoticed: the assertions could only check
+        // fields the mock actually carried.
+        costTotal: 900_000,
         lines: [
           {
             id: 'line-1',
@@ -560,6 +564,7 @@ describe('SaleService', () => {
 
       expect(sale.lines[0].costOfGoodsSold).toBe(900_000);
       expect(sale.returns[0].costAmount).toBe(83_000);
+      expect(sale.costTotal).toBe(900_000);
     });
 
     it('withholds it from a rep, who keeps the rest of the invoice', async () => {
@@ -575,6 +580,11 @@ describe('SaleService', () => {
       expect(sale.lines[0]).not.toHaveProperty('costOfGoodsSold');
       expect(sale.lines[0]).not.toHaveProperty('costIsEstimated');
       expect(sale.returns[0]).not.toHaveProperty('costAmount');
+
+      // And the same money summed onto the header, which is the form the leak
+      // actually took: the lines were redacted, `costTotal` was not, so the
+      // margin was one subtraction away from a rep reading their own invoice.
+      expect(sale).not.toHaveProperty('costTotal');
 
       // What they sold it for is theirs to see — they negotiated it.
       expect(sale.lines[0].unitPrice).toBe(540_000);

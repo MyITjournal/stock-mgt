@@ -1982,6 +1982,31 @@ export interface components {
              */
             role: "admin" | "user";
         };
+        CustomerView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Ngozi */
+            firstName: string;
+            middleName: string | null;
+            /** @example Okafor */
+            lastName: string | null;
+            email: string | null;
+            /** @example +2348030000000 */
+            phone: string | null;
+            /**
+             * Format: uuid
+             * @description Which price list this customer buys on. Null falls back to the default tier.
+             */
+            priceTierId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+        };
         CreateCustomerDto: {
             /**
              * Format: uuid
@@ -2086,6 +2111,21 @@ export interface components {
              */
             sortOrder?: number;
         };
+        PriceTierView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Retail */
+            name: string;
+            isDefault: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+        };
         CreatePriceTierDto: {
             /** Format: uuid */
             id?: string;
@@ -2107,6 +2147,182 @@ export interface components {
              * @example false
              */
             isDefault?: boolean;
+        };
+        CategoryView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Beverages */
+            name: string;
+            description: string | null;
+            /** Format: uuid */
+            parentId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+        };
+        PackagingTypeView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Carton */
+            name: string;
+            description: string | null;
+            /** @example 10 */
+            sortOrder: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+        };
+        ProductUnitView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            productId: string;
+            /** @example carton */
+            name: string;
+            /**
+             * @description How many base units one of these is. Stock is recorded in the unit whose factor is 1 (§2).
+             * @example 24
+             */
+            factor: number;
+            /** @description The one unit with `factor = 1`. */
+            isBase: boolean;
+            /** @description What the till offers first. */
+            isDefaultSelling: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ProductPriceView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            tierId: string;
+            /** Format: uuid */
+            unitId: string;
+            /**
+             * @description Tax-inclusive price of one `unitId`, in kobo.
+             * @example 1200000
+             */
+            price: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            tier: components["schemas"]["PriceTierView"];
+            unit: components["schemas"]["ProductUnitView"];
+        };
+        /** @enum {string} */
+        BarcodeSymbology: "EAN13" | "UPC_A" | "EAN8" | "ITF14" | "CODE128" | "QR" | "INTERNAL";
+        ProductBarcodeView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** @example 6154000010025 */
+            code: string;
+            symbology: components["schemas"]["BarcodeSymbology"];
+            isPrimary: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            unit: components["schemas"]["ProductUnitView"];
+        };
+        ProductView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example PEAK-400G */
+            sku: string;
+            /** @example Peak Milk Powder 400g */
+            name: string;
+            description: string | null;
+            /** Format: uuid */
+            categoryId: string | null;
+            /** Format: uuid */
+            packagingTypeId: string | null;
+            /**
+             * @description Tax-inclusive price of one **base** unit, in kobo. A unit without a tier row falls back to `basePrice × factor`, which is right for a sachet and wrong for a carton (§4).
+             * @example 50000
+             */
+            basePrice: number;
+            /** @description What one base unit last cost to buy. **Absent** for a role that may not see cost (§9); **null** when nothing has been bought yet. Never an input to stock valuation, which §2 values from lot totals instead. */
+            costPrice?: number | null;
+            /**
+             * @description VAT rate in basis points.
+             * @example 750
+             */
+            taxRateBps: number;
+            imageUrl: string | null;
+            imagePublicId: string | null;
+            /** @description In base units. Below this, the product shows as low stock. */
+            reorderPoint: number | null;
+            isActive: boolean;
+            /** @description False for a service or anything sold without touching the ledger. */
+            trackStock: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+            category: components["schemas"]["CategoryView"] | null;
+            packagingType: components["schemas"]["PackagingTypeView"] | null;
+            /** @description Smallest first — ordered by factor. */
+            units: components["schemas"]["ProductUnitView"][];
+            prices: components["schemas"]["ProductPriceView"][];
+            barcodes: components["schemas"]["ProductBarcodeView"][];
+        };
+        UnitTaxSplit: {
+            /** @description What the customer pays. */
+            gross: number;
+            /** @description The gross less the VAT inside it. */
+            net: number;
+            /** @description The VAT, derived by subtraction (§2). */
+            tax: number;
+        };
+        ResolvedUnitPrice: {
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** @example carton */
+            unitName: string;
+            /**
+             * @description How many base units one of these is.
+             * @example 24
+             */
+            baseQuantity: number;
+            /**
+             * @description Tax-inclusive, in kobo.
+             * @example 1200000
+             */
+            price: number;
+            /** @description False means no tier priced this unit and the price is `basePrice × factor` — right for a sachet, wrong for a carton. The till surfaces it so a wrong carton price is caught before the sale (§4). */
+            isTierPrice: boolean;
+            tax: components["schemas"]["UnitTaxSplit"];
         };
         ProductUnitInput: {
             /** @example carton */
@@ -2348,6 +2564,58 @@ export interface components {
             symbology?: "EAN13" | "UPC_A" | "EAN8" | "ITF14" | "CODE128" | "QR" | "INTERNAL";
             /** @description Use this code on printed labels. */
             isPrimary?: boolean;
+        };
+        ScannedProduct: {
+            /** Format: uuid */
+            id: string;
+            /** @example PEAK-400G */
+            sku: string;
+            /** @example Peak Milk Powder 400g */
+            name: string;
+            /** @description False for a service or a non-stocked line, which sells without touching the ledger. */
+            trackStock: boolean;
+        };
+        ScannedUnit: {
+            /** Format: uuid */
+            id: string;
+            /** @example carton */
+            name: string;
+            /**
+             * @description How many base units one of these is. The base unit is 1.
+             * @example 24
+             */
+            factor: number;
+        };
+        TaxSplit: {
+            /** @description What the customer pays. Prices are stored tax-inclusive (§2). */
+            gross: number;
+            /** @description The gross less the tax within it. */
+            net: number;
+            /** @description The VAT already inside the price, derived by subtraction. */
+            tax: number;
+        };
+        ScanResult: {
+            /**
+             * @description The code as stored, after normalisation.
+             * @example 6154000010025
+             */
+            code: string;
+            symbology: components["schemas"]["BarcodeSymbology"];
+            product: components["schemas"]["ScannedProduct"];
+            unit: components["schemas"]["ScannedUnit"];
+            /**
+             * @description How many base units one scan of this code represents, so scanning a carton adds 24 pieces to the ledger rather than one anonymous item.
+             * @example 24
+             */
+            baseQuantity: number;
+            /**
+             * @description Tax-inclusive price for one of `unit`, in kobo.
+             * @example 1200000
+             */
+            price: number;
+            /** @description True when a tier row priced this exact unit. False means the price is `basePrice × factor`, which is right for a sachet and wrong for a carton — the till shows it so a wrong carton price is visible before the sale, not after (§4). */
+            isTierPrice: boolean;
+            tax: components["schemas"]["TaxSplit"];
         };
         CreateLocationDto: {
             /**
@@ -2773,6 +3041,32 @@ export interface components {
              */
             reason: string;
         };
+        BankAccountView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example GTBank */
+            bankName: string;
+            /** @example Adebayo Stores Limited */
+            accountName: string;
+            /** @example 0123456789 */
+            accountNumber: string;
+            /** @example 058 */
+            bankCode: string | null;
+            /** @description Printed first on an invoice or statement (§6). */
+            isDefault: boolean;
+            /** @description An account with payments against it can never be deleted, only deactivated — the payments still have to reconcile (§11). */
+            isActive: boolean;
+            sortOrder: number;
+            note: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+        };
         CreateBankAccountDto: {
             /**
              * Format: uuid
@@ -2842,6 +3136,265 @@ export interface components {
             sortOrder?: number;
             /** @example POS settlement lands here. */
             note?: string;
+        };
+        SaleCustomerView: {
+            /** Format: uuid */
+            id: string;
+            /** @example Ngozi */
+            firstName: string;
+            /** @example Okafor */
+            lastName: string | null;
+            /** @example +2348030000000 */
+            phone: string | null;
+        };
+        NamedRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Main shop */
+            name: string;
+        };
+        RecordedByView: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+        };
+        SoldProductRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Peak Milk Powder 400g */
+            name: string;
+            /** @example PEAK-400G */
+            sku: string;
+        };
+        SoldUnitRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example carton */
+            name: string;
+            /** @example 24 */
+            factor: number;
+        };
+        SaleLineView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            saleId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            unitId: string;
+            /**
+             * @description As typed, counted in `unitId` — two cartons, not 48 pieces.
+             * @example 2
+             */
+            quantity: number;
+            /**
+             * @description What `unitId` meant at the time, copied so redefining a carton later cannot change what this sale took off the shelf.
+             * @example 24
+             */
+            unitFactor: number;
+            /**
+             * @description `quantity × unitFactor`.
+             * @example 48
+             */
+            baseQuantity: number;
+            /**
+             * @description Tax-inclusive price of one `unitId`, in kobo.
+             * @example 1200000
+             */
+            unitPrice: number;
+            /**
+             * @description `unitPrice × quantity`.
+             * @example 2400000
+             */
+            lineTotal: number;
+            /**
+             * @description The VAT rate at the time.
+             * @example 750
+             */
+            taxRateBps: number;
+            /**
+             * @description The VAT inside `lineTotal`, derived by subtraction (§2).
+             * @example 167442
+             */
+            taxAmount: number;
+            /** @description What these goods cost, from the batches FEFO actually picked. **Absent, not null,** for a role that may not see cost (§9). */
+            costOfGoodsSold?: number;
+            /** @description True when the cost above came from an estimated rate rather than an invoice — goods sold before their delivery was recorded (§2). Absent alongside the cost it qualifies. */
+            costIsEstimated?: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            product: components["schemas"]["SoldProductRef"];
+            unit: components["schemas"]["SoldUnitRef"];
+        };
+        SaleReturnView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            saleId: string;
+            /** Format: uuid */
+            saleLineId: string;
+            /**
+             * Format: uuid
+             * @description Groups the lines handed back in one visit.
+             */
+            returnGroupId: string;
+            /** @description In base units, always positive. */
+            quantity: number;
+            /** @description What the customer got back, in kobo. */
+            refundAmount: number;
+            /** @description The share of the line cost that came back with the goods. Absent for a role that may not see cost (§9). */
+            costAmount?: number;
+            /** @description False when the goods came back broken: the refund still happens, but nothing returns to sellable stock. */
+            restocked: boolean;
+            reason: string | null;
+            note: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        /** @enum {string} */
+        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
+        AllocatedPaymentRef: {
+            /** Format: uuid */
+            id: string;
+            method: components["schemas"]["PaymentMethod"];
+            /** @example FT26083012345 */
+            reference: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        SaleAllocationView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            paymentId: string;
+            /** Format: uuid */
+            saleId: string;
+            /** @description Signed, following the payment it belongs to (§5). */
+            amount: number;
+            /** Format: date-time */
+            createdAt: string;
+            payment: components["schemas"]["AllocatedPaymentRef"];
+        };
+        SaleView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /**
+             * @description Sequential per organization. The number a customer quotes on the phone; `id` is the one machines use.
+             * @example INV-0001
+             */
+            number: string;
+            /**
+             * Format: uuid
+             * @description Null for a walk-in.
+             */
+            customerId: string | null;
+            /** Format: uuid */
+            locationId: string;
+            /**
+             * Format: uuid
+             * @description The tier the prices were resolved against, kept so a sale stays explainable after the customer moves to another price list.
+             */
+            tierId: string | null;
+            /**
+             * @description Tax-inclusive, in kobo. The sum of its lines.
+             * @example 16200000
+             */
+            total: number;
+            /**
+             * @description The VAT inside `total`, frozen at sale time.
+             * @example 1130233
+             */
+            taxTotal: number;
+            /**
+             * @description What the goods on this invoice cost, rounded once (§2). **Absent, not null,** for a role that may not see cost — it is the sum of the per-line `costOfGoodsSold` beneath it, so leaving it while redacting them would hand over the same margin added up (§9).
+             * @example 2820000
+             */
+            costTotal?: number;
+            note: string | null;
+            /** @description Why this sale was allowed out on credit to a customer who already owed. Supplying the reason *is* the override, so one can never be recorded without it (§6). */
+            creditOverrideReason: string | null;
+            /**
+             * Format: date-time
+             * @description When it happened by the recording device's clock. `createdAt` is when the server stored it.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            customer: components["schemas"]["SaleCustomerView"] | null;
+            location: components["schemas"]["NamedRef"];
+            tier: components["schemas"]["NamedRef"] | null;
+            recordedBy: components["schemas"]["RecordedByView"] | null;
+            lines: components["schemas"]["SaleLineView"][];
+            returns: components["schemas"]["SaleReturnView"][];
+            /** @description Payments settling this invoice. Voided payments are excluded — one never settled anything, so counting it would show money that was never taken (§5). */
+            allocations: components["schemas"]["SaleAllocationView"][];
+            /** @description Settled by payments, signed. Derived, never stored. */
+            allocated: number;
+            /** @description Credited back by returns. */
+            refunded: number;
+            /** @description `total − allocated − refunded`. Positive: the customer owes. Negative: the business owes. */
+            balance: number;
+        };
+        SaleListView: {
+            sales: components["schemas"]["SaleView"][];
+            /** @description Pass back as `cursor` for the next page. Null at the end. */
+            nextCursor: string | null;
+            /**
+             * Format: date-time
+             * @description Rows created after this point are held back, so a client syncing on `createdAt` cannot skip a row written while the page was being built (§8).
+             */
+            syncedThrough: string;
+            hasMore: boolean;
+        };
+        ReceiptLineView: {
+            /** @example Peak Milk Powder 400g */
+            description: string;
+            /** @example carton */
+            unit: string;
+            /** @example 2 */
+            quantity: number;
+            /** @example 1200000 */
+            unitPrice: number;
+            /** @example 2400000 */
+            lineTotal: number;
+        };
+        SaleReceiptView: {
+            /** @example INV-0001 */
+            number: string;
+            /** Format: date-time */
+            occurredAt: string;
+            /** @example Ngozi Okafor */
+            customer: string | null;
+            /** @example Amina */
+            servedBy: string | null;
+            lines: components["schemas"]["ReceiptLineView"][];
+            /** @description Tax-inclusive. */
+            total: number;
+            /** @description The VAT already inside `total`. Prints as "of which", never added on top (§6). */
+            tax: number;
+            /** @description Settled so far, signed. */
+            paid: number;
+            /** @description What is still owed. */
+            balance: number;
+            note: string | null;
         };
         SalePaymentDto: {
             /**
@@ -3128,10 +3681,6 @@ export interface components {
             estimatedCost: number;
             estimatedLines: number;
             lastMonthOperating: number;
-        };
-        NamedRef: {
-            id: string;
-            name: string;
         };
         ExpiringBatchRow: {
             batchId: string;
@@ -3879,7 +4428,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CustomerView"][];
+                };
             };
         };
     };
@@ -4157,7 +4708,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PriceTierView"][];
+                };
             };
         };
     };
@@ -4262,7 +4815,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ProductView"][];
+                };
             };
         };
     };
@@ -4369,7 +4924,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ResolvedUnitPrice"];
+                };
             };
         };
     };
@@ -4477,7 +5034,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
             };
         };
     };
@@ -5463,7 +6022,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BankAccountView"][];
+                };
             };
         };
     };
@@ -5573,7 +6134,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SaleListView"];
+                };
             };
         };
     };
@@ -5597,7 +6160,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
             };
         };
     };
@@ -5616,7 +6181,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
             };
         };
     };
@@ -5635,7 +6202,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SaleReceiptView"];
+                };
             };
         };
     };

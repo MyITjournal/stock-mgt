@@ -211,6 +211,13 @@ new field that reveals what goods cost.** Two rules about redaction: it happens 
 `costOfGoodsSold` and would compute `NaN` against a redacted row; and a field is **removed, not
 zeroed**, because a zero reads as "free goods" to anything that sums it.
 
+**A third leak turned up on 2026-09-25, on an endpoint that sweep had already been through**:
+`GET /sales` redacted `costOfGoodsSold` line by line and passed the header's `costTotal` straight
+out — the same numbers summed, next to the `total` they sold at, which is the margin. Two lessons
+worth more than the fix: **redact the header and the lines together** (`SALE_COST_FIELDS` sits
+beside the other two in `sale.service.ts`), and **a redaction test proves nothing about a field its
+fixture does not set** — `not.toHaveProperty` passes happily on a mock that never had the key.
+
 Four more rules from that pass: **a negative payment needs the same authority as a void** (owner,
 manager, accountant — a cashier could otherwise cover a till shortage with a refund); **resetting a
 staff password or suspending someone revokes their sessions**, since the owner believes they have
@@ -326,10 +333,10 @@ Slice 7, planned in §17. **Vite + React + TypeScript**, with its own `package.j
 `npm install` and `npm run dev` from inside `web/`. It reaches the API over HTTP at `VITE_API_URL`
 and shares no code with it.
 
-**Where it has got to: 7.0 (foundation, sign-in) and 7.1 (home) are done. 7.2 is the till** — scan
-or search, cart, units, price override, payment, receipt. The slice table and the two till rules
-worth fixing before writing it are in §17. Both servers have to be running to work on this: the API
-on 4000, then `npm run dev` in `web/` on 5173, which `CORS_ORIGINS` already allows.
+**Where it has got to: 7.0 (foundation, sign-in), 7.1 (home) and 7.2 (the till) are done — a sale
+can be rung up in a browser. 7.3 is next**: sales history, returns, customers, statements, PDFs.
+The slice table is in §17. Both servers have to be running to work on this: the API on 4000, then
+`npm run dev` in `web/` on 5173, which `CORS_ORIGINS` already allows.
 
 - **Types are generated, never hand-written.** `npm run api:types` in `web/` regenerates
   `src/api/schema.d.ts` from the running server's `/docs-json`. **Re-run it whenever an endpoint or
@@ -350,6 +357,23 @@ on 4000, then `npm run dev` in `web/` on 5173, which `CORS_ORIGINS` already allo
 - **Money is displayed, never computed.** The one exception is the till's running total, which is
   exact only because prices are tax-inclusive — see `lib/money.ts`.
 - **Role checks in the UI are navigation, not security.** The server enforces every one of them.
+
+Four more from the till (7.2), all in `web/src/till/`:
+
+- **The stable thing across a retry is the `id`, not the `Idempotency-Key`.** The key is bound to a
+  hash of the request body, so an override retry — which adds a reason — is correctly refused if it
+  reuses one. The cart mints `saleId` and a `saleLineId` per line **once** and keeps them; each
+  attempt carries a fresh key. Getting this backwards makes every override fail with a 409.
+- **The browser never works out a price.** Changing a unit or a customer re-prices through
+  `GET /products/:id/price`. And **always pass `tierId`** — the customer's tier, else the default —
+  because omitting it makes the server return the `basePrice × factor` fallback for everything,
+  which is the carton overcharge §4 exists to prevent.
+- **`unitPrice` is sent on every line.** The price was on the screen and probably said out loud, so
+  it is what the customer pays; letting the server re-derive it lets the receipt disagree with the
+  screen.
+- **A 409 is a rule, not an error.** Not enough stock and "this customer still owes" both come back
+  as refusals an owner or manager overrides with a reason, and **supplying the reason is the
+  override**. A cashier sees the refusal and no dialog.
 
 The root `tsconfig.json` and the jest config are scoped to `src` and `test` so `web/` cannot break
 `npm run typecheck` or `npx jest` at the root. Keep it that way.

@@ -1,21 +1,9 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { BarcodeSymbology } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { splitTaxInclusive } from '../../common/money/money';
 import { detectSymbology, normaliseCode } from './barcode';
-
-export interface ScanResult {
-  code: string;
-  symbology: BarcodeSymbology;
-  product: { id: string; sku: string; name: string; trackStock: boolean };
-  unit: { id: string; name: string; factor: number };
-  /** How many base units one scan of this code represents. */
-  baseQuantity: number;
-  price: number;
-  isTierPrice: boolean;
-  tax: { gross: number; net: number; tax: number };
-}
+import { ScanResult } from './dto/scan.response';
 
 /**
  * The single seam every scan goes through.

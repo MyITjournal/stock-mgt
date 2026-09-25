@@ -1457,9 +1457,24 @@ Recorded because each cost real time and none is obvious.
 ## 14. Where things stand
 
 **Slices 0–6.6 done, plus the 6.1 gap-closing pass, two security passes, and staff
-management and working hours.** 424 tests across 33 suites, twenty-four migrations,
-`typecheck`/`lint`/`build` clean, `npm audit` at **0 vulnerabilities**, and `npm run smoke` green
-at 369 checks against a running server.
+management and working hours. On the web side, 7.0, 7.1 and 7.2 are done — a sale can be rung
+up in a browser.** 424 tests across 33 suites, twenty-four migrations,
+`typecheck`/`lint`/`build` clean in both trees, `npm audit` at **0 vulnerabilities**, and
+`npm run smoke` green at 369 checks against a running server.
+
+**Slice 7.2 — the till — landed 2026-09-25**, decided and recorded in §17. Scan or search into a
+cart, unit and price editing, customer, payment, receipt, and dialogs for both overridable 409s.
+Two things from it belong here rather than only in §17:
+
+- **A third cost leak, on an endpoint §9 had already swept.** `GET /sales` redacted
+  `costOfGoodsSold` per line and handed over the header `costTotal`, which is those same numbers
+  summed — the margin, to a `sales_rep`, beside the price they sold at. Fixed in `forReading` and
+  verified live as a rep. It survived because **the test's fixture never carried the field it was
+  asserting the absence of**, which is worth checking in any redaction test.
+- **The `Idempotency-Key` is bound to a hash of the request body.** A retry that adds a reason is a
+  different body and is correctly refused as a mismatch. What makes two attempts one sale is the
+  **client-supplied `id`** (§8), not the key — the till mints its sale and line ids once per cart
+  and a fresh key per attempt.
 
 **Slice 6.6 — vendor payables — landed 2026-09-19**, decided and recorded in §16. It is the door §6
 left open: "what do I owe this supplier" became a question the owner actually asked, so vendor
@@ -1754,6 +1769,21 @@ sign in as, so it is covered by construction rather than by demonstration.
 ---
 
 ## 15. Next
+
+**The immediate next thing is slice 7.3** — sales history, returns, customers, statements and the
+PDFs — then 7.4 through 7.6, then the deploy at item 1 below. The slice table and what each one
+owes are in §17; this list is everything that sits outside it.
+
+Two small things 7.2 left behind, neither blocking:
+
+- **`GET /sales/:id/receipt` is fetched after `POST /sales`**, a second round trip for a payload
+  the sale response almost contains. Fine on a shop's wifi, worth collapsing if a till ever feels
+  slow — the receipt is deliberately its own narrow shape, so the fix is to return both rather
+  than to widen one.
+- **The till guesses which 409 it is from the message text.** Credit is matched on its wording and
+  everything else is treated as a stock shortfall. A machine-readable code on the server would end
+  the guessing; a wrong guess currently costs a clear refusal rather than a wrong sale, which is
+  why it was not worth a response-shape change mid-slice.
 
 0. **Rate-limit state is in memory, and that becomes wrong the moment there are two instances.**
    The only finding from the 2026-09-18 review left unfixed, because there is no fix worth making
@@ -2298,7 +2328,7 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 |---|---|---|
 | 7.0 | Foundation: `web/`, routing, generated types, cookie auth, role guards, `<Money>`, one table and one form pattern | **done 2026-09-19** |
 | 7.1 | Home — the single `GET /reports/dashboard` call | **done 2026-09-22** |
-| 7.2 | The till — scan or search, cart, units, price override, payment, receipt | A sale can be rung up |
+| 7.2 | The till — scan or search, cart, units, price override, payment, receipt | **done 2026-09-25** |
 | 7.3 | Sales history, returns, customers, statements, PDFs | |
 | 7.4 | Money — receivables, payables, supplier bills and payments, expenses, bank accounts | |
 | 7.5 | Stock and catalog — products, units, prices, barcodes, goods receipts, levels, adjustments, transfers, stocktake | |
@@ -2374,3 +2404,61 @@ attempt picked the *wrong* organization — several smoke runs leave orgs with i
 sale counts, and the one chosen predated payables, so the panel read zero and looked like a bug in
 the screen. When a dashboard reads empty, check which tenant you are looking at before debugging
 the query.
+
+### 7.2, the till, and the cost leak it found
+
+Built 2026-09-25. A sale can be rung up on the web: scan or search, cart with unit and price
+editing, customer, payment, receipt, and both overrides.
+
+**Seven endpoints got response types**, because a screen cannot consume what the contract does not
+describe: `GET /scan/:code`, `GET /products`, `GET /products/:id/price`, `GET /price-tiers`,
+`GET /customers`, `GET /bank-accounts`, and the sale trio — `POST /sales`, `GET /sales/:id` and
+`GET /sales/:id/receipt`, where the first two share `SaleView` because `create` ends in
+`return this.findOne(saleId)`. 132 operations still return `content?: never`; they get types as
+the slice that reads them is built.
+
+**Writing one down found a live cost leak.** `forReading` redacted `costOfGoodsSold` per line and
+`costAmount` per return, and passed the invoice header's `costTotal` straight through — the sum of
+exactly the numbers being removed. A `sales_rep` reading their own invoice got `total` ₦162,000
+beside `costTotal` ₦28,200, which is the whole margin, on the endpoint §9 had already been through
+once. Verified live against a running server as a rep before and after the fix.
+
+Two things made it survive a dedicated security sweep, and both are worth remembering:
+
+- **The unit test asserted the redaction it could see.** Its fixture never set `costTotal`, so
+  `expect(sale).not.toHaveProperty('costTotal')` would have passed on a sale that never had one.
+  A redaction test is only as good as the fields its fixture carries.
+- **Nobody had written the shape down.** §9's sweep read the code; the leak needed the response
+  *enumerated* — field by field, deciding for each one whether it belongs — before it was obvious.
+  That is an argument for response types beyond typing the client.
+
+**The idempotency key is bound to a hash of the body, and the till was designed wrongly first.**
+The first version kept one key per sale and reused it across an override retry, reasoning that a
+retry supplying a reason is "the same sale". It is not the same *request*: adding `forcedReason`
+changes the body, `hashBody` changes, and the interceptor correctly answers `mismatch` with a 409.
+So the override would have failed every time.
+
+The stable thing is **the ids, not the key** (§8). The cart mints `saleId` and a `saleLineId` per
+line once and keeps them, so two attempts describe one sale; each attempt carries a fresh
+`Idempotency-Key`. `api.post` reuses a key across its own retry behind a refreshed session, which
+is the case idempotency is actually protecting.
+
+**The browser never works out a price.** Switching a piece to a carton, or naming a customer on
+another tier, re-prices through `GET /products/:id/price` — because the fallback for a unit with no
+tier row is `basePrice × factor` (§4), and that is arithmetic. Doing it client-side would be a
+second pricing implementation and the first thing to disagree with a receipt. The till also passes
+`tierId` on every lookup, resolved as the customer's tier or the default: **omitting it makes the
+server return the fallback for everything**, which is the carton overcharge §4 exists to prevent.
+
+**`unitPrice` is sent on every line, never left for the server to resolve.** The price was on the
+screen and very likely said out loud, so that is what the customer pays. The consequence is that
+changing tier has to re-price the cart rather than let the server surprise it.
+
+**Verified by walking the till's exact request sequence** against the running API — same paths,
+same payloads, same ids — rather than by asserting the components render. The load-bearing check is
+that the cart preview equals the receipt total: ₦2,400.00 both sides, with ₦167.44 of VAT *inside*
+it. Overselling by one unit refused with a 409 naming the shortfall, and an owner forced it through
+with a reason. `npm run smoke` passed 369 checks afterwards, so the ledger still balances.
+
+**Not verified in a browser.** There is no Playwright or headless Chromium in this environment, so
+the rendering is unchecked — the wiring, the arithmetic and the refusals are not.

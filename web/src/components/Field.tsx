@@ -1,4 +1,9 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type {
+  ComponentProps,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+} from 'react';
 
 /**
  * Form primitives, deliberately not a form engine.
@@ -47,7 +52,12 @@ export function Field({
   );
 }
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+/**
+ * `ComponentProps<'input'>` rather than `InputHTMLAttributes`, so `ref` passes
+ * through: React 19 hands a function component its ref as an ordinary prop, and
+ * the till needs one to keep the scan box focused.
+ */
+export function Input(props: ComponentProps<'input'>) {
   const { className = '', ...rest } = props;
   return <input {...rest} className={`${inputStyles} ${className}`.trim()} />;
 }
