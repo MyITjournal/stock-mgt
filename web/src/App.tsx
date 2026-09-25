@@ -11,6 +11,10 @@ import { SalesPage } from './sales/SalesPage';
 import { SaleDetailPage } from './sales/SaleDetailPage';
 import { CustomersPage } from './customers/CustomersPage';
 import { CustomerDetailPage } from './customers/CustomerDetailPage';
+import { MoneyLayout } from './money/MoneyLayout';
+import { ReceivablesPage } from './money/ReceivablesPage';
+import { PaymentsPage } from './money/PaymentsPage';
+import { BankAccountsPage } from './money/BankAccountsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,10 +55,11 @@ export default function App() {
                 <Route path="sales/:id" element={<SaleDetailPage />} />
                 <Route path="customers" element={<CustomersPage />} />
                 <Route path="customers/:id" element={<CustomerDetailPage />} />
-                <Route
-                  path="money"
-                  element={<ComingSoon title="Money" slice="7.4" />}
-                />
+                <Route path="money" element={<MoneyLayout />}>
+                  <Route index element={<ReceivablesPage />} />
+                  <Route path="payments" element={<PaymentsPage />} />
+                  <Route path="accounts" element={<BankAccountsPage />} />
+                </Route>
                 <Route
                   path="stock"
                   element={<ComingSoon title="Stock" slice="7.5" />}
