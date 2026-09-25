@@ -1462,6 +1462,12 @@ in a browser, and the sales, returns, customer and statement screens are live.**
 34 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
 **0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
 
+**Slice 7.4a — money in — landed 2026-09-26**, recorded in §17. One rule from it is general enough
+to belong here: **the one-second sync lag is a safeguard for a forward-walking cursor, and a
+browsing reader must skip it.** Leaving it on made a payment recorded a moment earlier vanish from
+the list that refetched, which reads as a lost payment. The same latent bug was in `GET /sales` and
+is fixed in both.
+
 **Slice 7.3 landed 2026-09-25**, recorded in §17. The one API change it needed is worth knowing
 here: **`GET /sales` serves two readers now**, a syncing client walking forward and a person
 browsing backward, split by `order` which defaults to the sync behaviour. The till's other lesson
@@ -1776,8 +1782,8 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ## 15. Next
 
-**The immediate next thing is slice 7.4** — receivables, payables, supplier bills and payments,
-expenses and bank accounts — then 7.5 and 7.6, then the deploy at item 1 below. The slice table and
+**The immediate next thing is slice 7.4b** — payables, supplier bills and payments, expenses —
+then 7.5 and 7.6, then the deploy at item 1 below. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
 **A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
@@ -2374,7 +2380,8 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 | 7.1 | Home — the single `GET /reports/dashboard` call | **done 2026-09-22** |
 | 7.2 | The till — scan or search, cart, units, price override, payment, receipt | **done 2026-09-25** |
 | 7.3 | Sales history, returns, customers, statements, PDFs | **done 2026-09-25** |
-| 7.4 | Money — receivables, payables, supplier bills and payments, expenses, bank accounts | |
+| 7.4a | Money in — receivables, customer payments, allocation, void, bank accounts | **done 2026-09-26** |
+| 7.4b | Money out — payables, supplier bills and payments, expenses | |
 | 7.5 | Stock and catalog — products, units, prices, barcodes, goods receipts, levels, adjustments, transfers, stocktake | |
 | 7.6 | Reports and settings — every report screen, organization letterhead, staff, working hours | v1 is closed |
 
@@ -2557,3 +2564,51 @@ one that broke it.
 dashboard's `DebtorRow` describes the same rows. Both sit on declared return types over the same
 value, so the compiler checks them against each other and they cannot drift silently. Collapsing
 them is a tidy-up for whenever §17's reports slice touches that file.
+
+### 7.4a, and the sync lag that made a screen look broken
+
+Built 2026-09-26. Split from 7.4 so money-in ships on its own: receivables grouped per customer,
+recording a payment with or without explicit allocation, voiding, refunding, and bank accounts.
+Money-out — payables, supplier bills and payments, expenses — is 7.4b.
+
+**The sync lag is a sync safeguard, and browsing now skips it.** `GET /payments` held back
+everything newer than one second, so a payment recorded a moment earlier was missing from the list
+that refetched right after recording it. On screen that reads as a lost payment, not as caution.
+
+The lag exists so a *forward-walking cursor* cannot advance past a row that was still committing —
+unrecoverable, because the cursor never goes back. Reading newest-first has the opposite exposure:
+new rows arrive at the top, above wherever the reader has paged to, so a late commit is never
+stepped over. Verified both ways: the row is absent from the `asc` feed and present in `desc`
+immediately, and backward paging still returns no overlap.
+
+**The same latent bug was in `GET /sales`, and the comment there argued for keeping it.** 7.3's
+version applied the lag to both orders, reasoning that letting them disagree would be confusing to
+explain. That was wrong in a way only visible on a screen, and it is now corrected in both places.
+Worth recording as a pattern: *a safeguard written for one reader is not automatically right for
+another*, and this is the second time that has bitten in the same endpoint pair.
+
+**`keysetWhereUpdatedDesc` makes four cursor helpers, not two**, and the reason they do not collapse
+is that they answer independent questions. Which *column* a feed walks follows from whether its
+rows can change after they are written — `createdAt` for the append-only ledger, `updatedAt` for
+payments, because a void must reach a client that already synced the row (§8). Which *direction*
+follows from whether the reader is syncing or browsing. Eleven tests, including one asserting the
+two stay independent.
+
+**Allocation is offered as two honest choices, never a guess.** Either the server settles the
+oldest invoices first, or the person says exactly which invoice gets what — there is no third mode
+where the UI spreads money cleverly and nobody can tell what it decided (§5). Verified: an explicit
+allocation settles exactly the named invoice; over-allocating one is a 409 naming what is
+outstanding; and a payment larger than the whole debt leaves the remainder as credit rather than
+pushing it somewhere. That last check initially "failed" because `allocateOldest` walks the *whole*
+list — paying more than one invoice simply settles the next one too, which is correct and was a
+wrong assumption in the test rather than a bug.
+
+**Void and refund are kept apart in words, not just in code.** Both make an invoice owed again, so
+they look interchangeable from outside — but a void says the money never moved, while a refund is
+real money out that a bank statement will show. Choosing wrong makes the books disagree with the
+bank with nothing on screen to explain why. The void dialog therefore states what a void *means*
+before asking for a reason, and offers "record money going back instead" as a way out.
+
+**Voided payments stay on the payments feed and never appear on a statement.** The feed is the
+audit trail, where the mistake and its correction both have to be legible; a statement is the
+customer's position, where a line claiming money moved when it never did is worse than no line.

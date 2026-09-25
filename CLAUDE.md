@@ -333,9 +333,9 @@ Slice 7, planned in §17. **Vite + React + TypeScript**, with its own `package.j
 `npm install` and `npm run dev` from inside `web/`. It reaches the API over HTTP at `VITE_API_URL`
 and shares no code with it.
 
-**Where it has got to: 7.0 (foundation, sign-in), 7.1 (home), 7.2 (the till) and 7.3 (sales,
-returns, customers, statements, PDFs) are done. 7.4 is next**: receivables, payables, supplier
-bills and payments, expenses, bank accounts. The slice table is in §17. Both servers have to be
+**Where it has got to: 7.0 (foundation, sign-in), 7.1 (home), 7.2 (the till), 7.3 (sales, returns,
+customers, statements, PDFs) and 7.4a (money in — receivables, payments, allocation, void,
+accounts) are done. 7.4b is next**: payables, supplier bills and payments, expenses. The slice table is in §17. Both servers have to be
 running to work on this: the API on 4000, then `npm run dev` in `web/` on 5173, which
 `CORS_ORIGINS` already allows.
 
@@ -378,16 +378,29 @@ Four more from the till (7.2), all in `web/src/till/`:
 
 And three from 7.3:
 
-- **`GET /sales` serves two readers.** `order=desc` plus `since`/`until` is the browsing half;
+- **`GET /sales` and `GET /payments` each serve two readers.** `order=desc` is the browsing half;
   `asc` is the sync default and must stay that way. Walking forward, `since` is a starting position
   a cursor overrides; walking backward, `since`/`until` are plain filters applied beside the cursor.
-  The date bounds filter `createdAt`, so the screen is a ledger of what was *recorded* — reports use
-  `occurredAt` and answer a different question.
+  **Browsing also skips the one-second sync lag** — that lag stops a forward cursor stepping over a
+  row still committing, and leaving it on made a just-recorded payment vanish from the list that
+  refetched. Date bounds filter `createdAt`, so the screen is a ledger of what was *recorded* —
+  reports use `occurredAt` and answer a different question.
 - **PDFs go through `api.document`, never a plain link.** A raw navigation cannot run the refresh,
   so a link shows a JSON 401 instead of an invoice once the 15-minute token expires. Revoke the
   object URL on a timer, not immediately — immediately races the new tab.
 - **A damaged return refunds money and writes no stock movement.** `restocked: false` means crushed
   goods never become sellable again, so the till must ask rather than default it.
+
+Two from 7.4a:
+
+- **Void and refund must stay distinguishable on screen.** Both make an invoice owed again, so they
+  look interchangeable — but a void says the money never moved and a refund is real money out that
+  a bank statement will show. The void dialog says what a void *means* and offers the alternative.
+  **Voided payments stay on the payments feed** (the audit trail) and **never appear on a
+  statement** (the customer's position).
+- **Allocation is two honest choices, never a guess.** Oldest-first, or exactly which invoice gets
+  what. Over-allocating one invoice is a 409; money beyond the whole debt stays as credit. Note
+  `allocateOldest` walks the *entire* list, so paying more than one invoice settles the next too.
 
 **Quantities are integers everywhere, and half a carton is six pieces.** Typing `0.5` is refused at
 three layers on purpose. Stock lives in base units, so a fraction of a bigger unit is a whole
