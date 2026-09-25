@@ -329,6 +329,12 @@ HTTP at `VITE_API_URL` and shares no code with it.
   `src/api/schema.d.ts` from the running server's `/docs-json`. **Re-run it whenever an endpoint or
   DTO changes**, or the UI types against yesterday's contract and nothing says so. Nothing in
   `web/` may import from Prisma.
+- **Response shapes only exist in the contract where an endpoint declares one.** NestJS cannot
+  infer a return type, so an endpoint with no `@ApiOkResponse` generates `content?: never` and the
+  client is typing blind. **Every endpoint a screen reads needs a response class** —
+  `reports/dto/dashboard.response.ts` is the pattern. The class must be the **service's declared
+  return type** (`build(): Promise<DashboardView>`), not a hand-written mirror of it: a mirror
+  drifts silently and gets believed anyway. Added per endpoint as each slice consumes it.
 - **Every request goes through `src/api/client.ts`.** It sends cookies, retries once behind a
   *single shared* refresh, and puts an `Idempotency-Key` on every write. Do not call `fetch`
   directly — concurrent refreshes trip the server's token-reuse detection and log the person out.

@@ -2297,7 +2297,7 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 | Slice | What | Done when |
 |---|---|---|
 | 7.0 | Foundation: `web/`, routing, generated types, cookie auth, role guards, `<Money>`, one table and one form pattern | **done 2026-09-19** |
-| 7.1 | Home — the single `GET /reports/dashboard` call | The stack is proven end to end |
+| 7.1 | Home — the single `GET /reports/dashboard` call | **done 2026-09-22** |
 | 7.2 | The till — scan or search, cart, units, price override, payment, receipt | A sale can be rung up |
 | 7.3 | Sales history, returns, customers, statements, PDFs | |
 | 7.4 | Money — receivables, payables, supplier bills and payments, expenses, bank accounts | |
@@ -2335,3 +2335,42 @@ person out. The client therefore keeps a single in-flight refresh that every 401
 cookie alone; `POST /auth/refresh` rotates from the cookie alone; the session survives it. The
 cookie path had been complete on the server since §15 item 11, but nothing had ever exercised it
 from another origin.
+
+### 7.1, and the hole it found in the contract
+
+Built 2026-09-22.
+
+**The generated types described what we send, not what we read.** The OpenAPI
+document carried paths, path and query parameters, headers and request bodies — DTOs have
+`@ApiProperty`, so those came through in full — but **all 142 operations returned
+`content?: never`**. NestJS cannot infer a controller's return shape, and no controller declared
+one, so every client was left to hand-write what it read back. §17's promise that "a screen cannot
+drift from the contract without the build saying so" held for half of it.
+
+**The fix is a response type the service is annotated with, not one that describes it.**
+`DashboardService.build(): Promise<DashboardView>` means a field changing shape is a compile error
+in the API. A response class that merely mirrors what a service happens to return is *worse than
+nothing*: it drifts silently and is trusted anyway. Declared per endpoint, as the slice that
+consumes it is built — the alternative, typing all 142 at once, is weeks before anybody sees a
+screen.
+
+**Annotating it found a real weakness immediately.** `groupByCustomer` in `receivable.service.ts`
+typed its `customer` as `unknown`. It never was: the `select` above it says exactly what the shape
+is. Widening it meant every caller either re-narrowed it or, more often, quietly gave up on knowing
+— and the dashboard could not describe its own response until it was fixed. It is now `DebtorGroup`,
+and it carries `phone`, because chasing a debt is a phone call and the query already fetched it.
+
+**`npm run api:types` never worked, and CLAUDE.md told people to run it.** npm executes scripts
+through `cmd.exe` on Windows, so `${API_DOCS_URL:-http://localhost:4000/docs-json}` was passed
+through as a *literal filename* and openapi-typescript failed looking for a file by that name. It
+only appeared to work in 7.0 because the generation was run by hand as `npx openapi-typescript
+<url>`. Now a small Node script that reads `process.env` identically on every platform, and says
+what to check when the document cannot be read.
+
+**Verified with real data rather than an empty organization.** Signed in as the org the smoke suite
+builds and rendered the live payload: ₦1,532,000 owed to vendors across 7 bills, ₦1,507,800 bought
+over 5 deliveries, ₦108,000 owed by customers, 30 days of trend. Worth noting because the first
+attempt picked the *wrong* organization — several smoke runs leave orgs with identical names and
+sale counts, and the one chosen predated payables, so the panel read zero and looked like a bug in
+the screen. When a dashboard reads empty, check which tenant you are looking at before debugging
+the query.
