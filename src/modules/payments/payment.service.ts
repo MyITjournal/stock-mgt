@@ -17,6 +17,7 @@ import {
   decodeCursor,
   encodeCursor,
   keysetWhereUpdated,
+  keysetWhereUpdatedDesc,
 } from '../../common/pagination/keyset-cursor';
 import {
   AllocationRequest,
@@ -27,6 +28,7 @@ import {
 import { LIVE_ALLOCATIONS, saleBalance } from './balance';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
+import { PaymentListView, PaymentView } from './dto/payment.response';
 
 /**
  * Who may record money leaving the till.
@@ -50,6 +52,11 @@ export interface PaymentQuery {
   since?: Date;
   cursor?: string;
   limit?: number;
+  /**
+   * `asc` is the sync order and the default. `desc` is for a person reading a
+   * list, newest first — the same split `GET /sales` makes (§17).
+   */
+  order?: 'asc' | 'desc';
 }
 
 const PAYMENT_INCLUDE = {
@@ -94,7 +101,7 @@ export class PaymentService {
     private readonly bankAccounts: BankAccountService,
   ) {}
 
-  async create(input: CreatePaymentDto) {
+  async create(input: CreatePaymentDto): Promise<PaymentView> {
     if (input.amount === 0) {
       throw new BadRequestException('A payment of zero records nothing');
     }
@@ -215,20 +222,36 @@ export class PaymentService {
    * must upsert by id rather than append. That is the right trade: a duplicate
    * is a no-op, a missed void is money the business does not have.
    */
-  async findAll(query: PaymentQuery = {}) {
+  async findAll(query: PaymentQuery = {}): Promise<PaymentListView> {
     const limit = Math.min(query.limit ?? DEFAULT_PAGE, MAX_PAGE);
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
+    const browsing = query.order === 'desc';
     const syncedThrough = new Date(Date.now() - SYNC_LAG_MS);
 
     const rows = await this.prisma.payment.findMany({
       where: {
         ...(query.customerId && { customerId: query.customerId }),
         AND: [
-          { updatedAt: { lte: syncedThrough } },
-          ...keysetWhereUpdated(cursor, query.since),
+          // The one-second lag is a *sync* safeguard and is deliberately not
+          // applied when browsing. Its job is to stop a forward-walking cursor
+          // advancing past a row that was still committing, which is
+          // unrecoverable because the cursor never goes back. A person reading
+          // newest-first has the opposite exposure: new rows arrive at the top,
+          // above wherever they have paged to, so a late commit is never
+          // stepped over.
+          //
+          // Leaving it on made the payments screen look broken — a payment just
+          // recorded was missing from the list that refetched right after it,
+          // for one second.
+          ...(browsing ? [] : [{ updatedAt: { lte: syncedThrough } }]),
+          ...(browsing
+            ? keysetWhereUpdatedDesc(cursor)
+            : keysetWhereUpdated(cursor, query.since)),
         ],
       },
-      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      orderBy: browsing
+        ? [{ updatedAt: 'desc' }, { id: 'desc' }]
+        : [{ updatedAt: 'asc' }, { id: 'asc' }],
       take: limit,
       include: PAYMENT_INCLUDE,
     });
@@ -246,7 +269,7 @@ export class PaymentService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<PaymentView> {
     const payment = await this.prisma.payment.findFirst({
       where: { id },
       include: PAYMENT_INCLUDE,
@@ -269,7 +292,7 @@ export class PaymentService {
    * downstream counts it: `LIVE_ALLOCATIONS` drops it out of every balance, so
    * the invoices it had settled go back to being owed.
    */
-  async voidPayment(id: string, input: VoidPaymentDto) {
+  async voidPayment(id: string, input: VoidPaymentDto): Promise<PaymentView> {
     const payment = await this.findOne(id);
 
     if (payment.voidedAt) {

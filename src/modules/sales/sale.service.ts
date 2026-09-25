@@ -381,11 +381,19 @@ export class SaleService {
         ...(query.customerId && { customerId: query.customerId }),
         ...(query.locationId && { locationId: query.locationId }),
         AND: [
-          // The one-second lag applies to both orders. It is there so a sync
-          // cannot step over a row still committing, and while a browser has
-          // no cursor to corrupt, letting the two disagree about what exists
-          // would be a confusing thing to explain later.
-          { createdAt: { lte: syncedThrough } },
+          // The one-second lag is a *sync* safeguard, so browsing skips it.
+          // It exists to stop a forward-walking cursor advancing past a row
+          // that was still committing — unrecoverable, because the cursor
+          // never goes back. Reading newest-first has the opposite exposure:
+          // new rows arrive at the top, above wherever the reader has paged to,
+          // so a late commit is never stepped over.
+          //
+          // This once read "applies to both orders", on the grounds that
+          // letting them disagree would be confusing. That was wrong in a way
+          // only visible on screen: a row written a moment ago is missing from
+          // the list that refetches right after writing it, which reads as a
+          // bug rather than as caution. Found on the payments list in 7.4.
+          ...(browsing ? [] : [{ createdAt: { lte: syncedThrough } }]),
           ...(browsing
             ? [
                 // Both bounds are plain filters here; the cursor only says how
