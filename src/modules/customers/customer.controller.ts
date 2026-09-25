@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -35,12 +36,14 @@ export class CustomerController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a customer' })
+  @ApiOkResponse({ type: CustomerView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.svc.findOne(id);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a customer' })
+  @ApiCreatedResponse({ type: CustomerView })
   create(@Body() dto: CreateCustomerDto) {
     return this.svc.create(dto);
   }
@@ -51,6 +54,7 @@ export class CustomerController {
     description:
       'Chiefly how a customer is moved onto another price list, which is what decides the prices on their next sale.',
   })
+  @ApiOkResponse({ type: CustomerView })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCustomerDto,

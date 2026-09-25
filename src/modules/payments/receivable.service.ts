@@ -2,6 +2,12 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { LIVE_ALLOCATIONS, saleBalance } from './balance';
+import {
+  DebtorCustomer,
+  DebtorGroup,
+  ReceivablesView,
+  StatementView,
+} from './dto/receivable.response';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -21,7 +27,9 @@ export class ReceivableService {
    * Every invoice with money still on it, longest outstanding first, plus a
    * total per customer so the list can be read either way round.
    */
-  async outstanding(filter: { customerId?: string } = {}) {
+  async outstanding(
+    filter: { customerId?: string } = {},
+  ): Promise<ReceivablesView> {
     const sales = await this.prisma.sale.findMany({
       where: { ...(filter.customerId && { customerId: filter.customerId }) },
       orderBy: [{ occurredAt: 'asc' }, { number: 'asc' }],
@@ -67,7 +75,7 @@ export class ReceivableService {
    * One customer's position: their invoices, their payments, and any credit
    * they are holding from money that was never put against an invoice.
    */
-  async statement(customerId: string) {
+  async statement(customerId: string): Promise<StatementView> {
     const customer = await this.prisma.customer.findFirst({
       where: { id: customerId, deletedAt: null },
       select: { id: true, firstName: true, lastName: true, phone: true },
@@ -104,26 +112,6 @@ export class ReceivableService {
       owed: invoices.reduce((total, sale) => total + sale.balance, 0),
     };
   }
-}
-
-/**
- * Who an unpaid invoice belongs to. Null on a walk-in, which has no account.
- *
- * `phone` is here because chasing a debt is a phone call — the whole point of
- * the list is to act on it — and because the `select` above already fetches it.
- */
-interface DebtorCustomer {
-  id: string;
-  firstName: string;
-  lastName: string | null;
-  phone: string | null;
-}
-
-export interface DebtorGroup {
-  customer: DebtorCustomer | null;
-  balance: number;
-  invoices: number;
-  oldestDays: number;
 }
 
 function groupByCustomer(

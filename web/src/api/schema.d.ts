@@ -1310,8 +1310,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List sales, paged for delta sync
-         * @description Keyset paging over (createdAt, id), the same shape the stock ledger uses. The window stops a second short of now so a sale still committing cannot be stepped over.
+         * List sales, for delta sync or for reading
+         * @description Keyset paging over (createdAt, id), the same shape the stock ledger uses. The window stops a second short of now so a sale still committing cannot be stepped over. Two readers, one endpoint: a syncing client walks forward from where it stopped, and a person browsing walks backward from today with `order=desc` and a date range.
          */
         get: operations["SaleController_findAll"];
         put?: never;
@@ -3041,6 +3041,97 @@ export interface components {
              */
             reason: string;
         };
+        DebtorCustomer: {
+            /** Format: uuid */
+            id: string;
+            /** @example Ngozi */
+            firstName: string;
+            lastName: string | null;
+            /** @description Here because chasing a debt is a phone call — the point of the list is to act on it. */
+            phone: string | null;
+        };
+        OutstandingInvoice: {
+            /** Format: uuid */
+            id: string;
+            /** @example INV-0001 */
+            number: string;
+            /** Format: date-time */
+            occurredAt: string;
+            /** @description Null on a walk-in, which has no account — but a walk-in invoice can still carry a balance if goods went back after payment. */
+            customer: components["schemas"]["DebtorCustomer"] | null;
+            /** @description Tax-inclusive invoice total. */
+            total: number;
+            /** @description Settled by payments, signed. */
+            allocated: number;
+            /** @description Credited back by returns. */
+            refunded: number;
+            /** @description `total − allocated − refunded`. Positive: they owe. Negative: the business does. */
+            balance: number;
+            /** @description Whole days since the sale. The field the list sorts on. */
+            daysOutstanding: number;
+        };
+        DebtorGroup: {
+            customer: components["schemas"]["DebtorCustomer"] | null;
+            balance: number;
+            /** @description How many invoices make up that balance. */
+            invoices: number;
+            /** @description Age of the oldest, in days. */
+            oldestDays: number;
+        };
+        ReceivablesView: {
+            /** @description Longest outstanding first. */
+            invoices: components["schemas"]["OutstandingInvoice"][];
+            /** @description The same money grouped per customer, oldest debt first. */
+            byCustomer: components["schemas"]["DebtorGroup"][];
+            /** @description Owed **to** the business. Money owed back to a customer is excluded rather than netted off — the two are different problems and summing them hides both. */
+            totalOutstanding: number;
+        };
+        /** @enum {string} */
+        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
+        StatementAllocation: {
+            amount: number;
+        };
+        StatementPayment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            customerId: string | null;
+            /** Format: uuid */
+            locationId: string | null;
+            /** @description Signed: positive in, negative back out, so a refund is an ordinary payment row rather than a second table (§5). */
+            amount: number;
+            method: components["schemas"]["PaymentMethod"];
+            /** Format: uuid */
+            bankAccountId: string | null;
+            reference: string | null;
+            note: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            voidedAt: string | null;
+            voidedReason: string | null;
+            /** Format: uuid */
+            voidedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description What this payment was put against. */
+            allocations: components["schemas"]["StatementAllocation"][];
+        };
+        StatementView: {
+            customer: components["schemas"]["DebtorCustomer"];
+            invoices: components["schemas"]["OutstandingInvoice"][];
+            payments: components["schemas"]["StatementPayment"][];
+            /** @description Money received that no invoice has claimed yet. It stays with the customer rather than being spread cleverly across invoices (§5). */
+            credit: number;
+            /** @description The sum of the balances above. */
+            owed: number;
+        };
         BankAccountView: {
             /** Format: uuid */
             id: string;
@@ -3261,8 +3352,6 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
-        /** @enum {string} */
-        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
         AllocatedPaymentRef: {
             /** Format: uuid */
             id: string;
@@ -3647,13 +3736,6 @@ export interface components {
             byMethod: components["schemas"]["MethodTotal"][];
             /** @description Sold this month and not yet collected. Deliberately separate from sales: on a credit route the two diverge, and the gap is the cash position. */
             uncollectedThisMonth: number;
-        };
-        DebtorCustomer: {
-            id: string;
-            firstName: string;
-            lastName: string | null;
-            /** @description Chasing a debt is a phone call, so the list carries the number. */
-            phone: string | null;
         };
         DebtorRow: {
             /** @description Null for walk-in sales, which carry no customer row. */
@@ -4451,7 +4533,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CustomerView"];
+                };
             };
         };
     };
@@ -4470,7 +4554,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CustomerView"];
+                };
             };
         };
     };
@@ -4493,7 +4579,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CustomerView"];
+                };
             };
         };
     };
@@ -5983,7 +6071,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReceivablesView"];
+                };
             };
         };
     };
@@ -6002,7 +6092,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StatementView"];
+                };
             };
         };
     };
@@ -6120,6 +6212,10 @@ export interface operations {
                 locationId?: string;
                 /** @description ISO date-time. Ignored when a cursor is given. */
                 since?: string;
+                /** @description ISO date-time upper bound. Browsing only — a sync has no reason to stop early. */
+                until?: string;
+                /** @description `asc` (the default) is the sync order. `desc` is for a person reading a list, newest first. */
+                order?: "asc" | "desc";
                 /** @description The nextCursor from the previous page, passed back verbatim. */
                 cursor?: string;
                 limit?: number;
@@ -6230,7 +6326,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
             };
         };
     };

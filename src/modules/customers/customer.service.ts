@@ -31,7 +31,7 @@ const SETS_CUSTOMER_TIER: OrgRole[] = [OrgRole.owner, OrgRole.manager];
 export class CustomerService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
-  async create(input: CreateCustomerDto) {
+  async create(input: CreateCustomerDto): Promise<CustomerView> {
     if (input.priceTierId) {
       this.assertMaySetTier();
       await this.assertTierExists(input.priceTierId);
@@ -55,7 +55,7 @@ export class CustomerService {
    * Mostly here so a customer can be moved onto another price list — a retail
    * buyer who grows into a wholesale one.
    */
-  async update(id: string, input: UpdateCustomerDto) {
+  async update(id: string, input: UpdateCustomerDto): Promise<CustomerView> {
     const existing = await this.findOne(id);
 
     // Checked against what it currently is, so re-sending the same tier with a
@@ -103,7 +103,7 @@ export class CustomerService {
     return this.prisma.customer.findMany({ where: { deletedAt: null } });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<CustomerView> {
     const customer = await this.prisma.customer.findFirst({
       where: { id, deletedAt: null },
     });
