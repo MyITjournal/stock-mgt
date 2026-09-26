@@ -181,7 +181,15 @@ export function HomePage() {
               },
               {
                 header: 'Margin',
-                cell: (row) => `${(row.marginBps / 100).toFixed(1)}%`,
+                // `marginBps` is a cost field, so the contract types it as
+                // possibly absent — `redactCost` removes the key rather than
+                // nulling it. This endpoint is closed to anyone who would be
+                // redacted, so it is always here in practice, but printing
+                // `NaN%` on the day that changes is not worth the saved line.
+                cell: (row) =>
+                  row.marginBps === undefined
+                    ? '—'
+                    : `${(row.marginBps / 100).toFixed(1)}%`,
                 numeric: true,
               },
             ]}
