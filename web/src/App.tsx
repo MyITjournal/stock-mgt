@@ -28,6 +28,14 @@ import { ReceiveDeliveryPage } from './stock/ReceiveDeliveryPage';
 import { CountsPage } from './stock/CountsPage';
 import { CountSheetPage } from './stock/CountSheetPage';
 import { PlacesPage } from './stock/PlacesPage';
+import { ReportsLayout } from './reports/ReportsLayout';
+import { ProfitPage } from './reports/ProfitPage';
+import { SalesReportPage } from './reports/SalesReportPage';
+import { PurchasesPage } from './reports/PurchasesPage';
+import { CollectionsPage } from './reports/CollectionsPage';
+import { StockReportPage } from './reports/StockReportPage';
+import { MoversPage } from './reports/MoversPage';
+import { TargetsPage } from './reports/TargetsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -93,10 +101,15 @@ export default function App() {
                   element={<ReceiptDetailPage />}
                 />
                 <Route path="stock/counts/:id" element={<CountSheetPage />} />
-                <Route
-                  path="reports"
-                  element={<ComingSoon title="Reports" slice="7.6" />}
-                />
+                <Route path="reports" element={<ReportsLayout />}>
+                  <Route index element={<ProfitPage />} />
+                  <Route path="sales" element={<SalesReportPage />} />
+                  <Route path="purchases" element={<PurchasesPage />} />
+                  <Route path="collections" element={<CollectionsPage />} />
+                  <Route path="stock" element={<StockReportPage />} />
+                  <Route path="movers" element={<MoversPage />} />
+                  <Route path="targets" element={<TargetsPage />} />
+                </Route>
                 <Route
                   path="settings"
                   element={<ComingSoon title="Settings" slice="7.6" />}
