@@ -49,7 +49,33 @@ const MAX_PAGE = 500;
 
 export interface PaymentQuery {
   customerId?: string;
+  /**
+   * Means two different things by direction, and the difference is the point.
+   *
+   * **Syncing** (`asc`): a position in the `updatedAt` walk — "what has
+   * changed since I last asked". A cursor overrides it.
+   *
+   * **Browsing** (`desc`): a bound on `occurredAt` — "payments taken in
+   * September". Somebody reading this list is asking when the *money moved*,
+   * not when the row was last touched; filtering on `updatedAt` would drag a
+   * September payment into today because it was voided this morning.
+   */
   since?: Date;
+  /** The upper bound on `occurredAt`. Browsing only, like `until` on sales. */
+  until?: Date;
+  /** One method, for the reconciliation question: "show me the transfers". */
+  method?: PaymentMethod;
+  /**
+   * Browsing only, and deliberately so.
+   *
+   * Voided payments stay on this feed because it is the audit trail, and a
+   * **syncing** client must always receive them — that a void reaches a
+   * client that already holds the row is the entire reason this feed walks
+   * `updatedAt` rather than `createdAt` (§8). Hiding them from a sync would
+   * reintroduce the bug that ordering choice exists to prevent, so the filter
+   * applies to the browsing walk only.
+   */
+  includeVoided?: boolean;
   cursor?: string;
   limit?: number;
   /**
@@ -231,6 +257,10 @@ export class PaymentService {
     const rows = await this.prisma.payment.findMany({
       where: {
         ...(query.customerId && { customerId: query.customerId }),
+        // Safe on either walk: a method is a fact about the row rather than a
+        // position in the feed, so narrowing by it cannot make a sync skip
+        // anything it would otherwise have been told about.
+        ...(query.method && { method: query.method }),
         AND: [
           // The one-second lag is a *sync* safeguard and is deliberately not
           // applied when browsing. Its job is to stop a forward-walking cursor
@@ -245,7 +275,21 @@ export class PaymentService {
           // for one second.
           ...(browsing ? [] : [{ updatedAt: { lte: syncedThrough } }]),
           ...(browsing
-            ? keysetWhereUpdatedDesc(cursor)
+            ? [
+                // `since` used to be accepted here and silently dropped — the
+                // browsing branch applied the cursor and nothing else — so a
+                // date filter on the payments screen did nothing at all. Both
+                // bounds are ordinary filters beside the cursor, as on sales;
+                // walking backwards, the starting position is the newest row.
+                //
+                // They bound `occurredAt`, not the `updatedAt` this feed is
+                // ordered by: ordering is a property of the feed, filtering is
+                // a question about the money.
+                ...(query.since ? [{ occurredAt: { gte: query.since } }] : []),
+                ...(query.until ? [{ occurredAt: { lte: query.until } }] : []),
+                ...(query.includeVoided === false ? [{ voidedAt: null }] : []),
+                ...keysetWhereUpdatedDesc(cursor),
+              ]
             : keysetWhereUpdated(cursor, query.since)),
         ],
       },

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
+import { Field, Input, Select } from '../components/Field';
 import { Money } from '../components/Money';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
@@ -12,6 +13,7 @@ import { VoidPaymentDialog } from './VoidPaymentDialog';
 
 type PaymentListView = components['schemas']['PaymentListView'];
 type PaymentView = components['schemas']['PaymentView'];
+type CustomerView = components['schemas']['CustomerView'];
 
 /** Who may void a payment, or hand money back. Mirrors the server. */
 const MAY_REVERSE = ['owner', 'manager', 'accountant'];
@@ -31,17 +33,37 @@ export function PaymentsPage() {
   const { user } = useAuth();
   const mayReverse = user !== null && MAY_REVERSE.includes(user.orgRole);
 
+  const [customerId, setCustomerId] = useState('');
+  const [since, setSince] = useState('');
+  const [until, setUntil] = useState('');
+  const [method, setMethod] = useState('');
+  const [showVoided, setShowVoided] = useState(true);
+
   const [voiding, setVoiding] = useState<PaymentView | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const query = new URLSearchParams({ order: 'desc', limit: '100' });
+  if (customerId) query.set('customerId', customerId);
+  // The end of the chosen day, not its midnight: somebody picking 1-7
+  // September means the whole of the seventh.
+  if (since) query.set('since', new Date(since).toISOString());
+  if (until) query.set('until', new Date(`${until}T23:59:59.999`).toISOString());
+  if (method) query.set('method', method);
+  if (!showVoided) query.set('includeVoided', 'false');
+
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers'],
+    queryFn: () => api.get<CustomerView[]>('/customers'),
+  });
+
   const { data, isPending } = useQuery({
-    queryKey: ['payments'],
+    queryKey: ['payments', query.toString()],
     // `order=desc` is the browsing half of a feed that also serves delta sync.
     // It is not only about order: the sync path holds back rows newer than a
     // second, so without this a payment recorded a moment ago is missing from
     // the list that refetches right after recording it.
-    queryFn: () => api.get<PaymentListView>('/payments?order=desc&limit=100'),
+    queryFn: () => api.get<PaymentListView>(`/payments?${query}`),
   });
 
   const invalidate = () => {
@@ -100,6 +122,79 @@ export function PaymentsPage() {
 
   return (
     <Page title="Payments" description="Money in, and money handed back.">
+      <div className="mb-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Field label="Customer" htmlFor="payment-customer">
+          <Select
+            id="payment-customer"
+            value={customerId}
+            onChange={(event) => setCustomerId(event.target.value)}
+          >
+            <option value="">Everyone</option>
+            {customers.map((customer) => (
+              <option key={customer.id} value={customer.id}>
+                {`${customer.firstName} ${customer.lastName ?? ''}`.trim()}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <Field label="From" htmlFor="payment-since">
+          <Input
+            id="payment-since"
+            type="date"
+            value={since}
+            onChange={(event) => setSince(event.target.value)}
+          />
+        </Field>
+
+        <Field label="To" htmlFor="payment-until">
+          <Input
+            id="payment-until"
+            type="date"
+            value={until}
+            onChange={(event) => setUntil(event.target.value)}
+          />
+        </Field>
+
+        <Field label="How" htmlFor="payment-method">
+          <Select
+            id="payment-method"
+            value={method}
+            onChange={(event) => setMethod(event.target.value)}
+          >
+            <option value="">Any method</option>
+            <option value="cash">Cash</option>
+            <option value="transfer">Transfer</option>
+            <option value="pos">POS</option>
+            <option value="cheque">Cheque</option>
+          </Select>
+        </Field>
+
+        <div className="flex items-end">
+          {/*
+            On by default. Voided payments belong on this list — it is the
+            audit trail, where a mistake and its correction both have to be
+            legible — so hiding them is something you ask for while
+            reconciling against a statement, not the state you find it in.
+          */}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showVoided}
+              onChange={(event) => setShowVoided(event.target.checked)}
+            />
+            <span className="text-slate-700">Show voided</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Dates bound when the money moved, not when the row was last
+          touched — so voiding a September payment today does not move it
+          into today's window. */}
+      <p className="mb-4 text-xs text-slate-500">
+        Dates filter when the payment was taken.
+      </p>
+
       {isPending && <p className="text-sm text-slate-500">Loading…</p>}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseBoolPipe,
   ParseIntPipe,
   ParseUUIDPipe,
   Post,
@@ -16,7 +17,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { OrgRole } from '@prisma/client';
+import { OrgRole, PaymentMethod } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { PaymentService } from './payment.service';
@@ -52,7 +53,30 @@ export class PaymentController {
   @Get()
   @Roles(...MONEY_HANDLERS)
   @ApiQuery({ name: 'customerId', required: false })
-  @ApiQuery({ name: 'since', required: false, description: 'ISO date-time.' })
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description:
+      'ISO date-time. Syncing, a position in the `updatedAt` walk that a cursor overrides; browsing, a lower bound on `occurredAt` — when the money moved.',
+  })
+  @ApiQuery({
+    name: 'until',
+    required: false,
+    description: 'ISO date-time. An upper bound on `occurredAt`, for browsing.',
+  })
+  @ApiQuery({
+    name: 'method',
+    required: false,
+    enum: PaymentMethod,
+    description: 'One method — the reconciliation question.',
+  })
+  @ApiQuery({
+    name: 'includeVoided',
+    required: false,
+    type: Boolean,
+    description:
+      'Defaults to true: voided payments belong on this feed, which is the audit trail. Pass false to hide them while reconciling. **Browsing only** — a syncing client must always be told about a void, which is why this feed walks `updatedAt` at all.',
+  })
   @ApiQuery({ name: 'cursor', required: false })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiOperation({
@@ -71,6 +95,10 @@ export class PaymentController {
   findAll(
     @Query('customerId') customerId?: string,
     @Query('since') since?: string,
+    @Query('until') until?: string,
+    @Query('method') method?: PaymentMethod,
+    @Query('includeVoided', new ParseBoolPipe({ optional: true }))
+    includeVoided?: boolean,
     @Query('order') order?: string,
     @Query('cursor') cursor?: string,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
@@ -78,6 +106,9 @@ export class PaymentController {
     return this.payments.findAll({
       customerId,
       since: since ? new Date(since) : undefined,
+      until: until ? new Date(until) : undefined,
+      method,
+      includeVoided,
       order: order === 'desc' ? 'desc' : undefined,
       cursor,
       limit,
