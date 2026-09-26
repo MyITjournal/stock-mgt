@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
@@ -24,6 +25,7 @@ type CategoryView = components['schemas']['CategoryView'];
  * facts that look the same on a screen.
  */
 export function ProductsPage() {
+  const navigate = useNavigate();
   const seesCost = useSeesCost();
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -105,7 +107,11 @@ export function ProductsPage() {
               </tr>
             )}
             {products.map((product) => (
-              <tr key={product.id} className="hover:bg-slate-50">
+              <tr
+                key={product.id}
+                className="cursor-pointer transition hover:bg-slate-50"
+                onClick={() => navigate(`/stock/products/${product.id}`)}
+              >
                 <td className="px-4 py-3">
                   <div className="font-medium text-slate-900">
                     {product.name}
@@ -134,17 +140,31 @@ export function ProductsPage() {
                   </td>
                 )}
                 <td className="px-4 py-3 text-right">
+                  {/*
+                    Both buttons stop propagation: the row navigates to the
+                    product page, and a button inside it must do its own thing
+                    instead, not as well. Retire needs this as much as Edit —
+                    opening a confirmation and changing page at the same time
+                    would leave somebody confirming a dialog on top of a screen
+                    they did not ask for.
+                  */}
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="secondary"
-                      onClick={() => setEditing(product)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setEditing(product);
+                      }}
                     >
                       Edit
                     </Button>
                     {product.isActive && (
                       <Button
                         variant="ghost"
-                        onClick={() => setRetiring(product)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setRetiring(product);
+                        }}
                       >
                         Retire
                       </Button>
