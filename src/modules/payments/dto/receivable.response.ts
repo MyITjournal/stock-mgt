@@ -76,8 +76,17 @@ export class DebtorGroup {
   @ApiProperty({ type: () => DebtorCustomer, nullable: true })
   customer!: DebtorCustomer | null;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Owed **to** the business: the invoices in credit are not netted off it, which is the same rule `totalOutstanding` follows. Summing these across the groups gives exactly that headline — they used to disagree, because this one netted and the headline did not.',
+  })
   balance!: number;
+
+  @ApiProperty({
+    description:
+      'Owed **back**, as a positive number: goods returned after an invoice was paid, or money taken twice. Reported beside the balance rather than subtracted from it, because the two are different debts and netting hides both.',
+  })
+  credit!: number;
 
   @ApiProperty({ description: 'How many invoices make up that balance.' })
   invoices!: number;
@@ -101,9 +110,15 @@ export class ReceivablesView {
 
   @ApiProperty({
     description:
-      'Owed **to** the business. Money owed back to a customer is excluded rather than netted off — the two are different problems and summing them hides both.',
+      'Owed **to** the business. Money owed back to a customer is excluded rather than netted off — the two are different problems and summing them hides both. Equal to the sum of `byCustomer[].balance`.',
   })
   totalOutstanding!: number;
+
+  @ApiProperty({
+    description:
+      'Owed **back**, as a positive number — the other half of the same picture, and equal to the sum of `byCustomer[].credit`. Reported so that excluding it from `totalOutstanding` does not make it disappear: a credit nobody can see is one nobody honours.',
+  })
+  totalCredit!: number;
 }
 
 export class StatementAllocation {
