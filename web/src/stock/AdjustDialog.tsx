@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useIsManager, useSeesCost } from '../auth/useAuth';
 import { OverrideDialog } from '../till/OverrideDialog';
 import { useProductUnits, toBaseUnits } from './units';
@@ -97,8 +98,7 @@ export function AdjustDialog({
         ...(forcedReason ? { force: true, forcedReason } : {}),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['stock-levels'] });
-      void queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) => {

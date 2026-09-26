@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Field, Input } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
 import { Actions, Shell } from './StaffPage';
 
@@ -67,7 +68,7 @@ export function StaffHoursDialog({
         ignoresWorkingHours: exempt,
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['staff'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>

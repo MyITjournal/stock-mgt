@@ -4,6 +4,7 @@ import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -157,7 +158,7 @@ export function ProductForm({
           });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['products'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>

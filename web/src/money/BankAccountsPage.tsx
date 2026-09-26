@@ -4,6 +4,7 @@ import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Field, Input } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -41,7 +42,7 @@ export function BankAccountsPage() {
         isActive: input.isActive,
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
+      afterWrite(queryClient);
       setError(null);
     },
     onError: (caught) =>
@@ -153,7 +154,7 @@ function AccountDialog({ onClose }: { onClose: () => void }) {
         isDefault,
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['bank-accounts'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>
