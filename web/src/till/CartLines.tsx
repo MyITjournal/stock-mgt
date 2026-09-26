@@ -1,5 +1,6 @@
 import { Money } from '../components/Money';
 import { MoneyInput, Select } from '../components/Field';
+import { QuantityInput } from '../components/QuantityInput';
 import { Button } from '../components/Button';
 import { isOverridden, lineTotal, type CartLine } from './cart';
 
@@ -91,22 +92,12 @@ export function CartLines({
               </td>
 
               <td className="px-4 py-3">
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  aria-label={`Quantity of ${line.productName}`}
+                <QuantityInput
+                  label={`Quantity of ${line.productName}`}
                   value={line.quantity}
                   disabled={busy}
-                  onChange={(event) => {
-                    const next = Number(event.target.value);
-                    // A till cannot sell nothing, and a negative quantity is a
-                    // return — a different act with its own screen in 7.3.
-                    if (Number.isInteger(next) && next >= 1) {
-                      onQuantityChange(line.key, next);
-                    }
-                  }}
-                  className="w-20 rounded-md border border-slate-300 bg-white px-2 py-2 text-sm tabular-nums focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  onChange={(next) => onQuantityChange(line.key, next)}
+                  className="w-20"
                 />
               </td>
 
