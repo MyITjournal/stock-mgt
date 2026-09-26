@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SalesGroupRow } from './report.response';
 
 /**
  * What `GET /reports/dashboard` returns.
@@ -268,38 +269,6 @@ class AttentionSummary {
   forcedMovements!: number;
 }
 
-class MoverRow {
-  @ApiProperty()
-  key!: string;
-
-  @ApiProperty()
-  label!: string;
-
-  @ApiProperty()
-  grossSales!: number;
-
-  @ApiProperty()
-  revenue!: number;
-
-  @ApiProperty()
-  returned!: number;
-
-  @ApiProperty()
-  cogs!: number;
-
-  @ApiProperty()
-  grossProfit!: number;
-
-  @ApiProperty()
-  marginBps!: number;
-
-  @ApiProperty({ description: 'Base units sold, net of what came back.' })
-  units!: number;
-
-  @ApiProperty()
-  invoices!: number;
-}
-
 class DeadStockProduct {
   @ApiProperty()
   id!: string;
@@ -320,11 +289,11 @@ class DeadStockRow {
 }
 
 class MoversSummary {
-  @ApiProperty({ type: () => [MoverRow] })
-  topByRevenue!: MoverRow[];
+  @ApiProperty({ type: () => [SalesGroupRow] })
+  topByRevenue!: SalesGroupRow[];
 
-  @ApiProperty({ type: () => [MoverRow] })
-  topByUnits!: MoverRow[];
+  @ApiProperty({ type: () => [SalesGroupRow] })
+  topByUnits!: SalesGroupRow[];
 
   @ApiProperty({ type: () => [DeadStockRow] })
   deadStock!: DeadStockRow[];

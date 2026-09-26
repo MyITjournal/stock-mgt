@@ -36,7 +36,7 @@ and a wholesale route have to coexist in the same model rather than one being as
 | 6.1 | Gap-closing: sync correctness, cash-up, the no-credit rule, images, stocktake | done |
 | 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | done |
 | 6.6 | **Vendor payables**: what I owe, supplier payments, purchases summary | done |
-| 7 | **Web dashboard** — v1 does not ship without it; planned in §17 as 7.0–7.6 | 7.0–7.5b done; **7.6 next** |
+| 7 | **Web dashboard** — v1 does not ship without it; planned in §17 as 7.0–7.6 | 7.0–7.6a done; **7.6b next** |
 | — | **Deploy to Render** — free tier, once the dashboard exists | after 7 |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
@@ -1457,11 +1457,17 @@ Recorded because each cost real time and none is obvious.
 ## 14. Where things stand
 
 **Slices 0–6.6 done, plus the 6.1 gap-closing pass, two security passes, and staff
-management and working hours. On the web side, 7.0 through 7.5b are done — a sale can be rung up
-in a browser, and the sales, money, catalog and stock screens are live. Only 7.6, reports and
+management and working hours. On the web side, 7.0 through 7.6a are done — a sale can be rung up
+in a browser, and the sales, money, catalog, stock and report screens are live. Only 7.6b,
 settings, stands between here and v1.** 445 tests across
 34 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
 **0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
+
+**Slice 7.6a — reports — landed 2026-09-26**, recorded in §17. It typed the seventeen remaining
+report and purchase-target endpoints, and collapsing a duplicated row type found a latent `NaN`:
+`MoverRow.cogs` was declared required while the value behind it comes from a redacted path. The
+general lesson is worth keeping — **a duplicated type is a second chance to be wrong, and the copy
+is the one nobody re-checks.**
 
 **Slice 7.5b — stock — landed 2026-09-26**, recorded in §17. It typed the whole inventory module,
 which had been returning `content?: never` on every endpoint, and closed two gaps that only a
@@ -1800,9 +1806,9 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ## 15. Next
 
-**The immediate next thing is slice 7.6** — reports and settings: every report screen, the
-organization letterhead, staff and working hours. It is the last slice of the web dashboard, and
-v1 is closed when it lands; then the deploy at item 1 below. The slice table and
+**The immediate next thing is slice 7.6b** — settings: the organization letterhead, staff and
+working hours. It is the last slice of the web dashboard, and v1 is closed when it lands; then
+the deploy at item 1 below. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
 **A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
@@ -2403,7 +2409,8 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 | 7.4b | Money out — payables, supplier bills and payments, expenses | **done 2026-09-26** |
 | 7.5a | Catalog — products, units, prices, barcodes, categories, packaging types, tiers | **done 2026-09-26** |
 | 7.5b | Stock — levels, batches, movements, goods receipts, adjustments, transfers, locations, suppliers, stocktake | **done 2026-09-26** |
-| 7.6 | Reports and settings — every report screen, organization letterhead, staff, working hours | v1 is closed |
+| 7.6a | Reports — profit, sales, purchases, collections, stock, movers, purchase targets | **done 2026-09-26** |
+| 7.6b | Settings — organization letterhead, staff, working hours | v1 is closed |
 
 Each is independently deployable. After 7.2 the application is genuinely usable, which is the
 earliest point worth putting in front of a real shop.
@@ -2782,3 +2789,58 @@ still sum to levels.
 
 **Still not verified in a browser** — there is no Playwright or headless Chromium here, so the
 wiring, the arithmetic and the refusals are checked and the rendering is not.
+
+### 7.6a, and a duplicate that had been hiding a wrong type
+
+Built 2026-09-26. Profit, the sales slice, purchases, collections, stock, movers and purchase
+targets. Split from 7.6 because the settings half is self-contained and this half is large:
+**seventeen endpoints had no response type** — every report but the dashboard, and all six target
+routes. 84 of 142 operations now declare one, against 69 before it.
+
+**Collapsing `MoverRow` into `SalesGroupRow` found a latent bug.** §17 recorded the duplication as
+"a tidy-up for whenever the reports slice touches that file", and doing it turned out to matter:
+`MoverRow.cogs` was declared **required**, while the value behind it comes from a redacted path
+where the key is removed. The compiler caught `HomePage` printing `${row.marginBps / 100}%`
+against a possibly-absent field — which would have rendered `NaN%` the day that endpoint ever
+served a redacted caller. It is closed to those roles today, so nothing was broken in practice;
+what was broken was the *type*, which claimed a guarantee the producer does not make.
+
+Worth stating generally: **a duplicated type is not merely redundant, it is a second chance to be
+wrong**, and the copy is the one nobody re-checks.
+
+**The period picker sends a name, never a date range.** Periods resolve in `Organization.timezone`
+(§6), so a browser working out "this month" from its own clock would put a shop in Lagos an hour
+out of step with its own reports — silently, and only near midnight. The client sends `period=month`
+and renders the window the server resolved; a custom range is the one case it sends dates, and the
+server still interprets them in the shop's zone. The window lives in the URL, so switching tabs
+keeps it and a link to a particular report over a particular month is a link somebody can send.
+
+**`/reports/sales` was the one to check, and it holds.** It is the only report open to a rep, and
+it is the exact shape of the leak 7.2 shipped on `GET /sales`: rows redacted one at a time with a
+header total — the same numbers summed — beside them. The walkthrough signs in as a real rep and
+asserts `cogs`, `grossProfit` and `marginBps` are absent from **every row and from the totals**,
+against a response that actually has rows in it. It also asserts the other nine cost-bearing
+reports answer 403 rather than a redacted 200, which is the right answer for a report that is
+*entirely* buying-price data.
+
+**`TARGET_INCLUDE` was `product: true`**, which returned the whole product row including
+`costPrice`. No leak — the controller is owner, manager and accountant only — but §9's rule is
+**select, never exclude**, and an allow-list means the next column added to `Product` is invisible
+here until somebody adds it deliberately. Narrowed to the four fields a screen renders.
+
+**One figure was deliberately not shown.** The collections screen lays "collected" beside "sold",
+because on a credit route they diverge and the gap is the cash position. The obvious third card —
+one minus the other — is absent, and for two reasons worth keeping apart: money is displayed
+rather than computed in the browser, *and* that subtraction would be wrong anyway, because
+collections in a window include payments against invoices from months ago. The screen explains the
+difference in words and points at `/receivables`, which answers the question properly.
+
+**Verified against the running server**: 57 checks over the exact requests the screens make.
+Periods echo back a resolved window in `Africa/Lagos`; half a custom range is refused rather than
+guessed; the profit statement adds up line by line (`revenue = gross − VAT − returns`,
+`grossProfit = revenue − cogs`, `operatingProfit = grossProfit − expenses`); every one of the
+seven sales groupings answers; collections' method rows sum to their headline; and target progress
+is `max(0, target − achieved)` on every live target.
+
+**Still not verified in a browser** — no Playwright or headless Chromium here, so the wiring, the
+arithmetic and the refusals are checked and the rendering is not.

@@ -336,10 +336,11 @@ and shares no code with it.
 **Where it has got to: 7.0 (foundation, sign-in), 7.1 (home), 7.2 (the till), 7.3 (sales, returns,
 customers, statements, PDFs) and 7.4 (money — receivables, payments, allocation, void,
 accounts, payables, supplier bills and payments, expenses), 7.5a (catalog — products, units,
-prices, categories, packaging types, tiers) and 7.5b (stock — on hand with its lots, deliveries,
-the movement ledger, adjustments, transfers, counts, locations and vendors) are done. 7.6 is
-next and closes v1**: reports and settings — every report screen, the organization letterhead,
-staff, working hours. The slice table is in §17. Both servers have to be
+prices, categories, packaging types, tiers), 7.5b (stock — on hand with its lots, deliveries,
+the movement ledger, adjustments, transfers, counts, locations and vendors) and 7.6a (reports —
+profit, sales, purchases, collections, stock, movers, purchase targets) are done. 7.6b is
+next and closes v1**: settings — the organization letterhead, staff, working hours. The slice
+table is in §17. Both servers have to be
 running to work on this: the API on 4000, then `npm run dev` in `web/` on 5173, which
 `CORS_ORIGINS` already allows.
 
@@ -429,6 +430,22 @@ And four from 7.5b, in `web/src/stock/`:
 - **A surplus needs a lot, and an unvalued one reads as free.** Bringing stock on asks for the lot
   code, expiry and what it is worth rather than silently opening an empty batch. Deliveries say out
   loud that they raise a bill on *We owe* — the goods value on a receipt is not what is owed.
+
+And three from 7.6a, in `web/src/reports/`:
+
+- **The period picker sends a period *name*, never a date range.** Periods resolve in
+  `Organization.timezone` (§6), so a browser working out "this month" from its own clock puts a
+  Lagos shop an hour out of step with its own reports, silently and only near midnight. The window
+  lives in the URL, so it survives a tab switch and a link to one report over one month is
+  sendable. A custom range is the one case dates are sent, and the server still reads them in the
+  shop's zone.
+- **A duplicated type is a second chance to be wrong**, and the copy is the one nobody re-checks.
+  `MoverRow` duplicated `SalesGroupRow` with `cogs` wrongly **required**; collapsing them made the
+  compiler find the home screen printing `NaN%` against a field `redactCost` can remove.
+- **Two server figures beside each other, never one subtracted from the other.** The collections
+  screen shows collected *and* sold, because on a credit route they diverge — but the difference
+  is not shown, both because money is displayed rather than computed and because that subtraction
+  would be wrong: collections include payments on invoices from months ago.
 
 **Units, prices and barcodes upsert and never delete what a request does not list** (§4), and the
 product form must not imply otherwise — a remove button would silently do nothing. Units can be
