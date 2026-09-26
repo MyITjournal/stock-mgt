@@ -4031,7 +4031,10 @@ export interface components {
         };
         DebtorGroup: {
             customer: components["schemas"]["DebtorCustomer"] | null;
+            /** @description Owed **to** the business: the invoices in credit are not netted off it, which is the same rule `totalOutstanding` follows. Summing these across the groups gives exactly that headline — they used to disagree, because this one netted and the headline did not. */
             balance: number;
+            /** @description Owed **back**, as a positive number: goods returned after an invoice was paid, or money taken twice. Reported beside the balance rather than subtracted from it, because the two are different debts and netting hides both. */
+            credit: number;
             /** @description How many invoices make up that balance. */
             invoices: number;
             /** @description Age of the oldest, in days. */
@@ -4042,8 +4045,10 @@ export interface components {
             invoices: components["schemas"]["OutstandingInvoice"][];
             /** @description The same money grouped per customer, oldest debt first. */
             byCustomer: components["schemas"]["DebtorGroup"][];
-            /** @description Owed **to** the business. Money owed back to a customer is excluded rather than netted off — the two are different problems and summing them hides both. */
+            /** @description Owed **to** the business. Money owed back to a customer is excluded rather than netted off — the two are different problems and summing them hides both. Equal to the sum of `byCustomer[].balance`. */
             totalOutstanding: number;
+            /** @description Owed **back**, as a positive number — the other half of the same picture, and equal to the sum of `byCustomer[].credit`. Reported so that excluding it from `totalOutstanding` does not make it disappear: a credit nobody can see is one nobody honours. */
+            totalCredit: number;
         };
         StatementAllocation: {
             amount: number;
@@ -4768,19 +4773,12 @@ export interface components {
             /** @description Sold this month and not yet collected. Deliberately separate from sales: on a credit route the two diverge, and the gap is the cash position. */
             uncollectedThisMonth: number;
         };
-        DebtorRow: {
-            /** @description Null for walk-in sales, which carry no customer row. */
-            customer: components["schemas"]["DebtorCustomer"] | null;
-            balance: number;
-            invoices: number;
-            oldestDays: number;
-        };
         ReceivablesSummary: {
             /** @description Everything still owed to the business, in kobo. */
             total: number;
             invoices: number;
             oldestDays: number;
-            topDebtors: components["schemas"]["DebtorRow"][];
+            topDebtors: components["schemas"]["DebtorGroup"][];
         };
         ProfitSummary: {
             /** @description Tax-exclusive. VAT was never the business’s money. */

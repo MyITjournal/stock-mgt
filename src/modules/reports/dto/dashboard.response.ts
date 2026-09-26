@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SalesGroupRow } from './report.response';
+import { DebtorGroup } from '../../payments/dto/receivable.response';
 
 /**
  * What `GET /reports/dashboard` returns.
@@ -89,43 +90,6 @@ class CollectionsSummary {
   uncollectedThisMonth!: number;
 }
 
-class DebtorCustomer {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  firstName!: string;
-
-  @ApiProperty({ nullable: true, type: String })
-  lastName!: string | null;
-
-  @ApiProperty({
-    nullable: true,
-    type: String,
-    description:
-      'Chasing a debt is a phone call, so the list carries the number.',
-  })
-  phone!: string | null;
-}
-
-class DebtorRow {
-  @ApiProperty({
-    type: () => DebtorCustomer,
-    nullable: true,
-    description: 'Null for walk-in sales, which carry no customer row.',
-  })
-  customer!: DebtorCustomer | null;
-
-  @ApiProperty()
-  balance!: number;
-
-  @ApiProperty()
-  invoices!: number;
-
-  @ApiProperty()
-  oldestDays!: number;
-}
-
 class ReceivablesSummary {
   @ApiProperty({
     description: 'Everything still owed to the business, in kobo.',
@@ -138,8 +102,8 @@ class ReceivablesSummary {
   @ApiProperty()
   oldestDays!: number;
 
-  @ApiProperty({ type: () => [DebtorRow] })
-  topDebtors!: DebtorRow[];
+  @ApiProperty({ type: () => [DebtorGroup] })
+  topDebtors!: DebtorGroup[];
 }
 
 class ProfitSummary {

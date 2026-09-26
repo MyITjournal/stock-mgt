@@ -64,3 +64,36 @@ export function withBalance<T extends SaleBalanceInput>(sale: T) {
 function sum(values: readonly number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
+
+/**
+ * How a balance that has gone *negative* is counted.
+ *
+ * A sale can end up owing money **back**: it was paid in full and then goods
+ * were returned, or it was paid twice. That is a real debt, but it is the
+ * business's debt rather than the customer's, and the two must not be summed
+ * — netting them reports a smaller number than either one and hides both.
+ *
+ * Defined here, beside `saleBalance`, because the two halves of the rule kept
+ * drifting apart while they lived in separate functions: `totalOutstanding`
+ * filtered credits out while `groupByCustomer` netted them away, so a
+ * receivables screen showed a headline ₦21,000 larger than its own breakdown
+ * added up to. Anything that totals balances should split them through here.
+ */
+export interface OwedBothWays {
+  /** Owed **to** the business. */
+  owed: number;
+  /** Owed **back**, as a positive number. */
+  credit: number;
+}
+
+export function splitOwed(balances: readonly number[]): OwedBothWays {
+  let owed = 0;
+  let credit = 0;
+
+  for (const balance of balances) {
+    if (balance > 0) owed += balance;
+    else credit -= balance;
+  }
+
+  return { owed, credit };
+}
