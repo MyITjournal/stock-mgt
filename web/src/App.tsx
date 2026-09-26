@@ -20,6 +20,7 @@ import { SupplierPaymentsPage } from './money/SupplierPaymentsPage';
 import { ExpensesPage } from './money/ExpensesPage';
 import { StockLayout } from './catalog/StockLayout';
 import { ProductsPage } from './catalog/ProductsPage';
+import { ProductDetailPage } from './catalog/ProductDetailPage';
 import { CatalogSetupPage } from './catalog/CatalogSetupPage';
 import { LevelsPage } from './stock/LevelsPage';
 import { MovementsPage } from './stock/MovementsPage';
@@ -101,6 +102,10 @@ export default function App() {
 
                 {/* Detail and entry screens sit outside the tab strip: they are
                     somewhere you went from a list, not another tab. */}
+                <Route
+                  path="stock/products/:id"
+                  element={<ProductDetailPage />}
+                />
                 <Route path="stock/receive" element={<ReceiveDeliveryPage />} />
                 <Route
                   path="stock/receipts/:id"

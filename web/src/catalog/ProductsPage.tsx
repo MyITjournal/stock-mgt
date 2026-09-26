@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
@@ -23,6 +24,7 @@ type CategoryView = components['schemas']['CategoryView'];
  * facts that look the same on a screen.
  */
 export function ProductsPage() {
+  const navigate = useNavigate();
   const seesCost = useSeesCost();
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -103,7 +105,11 @@ export function ProductsPage() {
               </tr>
             )}
             {products.map((product) => (
-              <tr key={product.id} className="hover:bg-slate-50">
+              <tr
+                key={product.id}
+                className="cursor-pointer transition hover:bg-slate-50"
+                onClick={() => navigate(`/stock/products/${product.id}`)}
+              >
                 <td className="px-4 py-3">
                   <div className="font-medium text-slate-900">
                     {product.name}
@@ -134,7 +140,11 @@ export function ProductsPage() {
                 <td className="px-4 py-3 text-right">
                   <Button
                     variant="secondary"
-                    onClick={() => setEditing(product)}
+                    onClick={(event) => {
+                      // The row navigates; this must not do both.
+                      event.stopPropagation();
+                      setEditing(product);
+                    }}
                   >
                     Edit
                   </Button>
