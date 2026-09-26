@@ -334,8 +334,9 @@ Slice 7, planned in §17. **Vite + React + TypeScript**, with its own `package.j
 and shares no code with it.
 
 **Where it has got to: 7.0 (foundation, sign-in), 7.1 (home), 7.2 (the till), 7.3 (sales, returns,
-customers, statements, PDFs) and 7.4a (money in — receivables, payments, allocation, void,
-accounts) are done. 7.4b is next**: payables, supplier bills and payments, expenses. The slice table is in §17. Both servers have to be
+customers, statements, PDFs) and 7.4 (money — receivables, payments, allocation, void,
+accounts, payables, supplier bills and payments, expenses) are done. 7.5 is next**: stock and
+catalog, the largest slice left. The slice table is in §17. Both servers have to be
 running to work on this: the API on 4000, then `npm run dev` in `web/` on 5173, which
 `CORS_ORIGINS` already allows.
 
@@ -391,7 +392,7 @@ And three from 7.3:
 - **A damaged return refunds money and writes no stock movement.** `restocked: false` means crushed
   goods never become sellable again, so the till must ask rather than default it.
 
-Two from 7.4a:
+Four from 7.4:
 
 - **Void and refund must stay distinguishable on screen.** Both make an invoice owed again, so they
   look interchangeable — but a void says the money never moved and a refund is real money out that
@@ -401,6 +402,11 @@ Two from 7.4a:
 - **Allocation is two honest choices, never a guess.** Oldest-first, or exactly which invoice gets
   what. Over-allocating one invoice is a 409; money beyond the whole debt stays as credit. Note
   `allocateOldest` walks the *entire* list, so paying more than one invoice settles the next too.
+- **The vendor side is not the customer side mirrored.** One supplier payment settles **exactly one
+  bill** (no allocation table), there are **no negative payments** (void is the only correction),
+  and overpaying is a **409** rather than credit. Those absences are decisions, not gaps.
+- **A supplier payment is never an `Expense`.** Stock already reaches profit through cost of goods
+  sold, so recording it twice understates every margin. The expense form says so on screen.
 
 **Quantities are integers everywhere, and half a carton is six pieces.** Typing `0.5` is refused at
 three layers on purpose. Stock lives in base units, so a fraction of a bigger unit is a whole

@@ -1462,6 +1462,11 @@ in a browser, and the sales, returns, customer and statement screens are live.**
 34 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
 **0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
 
+**Slice 7.4 is complete — money in landed 2026-09-26, money out the same day**. §17 records both.
+The rule from 7.4b worth repeating here: **the vendor side is not the customer side mirrored.** One
+vendor payment settles exactly one bill, there are no negative payments, and overpaying is a 409
+rather than credit — three absences a later change could undo without noticing they were decisions.
+
 **Slice 7.4a — money in — landed 2026-09-26**, recorded in §17. One rule from it is general enough
 to belong here: **the one-second sync lag is a safeguard for a forward-walking cursor, and a
 browsing reader must skip it.** Leaving it on made a payment recorded a moment earlier vanish from
@@ -1782,8 +1787,8 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ## 15. Next
 
-**The immediate next thing is slice 7.4b** — payables, supplier bills and payments, expenses —
-then 7.5 and 7.6, then the deploy at item 1 below. The slice table and
+**The immediate next thing is slice 7.5** — stock and catalog, the largest slice left — then 7.6,
+then the deploy at item 1 below. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
 **A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
@@ -2381,7 +2386,7 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 | 7.2 | The till — scan or search, cart, units, price override, payment, receipt | **done 2026-09-25** |
 | 7.3 | Sales history, returns, customers, statements, PDFs | **done 2026-09-25** |
 | 7.4a | Money in — receivables, customer payments, allocation, void, bank accounts | **done 2026-09-26** |
-| 7.4b | Money out — payables, supplier bills and payments, expenses | |
+| 7.4b | Money out — payables, supplier bills and payments, expenses | **done 2026-09-26** |
 | 7.5 | Stock and catalog — products, units, prices, barcodes, goods receipts, levels, adjustments, transfers, stocktake | |
 | 7.6 | Reports and settings — every report screen, organization letterhead, staff, working hours | v1 is closed |
 
@@ -2612,3 +2617,39 @@ before asking for a reason, and offers "record money going back instead" as a wa
 **Voided payments stay on the payments feed and never appear on a statement.** The feed is the
 audit trail, where the mistake and its correction both have to be legible; a statement is the
 customer's position, where a line claiming money moved when it never did is worse than no line.
+
+### 7.4b, and the asymmetry between the two sides of the money
+
+Built 2026-09-26. Payables grouped per vendor, supplier bills including opening balances, paying a
+vendor, voiding that, and expenses.
+
+**The vendor side is deliberately not the customer side with the words swapped**, and the whole
+risk in this slice was building it as though it were. Three differences are structural (§16):
+
+| Customer side | Vendor side |
+|---|---|
+| One payment allocates across many invoices | **One payment settles exactly one bill** — no allocation table |
+| Negative payments record a refund | **Void only** — the column could hold a negative, the write path refuses it |
+| Overpayment becomes credit on the customer | **Overpayment is a 409** — correct the bill's `amountDue` instead |
+
+So `PaySupplierDialog` starts from a bill rather than a vendor, has no allocation control, and
+offers no way to record money coming back. Each of those is an absence someone could "fix" later
+without realising it was a decision, which is why they are written down here and in the response
+class.
+
+**An opening balance creates no stock, and that is now verified rather than asserted.** A bill with
+no `goodsReceiptId` is what somebody owed on the day they started using the system; the goods
+behind it arrived and probably sold long before. Inventing movements for them would put inventory
+in the ledger that is not on the shelf — the exact thing smoke's sum-check exists to catch. The
+walkthrough snapshots stock levels either side of creating one and asserts they are byte-identical.
+
+**`GET /supplier-payments` got the same browse treatment as sales and payments** — third endpoint,
+same fix. `GET /expenses` needed none: it has always branched on `syncing = Boolean(cursor ||
+since)` and ordered by `occurredAt` with no lag otherwise. That was the right shape sitting in the
+codebase the whole time, and the other three were written without looking at it.
+
+**The expense form names the trap out loud.** A supplier payment is never an `Expense`: buying
+stock already reaches profit through cost of goods sold, so recording it here too counts the same
+money twice and understates every margin — quietly, showing up only as margins that look worse than
+the shop knows they are. The dialog says so and points at "We owe", and `Expense.supplierId` is
+documented as attribution rather than settlement.
