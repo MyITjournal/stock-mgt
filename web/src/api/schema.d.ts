@@ -1161,7 +1161,7 @@ export interface paths {
         };
         /**
          * List payments, paged for delta sync
-         * @description Keyset paging over (createdAt, id), the same shape sales and the stock ledger use.
+         * @description Keyset paging over (updatedAt, id) — payments are mutable, because a void must reach a client that already synced the row. Two readers, one endpoint: a syncing client walks forward with the default `asc`, and a person browsing walks backward from today with `order=desc`.
          */
         get: operations["PaymentController_findAll"];
         put?: never;
@@ -2884,6 +2884,140 @@ export interface components {
             /** @description Many at once, because a device that counted a shelf offline syncs the whole sheet in one request. Counting a product twice replaces the earlier line. */
             lines: components["schemas"]["CountLineDto"][];
         };
+        BilledSupplier: {
+            /** Format: uuid */
+            id: string;
+            /** @example Dangote Distribution */
+            name: string;
+            /** @description Chasing a bill, like chasing a debt, is a phone call. */
+            phone: string | null;
+        };
+        OutstandingBillView: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description The vendor's own number, which is what they quote.
+             * @example INV-88213
+             */
+            invoiceNumber: string | null;
+            /** Format: date-time */
+            issuedAt: string;
+            /**
+             * Format: date-time
+             * @description Most bills never get one, which is why `overdue` only counts those that do.
+             */
+            dueDate: string | null;
+            supplier: components["schemas"]["BilledSupplier"];
+            /** @description Stored, not derived. It defaults to the sum of the goods lines but is its own column, because a vendor invoice routinely carries a delivery charge or a settlement discount that no stock line can hold. It deliberately does **not** feed inventory cost — §2 still values stock from `GoodsReceiptLine.totalCost`. */
+            amountDue: number;
+            /** @description Settled so far, excluding voided payments. */
+            paid: number;
+            /** @description `amountDue − paid`. */
+            balance: number;
+            /** @description Whole days since the bill was issued. */
+            daysOutstanding: number;
+            /** @description Negative once the intended date has passed. Null when none was set. */
+            daysUntilDue: number | null;
+        };
+        SupplierGroup: {
+            supplier: components["schemas"]["BilledSupplier"];
+            balance: number;
+            /** @description How many bills make up that balance. */
+            bills: number;
+            /** @description Age of the oldest, in days. */
+            oldestDays: number;
+        };
+        PayablesView: {
+            /** @description Longest owed first. A settled bill is history rather than a payable and drops out — it stays readable through `GET /supplier-bills`, which is where the audit trail belongs. */
+            bills: components["schemas"]["OutstandingBillView"][];
+            bySupplier: components["schemas"]["SupplierGroup"][];
+            /** @description The headline figure: everything still owed to every vendor. This is the number the dashboard shows and the one a click drills into. */
+            total: number;
+            /** @description How many vendors are owed anything at all. */
+            suppliers: number;
+            /** @description The longest anything has gone unpaid, in days. Null when nothing is owed. */
+            oldestDays: number | null;
+            /** @description Owed and already past the date the business said it would pay. Only counts bills that were given a date, since most are not. */
+            overdue: number;
+        };
+        /** @enum {string} */
+        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
+        BillRef: {
+            /** Format: uuid */
+            id: string;
+            invoiceNumber: string | null;
+        };
+        StatementPaymentRef: {
+            /** Format: uuid */
+            id: string;
+            amount: number;
+            method: components["schemas"]["PaymentMethod"];
+            reference: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            bill: components["schemas"]["BillRef"];
+        };
+        SupplierStatementView: {
+            /** Format: uuid */
+            supplierId: string;
+            bills: components["schemas"]["OutstandingBillView"][];
+            /** @description Voided payments are excluded: this is a position, not a log. */
+            payments: components["schemas"]["StatementPaymentRef"][];
+            totalOwed: number;
+            totalPaid: number;
+        };
+        ReceiptRef: {
+            /** Format: uuid */
+            id: string;
+            invoiceNumber: string | null;
+            /** Format: date-time */
+            receivedAt: string;
+        };
+        BillPaymentRef: {
+            /** Format: uuid */
+            id: string;
+            amount: number;
+            method: components["schemas"]["PaymentMethod"];
+            reference: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+        };
+        SupplierBillView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            supplierId: string;
+            /**
+             * Format: uuid
+             * @description The delivery this bill is for. Null for an opening balance, which has no receipt and must never create stock.
+             */
+            goodsReceiptId: string | null;
+            invoiceNumber: string | null;
+            amountDue: number;
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            dueDate: string | null;
+            note: string | null;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+            supplier: components["schemas"]["BilledSupplier"];
+            goodsReceipt: components["schemas"]["ReceiptRef"] | null;
+            /** @description Live payments only — voided ones are excluded here. */
+            payments: components["schemas"]["BillPaymentRef"][];
+            /** @description Settled so far. */
+            paid: number;
+            /** @description `amountDue − paid`. */
+            balance: number;
+        };
         CreateSupplierBillDto: {
             /**
              * Format: uuid
@@ -2939,6 +3073,75 @@ export interface components {
             /** @example Opening balance carried in at go-live. */
             note?: string;
         };
+        PaidSupplierRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        SettledBillRef: {
+            /** Format: uuid */
+            id: string;
+            invoiceNumber: string | null;
+            amountDue: number;
+            /** Format: date-time */
+            issuedAt: string;
+        };
+        PaidFromAccount: {
+            /** Format: uuid */
+            id: string;
+            bankName: string;
+            accountName: string;
+        };
+        RecorderRef: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+        };
+        SupplierPaymentView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /**
+             * Format: uuid
+             * @description Exactly one bill. There is no allocation table on this side — which debt a payment answered is still recorded, never inferred.
+             */
+            billId: string;
+            /** Format: uuid */
+            supplierId: string;
+            /** @description Positive. The column could hold a negative, but the write path refuses one: money coming back from a vendor is not a case this business has. */
+            amount: number;
+            method: components["schemas"]["PaymentMethod"];
+            /** Format: uuid */
+            bankAccountId: string | null;
+            reference: string | null;
+            note: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            voidedAt: string | null;
+            voidedReason: string | null;
+            /** Format: uuid */
+            voidedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            supplier: components["schemas"]["PaidSupplierRef"];
+            bill: components["schemas"]["SettledBillRef"];
+            bankAccount: components["schemas"]["PaidFromAccount"] | null;
+            recordedBy?: components["schemas"]["RecorderRef"] | null;
+        };
+        SupplierPaymentListView: {
+            payments: components["schemas"]["SupplierPaymentView"][];
+            nextCursor: string | null;
+            /** Format: date-time */
+            syncedThrough: string;
+            hasMore: boolean;
+        };
         CreateSupplierPaymentDto: {
             /**
              * Format: uuid
@@ -2979,8 +3182,6 @@ export interface components {
             /** @example Keyed against the wrong vendor. */
             reason: string;
         };
-        /** @enum {string} */
-        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
         PaidByCustomer: {
             /** Format: uuid */
             id: string;
@@ -3709,6 +3910,70 @@ export interface components {
             occurredAt?: string;
             lines: components["schemas"]["ReturnLineDto"][];
         };
+        CategoryRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Fuel */
+            name: string;
+        };
+        SupplierRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ExpenseView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            categoryId: string;
+            /**
+             * @description In kobo.
+             * @example 1500000
+             */
+            amount: number;
+            method: components["schemas"]["PaymentMethod"];
+            /**
+             * Format: uuid
+             * @description Who the money went to, for attribution only. **Not** a way to settle a supplier bill — that is `POST /supplier-payments`, and recording it here instead would count the same money twice (§16).
+             */
+            supplierId: string | null;
+            reference: string | null;
+            note: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+            category: components["schemas"]["CategoryRef"];
+            supplier: components["schemas"]["SupplierRef"] | null;
+            recordedBy: components["schemas"]["RecorderRef"] | null;
+        };
+        CategoryTotal: {
+            /** Format: uuid */
+            categoryId: string;
+            /** @example Fuel */
+            name: string;
+            total: number;
+        };
+        ExpenseListView: {
+            expenses: components["schemas"]["ExpenseView"][];
+            /** @description Everything matching the filter, not this page. */
+            total: number;
+            /** @description Largest first. */
+            byCategory: components["schemas"]["CategoryTotal"][];
+            /** @description Only present when syncing. */
+            nextCursor?: string | null;
+            /** Format: date-time */
+            syncedThrough?: string;
+            hasMore?: boolean;
+        };
         CreateExpenseDto: {
             /**
              * Format: uuid
@@ -3774,6 +4039,22 @@ export interface components {
              * @description Defaults to now; an offline device sends its own clock.
              */
             occurredAt?: string;
+        };
+        ExpenseCategoryView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Fuel */
+            name: string;
+            description: string | null;
+            sortOrder: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
         };
         CreateExpenseCategoryDto: {
             /**
@@ -5855,7 +6136,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PayablesView"];
+                };
             };
         };
     };
@@ -5874,7 +6157,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierStatementView"];
+                };
             };
         };
     };
@@ -5895,7 +6180,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierBillView"][];
+                };
             };
         };
     };
@@ -5919,7 +6206,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierBillView"];
+                };
             };
         };
     };
@@ -5938,7 +6227,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierBillView"];
+                };
             };
         };
     };
@@ -5980,7 +6271,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierBillView"];
+                };
             };
         };
     };
@@ -5989,6 +6282,8 @@ export interface operations {
             query?: {
                 supplierId?: string;
                 billId?: string;
+                /** @description `asc` (the default) is the sync order. `desc` is for a person reading a list, newest first, and skips the one-second sync lag. */
+                order?: "asc" | "desc";
                 /** @description ISO date-time. */
                 since?: string;
                 cursor?: string;
@@ -6004,7 +6299,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierPaymentListView"];
+                };
             };
         };
     };
@@ -6028,7 +6325,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierPaymentView"];
+                };
             };
         };
     };
@@ -6047,7 +6346,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierPaymentView"];
+                };
             };
         };
     };
@@ -6070,7 +6371,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierPaymentView"];
+                };
             };
         };
     };
@@ -6080,6 +6383,8 @@ export interface operations {
                 customerId?: string;
                 /** @description ISO date-time. */
                 since?: string;
+                /** @description `asc` (the default) is the sync order. `desc` is for a person reading a list, newest first, and skips the one-second sync lag. */
+                order?: "asc" | "desc";
                 cursor?: string;
                 limit?: number;
             };
@@ -6473,7 +6778,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpenseListView"];
+                };
             };
         };
     };
@@ -6497,7 +6804,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpenseView"];
+                };
             };
         };
     };
@@ -6516,7 +6825,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpenseView"];
+                };
             };
         };
     };
@@ -6558,7 +6869,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpenseView"];
+                };
             };
         };
     };
@@ -6575,7 +6888,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpenseCategoryView"][];
+                };
             };
         };
     };
@@ -6596,7 +6911,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpenseCategoryView"];
+                };
             };
         };
     };
@@ -6615,7 +6932,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpenseCategoryView"];
+                };
             };
         };
     };

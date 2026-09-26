@@ -3,6 +3,7 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { Minor } from '../../common/money/money';
 import { LIVE_SUPPLIER_PAYMENTS, billBalance } from './balance';
+import { PayablesView, SupplierStatementView } from './dto/payables.response';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -35,7 +36,9 @@ export interface OutstandingBill {
 export class PayableService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
-  async outstanding(filter: { supplierId?: string } = {}) {
+  async outstanding(
+    filter: { supplierId?: string } = {},
+  ): Promise<PayablesView> {
     const bills = await this.prisma.supplierBill.findMany({
       where: {
         deletedAt: null,
@@ -108,7 +111,7 @@ export class PayableService {
    * The mirror of a customer statement, and what somebody reads out when a
    * vendor rings to chase.
    */
-  async statement(supplierId: string) {
+  async statement(supplierId: string): Promise<SupplierStatementView> {
     const [owing, payments] = await Promise.all([
       this.outstanding({ supplierId }),
       this.prisma.supplierPayment.findMany({

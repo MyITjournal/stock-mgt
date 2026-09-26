@@ -11,6 +11,7 @@ import {
 } from '../../common/pagination/keyset-cursor';
 import { ExpenseCategoryService } from './expense-category.service';
 import { CreateExpenseDto, UpdateExpenseDto } from './dto/expense.dto';
+import { ExpenseListView, ExpenseView } from './dto/expense.response';
 
 /** How many expenses one sync page returns when the caller does not say. */
 const DEFAULT_PAGE = 100;
@@ -49,7 +50,7 @@ export class ExpenseService {
     private readonly categories: ExpenseCategoryService,
   ) {}
 
-  async create(input: CreateExpenseDto) {
+  async create(input: CreateExpenseDto): Promise<ExpenseView> {
     await this.categories.assertExists(input.categoryId);
     if (input.supplierId) await this.assertSupplierExists(input.supplierId);
 
@@ -90,7 +91,7 @@ export class ExpenseService {
    * page, and always exclude deleted rows. A total that silently meant "this
    * page" would be worse than no total.
    */
-  async findAll(filter: ExpenseQuery = {}) {
+  async findAll(filter: ExpenseQuery = {}): Promise<ExpenseListView> {
     const syncing = Boolean(filter.cursor || filter.since);
     const limit = Math.min(filter.limit ?? DEFAULT_PAGE, MAX_PAGE);
     const cursor = filter.cursor ? decodeCursor(filter.cursor) : undefined;
@@ -161,7 +162,7 @@ export class ExpenseService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<ExpenseView> {
     const expense = await this.prisma.expense.findFirst({
       where: { id, deletedAt: null },
       include: EXPENSE_INCLUDE,
@@ -170,7 +171,7 @@ export class ExpenseService {
     return expense;
   }
 
-  async update(id: string, input: UpdateExpenseDto) {
+  async update(id: string, input: UpdateExpenseDto): Promise<ExpenseView> {
     await this.findOne(id);
     if (input.categoryId) await this.categories.assertExists(input.categoryId);
     if (input.supplierId) await this.assertSupplierExists(input.supplierId);

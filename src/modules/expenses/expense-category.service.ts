@@ -11,6 +11,7 @@ import {
   CreateExpenseCategoryDto,
   UpdateExpenseCategoryDto,
 } from './dto/expense-category.dto';
+import { ExpenseCategoryView } from './dto/expense.response';
 
 /**
  * What a new organization starts spending on, so the first expense can be
@@ -45,7 +46,7 @@ export function defaultExpenseCategoryRows(organizationId: string) {
 export class ExpenseCategoryService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
-  async create(input: CreateExpenseCategoryDto) {
+  async create(input: CreateExpenseCategoryDto): Promise<ExpenseCategoryView> {
     // A name freed by a soft delete still occupies the unique constraint, so
     // re-adding "rent" would 409 on a row the caller cannot see. Revive it.
     const buried = await this.prisma.expenseCategory.findFirst({
@@ -77,7 +78,7 @@ export class ExpenseCategoryService {
     }
   }
 
-  findAll() {
+  findAll(): Promise<ExpenseCategoryView[]> {
     return this.prisma.expenseCategory.findMany({
       where: { deletedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -88,7 +89,10 @@ export class ExpenseCategoryService {
     return this.findOneOrFail(id);
   }
 
-  async update(id: string, input: UpdateExpenseCategoryDto) {
+  async update(
+    id: string,
+    input: UpdateExpenseCategoryDto,
+  ): Promise<ExpenseCategoryView> {
     await this.findOneOrFail(id);
 
     try {
