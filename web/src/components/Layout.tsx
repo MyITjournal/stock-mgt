@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, useSeesCost } from '../auth/useAuth';
 import { Button } from './Button';
 
@@ -81,15 +81,27 @@ export function Page({
   title,
   description,
   actions,
+  back,
   children,
 }: {
   title: string;
   description?: string;
   actions?: React.ReactNode;
+  /**
+   * Where this screen was opened from.
+   *
+   * **Any screen you navigate *into* needs one.** The top navigation and the
+   * tab strips only reach list screens, so a detail page reached by clicking
+   * a row was a dead end: the only way out of an invoice was to press "Sales"
+   * again, which throws away the filters and the place in the list that got
+   * you there.
+   */
+  back?: { to: string; label: string };
   children: React.ReactNode;
 }) {
   return (
     <>
+      {back && <BackLink {...back} />}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
@@ -101,5 +113,44 @@ export function Page({
       </div>
       {children}
     </>
+  );
+}
+
+/**
+ * Out of here, and back to where you came from.
+ *
+ * Steps back through history when there is history to step through, so the
+ * list you came from is still filtered and scrolled the way you left it.
+ * Falling back to `to` matters more than it looks: a link pasted into
+ * WhatsApp, or a page opened in a new tab, has nothing behind it, and
+ * `navigate(-1)` from there walks out of the application entirely.
+ *
+ * `location.key` is `'default'` exactly when this is the first entry the
+ * router has seen, which is the test for that case.
+ */
+function BackLink({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // `'default'` is exactly the case where this is the first entry the router
+  // has seen — a pasted link, or a new tab — and there is nothing to step
+  // back to.
+  const deepLinked = location.key === 'default';
+
+  return (
+    <button
+      type="button"
+      onClick={() => (deepLinked ? navigate(to) : navigate(-1))}
+      className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 transition hover:text-slate-900"
+    >
+      {/*
+        Named only when we know where it goes. Stepping back lands wherever
+        you came from, which is usually the list this belongs to but not
+        always — a customer can be reached from the movers report as well as
+        from Customers — and a label that names the wrong screen is worse
+        than one that names none.
+      */}
+      <span aria-hidden="true">←</span> {deepLinked ? label : 'Back'}
+    </button>
   );
 }

@@ -62,7 +62,7 @@ export function SaleDetailPage() {
 
   if (isPending) {
     return (
-      <Page title="Sale">
+      <Page back={{ to: '/sales', label: 'Sales' }} title="Sale">
         <p className="text-sm text-slate-500">Loading…</p>
       </Page>
     );
@@ -70,7 +70,7 @@ export function SaleDetailPage() {
 
   if (!sale) {
     return (
-      <Page title="Sale">
+      <Page back={{ to: '/sales', label: 'Sales' }} title="Sale">
         <p className="text-sm text-slate-500">That sale does not exist.</p>
       </Page>
     );
@@ -84,6 +84,7 @@ export function SaleDetailPage() {
 
   return (
     <Page
+      back={{ to: '/sales', label: 'Sales' }}
       title={sale.number}
       description={`${new Date(sale.occurredAt).toLocaleString('en-NG')} · ${customerName}`}
       actions={
