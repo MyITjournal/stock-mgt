@@ -20,6 +20,7 @@ import {
   CreateAdjustmentDto,
   CreateTransferDto,
 } from './dto/stock-operations.dto';
+import { StockMovementView, TransferResultView } from './dto/stock.response';
 
 /**
  * The two stock movements a person performs directly: writing stock off (or on)
@@ -47,7 +48,7 @@ export class StockOperationsService {
    * received through a delivery — the pile that was already there on day one —
    * gets into the ledger with a cost attached.
    */
-  async adjust(input: CreateAdjustmentDto) {
+  async adjust(input: CreateAdjustmentDto): Promise<StockMovementView[]> {
     const locationId =
       input.locationId ?? (await this.locations.resolveDefaultId());
     await this.locations.assertExists(locationId);
@@ -144,7 +145,7 @@ export class StockOperationsService {
    * Batch identity is preserved across the move — the carton that arrives in
    * the van is the same lot, with the same expiry, that left the store.
    */
-  async transfer(input: CreateTransferDto) {
+  async transfer(input: CreateTransferDto): Promise<TransferResultView> {
     if (input.fromLocationId === input.toLocationId) {
       throw new BadRequestException(
         'Source and destination locations must differ.',

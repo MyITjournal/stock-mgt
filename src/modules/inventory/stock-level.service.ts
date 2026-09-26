@@ -3,6 +3,12 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { callerSeesCost } from '../../common/authz/cost-visibility';
+import {
+  ExpiringBatchRow,
+  ForcedMovementView,
+  RebuildBalancesView,
+  StockLevelRow,
+} from './dto/stock.response';
 
 export interface LevelFilter {
   productId?: string;
@@ -27,7 +33,7 @@ export class StockLevelService {
    * Stock on hand, one row per product and location, with the batches that make
    * it up when asked for.
    */
-  async findLevels(filter: LevelFilter = {}) {
+  async findLevels(filter: LevelFilter = {}): Promise<StockLevelRow[]> {
     const balances = await this.prisma.stockBalance.findMany({
       where: {
         ...(filter.productId && { productId: filter.productId }),
@@ -116,7 +122,10 @@ export class StockLevelService {
    * walks the shelves with. Ordered soonest first, which is the order FEFO
    * would sell them in anyway.
    */
-  async findExpiring(before: Date, locationId?: string) {
+  async findExpiring(
+    before: Date,
+    locationId?: string,
+  ): Promise<ExpiringBatchRow[]> {
     const balances = await this.prisma.stockBalance.findMany({
       where: {
         quantity: { gt: 0 },
@@ -177,7 +186,7 @@ export class StockLevelService {
    * not entered yet" becomes a list with names against it, rather than a stock
    * count that quietly stops adding up.
    */
-  findForced(since?: Date) {
+  findForced(since?: Date): Promise<ForcedMovementView[]> {
     return this.prisma.stockMovement.findMany({
       where: { isForced: true, ...(since && { occurredAt: { gte: since } }) },
       orderBy: { occurredAt: 'desc' },
@@ -196,7 +205,7 @@ export class StockLevelService {
    * reconstructed is a liability. Returns what changed, so running it and
    * getting an empty list is the proof that the cache and the ledger agree.
    */
-  async rebuild() {
+  async rebuild(): Promise<RebuildBalancesView> {
     const organizationId = TenantContext.requireOrganizationId();
 
     const summed = await this.prisma.stockMovement.groupBy({

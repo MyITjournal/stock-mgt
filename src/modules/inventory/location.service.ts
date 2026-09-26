@@ -8,6 +8,7 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
+import { LocationView } from './dto/location.response';
 
 /**
  * The one location every organization starts with, so stock can be received
@@ -31,7 +32,7 @@ export function defaultLocationRow(organizationId: string) {
 export class LocationService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
-  async create(input: CreateLocationDto) {
+  async create(input: CreateLocationDto): Promise<LocationView> {
     // A name freed by a soft delete still occupies the unique constraint, so
     // re-adding "Van 2" would 409 on a row the caller cannot see. Revive it.
     const buried = await this.prisma.location.findFirst({
@@ -67,18 +68,18 @@ export class LocationService {
     }
   }
 
-  findAll() {
+  findAll(): Promise<LocationView[]> {
     return this.prisma.location.findMany({
       where: { deletedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
   }
 
-  findOne(id: string) {
+  findOne(id: string): Promise<LocationView> {
     return this.findOneOrFail(id);
   }
 
-  async update(id: string, input: UpdateLocationDto) {
+  async update(id: string, input: UpdateLocationDto): Promise<LocationView> {
     await this.findOneOrFail(id);
 
     try {

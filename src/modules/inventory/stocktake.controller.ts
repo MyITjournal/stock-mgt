@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -19,6 +21,11 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { StocktakeService } from './stocktake.service';
 import { CountLinesDto, CreateStocktakeDto } from './dto/stocktake.dto';
+import {
+  PostedStocktakeView,
+  StocktakeSummary,
+  StocktakeView,
+} from './dto/stocktake.response';
 
 /** Walking the aisles with a phone is the storekeeper's job, and the rep's. */
 const COUNTERS = [
@@ -51,6 +58,7 @@ export class StocktakeController {
   })
   @ApiQuery({ name: 'locationId', required: false })
   @ApiOperation({ summary: 'List stocktakes, newest first' })
+  @ApiOkResponse({ type: [StocktakeSummary] })
   findAll(
     @Query('status') status?: string,
     @Query('locationId') locationId?: string,
@@ -64,6 +72,7 @@ export class StocktakeController {
     description:
       'While a count is open the variance is measured against live stock, because that is what posting will compare. Once posted it reports the snapshot, which is what was actually true when the correction was made.',
   })
+  @ApiOkResponse({ type: StocktakeView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.stocktakes.findOne(id);
   }
@@ -78,6 +87,7 @@ export class StocktakeController {
     description:
       'One open count per location at a time: two would post variances against each other’s corrections.',
   })
+  @ApiCreatedResponse({ type: StocktakeSummary })
   create(@Body() dto: CreateStocktakeDto) {
     return this.stocktakes.create(dto);
   }
@@ -89,6 +99,7 @@ export class StocktakeController {
     description:
       'Takes the whole sheet at once, in base units. Counting a product twice replaces the earlier line — a recount is a correction, not a second opinion. Nothing here touches stock.',
   })
+  @ApiCreatedResponse({ type: StocktakeView })
   count(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CountLinesDto) {
     return this.stocktakes.count(id, dto);
   }
@@ -96,6 +107,7 @@ export class StocktakeController {
   @Delete(':id/lines/:productId')
   @Roles(...COUNTERS)
   @ApiOperation({ summary: 'Remove a line counted by mistake' })
+  @ApiOkResponse({ type: StocktakeView })
   removeLine(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('productId', ParseUUIDPipe) productId: string,
@@ -113,6 +125,7 @@ export class StocktakeController {
     description:
       'Owner or manager only — finding a shortfall and approving it are deliberately different jobs. Variances are recomputed against live stock, then written as `adjustment` movements with reason `count_correction`: shortfalls leave FEFO, surpluses land on the most recently received batch at that location.',
   })
+  @ApiCreatedResponse({ type: PostedStocktakeView })
   post(@Param('id', ParseUUIDPipe) id: string) {
     return this.stocktakes.post(id);
   }
@@ -124,6 +137,7 @@ export class StocktakeController {
     description:
       'The lines are kept for the record; nothing reaches the ledger.',
   })
+  @ApiCreatedResponse({ type: StocktakeView })
   cancel(@Param('id', ParseUUIDPipe) id: string) {
     return this.stocktakes.cancel(id);
   }
