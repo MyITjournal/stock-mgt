@@ -337,9 +337,10 @@ and shares no code with it.
 customers, statements, PDFs) and 7.4 (money — receivables, payments, allocation, void,
 accounts, payables, supplier bills and payments, expenses), 7.5a (catalog — products, units,
 prices, categories, packaging types, tiers), 7.5b (stock — on hand with its lots, deliveries,
-the movement ledger, adjustments, transfers, counts, locations and vendors) and 7.6a (reports —
-profit, sales, purchases, collections, stock, movers, purchase targets) are done. 7.6b is
-next and closes v1**: settings — the organization letterhead, staff, working hours. The slice
+the movement ledger, adjustments, transfers, counts, locations and vendors), 7.6a (reports —
+profit, sales, purchases, collections, stock, movers, purchase targets) and 7.6b (settings — the
+letterhead, opening hours, staff) are all done. **The dashboard is finished, every route renders
+something real, and v1 is feature-complete. What is left is the deploy** (§15 item 1). The slice
 table is in §17. Both servers have to be
 running to work on this: the API on 4000, then `npm run dev` in `web/` on 5173, which
 `CORS_ORIGINS` already allows.
@@ -446,6 +447,19 @@ And three from 7.6a, in `web/src/reports/`:
   screen shows collected *and* sold, because on a credit route they diverge — but the difference
   is not shown, both because money is displayed rather than computed and because that subtraction
   would be wrong: collections include payments on invoices from months ago.
+
+And three from 7.6b, in `web/src/settings/`:
+
+- **An empty `workingDays` on the organization locks every member of staff out**, and the write
+  path used to accept it. It means *no* day is a working day, not "every day". Now
+  `@ArrayMinSize(1)`, and the form refuses it first. **Note the asymmetry**: the same field on a
+  *membership* is meaningfully empty and means "follow the business" — a membership has something
+  to fall back to and the organization does not.
+- **Seed a form by mounting it with the data, never by `useEffect`.** A loader that renders a
+  child form once the row exists has no state to sync, and cannot fight somebody typing when a
+  refetch lands. `BusinessPage` and `HoursPage` are both that shape.
+- **Letterhead fields are cleared with an empty string, not by omitting them.** Omitting means
+  "leave alone", `''` means "clear", and a settings form has to be able to do both.
 
 **Units, prices and barcodes upsert and never delete what a request does not list** (§4), and the
 product form must not imply otherwise — a remove button would silently do nothing. Units can be
