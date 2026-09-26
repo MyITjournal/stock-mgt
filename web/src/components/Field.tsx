@@ -17,9 +17,43 @@ import type {
  */
 
 const inputStyles =
-  'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 ' +
+  'rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 ' +
   'placeholder:text-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 ' +
   'focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-50';
+
+/**
+ * Classes that decide how wide a control is.
+ *
+ * `min-w-` and `max-w-` are deliberately absent: they bound a width rather
+ * than setting one, so a caller writing `max-w-xs` still wants to fill the
+ * space up to that bound.
+ */
+const SETS_WIDTH =
+  /(?:^|\s)(?:w-|basis-|flex-(?:1|auto|initial|none)(?:\s|$))/;
+
+/**
+ * The base styles, plus whatever the caller asked for — **and `w-full` only
+ * when the caller did not set a width themselves.**
+ *
+ * This is not tidiness. `w-full` used to be baked into the base string, and
+ * appending `w-28` after it does nothing: the two have equal specificity, so
+ * the one Tailwind emits later wins, and Tailwind emits `.w-full` after
+ * `.w-28`. Every width any caller passed was silently discarded and every
+ * control rendered at 100%.
+ *
+ * In a flex row that is not a cosmetic problem. The product form puts a
+ * `flex-1` name box beside a `w-28` factor box: the factor box claimed the
+ * full width, the row overflowed, and flex shrinking is proportional to
+ * flex-basis — which for the `flex-1` box is zero, so it shrank to **nothing**
+ * and never grew back. The result was a blank box that could not be clicked or
+ * typed into, on the one screen where a product's units are defined. Both
+ * dropdowns in the price row went the same way, which is why a unit and a tier
+ * could not be chosen either.
+ */
+function controlClass(extra = ''): string {
+  const width = SETS_WIDTH.test(` ${extra} `) ? '' : 'w-full';
+  return `${width} ${inputStyles} ${extra}`.trim().replace(/\s+/g, ' ');
+}
 
 export function Field({
   label,
@@ -60,12 +94,12 @@ export function Field({
  */
 export function Input(props: ComponentProps<'input'>) {
   const { className = '', ...rest } = props;
-  return <input {...rest} className={`${inputStyles} ${className}`.trim()} />;
+  return <input {...rest} className={controlClass(className)} />;
 }
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   const { className = '', ...rest } = props;
-  return <select {...rest} className={`${inputStyles} ${className}`.trim()} />;
+  return <select {...rest} className={controlClass(className)} />;
 }
 
 /**
