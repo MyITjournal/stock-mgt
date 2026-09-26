@@ -9,12 +9,13 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
+import { CategoryView } from './dto/product.response';
 
 @Injectable()
 export class CategoryService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
-  async create(input: CreateCategoryDto) {
+  async create(input: CreateCategoryDto): Promise<CategoryView> {
     if (input.parentId) await this.findOneOrFail(input.parentId);
 
     try {
@@ -32,7 +33,7 @@ export class CategoryService {
     }
   }
 
-  findAll() {
+  findAll(): Promise<CategoryView[]> {
     return this.prisma.category.findMany({
       where: { deletedAt: null },
       orderBy: { name: 'asc' },
@@ -43,7 +44,7 @@ export class CategoryService {
     return this.findOneOrFail(id);
   }
 
-  async update(id: string, input: UpdateCategoryDto) {
+  async update(id: string, input: UpdateCategoryDto): Promise<CategoryView> {
     await this.findOneOrFail(id);
 
     if (input.parentId) {

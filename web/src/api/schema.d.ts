@@ -2047,6 +2047,23 @@ export interface components {
              */
             priceTierId?: string;
         };
+        CategoryView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Beverages */
+            name: string;
+            description: string | null;
+            /** Format: uuid */
+            parentId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+        };
         CreateCategoryDto: {
             /**
              * Format: uuid
@@ -2078,6 +2095,23 @@ export interface components {
              * @description Parent category
              */
             parentId?: string;
+        };
+        PackagingTypeView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Carton */
+            name: string;
+            description: string | null;
+            /** @example 10 */
+            sortOrder: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
         };
         CreatePackagingTypeDto: {
             /**
@@ -2147,40 +2181,6 @@ export interface components {
              * @example false
              */
             isDefault?: boolean;
-        };
-        CategoryView: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            organizationId: string;
-            /** @example Beverages */
-            name: string;
-            description: string | null;
-            /** Format: uuid */
-            parentId: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-            /** Format: date-time */
-            deletedAt: string | null;
-        };
-        PackagingTypeView: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            organizationId: string;
-            /** @example Carton */
-            name: string;
-            description: string | null;
-            /** @example 10 */
-            sortOrder: number;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-            /** Format: date-time */
-            deletedAt: string | null;
         };
         ProductUnitView: {
             /** Format: uuid */
@@ -4986,7 +4986,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CategoryView"][];
+                };
             };
         };
     };
@@ -5007,7 +5009,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CategoryView"];
+                };
             };
         };
     };
@@ -5026,7 +5030,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CategoryView"];
+                };
             };
         };
     };
@@ -5068,7 +5074,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CategoryView"];
+                };
             };
         };
     };
@@ -5085,7 +5093,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PackagingTypeView"][];
+                };
             };
         };
     };
@@ -5125,7 +5135,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PackagingTypeView"];
+                };
             };
         };
     };
