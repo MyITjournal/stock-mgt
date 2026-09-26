@@ -16,12 +16,25 @@ import {
   PurchaseTargetQueryDto,
   UpdatePurchaseTargetDto,
 } from './dto/purchase-target.dto';
+import {
+  PurchaseTargetReportView,
+  PurchaseTargetView,
+} from './dto/purchase-target.response';
 
+/**
+ * What a target carries about the things it points at.
+ *
+ * Narrowed from `true` on each relation to the fields a reader actually needs.
+ * `product: true` returned the whole product row, `costPrice` included — no
+ * leak, because this controller is owner, manager and accountant only, but §9's
+ * rule is **select, never exclude**: an allow-list means the next column added
+ * to `Product` is invisible here until somebody puts it in deliberately.
+ */
 const TARGET_INCLUDE = {
-  supplier: true,
-  category: true,
-  product: true,
-  displayUnit: true,
+  supplier: { select: { id: true, name: true } },
+  category: { select: { id: true, name: true } },
+  product: { select: { id: true, name: true, sku: true } },
+  displayUnit: { select: { id: true, name: true, factor: true } },
 } as const;
 
 /**
@@ -38,7 +51,7 @@ export class PurchaseTargetService {
     private readonly reports: ReportService,
   ) {}
 
-  async create(input: CreatePurchaseTargetDto) {
+  async create(input: CreatePurchaseTargetDto): Promise<PurchaseTargetView> {
     const scope = await this.resolveScope(input);
     const periodStart = await this.monthStart(input.period);
     const { targetQuantity, displayUnitId, unitFactor } =
@@ -68,7 +81,7 @@ export class PurchaseTargetService {
     }
   }
 
-  findAll(query: PurchaseTargetQueryDto = {}) {
+  findAll(query: PurchaseTargetQueryDto = {}): Promise<PurchaseTargetView[]> {
     return this.prisma.purchaseTarget.findMany({
       where: {
         deletedAt: null,
@@ -79,7 +92,7 @@ export class PurchaseTargetService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<PurchaseTargetView> {
     const target = await this.prisma.purchaseTarget.findFirst({
       where: { id, deletedAt: null },
       include: TARGET_INCLUDE,
@@ -88,7 +101,10 @@ export class PurchaseTargetService {
     return target;
   }
 
-  async update(id: string, input: UpdatePurchaseTargetDto) {
+  async update(
+    id: string,
+    input: UpdatePurchaseTargetDto,
+  ): Promise<PurchaseTargetView> {
     const existing = await this.findOne(id);
 
     // The scope is what the target *is*; changing a lotions target into a
@@ -156,7 +172,9 @@ export class PurchaseTargetService {
    * order the vendor has not delivered is exactly what still needs chasing, so
    * it belongs in "remaining".
    */
-  async report(query: PurchaseTargetQueryDto = {}) {
+  async report(
+    query: PurchaseTargetQueryDto = {},
+  ): Promise<PurchaseTargetReportView> {
     const periodStart = await this.monthStart(query.period);
     const timezone = await this.reports.timezone();
     const periodEnd = addMonths(timezone, periodStart, 1);
