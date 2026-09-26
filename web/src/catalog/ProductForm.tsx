@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
-
+import { QuantityInput } from '../components/QuantityInput';
 import { api, ApiError } from '../api/client';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
@@ -356,18 +356,15 @@ export function ProductForm({
                   placeholder="carton"
                   className="flex-1"
                 />
-                <Input
-                  aria-label={`Unit ${index + 1} factor`}
-                  type="number"
+                <QuantityInput
+                  label={`Unit ${index + 1} factor`}
                   min={1}
                   value={unit.factor}
                   disabled={unit.isBase}
-                  onChange={(event) =>
+                  onChange={(next) =>
                     setUnits((current) =>
                       current.map((row, i) =>
-                        i === index
-                          ? { ...row, factor: Number(event.target.value) || 1 }
-                          : row,
+                        i === index ? { ...row, factor: next } : row,
                       ),
                     )
                   }
