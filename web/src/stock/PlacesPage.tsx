@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
@@ -422,8 +423,10 @@ function Dialog({
     >
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
+        <DialogClose onClose={onClose} />
+
         <h2 id={labelledBy} className="text-lg font-semibold text-slate-900">
           {title}
         </h2>

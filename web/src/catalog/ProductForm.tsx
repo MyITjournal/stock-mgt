@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
@@ -206,8 +207,10 @@ export function ProductForm({
     >
       <form
         onSubmit={submit}
-        className="my-8 w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative my-8 w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
+        <DialogClose onClose={onClose} />
+
         <h2 id="product-title" className="text-lg font-semibold text-slate-900">
           {editing ? `Edit ${product.name}` : 'Add a product'}
         </h2>

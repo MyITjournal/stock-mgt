@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
@@ -182,8 +183,10 @@ function ExpenseDialog({ onClose }: { onClose: () => void }) {
     >
       <form
         onSubmit={submit}
-        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
+        <DialogClose onClose={onClose} />
+
         <h2 id="expense-title" className="text-lg font-semibold text-slate-900">
           Record an expense
         </h2>

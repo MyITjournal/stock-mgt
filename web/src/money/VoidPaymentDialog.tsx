@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { Button } from '../components/Button';
 import { Field, Input } from '../components/Field';
 import { Money } from '../components/Money';
@@ -57,8 +58,10 @@ export function VoidPaymentDialog({
     >
       <form
         onSubmit={submit}
-        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
+        <DialogClose onClose={onCancel} />
+
         <h2 id="void-title" className="text-lg font-semibold text-slate-900">
           Void this payment?
         </h2>
