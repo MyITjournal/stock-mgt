@@ -19,6 +19,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -43,6 +44,8 @@ import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 import { CreateBarcodeDto } from './dto/barcode.dto';
 import { ScanResult } from './dto/scan.response';
 import {
+  CategoryView,
+  PackagingTypeView,
   PriceTierView,
   ProductView,
   ResolvedUnitPrice,
@@ -74,12 +77,14 @@ export class CategoryController {
 
   @Get()
   @ApiOperation({ summary: 'List categories' })
+  @ApiOkResponse({ type: [CategoryView] })
   findAll() {
     return this.categories.findAll();
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a category' })
+  @ApiOkResponse({ type: CategoryView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.categories.findOne(id);
   }
@@ -87,6 +92,7 @@ export class CategoryController {
   @Post()
   @Roles(...CATALOG_EDITORS)
   @ApiOperation({ summary: 'Create a category' })
+  @ApiCreatedResponse({ type: CategoryView })
   create(@Body() dto: CreateCategoryDto) {
     return this.categories.create(dto);
   }
@@ -94,6 +100,7 @@ export class CategoryController {
   @Patch(':id')
   @Roles(...CATALOG_EDITORS)
   @ApiOperation({ summary: 'Update a category' })
+  @ApiOkResponse({ type: CategoryView })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCategoryDto,
@@ -122,12 +129,14 @@ export class PackagingTypeController {
     description:
       "The organization's vocabulary for how goods are physically packed. Seeded at registration and editable, which is why it is a table rather than an enum.",
   })
+  @ApiOkResponse({ type: [PackagingTypeView] })
   findAll() {
     return this.packagingTypes.findAll();
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a packaging type' })
+  @ApiOkResponse({ type: PackagingTypeView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.packagingTypes.findOne(id);
   }

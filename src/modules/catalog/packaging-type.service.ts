@@ -11,6 +11,7 @@ import {
   CreatePackagingTypeDto,
   UpdatePackagingTypeDto,
 } from './dto/packaging-type.dto';
+import { PackagingTypeView } from './dto/product.response';
 
 /**
  * The vocabulary every new organization starts with, so the catalog is usable
@@ -50,7 +51,7 @@ export function defaultPackagingTypeRows(organizationId: string) {
 export class PackagingTypeService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
-  async create(input: CreatePackagingTypeDto) {
+  async create(input: CreatePackagingTypeDto): Promise<PackagingTypeView> {
     // A name freed by a soft delete is still occupied as far as the unique
     // constraint is concerned, so re-adding "keg" would 409 on a row the
     // caller cannot see. Revive it instead.
@@ -83,7 +84,7 @@ export class PackagingTypeService {
     }
   }
 
-  findAll() {
+  findAll(): Promise<PackagingTypeView[]> {
     return this.prisma.packagingType.findMany({
       where: { deletedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -94,7 +95,10 @@ export class PackagingTypeService {
     return this.findOneOrFail(id);
   }
 
-  async update(id: string, input: UpdatePackagingTypeDto) {
+  async update(
+    id: string,
+    input: UpdatePackagingTypeDto,
+  ): Promise<PackagingTypeView> {
     await this.findOneOrFail(id);
 
     try {
