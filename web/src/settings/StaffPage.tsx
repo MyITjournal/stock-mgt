@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
@@ -588,7 +589,9 @@ export function Shell({
       aria-labelledby={labelledBy}
       onKeyDown={(event) => event.key === 'Escape' && onClose()}
     >
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-lg">
+      <div className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-lg">
+        <DialogClose onClose={onClose} />
+
         <h2 id={labelledBy} className="text-lg font-semibold text-slate-900">
           {title}
         </h2>

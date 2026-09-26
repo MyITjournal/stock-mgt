@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
@@ -154,8 +155,10 @@ export function AdjustDialog({
     >
       <form
         onSubmit={submit}
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
+        <DialogClose onClose={onClose} />
+
         <h2 id="adjust-title" className="text-lg font-semibold text-slate-900">
           Adjust stock
         </h2>

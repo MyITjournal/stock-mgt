@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { Button } from '../components/Button';
 import { Field, Input } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
@@ -82,8 +83,10 @@ export function ReturnDialog({
     >
       <form
         onSubmit={submit}
-        className="my-8 w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative my-8 w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
+        <DialogClose onClose={onCancel} />
+
         <h2 id="return-title" className="text-lg font-semibold text-slate-900">
           Take goods back from {sale.number}
         </h2>

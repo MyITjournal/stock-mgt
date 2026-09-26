@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
@@ -357,8 +358,10 @@ function TargetDialog({ onClose }: { onClose: () => void }) {
     >
       <form
         onSubmit={submit}
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
+        <DialogClose onClose={onClose} />
+
         <h2 id="target-title" className="text-lg font-semibold text-slate-900">
           Set a purchase target
         </h2>

@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { DialogClose } from '../components/DialogClose';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
@@ -126,8 +127,10 @@ export function RecordPaymentDialog({
     >
       <form
         onSubmit={submit}
-        className="my-8 w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative my-8 w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
+        <DialogClose onClose={onCancel} />
+
         <h2 id="payment-title" className="text-lg font-semibold text-slate-900">
           Record a payment
         </h2>
