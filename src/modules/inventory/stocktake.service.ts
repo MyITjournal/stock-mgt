@@ -11,6 +11,11 @@ import { TenantContext } from '../../common/tenancy/tenant-context';
 import { LocationService } from './location.service';
 import { StockService, StockWriter } from './stock.service';
 import { CountLinesDto, CreateStocktakeDto } from './dto/stocktake.dto';
+import {
+  PostedStocktakeView,
+  StocktakeSummary,
+  StocktakeView,
+} from './dto/stocktake.response';
 
 const STOCKTAKE_INCLUDE = {
   location: { select: { id: true, name: true } },
@@ -45,7 +50,7 @@ export class StocktakeService {
     private readonly locations: LocationService,
   ) {}
 
-  async create(input: CreateStocktakeDto) {
+  async create(input: CreateStocktakeDto): Promise<StocktakeSummary> {
     const locationId =
       input.locationId ?? (await this.locations.resolveDefaultId());
     await this.locations.assertExists(locationId);
@@ -74,7 +79,9 @@ export class StocktakeService {
     });
   }
 
-  findAll(filter: { status?: string; locationId?: string } = {}) {
+  findAll(
+    filter: { status?: string; locationId?: string } = {},
+  ): Promise<StocktakeSummary[]> {
     return this.prisma.stocktake.findMany({
       where: {
         ...(filter.status && { status: filter.status as 'open' }),
@@ -86,7 +93,7 @@ export class StocktakeService {
   }
 
   /** One count, with the variance each line carries *right now*. */
-  async findOne(id: string) {
+  async findOne(id: string): Promise<StocktakeView> {
     const stocktake = await this.prisma.stocktake.findFirst({
       where: { id },
       include: STOCKTAKE_INCLUDE,
@@ -132,7 +139,7 @@ export class StocktakeService {
    * Counting the same product twice replaces the first line rather than adding
    * a second: a recount is a correction, not a second opinion.
    */
-  async count(id: string, input: CountLinesDto) {
+  async count(id: string, input: CountLinesDto): Promise<StocktakeView> {
     const stocktake = await this.requireOpen(id);
     const organizationId = TenantContext.requireOrganizationId();
     const countedByUserId = TenantContext.get()?.userId ?? null;
@@ -176,7 +183,7 @@ export class StocktakeService {
   }
 
   /** Removes a line counted by mistake. */
-  async removeLine(id: string, productId: string) {
+  async removeLine(id: string, productId: string): Promise<StocktakeView> {
     await this.requireOpen(id);
 
     const line = await this.prisma.stocktakeLine.findFirst({
@@ -201,7 +208,7 @@ export class StocktakeService {
    * such natural lot, so it lands on the batch most recently received at that
    * location, keeping its cost basis current.
    */
-  async post(id: string) {
+  async post(id: string): Promise<PostedStocktakeView> {
     const stocktake = await this.requireOpen(id);
 
     if (stocktake.lines.length === 0) {
@@ -271,7 +278,7 @@ export class StocktakeService {
   }
 
   /** Abandons a count. The lines are kept; nothing reaches the ledger. */
-  async cancel(id: string) {
+  async cancel(id: string): Promise<StocktakeView> {
     await this.requireOpen(id);
 
     await this.prisma.stocktake.update({

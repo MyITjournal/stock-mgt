@@ -8,6 +8,7 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
+import { SupplierView } from './dto/supplier.response';
 
 /**
  * Vendors goods are bought from.
@@ -21,7 +22,7 @@ import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
 export class SupplierService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
-  async create(input: CreateSupplierDto) {
+  async create(input: CreateSupplierDto): Promise<SupplierView> {
     const buried = await this.prisma.supplier.findFirst({
       where: { name: input.name, deletedAt: { not: null } },
     });
@@ -55,18 +56,18 @@ export class SupplierService {
     }
   }
 
-  findAll() {
+  findAll(): Promise<SupplierView[]> {
     return this.prisma.supplier.findMany({
       where: { deletedAt: null },
       orderBy: { name: 'asc' },
     });
   }
 
-  findOne(id: string) {
+  findOne(id: string): Promise<SupplierView> {
     return this.findOneOrFail(id);
   }
 
-  async update(id: string, input: UpdateSupplierDto) {
+  async update(id: string, input: UpdateSupplierDto): Promise<SupplierView> {
     await this.findOneOrFail(id);
 
     try {
