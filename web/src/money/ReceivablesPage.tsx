@@ -80,8 +80,26 @@ export function ReceivablesPage() {
           </div>
           <p className="mt-1 text-xs text-slate-400">
             Money owed back to a customer is excluded rather than netted off —
-            the two are different problems.
+            the two are different problems. This is exactly what the rows
+            below add up to.
           </p>
+
+          {/*
+            Shown whenever it exists, because excluding it from the headline
+            is only honest if it appears somewhere. It used to be subtracted
+            from a customer's row instead, which made the breakdown disagree
+            with the total and hid the credit in the same stroke.
+          */}
+          {data.totalCredit > 0 && (
+            <p className="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+              <strong>
+                <Money value={data.totalCredit} />
+              </strong>{' '}
+              is owed <strong>back</strong> — goods returned after an invoice
+              was paid, or money taken twice. It is not subtracted from the
+              figure above.
+            </p>
+          )}
         </div>
       )}
 
@@ -133,8 +151,15 @@ export function ReceivablesPage() {
                     oldest {group.oldestDays}d
                   </span>
                 </span>
-                <span className="font-semibold text-slate-900">
-                  <Money value={group.balance} signed />
+                <span className="text-right">
+                  <span className="font-semibold text-slate-900">
+                    <Money value={group.balance} signed />
+                  </span>
+                  {group.credit > 0 && (
+                    <span className="block text-xs text-amber-700">
+                      <Money value={group.credit} /> owed back
+                    </span>
+                  )}
                 </span>
               </button>
 
