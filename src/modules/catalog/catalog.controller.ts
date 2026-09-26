@@ -20,6 +20,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -47,6 +48,7 @@ import {
   CategoryView,
   PackagingTypeView,
   PriceTierView,
+  ProductBarcodeView,
   ProductView,
   ResolvedUnitPrice,
 } from './dto/product.response';
@@ -356,6 +358,7 @@ export class ProductController {
 
   @Get(':id/barcodes')
   @ApiOperation({ summary: 'List the barcodes on a product' })
+  @ApiOkResponse({ type: [ProductBarcodeView] })
   listBarcodes(@Param('id', ParseUUIDPipe) id: string) {
     return this.barcodes.findForProduct(id);
   }
@@ -367,6 +370,7 @@ export class ProductController {
     description:
       'Omit `code` to generate an internal EAN-13 for goods that arrive unbarcoded. GS1 codes are rejected if the check digit does not match.',
   })
+  @ApiCreatedResponse({ type: ProductBarcodeView })
   addBarcode(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateBarcodeDto,
@@ -408,6 +412,7 @@ export class ScanController {
   @Roles(...CATALOG_EDITORS)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a barcode' })
+  @ApiNoContentResponse()
   removeBarcode(@Param('id', ParseUUIDPipe) id: string) {
     return this.barcodes.remove(id);
   }
