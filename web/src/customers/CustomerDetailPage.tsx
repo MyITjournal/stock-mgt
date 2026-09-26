@@ -44,6 +44,7 @@ export function CustomerDetailPage() {
 
   return (
     <Page
+      back={{ to: '/customers', label: 'Customers' }}
       title={name}
       description={customer?.phone ?? undefined}
       actions={
