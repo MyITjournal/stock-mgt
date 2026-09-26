@@ -4,6 +4,7 @@ import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useAuth } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { StaffHoursDialog } from './StaffHoursDialog';
@@ -75,7 +76,7 @@ export function StaffPage() {
       body: Record<string, unknown>;
     }) => api.patch<StaffMemberView>(`/staff/${input.userId}`, input.body),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['staff'] });
+      afterWrite(queryClient);
       setError(null);
     },
     onError: (caught) =>
@@ -323,7 +324,7 @@ function AddStaffDialog({
         role,
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['staff'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>

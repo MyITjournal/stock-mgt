@@ -6,6 +6,7 @@ import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { Money } from '../components/Money';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -154,7 +155,7 @@ function CustomerDialog({ onClose }: { onClose: () => void }) {
         ...(priceTierId && { priceTierId }),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['customers'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>

@@ -6,6 +6,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useRecordsStock } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -155,7 +156,7 @@ function StartCountDialog({ onClose }: { onClose: () => void }) {
         ...(note.trim() ? { note: note.trim() } : {}),
       }),
     onSuccess: (count) => {
-      void queryClient.invalidateQueries({ queryKey: ['stocktakes'] });
+      afterWrite(queryClient);
       navigate(`/stock/counts/${count.id}`);
     },
     onError: (caught) =>

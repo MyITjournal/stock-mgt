@@ -5,6 +5,7 @@ import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
 import { RecordPaymentDialog, type PaymentDraft } from './RecordPaymentDialog';
 
@@ -49,9 +50,7 @@ export function ReceivablesPage() {
         }),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['receivables'] });
-      void queryClient.invalidateQueries({ queryKey: ['payments'] });
-      void queryClient.invalidateQueries({ queryKey: ['sales'] });
+      afterWrite(queryClient);
       setPaying(null);
       setError(null);
     },
