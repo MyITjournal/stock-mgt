@@ -2,15 +2,23 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const TABS = [
   { to: '/stock', label: 'Products', end: true },
+  { to: '/stock/levels', label: 'On hand' },
+  { to: '/stock/receipts', label: 'Deliveries' },
+  { to: '/stock/movements', label: 'Movements' },
+  { to: '/stock/counts', label: 'Counts' },
+  { to: '/stock/places', label: 'Places & vendors' },
   { to: '/stock/setup', label: 'Categories & tiers' },
 ];
 
 /**
  * The stock section.
  *
- * Slice 7.5a fills in the catalog half — what the business sells, and how it is
- * packaged and priced. 7.5b adds the movement half: levels, deliveries,
- * adjustments, transfers and stocktake, as further tabs here.
+ * Two halves, in the order somebody works: the catalog (what the business
+ * sells, how it is packaged and priced), then the ledger (what is on the
+ * shelf, what arrived, what moved, and what a count found).
+ *
+ * "Products" is the catalog; everything from "On hand" rightwards reads or
+ * writes the append-only ledger.
  */
 export function StockLayout() {
   return (
