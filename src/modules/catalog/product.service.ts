@@ -197,7 +197,9 @@ export class ProductService {
     if (input.packagingTypeId) {
       await this.assertPackagingTypeExists(input.packagingTypeId);
     }
-    if (input.units) assertExactlyOneBaseUnit(input.units);
+    // Not `assertExactlyOneBaseUnit` here: on a PATCH the units list is a
+    // change, not a whole set, so the base-unit rule is checked against the
+    // merged result inside `writeUnits`.
 
     const defaultTierId = await this.resolveDefaultTier(input.prices);
     const barcodes = resolveBarcodeInputs(input.barcodes);
@@ -236,15 +238,25 @@ export class ProductService {
       throw translateUniqueViolation(error, input.sku ?? '');
     }
 
-    // Prices and barcodes are keyed by unit name, so they need the units as
-    // they stand now rather than as the request described them.
-    if (input.prices?.length || barcodes.length) {
-      const units = await this.prisma.productUnit.findMany({
-        where: { productId: id },
-      });
-      const unitIdByName = new Map(units.map((unit) => [unit.name, unit.id]));
-
+    if (input.units?.length || input.prices?.length || barcodes.length) {
       await this.prisma.$transaction(async (tx) => {
+        // Units first: a request may add a unit and price it in one go, so the
+        // new unit has to exist before the name lookup below can find it.
+        if (input.units?.length) {
+          await this.writeUnits(tx, {
+            productId: id,
+            organizationId,
+            units: input.units,
+          });
+        }
+
+        // Prices and barcodes are keyed by unit name, so they need the units as
+        // they stand now rather than as the request described them.
+        const units = await tx.productUnit.findMany({
+          where: { productId: id },
+        });
+        const unitIdByName = new Map(units.map((unit) => [unit.name, unit.id]));
+
         await this.writePrices(tx, {
           productId: id,
           organizationId,
@@ -286,6 +298,99 @@ export class ProductService {
       );
     }
     return tier.id;
+  }
+
+  /**
+   * Upserts the listed units and leaves every unlisted one alone.
+   *
+   * **Added because `PATCH /products/:id` used to take a `units` array,
+   * validate it, and write nothing** — answering 200 while changing nothing,
+   * which is the worst of the three possible behaviours. A shop that starts
+   * selling by the carton could not record that without recreating the
+   * product.
+   *
+   * Same shape as `writePrices`, and for the same reason: a PATCH naming one
+   * unit must not delete the rest. Three deliberate limits:
+   *
+   * - **Nothing is ever deleted.** `StockMovement`, `SaleLine` and
+   *   `GoodsReceiptLine` all point at units; removing one would orphan history
+   *   that is supposed to be immutable.
+   * - **`factor` may change, and that is safe** only because every row that
+   *   depends on it copies it at write time — `SaleLine.unitFactor` is the
+   *   snapshot, so redefining a carton cannot rewrite what a past sale took off
+   *   the shelf (§4).
+   * - **The base unit cannot move.** `isBase` is derived from `factor === 1`
+   *   and stock is recorded in that unit (§2), so changing which unit is the
+   *   base would silently reinterpret every quantity in the ledger. A unit that
+   *   would change the answer is refused rather than applied.
+   */
+  private async writeUnits(
+    tx: TransactionClient,
+    args: {
+      productId: string;
+      organizationId: string;
+      units: ProductUnitInput[];
+    },
+  ): Promise<void> {
+    const existing = await tx.productUnit.findMany({
+      where: { productId: args.productId },
+    });
+    const byName = new Map(existing.map((unit) => [unit.name, unit]));
+
+    // Exactly one base unit must survive, and the check is on the **merged**
+    // result rather than on the request. `assertExactlyOneBaseUnit` validates a
+    // complete set, which is right for `POST /products` and wrong here: a PATCH
+    // adding a carton to a product that already has a piece lists no base at
+    // all, and would be refused for describing a change rather than a whole.
+    const merged = new Map(
+      existing.map((unit) => [unit.name, unit.factor] as const),
+    );
+    for (const row of args.units) merged.set(row.name, row.factor);
+    const bases = [...merged.entries()].filter(([, factor]) => factor === 1);
+    if (bases.length !== 1) {
+      throw new BadRequestException(
+        bases.length === 0
+          ? 'That would leave the product with no base unit. Stock is recorded in the unit whose factor is 1, so exactly one is required.'
+          : `That would give the product ${bases.length} base units (${bases.map(([name]) => name).join(', ')}). Exactly one unit may have factor 1.`,
+      );
+    }
+
+    for (const row of args.units) {
+      const current = byName.get(row.name);
+
+      // Moving the base would reinterpret every quantity already in the ledger,
+      // which is the one thing no product edit may do.
+      const wouldBecomeBase = row.factor === 1;
+      if (current && current.isBase !== wouldBecomeBase) {
+        throw new BadRequestException(
+          `"${row.name}" is ${current.isBase ? 'the base unit' : 'not the base unit'}, and that cannot change: stock is recorded in base units, so moving it would reinterpret every quantity already in the ledger. Add a new unit instead.`,
+        );
+      }
+
+      await tx.productUnit.upsert({
+        where: {
+          organizationId_productId_name: {
+            organizationId: args.organizationId,
+            productId: args.productId,
+            name: row.name,
+          },
+        },
+        create: {
+          organizationId: args.organizationId,
+          productId: args.productId,
+          name: row.name,
+          factor: row.factor,
+          isBase: row.factor === 1,
+          isDefaultSelling: row.isDefaultSelling ?? row.factor === 1,
+        },
+        update: {
+          factor: row.factor,
+          ...(row.isDefaultSelling !== undefined && {
+            isDefaultSelling: row.isDefaultSelling,
+          }),
+        },
+      });
+    }
   }
 
   /**
