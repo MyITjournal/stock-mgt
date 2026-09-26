@@ -8,7 +8,13 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -19,6 +25,7 @@ import {
   ResetStaffPasswordDto,
   UpdateStaffDto,
 } from './dto/staff.dto';
+import { StaffMemberView, StaffPasswordResetView } from './dto/staff.response';
 
 /**
  * Who works here.
@@ -42,6 +49,7 @@ export class StaffController {
     description:
       'Names, roles and status for any member. An owner or manager also sees usernames, contact details and each person’s working hours.',
   })
+  @ApiOkResponse({ type: [StaffMemberView] })
   list() {
     return this.staff.list();
   }
@@ -56,6 +64,7 @@ export class StaffController {
     description:
       'You set their password and tell them: most cashiers have no email to send it to, so the account is created already verified rather than waiting for a code that would never arrive. Give a `username` for staff without an address — it is stored qualified by your shop, so "amina" becomes `amina@your-slug` and another business can still have an Amina.',
   })
+  @ApiCreatedResponse({ type: StaffMemberView })
   create(@Body() dto: CreateStaffDto) {
     return this.staff.create(dto);
   }
@@ -67,6 +76,7 @@ export class StaffController {
     description:
       'You cannot change your own role or suspend yourself, and the last remaining owner cannot be demoted or suspended — a business with no owner has nobody who can manage staff. Restoring somebody needs a free seat.',
   })
+  @ApiOkResponse({ type: StaffMemberView })
   update(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: UpdateStaffDto,
@@ -82,6 +92,7 @@ export class StaffController {
     description:
       'Staff without an email address cannot use the self-service reset, so somebody has to be able to do it for them.',
   })
+  @ApiCreatedResponse({ type: StaffPasswordResetView })
   resetPassword(
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: ResetStaffPasswordDto,
@@ -96,6 +107,7 @@ export class StaffController {
     description:
       'Suspends rather than deletes: their name is on sales, payments and stock movements. It takes effect on their **next request**, not when their token expires, and it frees their seat.',
   })
+  @ApiOkResponse({ type: StaffMemberView })
   remove(
     @Param('userId', ParseUUIDPipe) userId: string,
     @CurrentUser('sub') actingUserId: string,

@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './auth/AuthProvider';
 import { RequireAuth } from './auth/RequireAuth';
 import { SignInPage } from './auth/SignInPage';
-import { Layout, Page } from './components/Layout';
+import { Layout } from './components/Layout';
 import { ApiError } from './api/client';
 import { HomePage } from './home/HomePage';
 import { TillPage } from './till/TillPage';
@@ -36,6 +36,10 @@ import { CollectionsPage } from './reports/CollectionsPage';
 import { StockReportPage } from './reports/StockReportPage';
 import { MoversPage } from './reports/MoversPage';
 import { TargetsPage } from './reports/TargetsPage';
+import { SettingsLayout } from './settings/SettingsLayout';
+import { BusinessPage } from './settings/BusinessPage';
+import { HoursPage } from './settings/HoursPage';
+import { StaffPage } from './settings/StaffPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -110,10 +114,11 @@ export default function App() {
                   <Route path="movers" element={<MoversPage />} />
                   <Route path="targets" element={<TargetsPage />} />
                 </Route>
-                <Route
-                  path="settings"
-                  element={<ComingSoon title="Settings" slice="7.6" />}
-                />
+                <Route path="settings" element={<SettingsLayout />}>
+                  <Route index element={<BusinessPage />} />
+                  <Route path="hours" element={<HoursPage />} />
+                  <Route path="staff" element={<StaffPage />} />
+                </Route>
               </Route>
             </Route>
 
@@ -122,15 +127,5 @@ export default function App() {
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
-  );
-}
-
-function ComingSoon({ title, slice }: { title: string; slice: string }) {
-  return (
-    <Page title={title} description={`Lands in slice ${slice}.`}>
-      <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
-        Not built yet.
-      </div>
-    </Page>
   );
 }

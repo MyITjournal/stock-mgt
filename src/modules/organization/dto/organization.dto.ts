@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsInt,
   IsOptional,
@@ -98,13 +99,30 @@ export class UpdateOrganizationDto {
   @Max(1440)
   closesAt?: number;
 
+  /**
+   * **At least one day, and that is a safety rule rather than tidiness.**
+   *
+   * An empty array here does not mean "every day" — it means *no* day is a
+   * working day, so `isWithinWorkingHours` refuses every sign-in and the whole
+   * shop is locked out of its own system. Owners are exempt and could put it
+   * back (§9), but every cashier, storekeeper and rep would be shut out with
+   * nothing on screen explaining why.
+   *
+   * Note this is the opposite of `StaffHoursDto.workingDays`, where an empty
+   * array is meaningful and means "follow the business". The difference is that
+   * a membership has something to fall back to and the organization does not.
+   */
   @ApiPropertyOptional({
     example: [1, 2, 3, 4, 5, 6],
     description:
-      'Which days you open, 0 = Sunday. All seven by default; drop 0 if you close on Sundays.',
+      'Which days you open, 0 = Sunday. All seven by default; drop 0 if you close on Sundays. At least one day is required — an empty list would lock every member of staff out.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMinSize(1, {
+    message:
+      'Choose at least one working day. A business open on no days locks every member of staff out.',
+  })
   @ArrayMaxSize(7)
   @IsInt({ each: true })
   @Min(0, { each: true })
