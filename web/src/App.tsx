@@ -17,6 +17,9 @@ import { PaymentsPage } from './money/PaymentsPage';
 import { BankAccountsPage } from './money/BankAccountsPage';
 import { PayablesPage } from './money/PayablesPage';
 import { ExpensesPage } from './money/ExpensesPage';
+import { StockLayout } from './catalog/StockLayout';
+import { ProductsPage } from './catalog/ProductsPage';
+import { CatalogSetupPage } from './catalog/CatalogSetupPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,10 +67,10 @@ export default function App() {
                   <Route path="expenses" element={<ExpensesPage />} />
                   <Route path="accounts" element={<BankAccountsPage />} />
                 </Route>
-                <Route
-                  path="stock"
-                  element={<ComingSoon title="Stock" slice="7.5" />}
-                />
+                <Route path="stock" element={<StockLayout />}>
+                  <Route index element={<ProductsPage />} />
+                  <Route path="setup" element={<CatalogSetupPage />} />
+                </Route>
                 <Route
                   path="reports"
                   element={<ComingSoon title="Reports" slice="7.6" />}
