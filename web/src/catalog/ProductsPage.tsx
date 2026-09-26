@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ProductForm } from './ProductForm';
@@ -28,6 +29,7 @@ export function ProductsPage() {
   const [categoryId, setCategoryId] = useState('');
   const [editing, setEditing] = useState<ProductView | null>(null);
   const [creating, setCreating] = useState(false);
+  const [retiring, setRetiring] = useState<ProductView | null>(null);
 
   const query = new URLSearchParams();
   if (search.trim()) query.set('search', search.trim());
@@ -132,12 +134,22 @@ export function ProductsPage() {
                   </td>
                 )}
                 <td className="px-4 py-3 text-right">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setEditing(product)}
-                  >
-                    Edit
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => setEditing(product)}
+                    >
+                      Edit
+                    </Button>
+                    {product.isActive && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => setRetiring(product)}
+                      >
+                        Retire
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -154,6 +166,106 @@ export function ProductsPage() {
           }}
         />
       )}
+
+      {retiring && (
+        <RetireDialog
+          product={retiring}
+          onClose={() => setRetiring(null)}
+        />
+      )}
     </Page>
+  );
+}
+
+/**
+ * Taking a product out of use.
+ *
+ * **It is a retirement, not a deletion, and the word matters.** The server
+ * soft-deletes: the row stays, `isActive` goes false, and every sale, stock
+ * movement and receipt line that points at it still says what was sold. A
+ * button labelled "Delete" would promise something the system deliberately
+ * will not do — and something a shop should not want, since it would erase
+ * what last month's figures were made of.
+ *
+ * What it does change is that the product stops appearing where somebody
+ * would pick it: the till, the delivery form, a count sheet.
+ */
+function RetireDialog({
+  product,
+  onClose,
+}: {
+  product: ProductView;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const retire = useMutation({
+    mutationFn: () => api.delete<void>(`/products/${product.id}`),
+    onSuccess: () => {
+      afterWrite(queryClient);
+      onClose();
+    },
+    onError: (caught) =>
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : 'Could not retire that product.',
+      ),
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="retire-title"
+    >
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg">
+        <h2 id="retire-title" className="text-lg font-semibold text-slate-900">
+          Retire {product.name}?
+        </h2>
+
+        <p className="mt-2 text-sm text-slate-500">
+          It stops appearing at the till, on a delivery and on a count sheet.
+        </p>
+
+        <p className="mt-2 text-sm text-slate-500">
+          Nothing is erased: past sales, deliveries and stock movements still
+          name it, so last month&rsquo;s figures stay whatever they were. Any
+          stock still on the shelf stays on the shelf and keeps its value —
+          retire it once it has sold through, or write it off with an
+          adjustment first.
+        </p>
+
+        {error && (
+          <p
+            className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700"
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onClose}
+            disabled={retire.isPending}
+          >
+            Keep it
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => retire.mutate()}
+            disabled={retire.isPending}
+          >
+            {retire.isPending ? 'Retiring…' : 'Retire it'}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
