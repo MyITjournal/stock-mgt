@@ -134,4 +134,83 @@ describe('SyncService', () => {
       sync(() => service.movements({ cursor: 'not-a-cursor' })),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  describe('browsing, newest first', () => {
+    it('skips the one-second lag', async () => {
+      await sync(() => service.movements({ order: 'desc' }));
+
+      // The lag stops a *forward* cursor stepping over a row still committing.
+      // Reading newest-first has the opposite exposure — new rows arrive above
+      // wherever the reader has paged to — so holding it back would only hide a
+      // movement recorded a moment ago from the list that refetched.
+      expect(JSON.stringify(lastWhere())).not.toContain('lte');
+    });
+
+    it('orders newest first', async () => {
+      await sync(() => service.movements({ order: 'desc' }));
+
+      const [[args]] = prisma.stockMovement.findMany.mock.calls as [
+        [{ orderBy: unknown }],
+      ];
+      expect(args.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('walks backwards rather than repeating the forward cursor', async () => {
+      prisma.stockMovement.findMany.mockResolvedValue([
+        movement('aaa', '2026-08-29T10:00:00.000Z'),
+      ]);
+      const { nextCursor } = await sync(() =>
+        service.movements({ order: 'desc', limit: 1 }),
+      );
+
+      await sync(() =>
+        service.movements({
+          order: 'desc',
+          limit: 1,
+          cursor: nextCursor as string,
+        }),
+      );
+
+      // `lt`, not `gt`. Getting the direction wrong pages away from the rows
+      // the reader wants while still returning plausible-looking results.
+      expect(lastWhere().AND[0]).toEqual({
+        OR: [
+          { createdAt: { lt: new Date('2026-08-29T10:00:00.000Z') } },
+          {
+            createdAt: new Date('2026-08-29T10:00:00.000Z'),
+            id: { lt: 'aaa' },
+          },
+        ],
+      });
+    });
+
+    it('applies both date bounds beside the cursor rather than as a start', async () => {
+      prisma.stockMovement.findMany.mockResolvedValue([
+        movement('aaa', '2026-08-29T10:00:00.000Z'),
+      ]);
+      const { nextCursor } = await sync(() =>
+        service.movements({ order: 'desc', limit: 1 }),
+      );
+
+      const since = new Date('2026-08-01T00:00:00.000Z');
+      const until = new Date('2026-08-31T00:00:00.000Z');
+      await sync(() =>
+        service.movements({
+          order: 'desc',
+          limit: 1,
+          cursor: nextCursor as string,
+          since,
+          until,
+        }),
+      );
+
+      // Walking forward, `since` is a starting position a cursor overrides.
+      // Walking backward the starting position is the newest row, so both
+      // bounds stay as ordinary filters and survive alongside the cursor.
+      const and = lastWhere().AND;
+      expect(and).toContainEqual({ createdAt: { gte: since } });
+      expect(and).toContainEqual({ createdAt: { lte: until } });
+      expect(and).toHaveLength(3);
+    });
+  });
 });
