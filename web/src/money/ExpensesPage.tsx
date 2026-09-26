@@ -5,6 +5,7 @@ import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import type { PaymentMethod } from '../till/payment';
 import type { components } from '../api/schema';
 
@@ -153,7 +154,7 @@ function ExpenseDialog({ onClose }: { onClose: () => void }) {
         ...(note.trim() && { note: note.trim() }),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>

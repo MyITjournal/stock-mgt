@@ -4,6 +4,7 @@ import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Field, Input } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -89,7 +90,7 @@ function HoursForm({ organization }: { organization: OrganizationView }) {
         workingDays: [...days].sort((a, b) => a - b),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['organization'] });
+      afterWrite(queryClient);
       setError(null);
       setSaved(true);
     },

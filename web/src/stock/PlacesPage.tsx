@@ -4,6 +4,7 @@ import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Field, Input } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -56,7 +57,7 @@ function Locations({ canEdit }: { canEdit: boolean }) {
     mutationFn: (id: string) =>
       api.patch<LocationView>(`/locations/${id}`, { isDefault: true }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['locations'] });
+      afterWrite(queryClient);
       setError(null);
     },
     onError: (caught) =>
@@ -68,7 +69,7 @@ function Locations({ canEdit }: { canEdit: boolean }) {
   const remove = useMutation({
     mutationFn: (id: string) => api.delete<void>(`/locations/${id}`),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['locations'] });
+      afterWrite(queryClient);
       setError(null);
     },
     onError: (caught) =>
@@ -172,7 +173,7 @@ function LocationDialog({ onClose }: { onClose: () => void }) {
         ...(description.trim() ? { description: description.trim() } : {}),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['locations'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>
@@ -236,7 +237,7 @@ function Suppliers({ canEdit }: { canEdit: boolean }) {
   const remove = useMutation({
     mutationFn: (id: string) => api.delete<void>(`/suppliers/${id}`),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      afterWrite(queryClient);
       setError(null);
     },
     onError: (caught) =>
@@ -327,7 +328,7 @@ function SupplierDialog({ onClose }: { onClose: () => void }) {
         ...(address.trim() ? { address: address.trim() } : {}),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>

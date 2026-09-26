@@ -4,6 +4,7 @@ import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Input } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -81,7 +82,7 @@ function SetupList({
     mutationFn: () =>
       api.post(path, { id: crypto.randomUUID(), name: name.trim() }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: [queryKey] });
+      afterWrite(queryClient);
       setName('');
       setError(null);
     },
@@ -156,7 +157,7 @@ function TierList({ canEdit }: { canEdit: boolean }) {
         name: name.trim(),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['price-tiers'] });
+      afterWrite(queryClient);
       setName('');
       setError(null);
     },
