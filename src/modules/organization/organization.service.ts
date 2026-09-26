@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { UpdateOrganizationDto } from './dto/organization.dto';
+import { OrganizationView } from './dto/organization.response';
 
 /**
  * The business itself: its name, and the letterhead a printed document carries.
@@ -19,7 +20,7 @@ import { UpdateOrganizationDto } from './dto/organization.dto';
 export class OrganizationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async current() {
+  async current(): Promise<OrganizationView> {
     const id = TenantContext.requireOrganizationId();
     const organization = await this.prisma.organization.findFirst({
       where: { id, deletedAt: null },
@@ -29,7 +30,7 @@ export class OrganizationService {
     return organization;
   }
 
-  async update(input: UpdateOrganizationDto) {
+  async update(input: UpdateOrganizationDto): Promise<OrganizationView> {
     const id = TenantContext.requireOrganizationId();
     const existing = await this.current();
 
@@ -77,6 +78,7 @@ const ORGANIZATION_FIELDS = {
   slug: true,
   currency: true,
   timezone: true,
+  maxUsers: true,
   address: true,
   phone: true,
   email: true,
