@@ -5389,6 +5389,66 @@ export interface components {
             /** @example Q3 scheme, agreed with Chidi. */
             note?: string;
         };
+        OrganizationView: {
+            /** Format: uuid */
+            id: string;
+            /** @example Adebayo Stores */
+            name: string;
+            /**
+             * @description Qualifies staff usernames, so two businesses can each have an Amina.
+             * @example adebayo-stores
+             */
+            slug: string;
+            /**
+             * @description Not editable. Money is stored as an integer count of minor units.
+             * @example NGN
+             */
+            currency: string;
+            /**
+             * @description Not editable. Every report period resolves in this zone, so changing it would restate history.
+             * @example Africa/Lagos
+             */
+            timezone: string;
+            /**
+             * @description How many **active** people this plan covers — a column rather than a constant, so the tier line moves without a migration (§9). Checked when somebody is added or reactivated, never when they sign in: a business over its limit keeps working. Exposed so the staff screen can say "4 of 5" rather than letting an owner discover the ceiling by hitting a 409.
+             * @example 5
+             */
+            maxUsers: number;
+            address: string | null;
+            phone: string | null;
+            email: string | null;
+            /** @description Tax identification number, printed on an invoice when set. */
+            taxId: string | null;
+            /** @description Company registration number. */
+            rcNumber: string | null;
+            logoUrl: string | null;
+            /**
+             * @description Opening time, in minutes past midnight, in the organization’s timezone.
+             * @example 480
+             */
+            opensAt: number;
+            /**
+             * @description Closing time, same units. Must be later than `opensAt`: no window crosses midnight, and a CHECK enforces it.
+             * @example 1140
+             */
+            closesAt: number;
+            /**
+             * @description Days of the week the shop trades, 0 = Sunday. All seven by default. **Never empty**: an empty list means no day is a working day, which would lock every member of staff out, so the write path refuses it. This is the opposite of a *membership*’s `workingDays`, where empty means "follow the business" — a membership has something to fall back to and the organization does not.
+             * @example [
+             *       1,
+             *       2,
+             *       3,
+             *       4,
+             *       5,
+             *       6
+             *     ]
+             */
+            workingDays: number[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         UpdateOrganizationDto: {
             /** @example Adebayo Stores Limited */
             name?: string;
@@ -5424,7 +5484,7 @@ export interface components {
              */
             closesAt?: number;
             /**
-             * @description Which days you open, 0 = Sunday. All seven by default; drop 0 if you close on Sundays.
+             * @description Which days you open, 0 = Sunday. All seven by default; drop 0 if you close on Sundays. At least one day is required — an empty list would lock every member of staff out.
              * @example [
              *       1,
              *       2,
@@ -5435,6 +5495,49 @@ export interface components {
              *     ]
              */
             workingDays?: string[];
+        };
+        /** @enum {string} */
+        OrgRole: "owner" | "manager" | "sales_rep" | "storekeeper" | "accountant";
+        /**
+         * @description Removal is suspension: their name is on sales, payments and stock movements. It takes effect on their **next request**, not when their token expires, and it frees their seat.
+         * @enum {string}
+         */
+        MembershipStatus: "active" | "invited" | "suspended";
+        StaffUserView: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Required when an owner adds somebody through `/staff`, but the column is nullable because accounts can reach a membership by other routes.
+             * @example Amina
+             */
+            firstName: string | null;
+            lastName: string | null;
+            /** @description Null for most staff — a cashier in this market usually has no working address, which is why `username` exists and why an owner resets their password for them. **Absent** for a reader who is not an owner or manager. */
+            email?: string | null;
+            /** @description Stored qualified by the org slug (`amina@adebayo-stores`), which makes it globally unique for free. **Absent** for a reader who is not an owner or manager: it is half of a credential. */
+            username?: string | null;
+            /** @description Staff accounts are created **pre-verified** — a code would never arrive at an address the owner invented, and the owner vouching in person is the verification. */
+            isVerified?: boolean;
+        };
+        StaffMemberView: {
+            /**
+             * Format: uuid
+             * @description The membership, not the user.
+             */
+            id: string;
+            role: components["schemas"]["OrgRole"];
+            /** @description Removal is suspension: their name is on sales, payments and stock movements. It takes effect on their **next request**, not when their token expires, and it frees their seat. */
+            status: components["schemas"]["MembershipStatus"];
+            /** @description This person’s own opening time, in minutes past midnight. **Null means inherit** the business hours, so a new hire is covered without anybody remembering. Absent for a reader who may not see it. */
+            opensAt?: number | null;
+            closesAt?: number | null;
+            /** @description Days this person works, 0 = Sunday. An **empty array means they follow the business** — the opposite of the organization’s own list, which may never be empty. */
+            workingDays?: number[];
+            /** @description Exempt from the window entirely. Owners are never locked out regardless. */
+            ignoresWorkingHours?: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            user: components["schemas"]["StaffUserView"];
         };
         CreateStaffDto: {
             /** @example Amina */
@@ -5494,6 +5597,10 @@ export interface components {
         ResetStaffPasswordDto: {
             /** @example a-new-password */
             password: string;
+        };
+        StaffPasswordResetView: {
+            /** @example Password updated. Tell them the new one. */
+            message: string;
         };
     };
     responses: never;
@@ -8487,7 +8594,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OrganizationView"];
+                };
             };
         };
     };
@@ -8508,7 +8617,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OrganizationView"];
+                };
             };
         };
     };
@@ -8525,7 +8636,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StaffMemberView"][];
+                };
             };
         };
     };
@@ -8549,7 +8662,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StaffMemberView"];
+                };
             };
         };
     };
@@ -8568,7 +8683,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StaffMemberView"];
+                };
             };
         };
     };
@@ -8591,7 +8708,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StaffMemberView"];
+                };
             };
         };
     };
@@ -8614,7 +8733,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StaffPasswordResetView"];
+                };
             };
         };
     };

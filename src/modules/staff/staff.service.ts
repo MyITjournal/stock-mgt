@@ -14,6 +14,7 @@ import {
   ResetStaffPasswordDto,
   UpdateStaffDto,
 } from './dto/staff.dto';
+import { StaffMemberView, StaffPasswordResetView } from './dto/staff.response';
 
 const MEMBER_SELECT = {
   id: true,
@@ -76,7 +77,7 @@ export class StaffService {
     private readonly tokens: TokenService,
   ) {}
 
-  list() {
+  list(): Promise<StaffMemberView[]> {
     const orgRole = TenantContext.get()?.orgRole;
     const full = Boolean(orgRole && SEES_FULL_STAFF_RECORD.includes(orgRole));
 
@@ -95,7 +96,7 @@ export class StaffService {
    * invented — they would never receive it and could never sign in. The owner
    * vouching for them in person *is* the verification.
    */
-  async create(input: CreateStaffDto) {
+  async create(input: CreateStaffDto): Promise<StaffMemberView> {
     const organizationId = TenantContext.requireOrganizationId();
 
     if (!input.username && !input.email) {
@@ -161,7 +162,11 @@ export class StaffService {
     );
   }
 
-  async update(userId: string, input: UpdateStaffDto, actingUserId: string) {
+  async update(
+    userId: string,
+    input: UpdateStaffDto,
+    actingUserId: string,
+  ): Promise<StaffMemberView> {
     const organizationId = TenantContext.requireOrganizationId();
     const membership = await this.findMembership(userId, organizationId);
 
@@ -255,7 +260,10 @@ export class StaffService {
    * request, so this locks them out on their next tap rather than when their
    * token expires.
    */
-  async suspend(userId: string, actingUserId: string) {
+  async suspend(
+    userId: string,
+    actingUserId: string,
+  ): Promise<StaffMemberView> {
     return this.update(
       userId,
       { status: MembershipStatus.suspended },
@@ -270,7 +278,10 @@ export class StaffService {
    * flow can never reach them — without this, the first forgotten password
    * would be unrecoverable.
    */
-  async resetPassword(userId: string, input: ResetStaffPasswordDto) {
+  async resetPassword(
+    userId: string,
+    input: ResetStaffPasswordDto,
+  ): Promise<StaffPasswordResetView> {
     const organizationId = TenantContext.requireOrganizationId();
     await this.findMembership(userId, organizationId);
 
