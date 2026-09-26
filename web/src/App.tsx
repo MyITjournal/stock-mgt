@@ -20,6 +20,14 @@ import { ExpensesPage } from './money/ExpensesPage';
 import { StockLayout } from './catalog/StockLayout';
 import { ProductsPage } from './catalog/ProductsPage';
 import { CatalogSetupPage } from './catalog/CatalogSetupPage';
+import { LevelsPage } from './stock/LevelsPage';
+import { MovementsPage } from './stock/MovementsPage';
+import { ReceiptsPage } from './stock/ReceiptsPage';
+import { ReceiptDetailPage } from './stock/ReceiptDetailPage';
+import { ReceiveDeliveryPage } from './stock/ReceiveDeliveryPage';
+import { CountsPage } from './stock/CountsPage';
+import { CountSheetPage } from './stock/CountSheetPage';
+import { PlacesPage } from './stock/PlacesPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,11 +46,11 @@ const queryClient = new QueryClient({
 });
 
 /**
- * Routes through slice 7.3.
+ * Routes through slice 7.5b.
  *
- * Signing in, home, the till, sales and customers are real; the rest of the map
- * is laid out so the navigation is honest about what is coming, and so each
- * later slice drops its screens into a route that already exists.
+ * Everything is real now except reports and settings, which land in 7.6 and are
+ * stubbed so the navigation is honest about what is coming rather than hiding
+ * it — and so the last slice drops its screens into routes that already exist.
  */
 export default function App() {
   return (
@@ -69,8 +77,22 @@ export default function App() {
                 </Route>
                 <Route path="stock" element={<StockLayout />}>
                   <Route index element={<ProductsPage />} />
+                  <Route path="levels" element={<LevelsPage />} />
+                  <Route path="receipts" element={<ReceiptsPage />} />
+                  <Route path="movements" element={<MovementsPage />} />
+                  <Route path="counts" element={<CountsPage />} />
+                  <Route path="places" element={<PlacesPage />} />
                   <Route path="setup" element={<CatalogSetupPage />} />
                 </Route>
+
+                {/* Detail and entry screens sit outside the tab strip: they are
+                    somewhere you went from a list, not another tab. */}
+                <Route path="stock/receive" element={<ReceiveDeliveryPage />} />
+                <Route
+                  path="stock/receipts/:id"
+                  element={<ReceiptDetailPage />}
+                />
+                <Route path="stock/counts/:id" element={<CountSheetPage />} />
                 <Route
                   path="reports"
                   element={<ComingSoon title="Reports" slice="7.6" />}

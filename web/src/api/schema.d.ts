@@ -710,12 +710,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List goods receipts */
+        /**
+         * List goods receipts
+         * @description Newest first, bounded. The date filters apply to `receivedAt` — a delivery is looked for by the day it arrived, not the day somebody got round to entering it.
+         */
         get: operations["GoodsReceiptController_findAll"];
         put?: never;
         /**
          * Receive a delivery
-         * @description Takes the invoice total per line, never a per-unit price — "45,211.11 x 6" loses a kobo before the calculation starts. Quantities are counted in the unit you name (the carton) and converted to base units once, here. Receiving 20 while paying for 19 is how free goods are recorded; both figures are kept.
+         * @description Takes the invoice total per line, never a per-unit price — "45,211.11 x 6" loses a kobo before the calculation starts. Quantities are counted in the unit you name (the carton) and converted to base units once, here. Receiving 20 while paying for 19 is how free goods are recorded; both figures are kept. Every delivery also raises a `SupplierBill`, which is what appears on `GET /payables`.
          */
         post: operations["GoodsReceiptController_create"];
         delete?: never;
@@ -812,8 +815,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The ledger, for delta sync
-         * @description Keyset paging over (createdAt, id). The window stops a second short of now so a transaction still committing cannot be stepped over — pages are safe to replay, since ids are client-stable.
+         * The ledger — delta sync, or newest first
+         * @description Keyset paging over (createdAt, id). Syncing (`asc`), the window stops a second short of now so a transaction still committing cannot be stepped over — pages are safe to replay, since ids are client-stable. Browsing (`desc`) skips that lag: new rows arrive above wherever the reader has paged to, so a late commit is never missed, and holding it back would only hide a movement recorded a moment ago.
          */
         get: operations["StockController_movements"];
         put?: never;
@@ -2617,6 +2620,28 @@ export interface components {
             isTierPrice: boolean;
             tax: components["schemas"]["TaxSplit"];
         };
+        LocationView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Main Store */
+            name: string;
+            description: string | null;
+            /** @description Where a movement lands when the caller named no location. Exactly one is flagged: setting it here demotes whichever held it. */
+            isDefault: boolean;
+            /** @description Display order in pickers. Ties break on name. */
+            sortOrder: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /**
+             * Format: date-time
+             * @description Soft delete, and only ever set on an empty location: movements point at it forever, so retiring one that still holds stock would strand that stock where nothing can see it.
+             */
+            deletedAt: string | null;
+        };
         CreateLocationDto: {
             /**
              * Format: uuid
@@ -2653,6 +2678,25 @@ export interface components {
              */
             sortOrder?: number;
         };
+        SupplierView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** @example Dangote Distribution */
+            name: string;
+            /** @description Chasing a delivery, like chasing a debt, is a phone call. */
+            phone: string | null;
+            email: string | null;
+            address: string | null;
+            notes: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            deletedAt: string | null;
+        };
         CreateSupplierDto: {
             /**
              * Format: uuid
@@ -2686,6 +2730,186 @@ export interface components {
             address?: string;
             /** @example Delivers Tuesdays. Rep: Chidi. */
             notes?: string;
+        };
+        ReceiptSupplierRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Dangote Distribution */
+            name: string;
+        };
+        ReceiptLocationRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Main Store */
+            name: string;
+        };
+        ReceiptProductRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Peak Milk 400g */
+            name: string;
+            /** @example PEAK-400 */
+            sku: string;
+        };
+        GoodsReceiptLineSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            batchId: string;
+            /** @description As entered, in the unit named — cartons, not pieces. */
+            quantityReceivedInUnit: number;
+            /** @description What the invoice charged for, in the same unit. */
+            quantityPaidForInUnit: number;
+            /** @description The factor applied at write time. A snapshot: redefining what a carton means later cannot rewrite what this delivery put on the shelf. */
+            unitFactor: number;
+            /** @description What arrived, in base units — what the ledger moved. */
+            quantityReceived: number;
+            /** @description What was charged for, in base units. */
+            quantityPaidFor: number;
+            /** @description The exact invoice total for this line, in kobo — never a per-unit price. **Absent** for a role that may not see cost. */
+            totalCost?: number;
+            /** Format: date-time */
+            createdAt: string;
+            product: components["schemas"]["ReceiptProductRef"];
+        };
+        GoodsReceiptSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            supplierId: string;
+            /** Format: uuid */
+            locationId: string;
+            /**
+             * @description The vendor's own number, which is what they quote.
+             * @example INV-88213
+             */
+            invoiceNumber: string | null;
+            /**
+             * Format: date-time
+             * @description When the delivery arrived, by the recording device. Orders go by phone in this market and are recorded on arrival — there is no purchase order behind this (§6).
+             */
+            receivedAt: string;
+            note: string | null;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            supplier: components["schemas"]["ReceiptSupplierRef"];
+            location: components["schemas"]["ReceiptLocationRef"];
+            lines: components["schemas"]["GoodsReceiptLineSummary"][];
+        };
+        ReceiptRecorderRef: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+        };
+        ReceiptUnitRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Carton */
+            name: string;
+            /**
+             * @description Base units per unit of this name.
+             * @example 12
+             */
+            factor: number;
+        };
+        ReceiptBatchView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            supplierId: string | null;
+            /** @example LOT-2026-04 */
+            lotCode: string | null;
+            /** Format: date-time */
+            expiryDate: string | null;
+            /** Format: date-time */
+            receivedAt: string;
+            /** @description Base units that arrived. */
+            quantityReceived: number;
+            /** @description Base units the invoice charged for. */
+            quantityPaidFor: number;
+            /** @description The same invoice total as the line carries. **Absent** for a role that may not see cost — redacted with the line rather than left as the way round the front door. */
+            totalCost?: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        GoodsReceiptLineView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            batchId: string;
+            /** @description As entered, in the unit named — cartons, not pieces. */
+            quantityReceivedInUnit: number;
+            /** @description What the invoice charged for, in the same unit. */
+            quantityPaidForInUnit: number;
+            /** @description The factor applied at write time. A snapshot: redefining what a carton means later cannot rewrite what this delivery put on the shelf. */
+            unitFactor: number;
+            /** @description What arrived, in base units — what the ledger moved. */
+            quantityReceived: number;
+            /** @description What was charged for, in base units. */
+            quantityPaidFor: number;
+            /** @description The exact invoice total for this line, in kobo — never a per-unit price. **Absent** for a role that may not see cost. */
+            totalCost?: number;
+            /** Format: date-time */
+            createdAt: string;
+            product: components["schemas"]["ReceiptProductRef"];
+            unit: components["schemas"]["ReceiptUnitRef"];
+            batch: components["schemas"]["ReceiptBatchView"];
+            /** @description Output, never input. Divided by what *arrived*, not what was paid for, so free goods pull the cost of every unit down — which is the whole point of them. **Absent** for a role that may not see cost. */
+            unitCost?: number;
+        };
+        GoodsReceiptView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            supplierId: string;
+            /** Format: uuid */
+            locationId: string;
+            /** @example INV-88213 */
+            invoiceNumber: string | null;
+            /** Format: date-time */
+            receivedAt: string;
+            note: string | null;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            supplier: components["schemas"]["ReceiptSupplierRef"];
+            location: components["schemas"]["ReceiptLocationRef"];
+            recordedBy: components["schemas"]["ReceiptRecorderRef"] | null;
+            lines: components["schemas"]["GoodsReceiptLineView"][];
         };
         DeliveryPaymentDto: {
             /**
@@ -2775,6 +2999,176 @@ export interface components {
             payment?: components["schemas"]["DeliveryPaymentDto"];
             lines: components["schemas"]["GoodsReceiptLineDto"][];
         };
+        StockProductRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Peak Milk 400g */
+            name: string;
+            /** @example PEAK-400 */
+            sku: string;
+        };
+        StockLocationRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Main Store */
+            name: string;
+        };
+        StockLevelBatch: {
+            /** Format: uuid */
+            batchId: string;
+            /** @description Base units of this lot on hand here. */
+            quantity: number;
+            /** @example LOT-2026-04 */
+            lotCode: string | null;
+            /** Format: date-time */
+            expiryDate: string | null;
+            /** @description The exact invoice total divided by what arrived — output, never input. **Absent entirely** for a role that may not see cost: this is a buying price. Null only when the lot recorded no quantity to divide by. */
+            unitCost?: number | null;
+        };
+        StockLevelRow: {
+            product: components["schemas"]["StockProductRef"];
+            location: components["schemas"]["StockLocationRef"];
+            /** @description Base units on hand. May be negative — a forced movement records stock that went out before it was entered as received. */
+            quantity: number;
+            /** @description Only when `includeBatches=true`. The lots that add up to `quantity`, which is what FEFO will pick from. */
+            batches?: components["schemas"]["StockLevelBatch"][];
+        };
+        ExpiringBatchRow: {
+            product: components["schemas"]["StockProductRef"];
+            location: components["schemas"]["StockLocationRef"];
+            /** Format: uuid */
+            batchId: string;
+            lotCode: string | null;
+            /** Format: date-time */
+            expiryDate: string | null;
+            /** @description Base units still on hand in this lot. */
+            quantity: number;
+            /** @description What walks out of the door if this is not sold in time. **Absent** for a role that may not see cost — the list itself stays open, because knowing which lots to push is not a cost question. */
+            valueAtRisk?: number;
+        };
+        /** @enum {string} */
+        StockMovementType: "receipt" | "sale" | "return_in" | "return_out" | "adjustment" | "transfer_in" | "transfer_out" | "damage";
+        /**
+         * @description Why, for an adjustment. Damage and spoilage are movements with a reason, never silent decrements.
+         * @enum {string}
+         */
+        StockAdjustmentReason: "damage" | "expiry" | "theft" | "count_correction" | "opening_balance" | "other";
+        StockUserRef: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+        };
+        ForcedMovementView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            locationId: string;
+            /**
+             * Format: uuid
+             * @description Every movement carries a lot.
+             */
+            batchId: string;
+            type: components["schemas"]["StockMovementType"];
+            /** @description Signed, in base units: positive in, negative out. A balance is then a plain sum. */
+            quantity: number;
+            /** @description Why, for an adjustment. Damage and spoilage are movements with a reason, never silent decrements. */
+            reason: components["schemas"]["StockAdjustmentReason"] | null;
+            note: string | null;
+            /**
+             * Format: date-time
+             * @description When it happened, by the recording device clock. `createdAt` is when the server stored it; offline, the two differ.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /**
+             * @description What caused it — a delivery, a sale, a stocktake.
+             * @example goods_receipt
+             */
+            referenceType: string | null;
+            /** Format: uuid */
+            referenceId: string | null;
+            /**
+             * Format: uuid
+             * @description Shared by the two halves of a transfer, so the pair reads as one act.
+             */
+            transferGroupId: string | null;
+            /** @description True when an owner or manager pushed this through a shortfall. The point of allowing the override is that it leaves this trail. */
+            isForced: boolean;
+            forcedReason: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            product: components["schemas"]["StockProductRef"];
+            location: components["schemas"]["StockLocationRef"];
+            recordedBy: components["schemas"]["StockUserRef"] | null;
+        };
+        MovementBatchRef: {
+            lotCode: string | null;
+            /** Format: date-time */
+            expiryDate: string | null;
+        };
+        SyncedMovementView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            locationId: string;
+            /**
+             * Format: uuid
+             * @description Every movement carries a lot.
+             */
+            batchId: string;
+            type: components["schemas"]["StockMovementType"];
+            /** @description Signed, in base units: positive in, negative out. A balance is then a plain sum. */
+            quantity: number;
+            /** @description Why, for an adjustment. Damage and spoilage are movements with a reason, never silent decrements. */
+            reason: components["schemas"]["StockAdjustmentReason"] | null;
+            note: string | null;
+            /**
+             * Format: date-time
+             * @description When it happened, by the recording device clock. `createdAt` is when the server stored it; offline, the two differ.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /**
+             * @description What caused it — a delivery, a sale, a stocktake.
+             * @example goods_receipt
+             */
+            referenceType: string | null;
+            /** Format: uuid */
+            referenceId: string | null;
+            /**
+             * Format: uuid
+             * @description Shared by the two halves of a transfer, so the pair reads as one act.
+             */
+            transferGroupId: string | null;
+            /** @description True when an owner or manager pushed this through a shortfall. The point of allowing the override is that it leaves this trail. */
+            isForced: boolean;
+            forcedReason: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            batch: components["schemas"]["MovementBatchRef"];
+        };
+        MovementPageView: {
+            movements: components["schemas"]["SyncedMovementView"][];
+            /** @description Pass back verbatim on the next call. Null when the page came up short. */
+            nextCursor: string | null;
+            /**
+             * Format: date-time
+             * @description How far a forward walk is safe to trust. Reported on both orders, as the other three feeds do, but only the sync half is filtered by it.
+             */
+            syncedThrough: string;
+            hasMore: boolean;
+        };
         CreateAdjustmentDto: {
             /**
              * Format: uuid
@@ -2830,6 +3224,51 @@ export interface components {
             /** @example Sold from the van before the delivery was entered. */
             forcedReason?: string;
         };
+        StockMovementView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            locationId: string;
+            /**
+             * Format: uuid
+             * @description Every movement carries a lot.
+             */
+            batchId: string;
+            type: components["schemas"]["StockMovementType"];
+            /** @description Signed, in base units: positive in, negative out. A balance is then a plain sum. */
+            quantity: number;
+            /** @description Why, for an adjustment. Damage and spoilage are movements with a reason, never silent decrements. */
+            reason: components["schemas"]["StockAdjustmentReason"] | null;
+            note: string | null;
+            /**
+             * Format: date-time
+             * @description When it happened, by the recording device clock. `createdAt` is when the server stored it; offline, the two differ.
+             */
+            occurredAt: string;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /**
+             * @description What caused it — a delivery, a sale, a stocktake.
+             * @example goods_receipt
+             */
+            referenceType: string | null;
+            /** Format: uuid */
+            referenceId: string | null;
+            /**
+             * Format: uuid
+             * @description Shared by the two halves of a transfer, so the pair reads as one act.
+             */
+            transferGroupId: string | null;
+            /** @description True when an owner or manager pushed this through a shortfall. The point of allowing the override is that it leaves this trail. */
+            isForced: boolean;
+            forcedReason: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
         CreateTransferDto: {
             /** Format: uuid */
             id?: string;
@@ -2854,6 +3293,174 @@ export interface components {
             force?: boolean;
             /** @example Van already loaded before the receipt was entered. */
             forcedReason?: string;
+        };
+        TransferResultView: {
+            /** Format: uuid */
+            transferGroupId: string;
+            /** @description The leaving half — one per lot the pick drew from. */
+            out: components["schemas"]["StockMovementView"][];
+            /** @description The arriving half, lot for lot. */
+            in: components["schemas"]["StockMovementView"][];
+        };
+        DriftedBalance: {
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            locationId: string;
+            /** Format: uuid */
+            batchId: string;
+            /** @description What the cache held. */
+            was: number;
+            /** @description What the ledger says. */
+            now: number;
+        };
+        RebuildBalancesView: {
+            corrected: number;
+            drifted: components["schemas"]["DriftedBalance"][];
+        };
+        /**
+         * @description Only a posted count has touched stock. One open count per location at a time: two would post variances against each other.
+         * @enum {string}
+         */
+        StocktakeStatus: "open" | "posted" | "cancelled";
+        CountLocationRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Main Store */
+            name: string;
+        };
+        CountUserRef: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+        };
+        CountProductRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Peak Milk 400g */
+            name: string;
+            /** @example PEAK-400 */
+            sku: string;
+        };
+        StocktakeLineSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            stocktakeId: string;
+            /** Format: uuid */
+            productId: string;
+            /** @description What was actually on the shelf, in **base units** — the unit the ledger counts in. */
+            countedQuantity: number;
+            /** @description What the ledger believed. Snapshotted when the line was counted, so the sheet still explains itself weeks later; it is evidence, not the arithmetic that posting does. */
+            expectedQuantity: number;
+            note: string | null;
+            /** Format: uuid */
+            countedByUserId: string | null;
+            /** Format: date-time */
+            countedAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            product: components["schemas"]["CountProductRef"];
+            countedBy: components["schemas"]["CountUserRef"] | null;
+        };
+        StocktakeSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /**
+             * Format: uuid
+             * @description Counts are per location. Counting everywhere at once is not a thing anybody does with a clipboard.
+             */
+            locationId: string;
+            /** @description Only a posted count has touched stock. One open count per location at a time: two would post variances against each other. */
+            status: components["schemas"]["StocktakeStatus"];
+            note: string | null;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            postedAt: string | null;
+            /** Format: date-time */
+            cancelledAt: string | null;
+            /** Format: uuid */
+            startedByUserId: string | null;
+            /** Format: uuid */
+            postedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            location: components["schemas"]["CountLocationRef"];
+            startedBy: components["schemas"]["CountUserRef"] | null;
+            /** @description Who decided the variance was real. Deliberately not the same job as finding it: a counter who could both report a shortfall and approve it can walk out with the difference. */
+            postedBy: components["schemas"]["CountUserRef"] | null;
+            lines: components["schemas"]["StocktakeLineSummary"][];
+        };
+        StocktakeLineView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            stocktakeId: string;
+            /** Format: uuid */
+            productId: string;
+            /** @description What was actually on the shelf, in **base units** — the unit the ledger counts in. */
+            countedQuantity: number;
+            /** @description What the ledger believed. Snapshotted when the line was counted, so the sheet still explains itself weeks later; it is evidence, not the arithmetic that posting does. */
+            expectedQuantity: number;
+            note: string | null;
+            /** Format: uuid */
+            countedByUserId: string | null;
+            /** Format: date-time */
+            countedAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            product: components["schemas"]["CountProductRef"];
+            countedBy: components["schemas"]["CountUserRef"] | null;
+            /** @description `countedQuantity − expectedQuantity`. Negative is a shortfall, positive a surplus. */
+            variance: number;
+        };
+        StocktakeView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            locationId: string;
+            status: components["schemas"]["StocktakeStatus"];
+            note: string | null;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            postedAt: string | null;
+            /** Format: date-time */
+            cancelledAt: string | null;
+            /** Format: uuid */
+            startedByUserId: string | null;
+            /** Format: uuid */
+            postedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            location: components["schemas"]["CountLocationRef"];
+            startedBy: components["schemas"]["CountUserRef"] | null;
+            postedBy: components["schemas"]["CountUserRef"] | null;
+            lines: components["schemas"]["StocktakeLineView"][];
+            /** @description How many products are on the sheet. */
+            counted: number;
+            /** @description Lines where the shelf and the ledger disagree. */
+            discrepancies: number;
+            /** @description Net base units the ledger would move if this were posted. */
+            netVariance: number;
         };
         CreateStocktakeDto: {
             /**
@@ -2883,6 +3490,42 @@ export interface components {
         CountLinesDto: {
             /** @description Many at once, because a device that counted a shelf offline syncs the whole sheet in one request. Counting a product twice replaces the earlier line. */
             lines: components["schemas"]["CountLineDto"][];
+        };
+        PostedStocktakeView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            locationId: string;
+            status: components["schemas"]["StocktakeStatus"];
+            note: string | null;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            postedAt: string | null;
+            /** Format: date-time */
+            cancelledAt: string | null;
+            /** Format: uuid */
+            startedByUserId: string | null;
+            /** Format: uuid */
+            postedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            location: components["schemas"]["CountLocationRef"];
+            startedBy: components["schemas"]["CountUserRef"] | null;
+            postedBy: components["schemas"]["CountUserRef"] | null;
+            lines: components["schemas"]["StocktakeLineView"][];
+            /** @description How many products are on the sheet. */
+            counted: number;
+            /** @description Lines where the shelf and the ledger disagree. */
+            discrepancies: number;
+            /** @description Net base units the ledger would move if this were posted. */
+            netVariance: number;
+            /** @description How many lines actually moved stock. Lines that matched are not corrections and write nothing. */
+            corrections: number;
         };
         BilledSupplier: {
             /** Format: uuid */
@@ -4151,18 +4794,6 @@ export interface components {
             estimatedCost: number;
             estimatedLines: number;
             lastMonthOperating: number;
-        };
-        ExpiringBatchRow: {
-            batchId: string;
-            lotCode: string | null;
-            /** Format: date-time */
-            expiryDate: string | null;
-            product: components["schemas"]["NamedRef"];
-            location: components["schemas"]["NamedRef"];
-            quantity: number;
-            /** @description What walks out of the door if this is not sold in time. Always present here, because this endpoint is closed to roles that may not see cost. */
-            value?: number;
-            daysToExpiry: number | null;
         };
         StockAlertRow: {
             id: string;
@@ -5579,7 +6210,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LocationView"][];
+                };
             };
         };
     };
@@ -5603,7 +6236,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LocationView"];
+                };
             };
         };
     };
@@ -5622,7 +6257,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LocationView"];
+                };
             };
         };
     };
@@ -5664,7 +6301,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LocationView"];
+                };
             };
         };
     };
@@ -5681,7 +6320,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierView"][];
+                };
             };
         };
     };
@@ -5705,7 +6346,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierView"];
+                };
             };
         };
     };
@@ -5724,7 +6367,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierView"];
+                };
             };
         };
     };
@@ -5766,7 +6411,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SupplierView"];
+                };
             };
         };
     };
@@ -5775,6 +6422,12 @@ export interface operations {
             query?: {
                 supplierId?: string;
                 locationId?: string;
+                /** @description ISO date-time. Filters the day the delivery arrived. */
+                since?: string;
+                /** @description ISO date-time. */
+                until?: string;
+                /** @description Defaults to 100, capped at 500. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -5786,7 +6439,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GoodsReceiptSummary"][];
+                };
             };
         };
     };
@@ -5810,7 +6465,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GoodsReceiptView"];
+                };
             };
         };
     };
@@ -5829,7 +6486,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["GoodsReceiptView"];
+                };
             };
         };
     };
@@ -5851,7 +6510,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StockLevelRow"][];
+                };
             };
         };
     };
@@ -5872,7 +6533,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpiringBatchRow"][];
+                };
             };
         };
     };
@@ -5892,7 +6555,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ForcedMovementView"][];
+                };
             };
         };
     };
@@ -5901,8 +6566,12 @@ export interface operations {
             query?: {
                 productId?: string;
                 locationId?: string;
-                /** @description ISO date-time. Ignored when a cursor is given. */
+                /** @description ISO date-time. Syncing, this is a starting position and is ignored when a cursor is given; browsing, it is an ordinary lower bound applied alongside the cursor. */
                 since?: string;
+                /** @description ISO date-time. An upper bound, for browsing. */
+                until?: string;
+                /** @description `asc` (the default) is the sync walk; `desc` is newest-first for a person reading the list. */
+                order?: "asc" | "desc";
                 /** @description The nextCursor from the previous page, passed back verbatim. */
                 cursor?: string;
                 limit?: number;
@@ -5917,7 +6586,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MovementPageView"];
+                };
             };
         };
     };
@@ -5937,11 +6608,14 @@ export interface operations {
             };
         };
         responses: {
+            /** @description One movement per lot the adjustment touched — writing stock off across three lots is three rows, so the ledger still says which lot left. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StockMovementView"][];
+                };
             };
         };
     };
@@ -5965,7 +6639,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TransferResultView"];
+                };
             };
         };
     };
@@ -5982,7 +6658,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RebuildBalancesView"];
+                };
             };
         };
     };
@@ -6002,7 +6680,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StocktakeSummary"][];
+                };
             };
         };
     };
@@ -6026,7 +6706,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StocktakeSummary"];
+                };
             };
         };
     };
@@ -6045,7 +6727,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StocktakeView"];
+                };
             };
         };
     };
@@ -6068,7 +6752,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StocktakeView"];
+                };
             };
         };
     };
@@ -6088,7 +6774,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StocktakeView"];
+                };
             };
         };
     };
@@ -6110,7 +6798,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PostedStocktakeView"];
+                };
             };
         };
     };
@@ -6129,7 +6819,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StocktakeView"];
+                };
             };
         };
     };

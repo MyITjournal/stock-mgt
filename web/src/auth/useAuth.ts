@@ -29,3 +29,25 @@ export function useIsManager(): boolean {
   const { user } = useAuth();
   return user?.orgRole === 'owner' || user?.orgRole === 'manager';
 }
+
+/**
+ * Who records stock moving, mirroring `STOCK_RECORDERS` on the server.
+ *
+ * Everybody except the accountant: receiving a delivery, writing off breakage
+ * and moving stock to a van are all daily work rather than decisions. The two
+ * things that *are* decisions — forcing a movement through a shortfall, and
+ * posting a count — stay with {@link useIsManager}.
+ *
+ * Navigation, not security. The server refuses these routes regardless (§9).
+ */
+export const RECORDS_STOCK: readonly OrgRole[] = [
+  'owner',
+  'manager',
+  'storekeeper',
+  'sales_rep',
+];
+
+export function useRecordsStock(): boolean {
+  const { user } = useAuth();
+  return user !== null && RECORDS_STOCK.includes(user.orgRole);
+}
