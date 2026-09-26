@@ -15,6 +15,8 @@ import { MoneyLayout } from './money/MoneyLayout';
 import { ReceivablesPage } from './money/ReceivablesPage';
 import { PaymentsPage } from './money/PaymentsPage';
 import { BankAccountsPage } from './money/BankAccountsPage';
+import { PayablesPage } from './money/PayablesPage';
+import { ExpensesPage } from './money/ExpensesPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,6 +60,8 @@ export default function App() {
                 <Route path="money" element={<MoneyLayout />}>
                   <Route index element={<ReceivablesPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
+                  <Route path="payables" element={<PayablesPage />} />
+                  <Route path="expenses" element={<ExpensesPage />} />
                   <Route path="accounts" element={<BankAccountsPage />} />
                 </Route>
                 <Route
