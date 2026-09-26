@@ -36,7 +36,7 @@ and a wholesale route have to coexist in the same model rather than one being as
 | 6.1 | Gap-closing: sync correctness, cash-up, the no-credit rule, images, stocktake | done |
 | 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | done |
 | 6.6 | **Vendor payables**: what I owe, supplier payments, purchases summary | done |
-| 7 | **Web dashboard** — v1 does not ship without it; planned in §17 as 7.0–7.6 | next |
+| 7 | **Web dashboard** — v1 does not ship without it; planned in §17 as 7.0–7.6 | 7.0–7.5b done; **7.6 next** |
 | — | **Deploy to Render** — free tier, once the dashboard exists | after 7 |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
@@ -1457,10 +1457,18 @@ Recorded because each cost real time and none is obvious.
 ## 14. Where things stand
 
 **Slices 0–6.6 done, plus the 6.1 gap-closing pass, two security passes, and staff
-management and working hours. On the web side, 7.0 through 7.3 are done — a sale can be rung up
-in a browser, and the sales, returns, customer and statement screens are live.** 433 tests across
+management and working hours. On the web side, 7.0 through 7.5b are done — a sale can be rung up
+in a browser, and the sales, money, catalog and stock screens are live. Only 7.6, reports and
+settings, stands between here and v1.** 445 tests across
 34 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
 **0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
+
+**Slice 7.5b — stock — landed 2026-09-26**, recorded in §17. It typed the whole inventory module,
+which had been returning `content?: never` on every endpoint, and closed two gaps that only a
+screen would have found: **`GET /stock/movements` was sync-only** — the fourth feed to need a
+browsing walk, which makes the pattern a checklist item rather than a discovery — and
+**`GET /goods-receipts` was unbounded**, returning every delivery ever recorded with every line
+on each.
 
 **Slice 7.5a — the catalog — landed 2026-09-26**, recorded in §17. It fixed a silent no-op worth
 knowing about: **`PATCH /products/:id` accepted a `units` array and wrote nothing**, answering 200.
@@ -1792,9 +1800,9 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ## 15. Next
 
-**The immediate next thing is slice 7.5b** — stock: levels, batches, movements, goods receipts,
-adjustments, transfers, locations, suppliers and stocktake — then 7.6, then the deploy at item 1
-below. The slice table and
+**The immediate next thing is slice 7.6** — reports and settings: every report screen, the
+organization letterhead, staff and working hours. It is the last slice of the web dashboard, and
+v1 is closed when it lands; then the deploy at item 1 below. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
 **A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
@@ -2394,7 +2402,7 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 | 7.4a | Money in — receivables, customer payments, allocation, void, bank accounts | **done 2026-09-26** |
 | 7.4b | Money out — payables, supplier bills and payments, expenses | **done 2026-09-26** |
 | 7.5a | Catalog — products, units, prices, barcodes, categories, packaging types, tiers | **done 2026-09-26** |
-| 7.5b | Stock — levels, batches, movements, goods receipts, adjustments, transfers, locations, suppliers, stocktake | |
+| 7.5b | Stock — levels, batches, movements, goods receipts, adjustments, transfers, locations, suppliers, stocktake | **done 2026-09-26** |
 | 7.6 | Reports and settings — every report screen, organization letterhead, staff, working hours | v1 is closed |
 
 Each is independently deployable. After 7.2 the application is genuinely usable, which is the
@@ -2705,3 +2713,72 @@ and **units cannot be deleted through the API** — the very rule just added. Th
 directly, which was safe only because nothing referenced them; the script checks sale lines and
 receipt lines first and skips anything that does. A unit with history would have been a history
 edit, not a cleanup.
+
+### 7.5b, and the fourth endpoint to learn it serves two readers
+
+Built 2026-09-26. Stock on hand with the lots behind it, deliveries, the movement ledger,
+adjustments, transfers, counts, locations and vendors.
+
+**The whole inventory module returned `content?: never`.** Every one of its endpoints was
+undescribed in the OpenAPI document, so this slice is about half API work: `LocationView`,
+`SupplierView`, `StockLevelRow`, `ExpiringBatchRow`, `StockMovementView` with its two richer
+forms, `MovementPageView`, `GoodsReceiptSummary`/`GoodsReceiptView`, `TransferResultView`,
+`RebuildBalancesView` and the stocktake trio. 69 of 142 operations now declare a response,
+against 39 before it.
+
+Writing them down did not find a leak this time, and that is worth recording too: §9's second
+sweep had already been through these endpoints, and `redactCost` was applied correctly on every
+one — per-lot `unitCost`, `valueAtRisk` on the expiry list, `totalCost` on a receipt line **and
+on the lot behind it**, which is the field an attacker would have reached for. The walkthrough
+asserts all four as a live rep rather than against a fixture, which is the lesson 7.2 paid for:
+`not.toHaveProperty` passes happily on a mock that never had the key.
+
+**`GET /stock/movements` browses now, and it is the fourth endpoint to need this.** Sales,
+payments and supplier payments each learned it separately; the ledger was still sync-only, so a
+movements screen would have read oldest-first and hidden anything from the last second. `order`
+defaults to `asc`, so every syncing client is untouched. Four tests, including one asserting the
+backward walk is `lt` rather than a copy of the forward one.
+
+At this point the pattern is not a discovery but a checklist item: **any feed a person will read
+needs both walks, and the sync lag belongs only to the forward one.** Expenses had the right
+shape from the start and still does.
+
+**`GET /goods-receipts` returned every delivery ever recorded, with every line on each.** Not a
+bug in the month it was written and a page that grows without limit thereafter. It now takes
+`since`, `until` and `limit` (100, capped at 500). The bounds filter `receivedAt` rather than
+`createdAt` — the opposite choice to `GET /sales` — because a delivery is looked for by the day
+it arrived, not the day somebody got round to entering it. No cursor: nothing syncs this feed,
+and a screen that wants older deliveries asks for an older window.
+
+**Adjust and move are dialogs on a stock row, not screens of their own.** You adjust *this
+product at this location*, which is a row already on the page; a separate screen would begin by
+asking for two things the click already said. Both inherit the till's override handling — a 409 is
+a rule, supplying the reason *is* the override, and the row id stays stable across the retry while
+each attempt carries a fresh `Idempotency-Key` (§8).
+
+**Three rules the screens have to say out loud**, because each is a decision somebody could
+otherwise mistake for a gap:
+
+- **Counting is not adjusting.** The count sheet says posting is what writes corrections, and a
+  counter who is not a manager is told plainly that somebody else posts it. The walkthrough
+  asserts stock is byte-identical after counting and moved after posting.
+- **Every delivery raises a bill.** The receive form says so beside the invoice total, and the
+  receipt detail points at Money → We owe rather than implying the goods value is what is owed.
+- **A surplus needs a lot.** Bringing stock on asks for a lot code, an expiry and what it is
+  worth, rather than silently opening an unvalued batch — an opening balance entered with no cost
+  is stock the valuation reads as free.
+
+**Counted quantities have no unit picker, and that is deliberate.** Adjustments and transfers do —
+somebody writing off two cartons should say "2" and "carton" — but a count sheet is filled in by
+a person looking at a shelf, and offering cartons there invites a number that has to be multiplied
+before it means anything. Counts are base units, like the ledger.
+
+**Verified against the running server, not asserted.** 45 checks over the exact request sequence
+the screens make: the transfer pair shares a group id, preserves batch identity and nets to zero;
+over-transferring is refused with a 409 naming the shortfall and forced with a reason; a delivery
+of 20 paid-for-19 prices at the received rate and raises a bill; counting moves nothing and
+posting moves exactly the variance. `npm run smoke` passed 369 checks afterwards, so movements
+still sum to levels.
+
+**Still not verified in a browser** — there is no Playwright or headless Chromium here, so the
+wiring, the arithmetic and the refusals are checked and the rendering is not.

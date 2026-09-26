@@ -335,9 +335,11 @@ and shares no code with it.
 
 **Where it has got to: 7.0 (foundation, sign-in), 7.1 (home), 7.2 (the till), 7.3 (sales, returns,
 customers, statements, PDFs) and 7.4 (money — receivables, payments, allocation, void,
-accounts, payables, supplier bills and payments, expenses) and 7.5a (catalog — products, units,
-prices, categories, packaging types, tiers) are done. 7.5b is next**: stock — levels, batches,
-movements, goods receipts, adjustments, transfers, locations, suppliers, stocktake. The slice table is in §17. Both servers have to be
+accounts, payables, supplier bills and payments, expenses), 7.5a (catalog — products, units,
+prices, categories, packaging types, tiers) and 7.5b (stock — on hand with its lots, deliveries,
+the movement ledger, adjustments, transfers, counts, locations and vendors) are done. 7.6 is
+next and closes v1**: reports and settings — every report screen, the organization letterhead,
+staff, working hours. The slice table is in §17. Both servers have to be
 running to work on this: the API on 4000, then `npm run dev` in `web/` on 5173, which
 `CORS_ORIGINS` already allows.
 
@@ -380,7 +382,8 @@ Four more from the till (7.2), all in `web/src/till/`:
 
 And three from 7.3:
 
-- **`GET /sales` and `GET /payments` each serve two readers.** `order=desc` is the browsing half;
+- **`GET /sales`, `GET /payments`, `GET /supplier-payments` and `GET /stock/movements` each serve
+  two readers.** `order=desc` is the browsing half;
   `asc` is the sync default and must stay that way. Walking forward, `since` is a starting position
   a cursor overrides; walking backward, `since`/`until` are plain filters applied beside the cursor.
   **Browsing also skips the one-second sync lag** — that lag stops a forward cursor stepping over a
@@ -408,6 +411,24 @@ Four from 7.4:
   and overpaying is a **409** rather than credit. Those absences are decisions, not gaps.
 - **A supplier payment is never an `Expense`.** Stock already reaches profit through cost of goods
   sold, so recording it twice understates every margin. The expense form says so on screen.
+
+And four from 7.5b, in `web/src/stock/`:
+
+- **Any feed a person reads needs both walks, and the sync lag belongs only to the forward one.**
+  `GET /stock/movements` was the fourth endpoint to need this after sales, payments and supplier
+  payments — it is a checklist item now, not a discovery. `order` still defaults to `asc` so
+  syncing clients are untouched.
+- **Adjust and move are dialogs on a stock row, not screens.** You adjust *this product at this
+  location*, which the click already said. Both inherit the till's override handling: a 409 is a
+  rule, the reason *is* the override, and **the row id stays stable while each attempt carries a
+  fresh key**.
+- **Counting is not adjusting, and the screens say so.** A count changes nothing until an owner or
+  manager posts it, and the sheet tells a counter that somebody else posts it. Counted quantities
+  are **base units with no unit picker** — a person at a shelf counts pieces — while adjustments
+  and transfers do offer one, because writing off "2 cartons" should not need multiplying first.
+- **A surplus needs a lot, and an unvalued one reads as free.** Bringing stock on asks for the lot
+  code, expiry and what it is worth rather than silently opening an empty batch. Deliveries say out
+  loud that they raise a bill on *We owe* — the goods value on a receipt is not what is owed.
 
 **Units, prices and barcodes upsert and never delete what a request does not list** (§4), and the
 product form must not imply otherwise — a remove button would silently do nothing. Units can be
