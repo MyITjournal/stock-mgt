@@ -16,6 +16,7 @@ import { ReceivablesPage } from './money/ReceivablesPage';
 import { PaymentsPage } from './money/PaymentsPage';
 import { BankAccountsPage } from './money/BankAccountsPage';
 import { PayablesPage } from './money/PayablesPage';
+import { SupplierPaymentsPage } from './money/SupplierPaymentsPage';
 import { ExpensesPage } from './money/ExpensesPage';
 import { StockLayout } from './catalog/StockLayout';
 import { ProductsPage } from './catalog/ProductsPage';
@@ -84,6 +85,7 @@ export default function App() {
                   <Route index element={<ReceivablesPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payables" element={<PayablesPage />} />
+                  <Route path="paid" element={<SupplierPaymentsPage />} />
                   <Route path="expenses" element={<ExpensesPage />} />
                   <Route path="accounts" element={<BankAccountsPage />} />
                 </Route>
