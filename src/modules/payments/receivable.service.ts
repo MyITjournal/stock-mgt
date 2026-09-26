@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
-import { LIVE_ALLOCATIONS, saleBalance } from './balance';
+import { LIVE_ALLOCATIONS, saleBalance, splitOwed } from './balance';
 import {
   DebtorCustomer,
   DebtorGroup,
@@ -61,13 +61,22 @@ export class ReceivableService {
       }))
       .filter((sale) => sale.balance !== 0);
 
+    const split = splitOwed(invoices.map((sale) => sale.balance));
+
     return {
       invoices,
       byCustomer: groupByCustomer(invoices),
-      /** Owed to the business. Money owed *back* is excluded, not netted off. */
-      totalOutstanding: invoices
-        .filter((sale) => sale.balance > 0)
-        .reduce((total, sale) => total + sale.balance, 0),
+      /**
+       * Owed to the business. Money owed *back* is excluded, not netted off.
+       *
+       * `groupByCustomer` follows the same rule, so these two agree. They did
+       * not for a while: the grouping netted credits away while this filtered
+       * them out, so the headline read ₦21,000 more than its own breakdown
+       * added up to, and nothing on the screen explained the difference.
+       */
+      totalOutstanding: split.owed,
+      /** The other half: owed back, as a positive number. */
+      totalCredit: split.credit,
     };
   }
 
@@ -134,11 +143,19 @@ function groupByCustomer(
     const row = grouped.get(key) ?? {
       customer: invoice.customer,
       balance: 0,
+      credit: 0,
       invoices: 0,
       oldestDays: 0,
     };
 
-    row.balance += invoice.balance;
+    // Split rather than summed, which is the whole point of this function
+    // having been wrong. Adding a negative balance in here netted a credit
+    // against unrelated debts — and for the walk-in bucket that is not even
+    // a customer's position, it is several strangers' debts with one
+    // stranger's credit taken off the pile.
+    if (invoice.balance > 0) row.balance += invoice.balance;
+    else row.credit -= invoice.balance;
+
     row.invoices += 1;
     row.oldestDays = Math.max(row.oldestDays, invoice.daysOutstanding);
     grouped.set(key, row);
