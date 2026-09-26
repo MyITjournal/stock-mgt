@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Button } from '../components/Button';
 import { Field, Input } from '../components/Field';
+import { QuantityInput } from '../components/QuantityInput';
 import { Money } from '../components/Money';
 import type { components } from '../api/schema';
 
@@ -122,19 +123,14 @@ export function ReturnDialog({
                 {entry && (
                   <div className="mt-3 grid gap-3 pl-7 sm:grid-cols-3">
                     <Field label="How many" htmlFor={`qty-${line.id}`}>
-                      <Input
+                      <QuantityInput
                         id={`qty-${line.id}`}
-                        type="number"
+                        label={`How many ${line.product.name} to return`}
                         min={1}
                         max={line.quantity}
                         value={entry.quantity}
                         disabled={busy}
-                        onChange={(event) => {
-                          const next = Number(event.target.value);
-                          if (Number.isInteger(next) && next >= 1) {
-                            update(line.id, { quantity: next });
-                          }
-                        }}
+                        onChange={(next) => update(line.id, { quantity: next })}
                       />
                     </Field>
 
