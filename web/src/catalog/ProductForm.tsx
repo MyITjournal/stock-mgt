@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
+import { Barcodes } from './Barcodes';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
@@ -48,8 +49,12 @@ interface PriceDraft {
  *   factor`, which is right for a sachet and wrong for a carton — the silent
  *   overcharge the per-unit price list exists to prevent. Change a price rather
  *   than removing it.
- * - **Barcodes can be deleted**, because `DELETE /barcodes/:id` exists and
- *   detaching a code from a product is an ordinary thing to want.
+ * - **Barcodes can be added and deleted**, because they have endpoints of
+ *   their own and detaching a code strands nothing. They are handled in
+ *   `Barcodes` below, which writes immediately rather than on Save — that
+ *   difference is why they are a section apart rather than more rows here.
+ *   This comment claimed the deletion was possible long before there was a
+ *   button for it, which is its own small lesson about documenting intent.
  *
  * The base unit also cannot move once set: stock is recorded in base units, so
  * changing which unit that is would reinterpret every quantity in the ledger.
@@ -467,26 +472,7 @@ export function ProductForm({
           </div>
         </section>
 
-        {editing && product.barcodes.length > 0 && (
-          <section className="mt-6">
-            <h3 className="text-sm font-semibold text-slate-900">Barcodes</h3>
-            <ul className="mt-2 space-y-1 text-sm">
-              {product.barcodes.map((barcode) => (
-                <li
-                  key={barcode.id}
-                  className="flex justify-between text-slate-600"
-                >
-                  <span>
-                    {barcode.code}
-                    <span className="ml-2 text-xs text-slate-400">
-                      {barcode.unit.name} · {barcode.symbology}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+        {editing && <Barcodes product={product} units={units} />}
 
         {editing && (
           <p className="mt-4 rounded-md bg-slate-50 p-3 text-xs text-slate-500">
