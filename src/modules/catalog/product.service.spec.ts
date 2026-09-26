@@ -410,3 +410,147 @@ describe('ProductService inline prices and barcodes', () => {
     );
   });
 });
+
+describe('ProductService editing units', () => {
+  let service: ProductService;
+  let prisma: {
+    product: { update: jest.Mock; findFirst: jest.Mock };
+    priceTier: { findFirst: jest.Mock };
+    productPrice: { upsert: jest.Mock };
+    productBarcode: { create: jest.Mock };
+    productUnit: { findMany: jest.Mock; upsert: jest.Mock };
+    $transaction: jest.Mock;
+  };
+
+  /** What the product already has: a base piece and a carton of twelve. */
+  const EXISTING = [
+    { id: 'unit-piece', name: 'piece', factor: 1, isBase: true },
+    { id: 'unit-carton', name: 'carton', factor: 12, isBase: false },
+  ];
+
+  beforeEach(async () => {
+    prisma = {
+      product: {
+        update: jest.fn().mockResolvedValue({ id: 'prod-1' }),
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'prod-1', units: EXISTING }),
+      },
+      priceTier: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'tier-retail' }),
+      },
+      productPrice: { upsert: jest.fn().mockResolvedValue({}) },
+      productBarcode: { create: jest.fn().mockResolvedValue({}) },
+      productUnit: {
+        findMany: jest.fn().mockResolvedValue(EXISTING),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductService,
+        { provide: TENANT_PRISMA, useValue: prisma },
+        {
+          provide: CloudinaryService,
+          useValue: {
+            isConfigured: false,
+            assertConfigured: jest.fn(),
+            uploadImage: jest.fn(),
+            deleteImage: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get(ProductService);
+  });
+
+  const asOrg = <T>(fn: () => Promise<T>) =>
+    TenantContext.run({ organizationId: 'org-aaa' }, fn);
+
+  /**
+   * The bug this replaced: `PATCH /products/:id` took a `units` array,
+   * validated it, wrote nothing, and answered 200.
+   */
+  it('adds a unit a shop has started selling', async () => {
+    await asOrg(() =>
+      service.update('prod-1', { units: [{ name: 'dozen', factor: 12 }] }),
+    );
+
+    expect(prisma.productUnit.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.productUnit.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          name: 'dozen',
+          factor: 12,
+        }) as object,
+      }),
+    );
+  });
+
+  it('leaves units it does not mention alone', async () => {
+    await asOrg(() =>
+      service.update('prod-1', { units: [{ name: 'carton', factor: 24 }] }),
+    );
+
+    // One call, for the carton. The piece is untouched — replacing the set
+    // would orphan every movement and sale line pointing at it.
+    expect(prisma.productUnit.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.productUnit.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ factor: 24 }) as object,
+      }),
+    );
+  });
+
+  /**
+   * The base-unit rule is checked against the merged result, not the request.
+   * A PATCH that adds a carton lists no base at all and must still be allowed.
+   */
+  it('accepts a change that names no base unit, because one already exists', async () => {
+    await expect(
+      asOrg(() =>
+        service.update('prod-1', { units: [{ name: 'pallet', factor: 480 }] }),
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('refuses a second base unit', async () => {
+    await expect(
+      asOrg(() =>
+        service.update('prod-1', { units: [{ name: 'sachet', factor: 1 }] }),
+      ),
+    ).rejects.toThrow(/base units/i);
+  });
+
+  /**
+   * Stock is recorded in base units, so promoting the carton would silently
+   * reinterpret every quantity already in the ledger.
+   */
+  it('refuses to swap which unit is the base', async () => {
+    // Demoting the piece and promoting the carton keeps exactly one base, so
+    // the merged-set check passes and the per-unit guard is what catches it.
+    // It has to: stock is recorded in base units, so this would silently
+    // reinterpret every quantity already in the ledger as cartons.
+    await expect(
+      asOrg(() =>
+        service.update('prod-1', {
+          units: [
+            { name: 'piece', factor: 12 },
+            { name: 'carton', factor: 1 },
+          ],
+        }),
+      ),
+    ).rejects.toThrow(/cannot change/i);
+  });
+
+  it('refuses to demote the base unit, which would leave none', async () => {
+    await expect(
+      asOrg(() =>
+        service.update('prod-1', { units: [{ name: 'piece', factor: 6 }] }),
+      ),
+    ).rejects.toThrow(/no base unit/i);
+  });
+});
