@@ -11,12 +11,16 @@ import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { resolveBarcode } from './barcode';
 import { CreateBarcodeDto } from './dto/barcode.dto';
+import { ProductBarcodeView } from './dto/product.response';
 
 @Injectable()
 export class BarcodeService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
-  async create(productId: string, input: CreateBarcodeDto) {
+  async create(
+    productId: string,
+    input: CreateBarcodeDto,
+  ): Promise<ProductBarcodeView> {
     const unit = await this.prisma.productUnit.findFirst({
       where: { id: input.unitId, productId },
     });
@@ -59,7 +63,7 @@ export class BarcodeService {
     }
   }
 
-  findForProduct(productId: string) {
+  findForProduct(productId: string): Promise<ProductBarcodeView[]> {
     return this.prisma.productBarcode.findMany({
       where: { productId },
       include: { unit: true },
