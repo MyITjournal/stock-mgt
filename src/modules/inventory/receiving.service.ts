@@ -20,6 +20,10 @@ import {
   GoodsReceiptLineDto,
 } from './dto/goods-receipt.dto';
 import { resolveProductUnit } from './base-units';
+import {
+  GoodsReceiptSummary,
+  GoodsReceiptView,
+} from './dto/goods-receipt.response';
 
 /**
  * Who may say what a delivery costs the business and whether it was paid.
@@ -34,6 +38,10 @@ const SETTLES_DELIVERIES: OrgRole[] = [
   OrgRole.manager,
   OrgRole.accountant,
 ];
+
+/** How many deliveries one page returns when the caller does not say. */
+const DEFAULT_RECEIPT_PAGE = 100;
+const MAX_RECEIPT_PAGE = 500;
 
 /** What the vendor charged for a line, as it is stored. */
 const RECEIPT_LINE_COST_FIELDS = ['totalCost'] as const;
@@ -76,7 +84,7 @@ export class ReceivingService {
     private readonly supplierPayments: SupplierPaymentService,
   ) {}
 
-  async create(input: CreateGoodsReceiptDto) {
+  async create(input: CreateGoodsReceiptDto): Promise<GoodsReceiptView> {
     await this.suppliers.assertExists(input.supplierId);
 
     const locationId =
@@ -248,14 +256,41 @@ export class ReceivingService {
    * The receipt itself stays readable: a storekeeper who recorded a delivery
    * has to be able to check what they entered, and quantities are the part of
    * it they entered.
+   *
+   * **Bounded.** This used to return every delivery the business had ever
+   * recorded, with every line on each one — fine in the month it was written
+   * and a page that grows without limit thereafter. `limit` caps it and the
+   * date bounds narrow it; there is no cursor, because nothing syncs this feed
+   * and a screen that wants older deliveries asks for an older window.
+   *
+   * The bounds filter `receivedAt`, which is also what the list is ordered by:
+   * a delivery is looked for by the day it arrived, not the day somebody got
+   * round to entering it. That is the opposite choice to `GET /sales`, which
+   * bounds on `createdAt` because it is a log of what was *recorded* — the two
+   * lists answer different questions.
    */
-  async findAll(filter: { supplierId?: string; locationId?: string } = {}) {
+  async findAll(
+    filter: {
+      supplierId?: string;
+      locationId?: string;
+      since?: Date;
+      until?: Date;
+      limit?: number;
+    } = {},
+  ): Promise<GoodsReceiptSummary[]> {
     const receipts = await this.prisma.goodsReceipt.findMany({
       where: {
         ...(filter.supplierId && { supplierId: filter.supplierId }),
         ...(filter.locationId && { locationId: filter.locationId }),
+        ...((filter.since || filter.until) && {
+          receivedAt: {
+            ...(filter.since && { gte: filter.since }),
+            ...(filter.until && { lte: filter.until }),
+          },
+        }),
       },
       orderBy: { receivedAt: 'desc' },
+      take: Math.min(filter.limit ?? DEFAULT_RECEIPT_PAGE, MAX_RECEIPT_PAGE),
       include: {
         supplier: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
@@ -271,7 +306,7 @@ export class ReceivingService {
     }));
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<GoodsReceiptView> {
     const receipt = await this.prisma.goodsReceipt.findFirst({
       where: { id },
       include: {

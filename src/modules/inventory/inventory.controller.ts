@@ -15,6 +15,9 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -35,6 +38,21 @@ import {
   CreateAdjustmentDto,
   CreateTransferDto,
 } from './dto/stock-operations.dto';
+import { LocationView } from './dto/location.response';
+import { SupplierView } from './dto/supplier.response';
+import {
+  GoodsReceiptSummary,
+  GoodsReceiptView,
+} from './dto/goods-receipt.response';
+import {
+  ExpiringBatchRow,
+  ForcedMovementView,
+  MovementPageView,
+  RebuildBalancesView,
+  StockLevelRow,
+  StockMovementView,
+  TransferResultView,
+} from './dto/stock.response';
 
 /** Setting up where stock lives and who it comes from is a management job. */
 const INVENTORY_EDITORS = [OrgRole.owner, OrgRole.manager];
@@ -59,12 +77,14 @@ export class LocationController {
     description:
       'Where stock physically sits: the main store, a shop counter, a van. Every organization is seeded a default.',
   })
+  @ApiOkResponse({ type: [LocationView] })
   findAll() {
     return this.locations.findAll();
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a location' })
+  @ApiOkResponse({ type: LocationView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.locations.findOne(id);
   }
@@ -79,6 +99,7 @@ export class LocationController {
     description:
       'Reusing the name of a previously deleted location restores that row rather than failing.',
   })
+  @ApiCreatedResponse({ type: LocationView })
   create(@Body() dto: CreateLocationDto) {
     return this.locations.create(dto);
   }
@@ -86,6 +107,7 @@ export class LocationController {
   @Patch(':id')
   @Roles(...INVENTORY_EDITORS)
   @ApiOperation({ summary: 'Update a location' })
+  @ApiOkResponse({ type: LocationView })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateLocationDto,
@@ -101,6 +123,7 @@ export class LocationController {
     description:
       'Refused while the location still holds stock — movements point at it forever, so retiring it would strand what is there.',
   })
+  @ApiNoContentResponse()
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.locations.remove(id);
   }
@@ -114,12 +137,14 @@ export class SupplierController {
 
   @Get()
   @ApiOperation({ summary: 'List suppliers' })
+  @ApiOkResponse({ type: [SupplierView] })
   findAll() {
     return this.suppliers.findAll();
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a supplier' })
+  @ApiOkResponse({ type: SupplierView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.suppliers.findOne(id);
   }
@@ -130,6 +155,7 @@ export class SupplierController {
     'A retry with the same key returns the original supplier instead of creating a duplicate.',
   )
   @ApiOperation({ summary: 'Create a supplier' })
+  @ApiCreatedResponse({ type: SupplierView })
   create(@Body() dto: CreateSupplierDto) {
     return this.suppliers.create(dto);
   }
@@ -137,6 +163,7 @@ export class SupplierController {
   @Patch(':id')
   @Roles(...INVENTORY_EDITORS)
   @ApiOperation({ summary: 'Update a supplier' })
+  @ApiOkResponse({ type: SupplierView })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateSupplierDto,
@@ -151,6 +178,7 @@ export class SupplierController {
     summary: 'Delete a supplier',
     description: 'Soft delete: past receipts still say who they came from.',
   })
+  @ApiNoContentResponse()
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.suppliers.remove(id);
   }
@@ -165,12 +193,38 @@ export class GoodsReceiptController {
   @Get()
   @ApiQuery({ name: 'supplierId', required: false })
   @ApiQuery({ name: 'locationId', required: false })
-  @ApiOperation({ summary: 'List goods receipts' })
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description: 'ISO date-time. Filters the day the delivery arrived.',
+  })
+  @ApiQuery({ name: 'until', required: false, description: 'ISO date-time.' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Defaults to 100, capped at 500.',
+  })
+  @ApiOperation({
+    summary: 'List goods receipts',
+    description:
+      'Newest first, bounded. The date filters apply to `receivedAt` — a delivery is looked for by the day it arrived, not the day somebody got round to entering it.',
+  })
+  @ApiOkResponse({ type: [GoodsReceiptSummary] })
   findAll(
     @Query('supplierId') supplierId?: string,
     @Query('locationId') locationId?: string,
+    @Query('since') since?: string,
+    @Query('until') until?: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
-    return this.receiving.findAll({ supplierId, locationId });
+    return this.receiving.findAll({
+      supplierId,
+      locationId,
+      since: since ? new Date(since) : undefined,
+      until: until ? new Date(until) : undefined,
+      limit,
+    });
   }
 
   @Get(':id')
@@ -179,6 +233,7 @@ export class GoodsReceiptController {
     description:
       'Each line reports the implied `unitCost` — totalCost divided by what arrived, so free goods pull the cost of every unit down.',
   })
+  @ApiOkResponse({ type: GoodsReceiptView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.receiving.findOne(id);
   }
@@ -191,8 +246,9 @@ export class GoodsReceiptController {
   @ApiOperation({
     summary: 'Receive a delivery',
     description:
-      'Takes the invoice total per line, never a per-unit price — "45,211.11 x 6" loses a kobo before the calculation starts. Quantities are counted in the unit you name (the carton) and converted to base units once, here. Receiving 20 while paying for 19 is how free goods are recorded; both figures are kept.',
+      'Takes the invoice total per line, never a per-unit price — "45,211.11 x 6" loses a kobo before the calculation starts. Quantities are counted in the unit you name (the carton) and converted to base units once, here. Receiving 20 while paying for 19 is how free goods are recorded; both figures are kept. Every delivery also raises a `SupplierBill`, which is what appears on `GET /payables`.',
   })
+  @ApiCreatedResponse({ type: GoodsReceiptView })
   create(@Body() dto: CreateGoodsReceiptDto) {
     return this.receiving.create(dto);
   }
@@ -218,6 +274,7 @@ export class StockController {
     description:
       'One row per product and location, in base units. Ask for batches to see the lots behind the number and what each cost.',
   })
+  @ApiOkResponse({ type: [StockLevelRow] })
   findLevels(
     @Query('productId') productId?: string,
     @Query('locationId') locationId?: string,
@@ -246,6 +303,7 @@ export class StockController {
     description:
       'Soonest first, with the value that walks out of the door if they are not sold in time.',
   })
+  @ApiOkResponse({ type: [ExpiringBatchRow] })
   findExpiring(
     @Query('expiringBefore') expiringBefore?: string,
     @Query('locationId') locationId?: string,
@@ -264,6 +322,7 @@ export class StockController {
     description:
       'Stock that was sold or moved before it had been entered as received. The point of allowing the override is that it leaves this trail.',
   })
+  @ApiOkResponse({ type: [ForcedMovementView] })
   findForced(@Query('since') since?: string) {
     return this.levels.findForced(since ? new Date(since) : undefined);
   }
@@ -274,7 +333,20 @@ export class StockController {
   @ApiQuery({
     name: 'since',
     required: false,
-    description: 'ISO date-time. Ignored when a cursor is given.',
+    description:
+      'ISO date-time. Syncing, this is a starting position and is ignored when a cursor is given; browsing, it is an ordinary lower bound applied alongside the cursor.',
+  })
+  @ApiQuery({
+    name: 'until',
+    required: false,
+    description: 'ISO date-time. An upper bound, for browsing.',
+  })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['asc', 'desc'],
+    description:
+      '`asc` (the default) is the sync walk; `desc` is newest-first for a person reading the list.',
   })
   @ApiQuery({
     name: 'cursor',
@@ -283,14 +355,17 @@ export class StockController {
   })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiOperation({
-    summary: 'The ledger, for delta sync',
+    summary: 'The ledger — delta sync, or newest first',
     description:
-      'Keyset paging over (createdAt, id). The window stops a second short of now so a transaction still committing cannot be stepped over — pages are safe to replay, since ids are client-stable.',
+      'Keyset paging over (createdAt, id). Syncing (`asc`), the window stops a second short of now so a transaction still committing cannot be stepped over — pages are safe to replay, since ids are client-stable. Browsing (`desc`) skips that lag: new rows arrive above wherever the reader has paged to, so a late commit is never missed, and holding it back would only hide a movement recorded a moment ago.',
   })
+  @ApiOkResponse({ type: MovementPageView })
   movements(
     @Query('productId') productId?: string,
     @Query('locationId') locationId?: string,
     @Query('since') since?: string,
+    @Query('until') until?: string,
+    @Query('order') order?: 'asc' | 'desc',
     @Query('cursor') cursor?: string,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
@@ -298,6 +373,8 @@ export class StockController {
       productId,
       locationId,
       since: since ? new Date(since) : undefined,
+      until: until ? new Date(until) : undefined,
+      order: order === 'desc' ? 'desc' : 'asc',
       cursor,
       limit,
     });
@@ -313,6 +390,11 @@ export class StockController {
     description:
       'Signed: negative writes stock off, positive brings it on. Breakage and spoilage are adjustments with a reason, never silent decrements. A negative adjustment that exceeds what is on hand is refused with a 409 naming the shortfall; an owner or manager may force it with a reason.',
   })
+  @ApiCreatedResponse({
+    type: [StockMovementView],
+    description:
+      'One movement per lot the adjustment touched — writing stock off across three lots is three rows, so the ledger still says which lot left.',
+  })
   adjust(@Body() dto: CreateAdjustmentDto) {
     return this.operations.adjust(dto);
   }
@@ -327,6 +409,7 @@ export class StockController {
     description:
       'Writes a matched pair of movements sharing a transferGroupId. Batch identity is preserved, so the carton that arrives in the van is the same lot, with the same expiry, that left the store.',
   })
+  @ApiCreatedResponse({ type: TransferResultView })
   transfer(@Body() dto: CreateTransferDto) {
     return this.operations.transfer(dto);
   }
@@ -339,6 +422,7 @@ export class StockController {
     description:
       'The cache is an optimisation, and one that cannot be reconstructed is a liability. Returns what it corrected; an empty list is the proof that cache and ledger agree.',
   })
+  @ApiOkResponse({ type: RebuildBalancesView })
   rebuild() {
     return this.levels.rebuild();
   }
