@@ -36,8 +36,8 @@ and a wholesale route have to coexist in the same model rather than one being as
 | 6.1 | Gap-closing: sync correctness, cash-up, the no-credit rule, images, stocktake | done |
 | 6.5 | **Vendor purchase targets**, target vs actual, **PDF invoice + statement** | done |
 | 6.6 | **Vendor payables**: what I owe, supplier payments, purchases summary | done |
-| 7 | **Web dashboard** — v1 does not ship without it; planned in §17 as 7.0–7.6 | 7.0–7.6a done; **7.6b next** |
-| — | **Deploy to Render** — free tier, once the dashboard exists | after 7 |
+| 7 | **Web dashboard** — v1 does not ship without it; planned in §17 as 7.0–7.6 | **done** |
+| — | **Deploy to Render** — paid tier, once the dashboard exists | **next** |
 | 8 | Mobile app | |
 | 9 | Subscriptions and billing | |
 | 10 | Telegram bot | |
@@ -1457,11 +1457,16 @@ Recorded because each cost real time and none is obvious.
 ## 14. Where things stand
 
 **Slices 0–6.6 done, plus the 6.1 gap-closing pass, two security passes, and staff
-management and working hours. On the web side, 7.0 through 7.6a are done — a sale can be rung up
-in a browser, and the sales, money, catalog, stock and report screens are live. Only 7.6b,
-settings, stands between here and v1.** 445 tests across
+management and working hours. The web dashboard is complete: 7.0 through 7.6b are all done, every
+route renders something real, and v1 is feature-complete. What remains before it ships is the
+deploy at §15 item 1.** 445 tests across
 34 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
 **0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
+
+**Slice 7.6b — settings — landed 2026-09-26**, recorded in §17. It found a setting that could
+lock out an entire shop: `PATCH /organization` accepted `workingDays: []`, which means *no* day is
+a working day and refuses every sign-in. Owners are exempt and could undo it, but every other
+member of staff would be shut out at once. Now refused, with a message saying what it would do.
 
 **Slice 7.6a — reports — landed 2026-09-26**, recorded in §17. It typed the seventeen remaining
 report and purchase-target endpoints, and collapsing a duplicated row type found a latent `NaN`:
@@ -1806,9 +1811,8 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ## 15. Next
 
-**The immediate next thing is slice 7.6b** — settings: the organization letterhead, staff and
-working hours. It is the last slice of the web dashboard, and v1 is closed when it lands; then
-the deploy at item 1 below. The slice table and
+**The immediate next thing is the deploy** — item 1 below. The web dashboard is finished and v1 is
+feature-complete, so what is left before a shop can use this is putting it somewhere. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
 **A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
@@ -2410,7 +2414,7 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 | 7.5a | Catalog — products, units, prices, barcodes, categories, packaging types, tiers | **done 2026-09-26** |
 | 7.5b | Stock — levels, batches, movements, goods receipts, adjustments, transfers, locations, suppliers, stocktake | **done 2026-09-26** |
 | 7.6a | Reports — profit, sales, purchases, collections, stock, movers, purchase targets | **done 2026-09-26** |
-| 7.6b | Settings — organization letterhead, staff, working hours | v1 is closed |
+| 7.6b | Settings — organization letterhead, staff, working hours | **done 2026-09-26 — v1 is closed** |
 
 Each is independently deployable. After 7.2 the application is genuinely usable, which is the
 earliest point worth putting in front of a real shop.
@@ -2844,3 +2848,48 @@ is `max(0, target − achieved)` on every live target.
 
 **Still not verified in a browser** — no Playwright or headless Chromium here, so the wiring, the
 arithmetic and the refusals are checked and the rendering is not.
+
+### 7.6b, and a setting that could lock out the whole shop
+
+Built 2026-09-26. The letterhead, opening hours and staff — the last slice of the dashboard, and
+**v1 is closed**. Seven endpoints typed; 91 of 142 operations now declare a response.
+
+**`PATCH /organization` accepted `workingDays: []`, and that locks every member of staff out.**
+An empty list does not mean "every day" — `isWithinWorkingHours` asks whether today is in the
+list, so an empty one refuses every sign-in there is. The DTO had `@ArrayMaxSize(7)` and no
+minimum. Recoverable, because owners are never locked out and could put it back, but every
+cashier, storekeeper and rep would be shut out at once with nothing on screen explaining why —
+and the person who did it would have been ticking boxes on a settings form.
+
+`@ArrayMinSize(1)` now refuses it with a message that says what it would do rather than naming a
+constraint, and the hours form refuses it before the request. Worth noting **why it survived**:
+the same field on `StaffHoursDto` *is* meaningfully empty — there it means "follow the business" —
+so a reader comparing the two validators would have seen a deliberate-looking asymmetry. The
+difference is that a membership has something to fall back to and the organization does not, which
+is now written on both.
+
+**The seat limit became readable.** `Organization.maxUsers` was not in `ORGANIZATION_FIELDS`, so
+the staff screen had no way to say "4 of 5" and an owner would meet the ceiling only as a 409 on
+the last field of a filled-in form. It is the pricing lever (§9), not a secret, and the check is
+on adding and reactivating rather than on signing in — so the screen can say plainly that
+everybody already there keeps working.
+
+**Two forms stopped syncing state to props.** `BusinessPage` and `HoursPage` first seeded their
+inputs from a `useEffect` on the fetched row, which is the pattern that fights whoever is typing
+when a refetch lands. Each is now a loader that renders a child form once the data exists, so the
+form mounts already holding its values and there is no effect at all. Keyed on the row id, so a
+genuinely different organization rebuilds it.
+
+**`ComingSoon` is gone**, which is the milestone rather than the change: every route in the
+application now renders something real.
+
+**Verified against the running server**: 38 checks. `currency`, `timezone`, `slug`, `maxUsers` and
+`nextSaleNumber` are each rejected outright by `forbidNonWhitelisted` rather than silently ignored;
+a letterhead field can be cleared back to null with an empty string as well as set; a window
+crossing midnight is refused with a message about midnight; and a `sales_rep` reading `/staff`
+gets names and roles but **no usernames, no contact details and nobody else's hours**, while still
+being able to read the letterhead they issue invoices with.
+
+**Still not verified in a browser** — no Playwright or headless Chromium here, so the wiring, the
+arithmetic and the refusals are checked and the rendering is not. That gap now spans the whole
+dashboard and is the first thing worth closing after deployment.
