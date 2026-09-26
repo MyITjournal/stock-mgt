@@ -7579,8 +7579,14 @@ export interface operations {
         parameters: {
             query?: {
                 customerId?: string;
-                /** @description ISO date-time. */
+                /** @description ISO date-time. Syncing, a position in the `updatedAt` walk that a cursor overrides; browsing, a lower bound on `occurredAt` — when the money moved. */
                 since?: string;
+                /** @description ISO date-time. An upper bound on `occurredAt`, for browsing. */
+                until?: string;
+                /** @description One method — the reconciliation question. */
+                method?: "cash" | "transfer" | "pos" | "cheque";
+                /** @description Defaults to true: voided payments belong on this feed, which is the audit trail. Pass false to hide them while reconciling. **Browsing only** — a syncing client must always be told about a void, which is why this feed walks `updatedAt` at all. */
+                includeVoided?: boolean;
                 /** @description `asc` (the default) is the sync order. `desc` is for a person reading a list, newest first, and skips the one-second sync lag. */
                 order?: "asc" | "desc";
                 cursor?: string;
