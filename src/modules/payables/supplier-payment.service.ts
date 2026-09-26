@@ -15,6 +15,7 @@ import {
   decodeCursor,
   encodeCursor,
   keysetWhereUpdated,
+  keysetWhereUpdatedDesc,
 } from '../../common/pagination/keyset-cursor';
 import { BankAccountService } from '../payments/bank-account.service';
 import { SupplierBillService } from './supplier-bill.service';
@@ -22,6 +23,10 @@ import {
   CreateSupplierPaymentDto,
   VoidSupplierPaymentDto,
 } from './dto/supplier-payment.dto';
+import {
+  SupplierPaymentListView,
+  SupplierPaymentView,
+} from './dto/payables.response';
 
 const DEFAULT_PAGE = 50;
 const MAX_PAGE = 200;
@@ -60,7 +65,7 @@ export class SupplierPaymentService {
     private readonly bankAccounts: BankAccountService,
   ) {}
 
-  async create(input: CreateSupplierPaymentDto) {
+  async create(input: CreateSupplierPaymentDto): Promise<SupplierPaymentView> {
     if (input.amount === 0) {
       throw new BadRequestException('A payment of zero records nothing');
     }
@@ -153,7 +158,10 @@ export class SupplierPaymentService {
    * vendor would be a negative payment, and this business does not have that
    * case (see the schema note on `SupplierPayment.amount`).
    */
-  async void(id: string, input: VoidSupplierPaymentDto) {
+  async void(
+    id: string,
+    input: VoidSupplierPaymentDto,
+  ): Promise<SupplierPaymentView> {
     const payment = await this.prisma.supplierPayment.findFirst({
       where: { id },
     });
@@ -188,10 +196,13 @@ export class SupplierPaymentService {
       since?: Date;
       cursor?: string;
       limit?: number;
+      /** `asc` syncs, `desc` is for a person reading. See below. */
+      order?: 'asc' | 'desc';
     } = {},
-  ) {
+  ): Promise<SupplierPaymentListView> {
     const limit = Math.min(query.limit ?? DEFAULT_PAGE, MAX_PAGE);
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
+    const browsing = query.order === 'desc';
     const syncedThrough = new Date(Date.now() - SYNC_LAG_MS);
 
     const rows = await this.prisma.supplierPayment.findMany({
@@ -199,11 +210,20 @@ export class SupplierPaymentService {
         ...(query.supplierId && { supplierId: query.supplierId }),
         ...(query.billId && { billId: query.billId }),
         AND: [
-          { updatedAt: { lte: syncedThrough } },
-          ...keysetWhereUpdated(cursor, query.since),
+          // Browsing skips the one-second lag, for the reason set out in
+          // `keyset-cursor.ts`: the lag protects a forward-walking cursor from
+          // stepping over a row that was still committing, and a reader going
+          // backward from the newest row has no such exposure. Leaving it on
+          // makes a payment just recorded missing from the list that refetches.
+          ...(browsing ? [] : [{ updatedAt: { lte: syncedThrough } }]),
+          ...(browsing
+            ? keysetWhereUpdatedDesc(cursor)
+            : keysetWhereUpdated(cursor, query.since)),
         ],
       },
-      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      orderBy: browsing
+        ? [{ updatedAt: 'desc' }, { id: 'desc' }]
+        : [{ updatedAt: 'asc' }, { id: 'asc' }],
       take: limit,
       include: PAYMENT_INCLUDE,
     });
@@ -221,7 +241,7 @@ export class SupplierPaymentService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<SupplierPaymentView> {
     const payment = await this.prisma.supplierPayment.findFirst({
       where: { id },
       include: PAYMENT_INCLUDE,

@@ -15,6 +15,8 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -33,6 +35,13 @@ import {
   CreateSupplierPaymentDto,
   VoidSupplierPaymentDto,
 } from './dto/supplier-payment.dto';
+import {
+  PayablesView,
+  SupplierBillView,
+  SupplierPaymentListView,
+  SupplierPaymentView,
+  SupplierStatementView,
+} from './dto/payables.response';
 
 /**
  * Everything here is a buying price.
@@ -64,6 +73,7 @@ export class PayablesController {
     description:
       'Every vendor bill with money still on it, longest outstanding first, with a total per vendor. `total` is the headline figure for the dashboard; the list behind it is what a click opens. A list rather than 30/60/90 buckets — the question is who has been owed longest, which is a sort.',
   })
+  @ApiOkResponse({ type: PayablesView })
   outstanding(@Query('supplierId') supplierId?: string) {
     return this.payables.outstanding({ supplierId });
   }
@@ -74,6 +84,7 @@ export class PayablesController {
     description:
       'Their unsettled bills and every payment made to them. What you read out when they ring to chase.',
   })
+  @ApiOkResponse({ type: SupplierStatementView })
   statement(@Param('id', ParseUUIDPipe) id: string) {
     return this.payables.statement(id);
   }
@@ -93,6 +104,7 @@ export class PayablesController {
     description:
       'Unlike `GET /payables`, this keeps bills that are fully paid — it is the record of what was owed and when it was cleared.',
   })
+  @ApiOkResponse({ type: [SupplierBillView] })
   listBills(
     @Query('supplierId') supplierId?: string,
     @Query('unsettledOnly', new ParseBoolPipe({ optional: true }))
@@ -103,6 +115,7 @@ export class PayablesController {
 
   @Get('supplier-bills/:id')
   @ApiOperation({ summary: 'Get a vendor bill with what has been paid on it' })
+  @ApiOkResponse({ type: SupplierBillView })
   findBill(@Param('id', ParseUUIDPipe) id: string) {
     return this.bills.findOne(id);
   }
@@ -116,6 +129,7 @@ export class PayablesController {
     description:
       'For opening balances — what was owed on the day you started using this system. **This creates no stock.** The goods behind it arrived, and probably sold, long before; inventing movements for them would put inventory in the ledger that is not on the shelf. A delivery recorded through `POST /goods-receipts` raises its own bill and does move stock.',
   })
+  @ApiCreatedResponse({ type: SupplierBillView })
   createBill(@Body() dto: CreateSupplierBillDto) {
     return this.bills.create(dto);
   }
@@ -126,6 +140,7 @@ export class PayablesController {
     description:
       'Chiefly `amountDue`, when the invoice turns out to carry a delivery charge or a discount that no stock line could hold. Cannot be reduced below what has already been paid against it.',
   })
+  @ApiOkResponse({ type: SupplierBillView })
   updateBill(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateSupplierBillDto,
@@ -156,9 +171,18 @@ export class PayablesController {
     description:
       'Keyset paging over `(updatedAt, id)` — a payment is mutable, because voiding one has to reach a client that already synced it. Clients upsert by id, since that ordering can re-send a row.',
   })
+  @ApiQuery({
+    name: 'order',
+    required: false,
+    enum: ['asc', 'desc'],
+    description:
+      '`asc` (the default) is the sync order. `desc` is for a person reading a list, newest first, and skips the one-second sync lag.',
+  })
+  @ApiOkResponse({ type: SupplierPaymentListView })
   listPayments(
     @Query('supplierId') supplierId?: string,
     @Query('billId') billId?: string,
+    @Query('order') order?: string,
     @Query('since') since?: string,
     @Query('cursor') cursor?: string,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
@@ -166,6 +190,7 @@ export class PayablesController {
     return this.payments.findAll({
       supplierId,
       billId,
+      order: order === 'desc' ? 'desc' : undefined,
       since: since ? new Date(since) : undefined,
       cursor,
       limit,
@@ -174,6 +199,7 @@ export class PayablesController {
 
   @Get('supplier-payments/:id')
   @ApiOperation({ summary: 'Get a payment made to a vendor' })
+  @ApiOkResponse({ type: SupplierPaymentView })
   findPayment(@Param('id', ParseUUIDPipe) id: string) {
     return this.payments.findOne(id);
   }
@@ -187,6 +213,7 @@ export class PayablesController {
     description:
       'Settles exactly one bill, in whole or in part. Paying more than is outstanding is a 409 — correct the bill’s `amountDue` if the invoice was higher than entered. `transfer` and `pos` must name the account the money left from; `cash` must not.',
   })
+  @ApiCreatedResponse({ type: SupplierPaymentView })
   createPayment(@Body() dto: CreateSupplierPaymentDto) {
     return this.payments.create(dto);
   }
@@ -198,6 +225,7 @@ export class PayablesController {
     description:
       'Says the money never moved — a mis-key, the wrong vendor. The row is kept and stops counting, so the bill goes back to owing. A reason is required.',
   })
+  @ApiOkResponse({ type: SupplierPaymentView })
   voidPayment(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: VoidSupplierPaymentDto,

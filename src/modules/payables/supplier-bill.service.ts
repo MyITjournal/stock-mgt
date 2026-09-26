@@ -16,6 +16,7 @@ import {
   billBalance,
   withBillBalance,
 } from './balance';
+import { SupplierBillView } from './dto/payables.response';
 
 /** What a bill carries when it is read back. */
 const BILL_INCLUDE = {
@@ -56,7 +57,7 @@ export class SupplierBillService {
    * that is not on the shelf into the ledger and break the invariant the smoke
    * suite checks. So this writes money and nothing else.
    */
-  async create(input: CreateSupplierBillDto) {
+  async create(input: CreateSupplierBillDto): Promise<SupplierBillView> {
     await this.assertSupplierExists(input.supplierId);
 
     const bill = await this.prisma.supplierBill.create({
@@ -77,7 +78,9 @@ export class SupplierBillService {
     return withBillBalance(bill);
   }
 
-  async findAll(filter: { supplierId?: string; unsettledOnly?: boolean } = {}) {
+  async findAll(
+    filter: { supplierId?: string; unsettledOnly?: boolean } = {},
+  ): Promise<SupplierBillView[]> {
     const bills = await this.prisma.supplierBill.findMany({
       where: {
         deletedAt: null,
@@ -94,7 +97,7 @@ export class SupplierBillService {
       : withBalances;
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<SupplierBillView> {
     const bill = await this.prisma.supplierBill.findFirst({
       where: { id, deletedAt: null },
       include: BILL_INCLUDE,
@@ -112,7 +115,10 @@ export class SupplierBillService {
    * money, and there is nothing here that can represent it — so it is a 409
    * naming the figure rather than a negative balance nobody can act on.
    */
-  async update(id: string, input: UpdateSupplierBillDto) {
+  async update(
+    id: string,
+    input: UpdateSupplierBillDto,
+  ): Promise<SupplierBillView> {
     const existing = await this.findOne(id);
 
     if (input.amountDue !== undefined && input.amountDue < existing.paid) {

@@ -14,6 +14,8 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -28,6 +30,11 @@ import {
   CreateExpenseCategoryDto,
   UpdateExpenseCategoryDto,
 } from './dto/expense-category.dto';
+import {
+  ExpenseCategoryView,
+  ExpenseListView,
+  ExpenseView,
+} from './dto/expense.response';
 
 /**
  * Spending money, and saying what it was for.
@@ -72,6 +79,7 @@ export class ExpenseController {
     description:
       'Newest first, with the period total and a breakdown per category — the shape "what did I spend on transport last month" needs. Passing `since` or `cursor` switches to keyset paging over `(updatedAt, id)`: an expense can be edited and deleted after it is written, so unlike the stock ledger it cannot sync on `createdAt`. Totals always describe the whole filter rather than the page, and always exclude deleted rows.',
   })
+  @ApiOkResponse({ type: ExpenseListView })
   findAll(
     @Query('categoryId') categoryId?: string,
     @Query('from') from?: string,
@@ -95,6 +103,7 @@ export class ExpenseController {
   @Get(':id')
   @Roles(...SPENDERS)
   @ApiOperation({ summary: 'Get an expense' })
+  @ApiOkResponse({ type: ExpenseView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.expenses.findOne(id);
   }
@@ -105,6 +114,7 @@ export class ExpenseController {
     'A retry with the same key returns the original expense instead of recording the spend twice.',
   )
   @ApiOperation({ summary: 'Record an expense' })
+  @ApiCreatedResponse({ type: ExpenseView })
   create(@Body() dto: CreateExpenseDto) {
     return this.expenses.create(dto);
   }
@@ -112,6 +122,7 @@ export class ExpenseController {
   @Patch(':id')
   @Roles(...SPENDERS)
   @ApiOperation({ summary: 'Update an expense' })
+  @ApiOkResponse({ type: ExpenseView })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateExpenseDto,
@@ -145,6 +156,7 @@ export class ExpenseCategoryController {
     description:
       'Every organization is seeded with the usual ones at registration; the list is meant to be edited.',
   })
+  @ApiOkResponse({ type: [ExpenseCategoryView] })
   findAll() {
     return this.categories.findAll();
   }
@@ -152,6 +164,7 @@ export class ExpenseCategoryController {
   @Get(':id')
   @Roles(...SPENDERS)
   @ApiOperation({ summary: 'Get an expense category' })
+  @ApiOkResponse({ type: ExpenseCategoryView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.categories.findOne(id);
   }
@@ -163,6 +176,7 @@ export class ExpenseCategoryController {
     description:
       'Recreating one that was deleted revives the original row rather than colliding with it.',
   })
+  @ApiCreatedResponse({ type: ExpenseCategoryView })
   create(@Body() dto: CreateExpenseCategoryDto) {
     return this.categories.create(dto);
   }
