@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { DialogClose } from '../components/DialogClose';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
+import { Money } from '../components/Money';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
 import { Barcodes } from './Barcodes';
@@ -80,9 +81,6 @@ export function ProductForm({
   const [basePrice, setBasePrice] = useState<number | null>(
     product?.basePrice ?? null,
   );
-  const [costPrice, setCostPrice] = useState<number | null>(
-    product?.costPrice ?? null,
-  );
   const [taxRateBps, setTaxRateBps] = useState(product?.taxRateBps ?? 750);
   const [trackStock, setTrackStock] = useState(product?.trackStock ?? true);
   const [reorderPoint, setReorderPoint] = useState<string>(
@@ -138,7 +136,6 @@ export function ProductForm({
         ...(categoryId && { categoryId }),
         ...(packagingTypeId && { packagingTypeId }),
         ...(basePrice !== null && { basePrice }),
-        ...(seesCost && costPrice !== null && { costPrice }),
         taxRateBps,
         trackStock,
         ...(reorderPoint.trim() !== '' && {
@@ -281,17 +278,37 @@ export function ProductForm({
           </Field>
 
           {seesCost && (
-            <Field
-              label="Cost price"
-              htmlFor="p-cost-price"
-              hint="What one base unit last cost. Never used to value stock."
-            >
-              <MoneyInput
-                id="p-cost-price"
-                value={costPrice}
-                onChange={setCostPrice}
-              />
-            </Field>
+            <div>
+              <span className="block text-sm font-medium text-slate-700">
+                Cost price
+              </span>
+              {/*
+                Shown, not typed. Every goods receipt overwrites this with
+                `totalCost / quantityReceived`, so anything entered here
+                survives until the next delivery and then disappears — and it
+                changes nothing in the meantime, because valuation and margins
+                read the lot totals rather than this field (§2).
+
+                A box that accepts a number, ignores it, and then forgets it is
+                worse than no box: it invites somebody to "correct" a cost and
+                believe they have.
+              */}
+              <p className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                {product?.costPrice === null ||
+                product?.costPrice === undefined ? (
+                  <span className="text-slate-400">
+                    Nothing bought yet — record a delivery to set this.
+                  </span>
+                ) : (
+                  <Money value={product.costPrice} />
+                )}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                What one base unit last cost, taken from the most recent
+                delivery. To change it, record the delivery — that is also what
+                makes stock valuation and margins right.
+              </p>
+            </div>
           )}
 
           <Field label="VAT rate" htmlFor="p-tax">
