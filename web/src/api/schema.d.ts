@@ -4818,15 +4818,18 @@ export interface components {
             /** @description Movements an owner or manager pushed through a shortfall. */
             forcedMovements: number;
         };
-        MoverRow: {
+        SalesGroupRow: {
             key: string;
             label: string;
+            /** @description Tax-inclusive turnover, before returns. */
             grossSales: number;
+            /** @description Tax-exclusive, net of returns. */
             revenue: number;
             returned: number;
-            cogs: number;
-            grossProfit: number;
-            marginBps: number;
+            /** @description **Absent** for a role that may not see cost. This row and its two neighbours are the margin one line at a time, which is why they go with the header totals rather than separately. */
+            cogs?: number;
+            grossProfit?: number;
+            marginBps?: number;
             /** @description Base units sold, net of what came back. */
             units: number;
             invoices: number;
@@ -4841,8 +4844,8 @@ export interface components {
             quantity: number;
         };
         MoversSummary: {
-            topByRevenue: components["schemas"]["MoverRow"][];
-            topByUnits: components["schemas"]["MoverRow"][];
+            topByRevenue: components["schemas"]["SalesGroupRow"][];
+            topByUnits: components["schemas"]["SalesGroupRow"][];
             deadStock: components["schemas"]["DeadStockRow"][];
             deadStockCount: number;
         };
@@ -4915,6 +4918,388 @@ export interface components {
             movers: components["schemas"]["MoversSummary"];
             purchasing: components["schemas"]["PurchasingSummary"];
             trend: components["schemas"]["TrendSummary"];
+        };
+        SalesTotals: {
+            grossSales: number;
+            revenue: number;
+            returned: number;
+            /** @description **Absent** for a role that may not see cost. */
+            cogs?: number;
+            grossProfit?: number;
+            marginBps?: number;
+            invoices: number;
+        };
+        SalesReportView: {
+            period: components["schemas"]["PeriodView"];
+            /** @enum {string} */
+            groupBy: "day" | "product" | "category" | "customer" | "location" | "rep" | "tier";
+            rows: components["schemas"]["SalesGroupRow"][];
+            totals: components["schemas"]["SalesTotals"];
+        };
+        ProfitReportView: {
+            period: components["schemas"]["PeriodView"];
+            /** @description Tax-exclusive and net of returns. This is the headline number, and it is deliberately smaller than what went through the till. */
+            revenue: number;
+            /** @description Tax-inclusive turnover, before returns. */
+            grossSales: number;
+            /** @description VAT inside the gross, which was never the business’s money. */
+            tax: number;
+            /** @description Refunded in this period, whenever it was sold. */
+            returned: number;
+            /** @description Cost of goods sold, from the lots the picks took. */
+            cogs: number;
+            /** @description `revenue − cogs`. */
+            grossProfit: number;
+            /** @description Expenses recorded in the window. */
+            expenses: number;
+            /** @description `grossProfit − expenses`. */
+            operatingProfit: number;
+            /** @description Gross margin in basis points. 250 is 2.5%. */
+            marginBps: number;
+            /** @description How much of `cogs` rests on a guess — goods sold before the delivery they came from was recorded, costed from the last real lot (§2). The annotation travels with the figures so a caller cannot show the margin while dropping the caveat. */
+            estimatedCost: number;
+            /** @description How many sale lines that covers. */
+            estimatedLines: number;
+        };
+        PurchasesReportView: {
+            period: components["schemas"]["PeriodView"];
+            /** @description What the window’s deliveries cost, at invoice totals. */
+            total: number;
+            /** @description How many separate deliveries arrived. */
+            deliveries: number;
+            /** @description How many vendors supplied anything. */
+            suppliers: number;
+            /** @description Base units received. */
+            unitsReceived: number;
+            /** @description Of those, how many were not charged for — the free goods. */
+            unitsFree: number;
+            bySupplier: components["schemas"]["PurchaseGroupRow"][];
+            byCategory: components["schemas"]["PurchaseGroupRow"][];
+            topProducts: components["schemas"]["PurchaseGroupRow"][];
+        };
+        CollectionsByMethod: {
+            method: components["schemas"]["PaymentMethod"];
+            total: number;
+        };
+        CollectionsByLocation: {
+            /** @description `unassigned` for money that belonged to no counter — a transfer landing in the bank. A real category rather than a gap, so it gets its own row instead of being dropped. */
+            locationId: string;
+            label: string;
+            total: number;
+            count: number;
+        };
+        CollectionsByAccount: {
+            /**
+             * Format: uuid
+             * @description Null for cash, which lands in no account.
+             */
+            bankAccountId: string | null;
+            label: string;
+            total: number;
+            count: number;
+        };
+        CollectionsView: {
+            total: number;
+            /** @description How many payments make it up. */
+            count: number;
+            byMethod: components["schemas"]["CollectionsByMethod"][];
+            byLocation: components["schemas"]["CollectionsByLocation"][];
+            byBankAccount: components["schemas"]["CollectionsByAccount"][];
+        };
+        ValuationGroupRow: {
+            key: string;
+            label: string;
+            /** @description Rounded once, over this group’s lots. */
+            value: number;
+            /** @description Base units held. */
+            units: number;
+        };
+        StockValuationView: {
+            total: number;
+            units: number;
+            byLocation: components["schemas"]["ValuationGroupRow"][];
+            byCategory: components["schemas"]["ValuationGroupRow"][];
+            /** @description The fifty most valuable. */
+            byProduct: components["schemas"]["ValuationGroupRow"][];
+        };
+        ReportProductRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ReportLocationRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ExpiringLotRow: {
+            /** Format: uuid */
+            batchId: string;
+            lotCode: string | null;
+            /** Format: date-time */
+            expiryDate: string | null;
+            product: components["schemas"]["ReportProductRef"];
+            location: components["schemas"]["ReportLocationRef"];
+            quantity: number;
+            /** @description What walking away from this lot costs. **Absent** for a role that may not see cost — the list itself stays open, because knowing which lots to push is a shelf question rather than a cost one. */
+            value?: number;
+            /** @description Negative once the date has passed. */
+            daysToExpiry: number | null;
+        };
+        ExpiryReportView: {
+            withinDays: number;
+            batches: components["schemas"]["ExpiringLotRow"][];
+            /** @description The whole list’s value. **Absent** for a role that may not see cost. */
+            valueAtRisk?: number;
+            /** @description Already past their date and still on the shelf. */
+            expired: number;
+        };
+        StockAlertsView: {
+            outOfStock: components["schemas"]["StockAlertRow"][];
+            /** @description Strictly above empty: a level of 0 means "tell me when it runs out", which `outOfStock` already covers. */
+            lowStock: components["schemas"]["StockAlertRow"][];
+            /** @description Stock that went out before it was entered as received. A forced movement leaves this trail. */
+            negative: components["schemas"]["StockAlertRow"][];
+            /** @description How many products have no level set, so nobody mistakes the list for complete. */
+            withoutReorderPoint: number;
+        };
+        ProductReportView: {
+            period: components["schemas"]["PeriodView"];
+            topByRevenue: components["schemas"]["SalesGroupRow"][];
+            topByUnits: components["schemas"]["SalesGroupRow"][];
+            /** @description Thinnest margin first, among products that sold anything. */
+            byMargin: components["schemas"]["SalesGroupRow"][];
+            /** @description Held, but nothing sold within `staleDays`. Cash sitting on a shelf. */
+            deadStock: components["schemas"]["DeadStockRow"][];
+            /** @description The window "not moving" was measured over. */
+            staleDays: number;
+        };
+        ReportCustomerRef: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+            /** @description Chasing a lapsed customer is a phone call. */
+            phone: string | null;
+        };
+        CustomerReportRow: {
+            customer: components["schemas"]["ReportCustomerRef"];
+            /** @description Invoices in this window. */
+            invoices: number;
+            /** @description Tax-exclusive spend in this window. */
+            spend: number;
+            grossProfit: number;
+            marginBps: number;
+            /** @description Every invoice ever, not just this window. */
+            lifetimeSpend: number;
+            /** @description What they still owe, over their whole history. Voided payments do not count toward it. */
+            balance: number;
+            /**
+             * Format: date-time
+             * @description Null for a customer who has never bought anything.
+             */
+            lastPurchase: string | null;
+        };
+        CustomerReportView: {
+            period: components["schemas"]["PeriodView"];
+            /** @description Biggest spender in the window first. */
+            customers: components["schemas"]["CustomerReportRow"][];
+            /** @description Bought before, but not in this window — the ones to ring. Most recent purchase first. */
+            lapsed: components["schemas"]["CustomerReportRow"][];
+        };
+        /** @enum {string} */
+        AuditMovementType: "adjustment" | "damage";
+        AuditUserRef: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+        };
+        StockAuditRow: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["AuditMovementType"];
+            /** @description Signed, in base units. */
+            quantity: number;
+            reason: string | null;
+            isForced: boolean;
+            /** @description Never null on a forced movement: supplying it is the override. */
+            forcedReason: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            product: components["schemas"]["ReportProductRef"];
+            location: components["schemas"]["ReportLocationRef"];
+            recordedBy: components["schemas"]["AuditUserRef"] | null;
+        };
+        AuditReasonTotal: {
+            /** @description The adjustment reason, or the movement type when it has none. */
+            reason: string;
+            count: number;
+            /** @description Net base units under this reason. */
+            quantity: number;
+        };
+        StockAuditView: {
+            period: components["schemas"]["PeriodView"];
+            movements: components["schemas"]["StockAuditRow"][];
+            /** @description How many were pushed through a shortfall. */
+            forced: number;
+            /** @description Net base units written off or corrected. Negative means stock left. */
+            netQuantity: number;
+            byReason: components["schemas"]["AuditReasonTotal"][];
+        };
+        TargetSupplierRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Dangote Distribution */
+            name: string;
+        };
+        TargetCategoryRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Lotions */
+            name: string;
+        };
+        TargetProductRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            sku: string;
+        };
+        TargetUnitRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Carton */
+            name: string;
+            /** @example 24 */
+            factor: number;
+        };
+        PurchaseTargetView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /**
+             * Format: uuid
+             * @description Whose scheme this is. Targets are always a vendor's.
+             */
+            supplierId: string;
+            /**
+             * Format: uuid
+             * @description Exactly one of this and `productId` is set, enforced by a CHECK. A category target covers the products in it that carry no target of their own — the named category only, never its children.
+             */
+            categoryId: string | null;
+            /** Format: uuid */
+            productId: string | null;
+            /**
+             * Format: date-time
+             * @description First instant of the target month, in the organization's timezone. Vendor schemes run on calendar months, not a rolling thirty days.
+             */
+            periodStart: string;
+            /** @description In **base units**, like everything the ledger counts. */
+            targetQuantity: number;
+            /**
+             * Format: uuid
+             * @description What the owner typed it in, so "110 cartons" reads back as cartons.
+             */
+            displayUnitId: string | null;
+            /** @description The factor at write time. Redefining a carton later cannot silently restate a quota that was already agreed. */
+            unitFactor: number;
+            /** @description Optional value quota in kobo, for schemes written in money rather than cases. */
+            targetValue: number | null;
+            note: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /**
+             * Format: date-time
+             * @description Soft, so a month already reported on keeps explaining itself.
+             */
+            deletedAt: string | null;
+            supplier: components["schemas"]["TargetSupplierRef"];
+            category: components["schemas"]["TargetCategoryRef"] | null;
+            product: components["schemas"]["TargetProductRef"] | null;
+            displayUnit: components["schemas"]["TargetUnitRef"] | null;
+        };
+        TargetProgressView: {
+            /** Format: uuid */
+            targetId: string;
+            /** @description Base units. */
+            targetQuantity: number;
+            /** @description Base units **paid for** in the month, from deliveries that arrived. Free goods do not advance it. */
+            achievedQuantity: number;
+            /** @description What is still to be bought. Never below zero. */
+            remainingQuantity: number;
+            targetValue: number | null;
+            /** @description Summed from invoice totals, never `costPrice × quantity`. */
+            achievedValue: number;
+            /** @description Null when the scheme is written in cases rather than money. */
+            remainingValue: number | null;
+            /** @description Basis points of the quantity target, so 10000 is exactly met and anything above it is over-performance. */
+            achievedBps: number;
+        };
+        PurchaseTargetWithProgress: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /**
+             * Format: uuid
+             * @description Whose scheme this is. Targets are always a vendor's.
+             */
+            supplierId: string;
+            /**
+             * Format: uuid
+             * @description Exactly one of this and `productId` is set, enforced by a CHECK. A category target covers the products in it that carry no target of their own — the named category only, never its children.
+             */
+            categoryId: string | null;
+            /** Format: uuid */
+            productId: string | null;
+            /**
+             * Format: date-time
+             * @description First instant of the target month, in the organization's timezone. Vendor schemes run on calendar months, not a rolling thirty days.
+             */
+            periodStart: string;
+            /** @description In **base units**, like everything the ledger counts. */
+            targetQuantity: number;
+            /**
+             * Format: uuid
+             * @description What the owner typed it in, so "110 cartons" reads back as cartons.
+             */
+            displayUnitId: string | null;
+            /** @description The factor at write time. Redefining a carton later cannot silently restate a quota that was already agreed. */
+            unitFactor: number;
+            /** @description Optional value quota in kobo, for schemes written in money rather than cases. */
+            targetValue: number | null;
+            note: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /**
+             * Format: date-time
+             * @description Soft, so a month already reported on keeps explaining itself.
+             */
+            deletedAt: string | null;
+            supplier: components["schemas"]["TargetSupplierRef"];
+            category: components["schemas"]["TargetCategoryRef"] | null;
+            product: components["schemas"]["TargetProductRef"] | null;
+            displayUnit: components["schemas"]["TargetUnitRef"] | null;
+            progress: components["schemas"]["TargetProgressView"];
+        };
+        PurchaseTargetReportView: {
+            /**
+             * Format: date-time
+             * @description First instant of the month, in the organization’s timezone.
+             */
+            periodStart: string;
+            /**
+             * Format: date-time
+             * @description Exclusive.
+             */
+            periodEnd: string;
+            /** @description Always present, and empty when nothing was quotaed for the month — which is the common case, and not an error. */
+            targets: components["schemas"]["PurchaseTargetWithProgress"][];
         };
         CreatePurchaseTargetDto: {
             /**
@@ -7725,7 +8110,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SalesReportView"];
+                };
             };
         };
     };
@@ -7749,7 +8136,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ProfitReportView"];
+                };
             };
         };
     };
@@ -7773,7 +8162,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PurchasesReportView"];
+                };
             };
         };
     };
@@ -7797,7 +8188,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CollectionsView"];
+                };
             };
         };
     };
@@ -7817,7 +8210,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StockValuationView"];
+                };
             };
         };
     };
@@ -7837,7 +8232,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ExpiryReportView"];
+                };
             };
         };
     };
@@ -7854,7 +8251,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StockAlertsView"];
+                };
             };
         };
     };
@@ -7880,7 +8279,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ProductReportView"];
+                };
             };
         };
     };
@@ -7904,7 +8305,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CustomerReportView"];
+                };
             };
         };
     };
@@ -7928,7 +8331,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StockAuditView"];
+                };
             };
         };
     };
@@ -7949,7 +8354,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PurchaseTargetView"][];
+                };
             };
         };
     };
@@ -7973,7 +8380,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PurchaseTargetView"];
+                };
             };
         };
     };
@@ -7994,7 +8403,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PurchaseTargetReportView"];
+                };
             };
         };
     };
@@ -8013,7 +8424,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PurchaseTargetView"];
+                };
             };
         };
     };
@@ -8055,7 +8468,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PurchaseTargetView"];
+                };
             };
         };
     };

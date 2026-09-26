@@ -11,7 +11,14 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { OrgRole } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator';
@@ -21,6 +28,10 @@ import {
   PurchaseTargetQueryDto,
   UpdatePurchaseTargetDto,
 } from './dto/purchase-target.dto';
+import {
+  PurchaseTargetReportView,
+  PurchaseTargetView,
+} from './dto/purchase-target.response';
 
 /**
  * A quota the owner negotiated is a management figure, and `targetValue` is a
@@ -48,6 +59,7 @@ export class PurchaseTargetController {
     summary: 'List vendor purchase targets',
     description: 'Newest month first. Filter by `supplierId`.',
   })
+  @ApiOkResponse({ type: [PurchaseTargetView] })
   findAll(@Query() query: PurchaseTargetQueryDto) {
     return this.targets.findAll(query);
   }
@@ -59,6 +71,7 @@ export class PurchaseTargetController {
     description:
       'Progress counts goods **received**, not orders placed: an order the vendor has not delivered is what still needs chasing, so it stays in "remaining". Quantities come from `quantityPaidFor`, so "buy 19, get 1 free" advances a 110-case target by 19 — the free case is real stock and counts for valuation, just not against the quota. Value comes from the invoice totals. A category target counts only the products in it that carry no target of their own, or the same carton would advance both rows.',
   })
+  @ApiOkResponse({ type: PurchaseTargetReportView })
   report(@Query() query: PurchaseTargetQueryDto) {
     return this.targets.report(query);
   }
@@ -66,6 +79,7 @@ export class PurchaseTargetController {
   @Get(':id')
   @Roles(...SEES_TARGETS)
   @ApiOperation({ summary: 'Get a purchase target' })
+  @ApiOkResponse({ type: PurchaseTargetView })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.targets.findOne(id);
   }
@@ -80,6 +94,7 @@ export class PurchaseTargetController {
     description:
       'Against exactly one of a category or a product. `period` is any instant inside the target month and is snapped to the first of it in the organization’s timezone — vendor schemes run on calendar months. Quote the quantity in `unitId` ("110 cartons") and it is converted to base units with the factor as it stands now.',
   })
+  @ApiCreatedResponse({ type: PurchaseTargetView })
   create(@Body() dto: CreatePurchaseTargetDto) {
     return this.targets.create(dto);
   }
@@ -91,6 +106,7 @@ export class PurchaseTargetController {
     description:
       'What a target is set against cannot change — rewriting a lotions target into a roll-on one would silently restate what last month meant. Delete it and set the one you mean.',
   })
+  @ApiOkResponse({ type: PurchaseTargetView })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePurchaseTargetDto,
@@ -106,6 +122,7 @@ export class PurchaseTargetController {
     description:
       'Soft, so a month already reported on keeps explaining itself.',
   })
+  @ApiNoContentResponse()
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.targets.remove(id);
   }

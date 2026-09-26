@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { PaymentMethod } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -15,6 +16,17 @@ import {
 } from './period';
 import { Profit, computeProfit, marginBps } from './profit';
 import { ValuedLot, valueOf } from './valuation';
+import {
+  CollectionsView,
+  CustomerReportView,
+  ExpiryReportView,
+  ProductReportView,
+  PurchasesReportView,
+  SalesReportView,
+  StockAlertsView,
+  StockAuditView,
+  StockValuationView,
+} from './dto/report.response';
 
 /** Africa/Lagos, unless the organization says otherwise. */
 const FALLBACK_TIMEZONE = 'Africa/Lagos';
@@ -200,7 +212,10 @@ export class ReportService {
    * else works at sale level. They are separate paths because a sale spanning
    * three products belongs to three product groups and exactly one customer.
    */
-  async sales(period: Period, groupBy: SalesGrouping = 'day') {
+  async sales(
+    period: Period,
+    groupBy: SalesGrouping = 'day',
+  ): Promise<SalesReportView> {
     const groups =
       groupBy === 'product' || groupBy === 'category'
         ? await this.salesByLine(period, groupBy)
@@ -414,7 +429,7 @@ export class ReportService {
    * the bank belongs to no till — so they get their own row instead of being
    * dropped or forced onto one.
    */
-  async collections(period: Period) {
+  async collections(period: Period): Promise<CollectionsView> {
     const payments = await this.prisma.payment.findMany({
       where: {
         voidedAt: null,
@@ -430,7 +445,9 @@ export class ReportService {
       },
     });
 
-    const byMethod = new Map<string, Minor>();
+    // Typed as the enum rather than a bare string: the key genuinely is a
+    // PaymentMethod, and widening it would hand the client `string` to branch on.
+    const byMethod = new Map<PaymentMethod, Minor>();
     const byLocation = new Map<
       string,
       { label: string; total: Minor; count: number }
@@ -500,7 +517,10 @@ export class ReportService {
    * The grand total is valued over every lot at once rather than by summing the
    * groups, because each group rounds its own fractions — see `valuation.ts`.
    */
-  async stockValuation(filter: { locationId?: string; categoryId?: string }) {
+  async stockValuation(filter: {
+    locationId?: string;
+    categoryId?: string;
+  }): Promise<StockValuationView> {
     const balances = await this.prisma.stockBalance.findMany({
       where: {
         quantity: { not: 0 },
@@ -557,7 +577,7 @@ export class ReportService {
    * Ordered by expiry, which is the order FEFO will pick them in — so the list
    * reads as "sell these first" rather than as a filing cabinet.
    */
-  async expiry(withinDays = 30) {
+  async expiry(withinDays = 30): Promise<ExpiryReportView> {
     const horizon = new Date(Date.now() + withinDays * 24 * 60 * 60 * 1000);
 
     const balances = await this.prisma.stockBalance.findMany({
@@ -626,7 +646,7 @@ export class ReportService {
    * per-product level (§12) — a van being empty is not a reason to reorder if
    * the store is full.
    */
-  async stockAlerts() {
+  async stockAlerts(): Promise<StockAlertsView> {
     const [products, balances] = await Promise.all([
       this.prisma.product.findMany({
         where: { deletedAt: null, isActive: true, trackStock: true },
@@ -686,7 +706,7 @@ export class ReportService {
    * the gap between them is free goods. A purchases summary that showed only
    * one of them would either overstate what was bought or hide what was given.
    */
-  async purchases(period: Period) {
+  async purchases(period: Period): Promise<PurchasesReportView> {
     const lines = await this.prisma.goodsReceiptLine.findMany({
       where: {
         receipt: { receivedAt: { gte: period.from, lt: period.to } },
@@ -761,7 +781,7 @@ export class ReportService {
     };
   }
 
-  async stockAudit(period: Period) {
+  async stockAudit(period: Period): Promise<StockAuditView> {
     const movements = await this.prisma.stockMovement.findMany({
       where: {
         createdAt: { gte: period.from, lt: period.to },
@@ -807,7 +827,10 @@ export class ReportService {
   // -- Products and customers ----------------------------------------------
 
   /** Best and worst sellers, and what is not moving at all. */
-  async products(period: Period, options: { staleDays?: number } = {}) {
+  async products(
+    period: Period,
+    options: { staleDays?: number } = {},
+  ): Promise<ProductReportView> {
     const staleDays = options.staleDays ?? 30;
     const byProduct = [...(await this.salesByLine(period, 'product')).values()]
       .map(finishGroup)
@@ -859,7 +882,7 @@ export class ReportService {
   }
 
   /** Who buys, how much, how recently, and what they still owe. */
-  async customers(period: Period) {
+  async customers(period: Period): Promise<CustomerReportView> {
     const window = { gte: period.from, lt: period.to };
 
     const customers = await this.prisma.customer.findMany({
