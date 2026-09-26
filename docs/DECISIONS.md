@@ -1462,6 +1462,11 @@ in a browser, and the sales, returns, customer and statement screens are live.**
 34 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
 **0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
 
+**Slice 7.5a — the catalog — landed 2026-09-26**, recorded in §17. It fixed a silent no-op worth
+knowing about: **`PATCH /products/:id` accepted a `units` array and wrote nothing**, answering 200.
+Units now upsert by name like prices, with three limits — nothing is deleted, `factor` may change
+because dependent rows snapshot it, and the base unit cannot move because stock is counted in it.
+
 **Slice 7.4 is complete — money in landed 2026-09-26, money out the same day**. §17 records both.
 The rule from 7.4b worth repeating here: **the vendor side is not the customer side mirrored.** One
 vendor payment settles exactly one bill, there are no negative payments, and overpaying is a 409
@@ -1787,8 +1792,9 @@ sign in as, so it is covered by construction rather than by demonstration.
 
 ## 15. Next
 
-**The immediate next thing is slice 7.5** — stock and catalog, the largest slice left — then 7.6,
-then the deploy at item 1 below. The slice table and
+**The immediate next thing is slice 7.5b** — stock: levels, batches, movements, goods receipts,
+adjustments, transfers, locations, suppliers and stocktake — then 7.6, then the deploy at item 1
+below. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
 **A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
@@ -2387,7 +2393,8 @@ figures**. A preview that disagrees with the receipt is a bug, not a rounding di
 | 7.3 | Sales history, returns, customers, statements, PDFs | **done 2026-09-25** |
 | 7.4a | Money in — receivables, customer payments, allocation, void, bank accounts | **done 2026-09-26** |
 | 7.4b | Money out — payables, supplier bills and payments, expenses | **done 2026-09-26** |
-| 7.5 | Stock and catalog — products, units, prices, barcodes, goods receipts, levels, adjustments, transfers, stocktake | |
+| 7.5a | Catalog — products, units, prices, barcodes, categories, packaging types, tiers | **done 2026-09-26** |
+| 7.5b | Stock — levels, batches, movements, goods receipts, adjustments, transfers, locations, suppliers, stocktake | |
 | 7.6 | Reports and settings — every report screen, organization letterhead, staff, working hours | v1 is closed |
 
 Each is independently deployable. After 7.2 the application is genuinely usable, which is the
@@ -2653,3 +2660,48 @@ stock already reaches profit through cost of goods sold, so recording it here to
 money twice and understates every margin — quietly, showing up only as margins that look worse than
 the shop knows they are. The dialog says so and points at "We owe", and `Expense.supplierId` is
 documented as attribution rather than settlement.
+
+### 7.5a, and a PATCH that answered 200 and did nothing
+
+Built 2026-09-26. Products with units, prices and barcodes; categories, packaging types and price
+tiers.
+
+**`PATCH /products/:id` took a `units` array, validated it, wrote nothing, and answered 200.**
+Found while planning the product form, and worth dwelling on because it is the worst of the three
+possible behaviours: rejecting would have been honest, writing would have been correct, and
+answering 200 while changing nothing is the one a caller cannot detect. A shop that started selling
+by the carton could not record it without recreating the product.
+
+`writeUnits` fixes it with the same shape `writePrices` already used — upsert by name, leave
+anything unlisted alone — plus three limits that are the point rather than an omission:
+
+- **Nothing is deleted.** `StockMovement`, `SaleLine` and `GoodsReceiptLine` all point at units.
+- **`factor` may change**, and that is safe *only* because every dependent row copies it at write
+  time: `SaleLine.unitFactor` is the snapshot, so redefining a carton cannot rewrite what a past
+  sale took off the shelf (§4).
+- **The base unit cannot move.** Stock is recorded in base units (§2), so promoting the carton
+  would silently reinterpret every quantity in the ledger as cartons.
+
+**The base-unit check moved from the request to the merged result.**
+`assertExactlyOneBaseUnit` validates a *complete* set, which is right for `POST /products` and
+wrong for a PATCH: a request adding a carton to a product that already has a piece lists no base at
+all, and would have been refused for describing a change rather than a whole. `writeUnits` merges
+what exists with what was sent and checks that.
+
+**The product form's hardest job is not implying replace-all.** Units, prices and barcodes all
+upsert and never delete what they are not sent. A list with remove buttons would imply otherwise,
+and the removal would silently do nothing — so nothing offers to remove a unit or a price, and the
+form explains why rather than leaving somebody to discover it. Prices genuinely *cannot* be deleted
+through any endpoint, and that is defensible: a unit with no tier price falls back to
+`basePrice × factor`, the silent carton overcharge §4 exists to prevent. Barcodes can be, because
+`DELETE /barcodes/:id` exists.
+
+**Adding a unit and pricing it in one request works**, which needed the write order fixed: units are
+written first, then the name→id map is rebuilt inside the same transaction, because prices are
+keyed by unit name and a brand-new unit is not in a map built beforehand.
+
+**A note on cleaning up after verification.** The unit checks left two test units on a real product
+and **units cannot be deleted through the API** — the very rule just added. They were removed
+directly, which was safe only because nothing referenced them; the script checks sale lines and
+receipt lines first and skips anything that does. A unit with history would have been a history
+edit, not a cleanup.

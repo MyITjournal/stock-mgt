@@ -335,8 +335,9 @@ and shares no code with it.
 
 **Where it has got to: 7.0 (foundation, sign-in), 7.1 (home), 7.2 (the till), 7.3 (sales, returns,
 customers, statements, PDFs) and 7.4 (money — receivables, payments, allocation, void,
-accounts, payables, supplier bills and payments, expenses) are done. 7.5 is next**: stock and
-catalog, the largest slice left. The slice table is in §17. Both servers have to be
+accounts, payables, supplier bills and payments, expenses) and 7.5a (catalog — products, units,
+prices, categories, packaging types, tiers) are done. 7.5b is next**: stock — levels, batches,
+movements, goods receipts, adjustments, transfers, locations, suppliers, stocktake. The slice table is in §17. Both servers have to be
 running to work on this: the API on 4000, then `npm run dev` in `web/` on 5173, which
 `CORS_ORIGINS` already allows.
 
@@ -407,6 +408,13 @@ Four from 7.4:
   and overpaying is a **409** rather than credit. Those absences are decisions, not gaps.
 - **A supplier payment is never an `Expense`.** Stock already reaches profit through cost of goods
   sold, so recording it twice understates every margin. The expense form says so on screen.
+
+**Units, prices and barcodes upsert and never delete what a request does not list** (§4), and the
+product form must not imply otherwise — a remove button would silently do nothing. Units can be
+added and their `factor` changed (safe, because `SaleLine.unitFactor` is a snapshot), but **never
+deleted** and **the base unit never moves**, since stock is counted in it. Prices cannot be deleted
+at all: an unpriced unit falls back to `basePrice × factor`, which is the carton overcharge §4
+exists to prevent. Barcodes *can* be deleted.
 
 **Quantities are integers everywhere, and half a carton is six pieces.** Typing `0.5` is refused at
 three layers on purpose. Stock lives in base units, so a fraction of a bigger unit is a whole
