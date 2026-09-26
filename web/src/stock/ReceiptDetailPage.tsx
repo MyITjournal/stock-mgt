@@ -34,7 +34,7 @@ export function ReceiptDetailPage() {
 
   if (isPending) {
     return (
-      <Page title="Delivery">
+      <Page back={{ to: '/stock/receipts', label: 'Deliveries' }} title="Delivery">
         <p className="text-sm text-slate-500">Loading…</p>
       </Page>
     );
@@ -42,7 +42,7 @@ export function ReceiptDetailPage() {
 
   if (error || !receipt) {
     return (
-      <Page title="Delivery">
+      <Page back={{ to: '/stock/receipts', label: 'Deliveries' }} title="Delivery">
         <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">
           {error instanceof ApiError
             ? error.message
@@ -146,6 +146,7 @@ export function ReceiptDetailPage() {
 
   return (
     <Page
+      back={{ to: '/stock/receipts', label: 'Deliveries' }}
       title={receipt.supplier.name}
       description={`Arrived ${new Date(receipt.receivedAt).toLocaleString()} into ${receipt.location.name}`}
     >

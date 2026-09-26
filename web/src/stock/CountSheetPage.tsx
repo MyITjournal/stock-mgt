@@ -125,7 +125,7 @@ export function CountSheetPage() {
 
   if (isPending || !count) {
     return (
-      <Page title="Count">
+      <Page back={{ to: '/stock/counts', label: 'Counts' }} title="Count">
         <p className="text-sm text-slate-500">Loading…</p>
       </Page>
     );
@@ -145,6 +145,7 @@ export function CountSheetPage() {
 
   return (
     <Page
+      back={{ to: '/stock/counts', label: 'Counts' }}
       title={`Count at ${count.location.name}`}
       description={
         open
@@ -153,9 +154,6 @@ export function CountSheetPage() {
       }
       actions={
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => navigate('/stock/counts')}>
-            Back
-          </Button>
           {open && isManager && (
             <>
               <Button
