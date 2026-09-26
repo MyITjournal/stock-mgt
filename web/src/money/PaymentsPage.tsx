@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useAuth } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { RecordPaymentDialog, type PaymentDraft } from './RecordPaymentDialog';
@@ -44,9 +45,7 @@ export function PaymentsPage() {
   });
 
   const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['payments'] });
-    void queryClient.invalidateQueries({ queryKey: ['receivables'] });
-    void queryClient.invalidateQueries({ queryKey: ['sales'] });
+    afterWrite(queryClient);
   };
 
   const voidPayment = useMutation({

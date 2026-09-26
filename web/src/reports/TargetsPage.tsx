@@ -6,6 +6,7 @@ import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -77,7 +78,7 @@ export function TargetsPage() {
   const remove = useMutation({
     mutationFn: (id: string) => api.delete<void>(`/purchase-targets/${id}`),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['purchase-targets'] });
+      afterWrite(queryClient);
       setError(null);
     },
     onError: (caught) =>
@@ -325,7 +326,7 @@ function TargetDialog({ onClose }: { onClose: () => void }) {
         ...(note.trim() ? { note: note.trim() } : {}),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['purchase-targets'] });
+      afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>

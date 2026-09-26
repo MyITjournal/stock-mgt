@@ -6,6 +6,7 @@ import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { Money } from '../components/Money';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -168,10 +169,7 @@ export function ReceiveDeliveryPage() {
         }),
       }),
     onSuccess: (receipt) => {
-      void queryClient.invalidateQueries({ queryKey: ['goods-receipts'] });
-      void queryClient.invalidateQueries({ queryKey: ['stock-levels'] });
-      void queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
-      void queryClient.invalidateQueries({ queryKey: ['payables'] });
+      afterWrite(queryClient);
       navigate(`/stock/receipts/${receipt.id}`);
     },
     onError: (caught) =>

@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Money } from '../components/Money';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import {
@@ -49,6 +50,7 @@ type PriceTierView = components['schemas']['PriceTierView'];
  */
 export function TillPage() {
   const isManager = useIsManager();
+  const queryClient = useQueryClient();
 
   const [lines, setLines] = useState<CartLine[]>([]);
   const [payment, setPayment] = useState<PaymentState>(EMPTY_PAYMENT);
@@ -321,6 +323,12 @@ export function TillPage() {
         );
         setCompleted(receipt);
         setOverride(null);
+
+        // A counter sale is the widest write in the application: it moves
+        // stock, banks a payment, and creates both an invoice and — on credit
+        // — a receivable. This used to refresh nothing at all, so selling the
+        // last carton left the stock screen still showing it on the shelf.
+        afterWrite(queryClient);
       } catch (caught) {
         if (caught instanceof ApiError && caught.isConflict && isManager) {
           setOverride({
@@ -335,7 +343,7 @@ export function TillPage() {
         setBusy(false);
       }
     },
-    [isManager, lines, payment, total],
+    [isManager, lines, payment, total, queryClient],
   );
 
   const startNewSale = useCallback(() => {

@@ -4,6 +4,7 @@ import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
 import { PaySupplierDialog, type SupplierPaymentDraft } from './PaySupplierDialog';
 
@@ -43,9 +44,7 @@ export function PayablesPage() {
         ...(draft.note && { note: draft.note }),
       }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['payables'] });
-      void queryClient.invalidateQueries({ queryKey: ['supplier-bills'] });
-      void queryClient.invalidateQueries({ queryKey: ['supplier-payments'] });
+      afterWrite(queryClient);
       setPaying(null);
       setError(null);
     },

@@ -5,6 +5,7 @@ import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useIsManager, useRecordsStock } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
@@ -53,8 +54,7 @@ export function CountSheetPage() {
   });
 
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ['stocktake', id] });
-    void queryClient.invalidateQueries({ queryKey: ['stocktakes'] });
+    afterWrite(queryClient);
   };
 
   const addLine = useMutation({
@@ -98,8 +98,7 @@ export function CountSheetPage() {
       api.post<PostedStocktakeView>(`/stocktakes/${id}/post`, {}),
     onSuccess: (result) => {
       refresh();
-      void queryClient.invalidateQueries({ queryKey: ['stock-levels'] });
-      void queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+      afterWrite(queryClient);
       setPosted(result.corrections);
     },
     onError: (caught) =>

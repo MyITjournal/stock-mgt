@@ -6,6 +6,7 @@ import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { PdfButton } from '../components/PdfButton';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ReturnDialog, type ReturnLineInput } from './ReturnDialog';
@@ -49,8 +50,7 @@ export function SaleDetailPage() {
       }),
     onSuccess: (updated) => {
       queryClient.setQueryData(['sale', id], updated);
-      void queryClient.invalidateQueries({ queryKey: ['sales'] });
-      void queryClient.invalidateQueries({ queryKey: ['receivables'] });
+      afterWrite(queryClient);
       setReturning(false);
       setReturnError(null);
     },
