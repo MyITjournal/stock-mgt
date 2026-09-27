@@ -508,6 +508,15 @@ deleted** and **the base unit never moves**, since stock is counted in it. Price
 at all: an unpriced unit falls back to `basePrice × factor`, which is the carton overcharge §4
 exists to prevent. Barcodes *can* be deleted.
 
+**A service is a product with `trackStock` off, never a category** (§4). A delivery charge is
+priced, taxed and invoiced like anything else; the sale path returns the line without calling
+`recordOutbound` and records `costOfGoodsSold: 0`, and reorder alerts, stocktakes and stock
+operations all exclude it. `Category` groups things for *reporting* and is orthogonal — one
+*Services* category is worth having if that revenue deserves its own line, and a "Goods" category
+opposite it is worth nothing. **The consequence: a service shows a 100% gross margin**, because
+the driver's fuel and time are an expense rather than cost of goods. Set a base unit (`trip`,
+factor 1) and the VAT rate deliberately — `taxRateBps` defaults to 7.5% and is per product.
+
 **Quantities are integers everywhere, and half a carton is six pieces.** Typing `0.5` is refused at
 three layers on purpose. Stock lives in base units, so a fraction of a bigger unit is a whole
 number of smaller ones — switch the unit. Divisible goods (rice, oil) want a *finer base unit*, not

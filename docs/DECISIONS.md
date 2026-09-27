@@ -337,6 +337,37 @@ what it was. That leaves the name occupied as far as the unique constraint is co
 **re-creating a deleted type revives that row** rather than returning a 409 naming something the
 caller cannot see in any list.
 
+### A service is a product with the stock flag off, not a category
+
+Asked on 2026-09-27: a delivery to Ikeja is charged for and appears on an invoice, but it is not
+a thing on a shelf. The instinct was to reach for categories — "Goods" and "Services" — and the
+worry was category proliferation.
+
+Neither is needed. **`Product.trackStock = false` is the whole mechanism**, and it was already
+there. A non-stocked product is priced, taxed and invoiced exactly like any other; `sale.service`
+simply returns the line without calling `recordOutbound`, with `costOfGoodsSold: 0`. It is
+excluded wherever it would otherwise be noise: reorder alerts filter on `trackStock`, a stocktake
+refuses to count it, and `resolveProductUnit` rejects it from stock operations outright.
+
+**`Category` is orthogonal to this.** A category groups things for reporting — sales by category,
+purchases by category, a purchase target scoped to one. Whether a line touches the ledger is a
+property of the product, not of how it is grouped. So a single *Services* category is worth
+having if service revenue deserves its own line on a report, and "Goods" as its opposite is
+worth nothing at all: it would name the absence of a flag that is already on every product.
+
+**The consequence to know: a service shows a 100% gross margin**, because cost of goods is zero
+and nothing was bought. The driver's fuel and time are an expense, so they reach profit through
+the expenses line rather than through cost of goods sold. Gross margin is flattered and operating
+profit stays honest, which is the right trade while this is a management tool rather than
+accounting (§1). It is worth revisiting only if services ever become a large share of turnover —
+at which point the question is whether they need a cost of their own, not whether they need a
+category.
+
+Two things still have to be set deliberately on a service: a **base unit** (`trip`, `delivery` —
+factor 1, never moves) and the **VAT rate**, which is per product and defaults to 7.5%. A charge
+that should not carry VAT needs `taxRateBps: 0` on the product rather than a workaround later.
+
+
 ---
 
 ## 5. Inventory
