@@ -341,9 +341,14 @@ the movement ledger, adjustments, transfers, counts, locations and vendors), 7.6
 profit, sales, purchases, collections, stock, movers, purchase targets) and 7.6b (settings — the
 letterhead, opening hours, staff) are all done. **The dashboard is finished, every route renders
 something real, and v1 is feature-complete. What is left is the deploy** (§15 item 1). The slice
-table is in §17. Both servers have to be
-running to work on this: the API on 4000, then `npm run dev` in `web/` on 5173, which
-`CORS_ORIGINS` already allows.
+table is in §17, and **§18 records the first bug sweep against real use** — eleven fixes, two of
+which made whole screens unusable while every check in the repository stayed green.
+
+**Two servers, two ports, and `start:prod` is not one of them.** `npm run start:prod` runs
+`node dist/main`, which is the API alone — it serves `/api/v1` and Swagger on 4000 and does not
+serve the dashboard at all. The dashboard is a separate Vite app: `npm run dev` inside `web/`, on
+**5173, which is the URL to open**. `CORS_ORIGINS` already allows it. Use `start:dev` while
+working, since `start:prod` needs a build first and will not pick up changes.
 
 - **Types are generated, never hand-written.** `npm run api:types` in `web/` regenerates
   `src/api/schema.d.ts` from the running server's `/docs-json`. **Re-run it whenever an endpoint or
@@ -461,6 +466,41 @@ And three from 7.6b, in `web/src/settings/`:
 - **Letterhead fields are cleared with an empty string, not by omitting them.** Omitting means
   "leave alone", `''` means "clear", and a settings form has to be able to do both.
 
+And six from the first bug sweep (§18), which are the ones most likely to be reintroduced:
+
+- **A field must never rewrite what you are typing.** `MoneyInput` re-formatted on every
+  keystroke, so it swallowed every character after the first *and* stored wrong prices — `1999.99`
+  became ₦9.01, which the form then saved. Show the draft while the field has focus, format on
+  blur. `QuantityInput` is the same idea for whole numbers: **filter to digits rather than
+  validating**, because a validator that rejects bad values also rejects the empty string and so
+  cannot be cleared.
+- **A `className` prop that is concatenated is not an override.** `Input` and `Select` baked in
+  `w-full` and appended the caller's width; Tailwind emits `.w-full` *after* `.w-28`, so every
+  width ever passed was discarded and a `flex-1` box beside a full-width one collapsed to zero.
+  Tailwind never warns about this. `controlClass` in `Field.tsx` now drops `w-full` when a width
+  was supplied.
+- **A write invalidates everything, through `afterWrite`.** Per-mutation cache lists were wrong at
+  nearly every call site — the till invalidated nothing at all — because the list is a claim about
+  what the *server's* write reached while the author is thinking about one screen. Refetching is
+  limited to active queries, so the cost is two or three requests for data the person just
+  changed.
+- **Two figures on one screen need one implementation.** `GET /receivables` disagreed with its own
+  breakdown by a returned invoice, because the headline filtered credits out while the grouping
+  netted them away. `splitOwed` in `balance.ts` decides it once (§5). Netting was wrong on its own
+  terms too: the walk-in bucket is several strangers' debts, so a credit taken off the pile is
+  true of nobody.
+- **Detail screens need a `back`, because the frame only points at lists.** `Page` takes one; it
+  steps through history so filters survive, and falls back to a named route when there is none —
+  a pasted link has nothing behind it.
+- **Cost is never typed.** Every goods receipt overwrites `Product.costPrice`, so an editable cost
+  box takes a number, ignores it and forgets it. Show it with where it came from and say to record
+  the delivery instead.
+
+**In-house barcodes are validated like any other EAN-13.** A 13-digit code starting with 2 reads
+as `INTERNAL`, which used to skip the check digit — harmless while every such code was generated,
+and a trap the moment one could be typed, because a scanner will never produce a mistyped string
+and the code simply never scans. Existing rows are not re-validated.
+
 **Units, prices and barcodes upsert and never delete what a request does not list** (§4), and the
 product form must not imply otherwise — a remove button would silently do nothing. Units can be
 added and their `factor` changed (safe, because `SaleLine.unitFactor` is a snapshot), but **never
@@ -473,6 +513,12 @@ three layers on purpose. Stock lives in base units, so a fraction of a bigger un
 number of smaller ones — switch the unit. Divisible goods (rice, oil) want a *finer base unit*, not
 a decimal column; making `quantity` decimal is a migration across five tables that puts a
 non-integer into the ledger smoke's sum-check depends on. Full reasoning in §15.
+
+The real case this meets is **buying**: "half a slot" means paying for 9.5 cartons and receiving
+10. That works today by entering the line in **pieces** — the same rows are stored either way,
+since a receipt line keeps base units. The only open question (§18) is whether the form should
+accept `9.5` against *carton* and do the multiplication itself, refusing when it does not divide
+whole. `0.5 × 19` has no answer in whole pieces, and that refusal is the point.
 
 **When a demo org looks wrong, add the movement that fixes it.** The slice walkthroughs force sales
 past the ledger to test the override, which leaves stock negative. Put it right with a **goods

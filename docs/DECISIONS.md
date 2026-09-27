@@ -1458,9 +1458,11 @@ Recorded because each cost real time and none is obvious.
 
 **Slices 0–6.6 done, plus the 6.1 gap-closing pass, two security passes, and staff
 management and working hours. The web dashboard is complete: 7.0 through 7.6b are all done, every
-route renders something real, and v1 is feature-complete. What remains before it ships is the
-deploy at §15 item 1.** 445 tests across
-34 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
+route renders something real, and v1 is feature-complete. A first bug sweep against real use
+followed on 2026-09-26/27 — eleven fixes, recorded in §18, two of which made whole screens
+unusable and were invisible to every check in the repository. What remains before it ships is the
+deploy at §15 item 1.** 457 tests across
+35 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
 **0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
 
 **Slice 7.6b — settings — landed 2026-09-26**, recorded in §17. It found a setting that could
@@ -1812,7 +1814,14 @@ sign in as, so it is covered by construction rather than by demonstration.
 ## 15. Next
 
 **The immediate next thing is the deploy** — item 1 below. The web dashboard is finished and v1 is
-feature-complete, so what is left before a shop can use this is putting it somewhere. The slice table and
+feature-complete, so what is left before a shop can use this is putting it somewhere.
+
+**Before that, the owner is testing the dashboard by hand**, which is the only check that has
+ever found the two worst classes of bug in it (§18) — nothing here drives a browser. One thing is
+left open from that sweep and needs a decision rather than work: whether a decimal quantity may
+be typed against a larger unit and converted in the browser. Also worth a sweep once a server is
+up: in-house barcodes stored before the check digit was enforced are still unscannable, since the
+check runs on write. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
 **A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
@@ -2893,3 +2902,145 @@ being able to read the letterhead they issue invoices with.
 **Still not verified in a browser** — no Playwright or headless Chromium here, so the wiring, the
 arithmetic and the refusals are checked and the rendering is not. That gap now spans the whole
 dashboard and is the first thing worth closing after deployment.
+
+---
+
+## 18. The first bug sweep
+
+2026-09-26/27, after v1 was feature-complete and before deploying. The shop owner used the
+dashboard for the first time and reported what did not work. Eleven fixes; the ones worth keeping
+are recorded here because each is a *class* of mistake rather than a typo, and most were invisible
+to a compiler, a test and a code review alike.
+
+### Two components fought the person typing into them
+
+**`MoneyInput` re-formatted on every keystroke.** It rendered `(value / 100).toFixed(2)`, so
+typing `3` stored 300 kobo and rendered back `3.00` with the caret at the end; the next digit made
+`3.000`, which parses to the same 300 kobo. Every keystroke after the first was swallowed, and the
+only way to enter 3,300.00 was to arrow back and type in front of it.
+
+**It was also storing wrong prices, not merely being tiring.** Simulated over the old code:
+`3300` lands on NGN 3.00, `250` on NGN 2.01, `1999.99` on **NGN 9.01** — each a figure the form
+would happily save. The rule now: **a field shows the draft while it has focus and formats on
+blur.** Anything that rewrites what you typed while you are typing it will fight you.
+
+Three other boxes had the sibling fault — they committed only values they considered valid, and
+the empty string is not valid, so backspacing snapped the old number straight back. `QuantityInput`
+**filters to digits rather than validating**, so there is nothing to reject.
+
+### A className that is concatenated is not an override
+
+`Input` and `Select` baked `w-full` into their base classes and appended the caller's. Appending
+does nothing: equal specificity means the rule Tailwind emits *later* wins, and it emits `.w-full`
+(byte 9278) after `.w-28` (9164). **Every width any caller had ever passed was silently
+discarded.**
+
+Harmless in a stacked form, fatal in a flex row. The product form put a `flex-1` name box beside a
+`w-28` factor box; the factor box claimed 100%, the row overflowed, and flex shrinking is
+proportional to flex-basis — which for a `flex-1` item is zero. The name box shrank to **nothing**,
+so units could not be named and a price could not be given a unit: a blank box that could not be
+clicked, on the one screen where a product is defined.
+
+`w-full` is now applied only when the caller has not set a width. Tailwind gives no warning when
+one utility beats another, so this is worth checking whenever a component takes a `className`.
+
+### Per-mutation cache lists cannot be kept right
+
+Every write listed the caches it thought it affected, and **nearly every one listed the wrong
+set** — recording a sale at the till invalidated nothing at all, so selling the last carton left
+the stock screen still showing it. The list is a claim about what the *server's* write reached
+while the person editing a screen is thinking about that screen, so the default is to under-list,
+and the failure reads as a broken write: somebody records a payment, the balance does not move,
+and they record it again.
+
+`afterWrite` in `web/src/api/cache.ts` marks everything stale. Invalidation refetches **active**
+queries only, so a write costs two or three small requests for data the person just changed. That
+is worth more than the requests it saves.
+
+### One rule, two implementations, two answers
+
+`GET /receivables` reported a headline NGN 21,000 larger than its own per-customer breakdown.
+`totalOutstanding` filtered credits out; `groupByCustomer` netted them away. One invoice paid in
+full and then partly returned carried a balance of minus NGN 21,000, and the two halves disagreed
+about what to do with it.
+
+Netting was wrong on its own terms, not only inconsistent: **the walk-in bucket is not one party's
+position**, it is several strangers' debts, and subtracting one stranger's credit from the pile
+says something true of nobody. `splitOwed` now lives in `balance.ts` beside `saleBalance`, which
+§5 already named as the one place this is decided.
+
+### Endpoints that accept a parameter and ignore it
+
+`GET /payments` took `since` and dropped it on the browsing path — the `desc` branch applied the
+cursor and nothing else. A date filter would have done nothing, which is probably why the screen
+never had one. It now takes `since`, `until`, `method` and `includeVoided`.
+
+**The date bounds filter `occurredAt` while the feed stays ordered by `updatedAt`.** The feed walks
+`updatedAt` because voiding mutates a row and a sync client must be told (§8); somebody filtering
+"payments in September" means when the money moved. Ordering is a property of the feed, filtering
+is a question about the money. `includeVoided` is **browsing-only** — letting a sync hide a void
+would reintroduce the exact bug that ordering choice exists to prevent.
+
+### Things the UI never offered
+
+Three endpoints had no caller at all, and each absence was a hole rather than a tidy-up:
+
+- **`POST /supplier-payments/:id/void`.** Void is the only correction on the vendor side — there
+  are no negative payments (§16) — and a mis-keyed payment makes its bill look settled, so it
+  drops off `/payables`. With no list of what had been paid out, the mistake was unreachable.
+  Money gains a **Paid out** tab.
+- **The barcode endpoints.** The product form's own comment had claimed "barcodes can be deleted"
+  since the day it was written, and the markup was even laid out for a button that never arrived.
+  Neither adding nor removing was possible.
+- **`DELETE /products/:id`.** Labelled **Retire**, because that is what it does: a soft delete that
+  leaves every past sale naming the product. "Delete" would promise something the system will not
+  do and a shop should not want.
+
+### Detail screens were dead ends
+
+The frame only ever points at list screens, so an invoice, a customer and a delivery had no way
+out but the top navigation — which reloads the list and throws away the filters that got you
+there. `Page` now takes a `back`, which **steps through history** rather than to a fixed route, and
+falls back to a named route when there is none: a pasted link has nothing behind it, and
+`navigate(-1)` from there leaves the application.
+
+### Cost is not something anybody types
+
+The product form had an editable cost field. Every goods receipt overwrites `Product.costPrice`
+with `totalCost / quantityReceived`, so a figure typed there survived until the next delivery and
+changed nothing meanwhile — valuation and margins read lot totals (§2). It is now shown with where
+it came from. **A box that accepts a number, ignores it and then forgets it is worse than no box.**
+
+### In-house barcodes skipped their check digit
+
+`detectSymbology` reads a 13-digit code beginning with 2 as INTERNAL, and `requiresCheckDigit` did
+not list INTERNAL. An internal code *is* a real EAN-13 — that is why a scanner reads one — so
+there was never a reason for a weaker rule. Unreachable until the form let a code be **typed**, and
+the failure is nastier than a rejection: a scanner computes the check digit from the bars, so a
+mistyped code sits in the catalog looking fine and never scans. Existing rows are not
+re-validated, since the check runs on write.
+
+### What a merge cannot work out
+
+Merging `fix/retire-product` and `feat/product-page` conflicted in the product row. Keeping both
+sides was not enough: the merged result needed `stopPropagation` on **Retire**, which neither
+branch contained — on one the row was not clickable, on the other the button did not exist. A
+clean auto-merge would have produced valid, compiling, wrong code.
+
+### Open, and deliberately not done
+
+- **A decimal quantity in a larger unit.** Buying "half a slot" means paying for 9.5 cartons and
+  receiving 10. Entering the line in **pieces** already works and stores the same rows, so the
+  only question is who does the multiplication. The proposal is to let a decimal be typed against
+  any unit, convert in the browser, show the base-unit result and refuse when it does not divide
+  whole — `0.5 × 19` has no answer in whole pieces. **No schema change**: the line still records
+  base units, which is what makes the ledger's sum-check possible (§15).
+
+### Still true
+
+**Nothing in the dashboard has been verified in a browser.** There is no Playwright or headless
+Chromium in this environment, so across every slice the wiring, the arithmetic and the refusals
+are checked and the rendering is not. Two of the bugs above — the collapsed inputs and the
+unusable money field — were invisible to every check in the repository and obvious within a
+minute of real use. That is the argument for the owner's testing pass being the real gate before
+deploying.
