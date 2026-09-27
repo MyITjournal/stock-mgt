@@ -80,13 +80,29 @@ export function detectSymbology(code: string): BarcodeSymbology {
   return BarcodeSymbology.CODE128;
 }
 
-/** Symbologies whose codes must satisfy the GS1 check digit. */
+/**
+ * Symbologies whose codes must satisfy the GS1 check digit.
+ *
+ * **`INTERNAL` belongs here, and its absence was a real gap.** An internal
+ * code is a *real EAN-13* — that is the whole point of `generateInternalCode`,
+ * so a scanner reads it and a label printer prints it — and the only thing
+ * separating it from a manufacturer's GTIN is the leading 2 that keeps it out
+ * of assigned space. Leaving it out meant any 13-digit number beginning with
+ * 2 was stored unchecked.
+ *
+ * Nothing this system generates could ever fail, so the gap was invisible
+ * until the product form let somebody **type** a code. A mistyped internal
+ * code is worse than a rejected one: a scanner computes the check digit from
+ * the bars and will never produce that string, so the code sits in the
+ * catalog looking fine and simply never scans.
+ */
 export function requiresCheckDigit(symbology: BarcodeSymbology): boolean {
   return (
     symbology === BarcodeSymbology.EAN13 ||
     symbology === BarcodeSymbology.EAN8 ||
     symbology === BarcodeSymbology.UPC_A ||
-    symbology === BarcodeSymbology.ITF14
+    symbology === BarcodeSymbology.ITF14 ||
+    symbology === BarcodeSymbology.INTERNAL
   );
 }
 
@@ -138,8 +154,13 @@ export function resolveBarcode(input: {
     requiresCheckDigit(symbology) &&
     !hasValidCheckDigit(code)
   ) {
+    // "INTERNAL" is a word from the schema, not one a shopkeeper would
+    // recognise on a screen, so it is named for what it is instead.
+    const kind =
+      symbology === BarcodeSymbology.INTERNAL ? 'in-house barcode' : symbology;
+
     return {
-      error: `"${code}" is not a valid ${symbology}: the check digit does not match. Re-scan or re-key it.`,
+      error: `"${code}" is not a valid ${kind}: the check digit does not match. Re-scan or re-key it.`,
     };
   }
 

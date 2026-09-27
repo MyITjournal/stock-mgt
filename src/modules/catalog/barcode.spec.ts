@@ -6,6 +6,7 @@ import {
   hasValidCheckDigit,
   normaliseCode,
   requiresCheckDigit,
+  resolveBarcode,
 } from './barcode';
 
 describe('gs1CheckDigit', () => {
@@ -75,6 +76,54 @@ describe('requiresCheckDigit', () => {
   it('is false for free-form symbologies', () => {
     expect(requiresCheckDigit(BarcodeSymbology.CODE128)).toBe(false);
     expect(requiresCheckDigit(BarcodeSymbology.QR)).toBe(false);
+  });
+
+  /**
+   * An internal code is a real EAN-13 — that is why a scanner reads one — so
+   * it is held to the same check digit. It was exempt, which nothing could
+   * expose while every internal code was generated; the moment the product
+   * form let one be typed, a mistyped code would have been stored looking
+   * fine and would simply never have scanned.
+   */
+  it('is true for an in-house code, which is an EAN-13 underneath', () => {
+    expect(requiresCheckDigit(BarcodeSymbology.INTERNAL)).toBe(true);
+  });
+});
+
+describe('resolveBarcode, on codes in the in-house range', () => {
+  /** A 13-digit code starting with 2, with the check digit it should carry. */
+  const valid = (body: string) => body + gs1CheckDigit(body).toString();
+
+  it('accepts one whose check digit is right', () => {
+    const code = valid('212345678901');
+    expect(resolveBarcode({ code })).toEqual({
+      code,
+      symbology: BarcodeSymbology.INTERNAL,
+    });
+  });
+
+  it('refuses one whose check digit is wrong', () => {
+    const code = valid('212345678901');
+    const mistyped = code.slice(0, 12) + ((Number(code[12]) + 1) % 10);
+
+    const result = resolveBarcode({ code: mistyped });
+    expect('error' in result).toBe(true);
+  });
+
+  it('names it in words a shopkeeper would recognise', () => {
+    const code = valid('212345678901');
+    const mistyped = code.slice(0, 12) + ((Number(code[12]) + 1) % 10);
+
+    const result = resolveBarcode({ code: mistyped });
+    // Not "INTERNAL", which is a word from the schema.
+    expect('error' in result && result.error).toContain('in-house barcode');
+  });
+
+  it('still accepts a generated one, which is the common case', () => {
+    for (let i = 0; i < 50; i++) {
+      const result = resolveBarcode({});
+      expect('error' in result).toBe(false);
+    }
   });
 });
 
