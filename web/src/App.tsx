@@ -1,11 +1,11 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './auth/AuthProvider';
 import { RequireAuth } from './auth/RequireAuth';
 import { SignInPage } from './auth/SignInPage';
 import { Layout } from './components/Layout';
 import { ApiError } from './api/client';
-import { HomePage } from './home/HomePage';
+import { Home, LandingRedirect } from './auth/Landing';
 import { TillPage } from './till/TillPage';
 import { SalesPage } from './sales/SalesPage';
 import { SaleDetailPage } from './sales/SaleDetailPage';
@@ -76,7 +76,7 @@ export default function App() {
 
             <Route element={<RequireAuth />}>
               <Route element={<Layout />}>
-                <Route index element={<HomePage />} />
+                <Route index element={<Home />} />
                 <Route path="till" element={<TillPage />} />
                 <Route path="sales" element={<SalesPage />} />
                 <Route path="sales/:id" element={<SaleDetailPage />} />
@@ -129,7 +129,7 @@ export default function App() {
               </Route>
             </Route>
 
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<LandingRedirect />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

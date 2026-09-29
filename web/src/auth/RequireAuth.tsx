@@ -1,5 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuth } from './useAuth';
+import { useAuth, useLandingPath } from './useAuth';
 import type { OrgRole } from './AuthProvider';
 
 /**
@@ -13,6 +13,7 @@ import type { OrgRole } from './AuthProvider';
 export function RequireAuth({ roles }: { roles?: readonly OrgRole[] }) {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const landing = useLandingPath();
 
   // Waiting on the first `GET /auth/me`. Redirecting now would bounce a signed
   // in person to the login screen on every hard refresh.
@@ -30,7 +31,7 @@ export function RequireAuth({ roles }: { roles?: readonly OrgRole[] }) {
   }
 
   if (roles && !roles.includes(user.orgRole)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={landing} replace />;
   }
 
   return <Outlet />;

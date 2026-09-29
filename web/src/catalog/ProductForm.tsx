@@ -327,12 +327,21 @@ export function ProductForm({
             htmlFor="p-reorder"
             hint="In base units. Blank for none."
           >
+            {/*
+              Digits filtered rather than `type="number"`, for the two reasons
+              that field is a trap on a form: a scroll wheel over a focused
+              number input silently changes it, and it happily accepts `2.5`
+              against a column the server requires to be a whole number of base
+              units. Blank stays possible — that is "no reorder point" — which
+              is why this holds the typed string rather than a number.
+            */}
             <Input
               id="p-reorder"
-              type="number"
-              min={0}
+              inputMode="numeric"
               value={reorderPoint}
-              onChange={(event) => setReorderPoint(event.target.value)}
+              onChange={(event) =>
+                setReorderPoint(event.target.value.replace(/[^\d]/g, ''))
+              }
             />
           </Field>
         </div>

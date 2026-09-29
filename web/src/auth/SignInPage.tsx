@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { ApiError } from '../api/client';
-import { useAuth } from './useAuth';
+import { useAuth, useLandingPath } from './useAuth';
 import { Field, Input } from '../components/Field';
 import { Button } from '../components/Button';
 
@@ -24,14 +24,17 @@ interface RedirectState {
 export function SignInPage() {
   const { user, signIn } = useAuth();
   const location = useLocation();
+  const landing = useLandingPath();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (user) {
+    // Where they were headed, else where this role's day starts — which is not
+    // `/` for everybody, because the dashboard is closed to a rep.
     const state = location.state as RedirectState | null;
-    return <Navigate to={state?.from?.pathname ?? '/'} replace />;
+    return <Navigate to={state?.from?.pathname ?? landing} replace />;
   }
 
   const onSubmit = async (event: FormEvent) => {
