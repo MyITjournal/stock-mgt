@@ -12,8 +12,11 @@
 #
 # ## Before the first deploy
 #
-# 1. **Rename `stock-mgt` below** to the product's name. The service name is the
-#    hostname, and renaming later changes the URL people have bookmarked.
+# 1. **The service name is the hostname**, so this deploys to `reho.onrender.com`.
+#    Render service names are globally unique across `onrender.com`, so if
+#    `reho` is already taken the create will fail and the name here needs a
+#    suffix — decide that *before* the first deploy, because renaming later
+#    changes a URL people have bookmarked.
 # 2. Set the four `sync: false` variables in the Render dashboard — they cannot
 #    be committed or derived. `APP_URL` and `FRONTEND_URL` are the *same* URL
 #    here, because there is one origin; both exist because the mobile app may
@@ -27,9 +30,9 @@
 #    that.
 
 databases:
-  - name: stock-mgt-db
-    databaseName: stockmgt
-    user: stockmgt
+  - name: reho-db
+    databaseName: reho
+    user: reho
     region: frankfurt
     # Frankfurt is Render's closest region to Lagos. Re-check at deploy time:
     # the choice was first made when cost was the constraint, and it no longer
@@ -38,7 +41,7 @@ databases:
 
 services:
   - type: web
-    name: stock-mgt
+    name: reho
     runtime: node
     region: frankfurt
     plan: starter
@@ -70,7 +73,7 @@ services:
 
       - key: DATABASE_URL
         fromDatabase:
-          name: stock-mgt-db
+          name: reho-db
           property: connectionString
 
       # The pool is capped in code, not with `?connection_limit=` on the URL —
