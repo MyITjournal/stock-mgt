@@ -344,6 +344,18 @@ something real, and v1 is feature-complete. What is left is the deploy** (§15 i
 table is in §17, and **§18 records the first bug sweep against real use** — eleven fixes, two of
 which made whole screens unusable while every check in the repository stayed green.
 
+**§19 records the second sweep** (2026-09-27), which re-checked every §18 class across all seventy
+dashboard files — all held — and produced **`docs/MANUAL-TESTS-WEB.md`**, the by-hand browser
+script §18 said was missing: 92 steps with `[gate]` markers, to be walked before deploying. Its
+one real finding is the rule worth carrying: **hiding a nav item does not decide where somebody
+lands.** Home is `costOnly` and correctly hidden from a rep, but three separate paths — sign-in
+with no destination, a role-guarded route turning somebody away, and a URL matching nothing — all
+sent everybody to `/` regardless, so a cashier's first screen after signing in was a red error
+box. `landingPath(role)` in `web/src/auth/useAuth.ts` now states it once and all three ask it.
+The near miss is worth more than the fix: `RequireAuth`'s docstring described the correct rule
+while its fallback did the opposite, and **a correct rule written next to code that contradicts
+it reads as verification** — nobody re-checks a line with a comment above it saying what it does.
+
 **Two servers, two ports, and `start:prod` is not one of them.** `npm run start:prod` runs
 `node dist/main`, which is the API alone — it serves `/api/v1` and Swagger on 4000 and does not
 serve the dashboard at all. The dashboard is a separate Vite app: `npm run dev` inside `web/`, on

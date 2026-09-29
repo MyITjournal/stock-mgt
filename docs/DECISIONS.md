@@ -1492,7 +1492,10 @@ management and working hours. The web dashboard is complete: 7.0 through 7.6b ar
 route renders something real, and v1 is feature-complete. A first bug sweep against real use
 followed on 2026-09-26/27 — eleven fixes, recorded in §18, two of which made whole screens
 unusable and were invisible to every check in the repository. What remains before it ships is the
-deploy at §15 item 1.** 457 tests across
+deploy at §15 item 1.** A second sweep followed on 2026-09-27, recorded in §19: a code-level pass
+for the §18 classes repeated elsewhere — all of which held — which found that **signing in as a
+`sales_rep` or `storekeeper` landed on an error screen**, and produced
+`docs/MANUAL-TESTS-WEB.md`, the by-hand browser script §18 said was missing. 457 tests across
 35 suites, twenty-four migrations, `typecheck`/`lint`/`build` clean in both trees, `npm audit` at
 **0 vulnerabilities**, and `npm run smoke` green at 369 checks against a running server.
 
@@ -1848,11 +1851,17 @@ sign in as, so it is covered by construction rather than by demonstration.
 feature-complete, so what is left before a shop can use this is putting it somewhere.
 
 **Before that, the owner is testing the dashboard by hand**, which is the only check that has
-ever found the two worst classes of bug in it (§18) — nothing here drives a browser. One thing is
-left open from that sweep and needs a decision rather than work: whether a decimal quantity may
-be typed against a larger unit and converted in the browser. Also worth a sweep once a server is
-up: in-house barcodes stored before the check digit was enforced are still unscannable, since the
-check runs on write. The slice table and
+ever found the two worst classes of bug in it (§18) — nothing here drives a browser. **The script
+for that pass is `docs/MANUAL-TESTS-WEB.md`** (§19), 92 steps with `[gate]` markers; run
+`npm run smoke` first, then walk it. Section J — signing in as a rep and a storekeeper and
+repeating the walk — is the part most likely to find something, and is what the second sweep's
+own bug came out of.
+
+One thing is
+left open from the first sweep and needs a decision rather than work: whether a decimal quantity
+may be typed against a larger unit and converted in the browser. Also worth a sweep once a server
+is up: in-house barcodes stored before the check digit was enforced are still unscannable, since
+the check runs on write. The slice table and
 what each one owes are in §17; this list is everything that sits outside it.
 
 **A till cannot sell half a carton, and mostly it should not have to.** Found while testing 7.2 on
@@ -3075,3 +3084,71 @@ are checked and the rendering is not. Two of the bugs above — the collapsed in
 unusable money field — were invisible to every check in the repository and obvious within a
 minute of real use. That is the argument for the owner's testing pass being the real gate before
 deploying.
+
+---
+
+## 19. The second sweep, and a written script for the by-hand pass
+
+2026-09-27. A code-level sweep of all seventy dashboard files for the §18 classes *repeated
+elsewhere* — they were fixed where they were noticed, not everywhere they occur — plus
+`docs/MANUAL-TESTS-WEB.md`, which is the thing §18 said was missing.
+
+**Everything in §18 held.** `controlClass` drops `w-full` when a width is passed; `MoneyInput` and
+`QuantityInput` both hold a draft while focused; **every** write site calls `afterWrite` — 25
+files, with only `AuthProvider` excepted and correctly so; all five detail screens pass `back`;
+all four paged feeds send `order=desc`; both till price lookups pass `tierId`; no `fetch` outside
+`client.ts`; no money arithmetic outside `lib/money.ts`. `jest` 457/457, both trees clean on
+typecheck, lint and build.
+
+### Hiding a nav item does not decide where somebody lands
+
+**A `sales_rep` or `storekeeper` signed in and landed on an error screen.** `Layout` marks Home
+`costOnly` and hides it from them, which is right — `GET /reports/dashboard` is
+`@Roles(...SEES_COST)`. But **three separate paths sent everybody to `/` regardless of role**:
+signing in with no intended destination, a role-guarded route turning somebody away, and a URL
+matching nothing. All three landed on the one screen that fires the one request those roles may
+not make, so the first thing a cashier saw after signing in was a red error box — and the nav had
+no Home link to explain where they were.
+
+It is worth noting what the *near miss* was. `RequireAuth`'s own docstring states the rule —
+"routing them somewhere useful instead of into an error they cannot act on" — and its fallback did
+the opposite for precisely the roles it turns away. **A correct rule written next to code that
+contradicts it reads as verification.** Nobody re-checks a line with a comment above it saying
+what it does.
+
+The fix is one fact stated once: `landingPath(role)` in `auth/useAuth.ts`, which all three paths
+now ask. A rep starts at the till and a storekeeper at stock, because that is what each of them
+opens the app to do. `auth/Landing.tsx` holds the index route, which renders the dashboard when
+the landing path *is* `/` — a comparison rather than a second reading of the role, so the two can
+never disagree and the redirect cannot loop.
+
+**`RequireAuth` is mounted once with no `roles` prop anywhere**, so its role branch is dead code
+today. It was fixed regardless: the first route that needs gating will not think to look.
+
+### A number input is a trap on a form
+
+The one surviving `type="number"` was the product's reorder point. Two things wrong with it, both
+silent: **a scroll wheel over a focused number input changes the value**, so scrolling the product
+form past it edits a field nobody touched, and it accepts `2.5` against a column the server
+requires to be a whole number of base units. Now digits are filtered, as everywhere else — and it
+still holds a *string*, because blank has to stay possible and means "no reorder point".
+
+### The script
+
+**`docs/MANUAL-TESTS-WEB.md`** — 92 steps in dependency order with `[gate]` markers, mirroring
+`MANUAL-TESTS.md` for the API. Its point is that the last sweep was whatever the owner happened to
+click, so its coverage was unknown. Two sections carry most of the value:
+
+- **Section J, the role pass**, is where the next findings are most likely. Every screen before it
+  is checked as the owner, and the owner sees everything — the bug above existed because no
+  by-hand pass had ever *started* as a rep.
+- **Section K** is a ten-minute version of the §18 classes alone: type a long number into every
+  money box digit by digit, backspace every number box empty, look at every row of side-by-side
+  boxes, check the screen behind every write updates.
+
+### Still true, still
+
+**There is still no browser driver**, so this sweep checked wiring and reasoning, not rendering.
+Adding Vitest and Testing Library to `web/` would let a pure rule like `landingPath` be tested —
+the root jest config is scoped to `src` and `test` and deliberately cannot see `web/` — but that
+is a toolchain decision rather than a fix, and it was not made here.
