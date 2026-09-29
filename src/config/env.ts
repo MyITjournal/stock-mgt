@@ -20,6 +20,16 @@ const envSchema = z.object({
 
   DATABASE_URL: z.string().min(1),
 
+  /**
+   * How many Postgres connections this process may hold.
+   *
+   * Sized here rather than as `?connection_limit=` on the URL, which the `pg`
+   * driver adapter does not read — see `PrismaService`. Five leaves headroom
+   * under a small hosted instance's cap for migrations, `psql` and a second
+   * instance during a rolling deploy.
+   */
+  DATABASE_POOL_MAX: z.coerce.number().int().positive().default(5),
+
   API_PREFIX: z.string().default('api/v1'),
   CORS_ORIGINS: z
     .string()
