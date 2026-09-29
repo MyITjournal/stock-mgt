@@ -1,0 +1,165 @@
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
+import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
+import { LIVE_ALLOCATIONS, saleBalance, splitOwed } from './balance';
+import {
+  DebtorCustomer,
+  DebtorGroup,
+  ReceivablesView,
+  StatementView,
+} from './dto/receivable.response';
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * "Who owes me" — one of the three questions the product exists to answer.
+ *
+ * Deliberately a **list, oldest first**, not a 30/60/90 aging report. Buckets
+ * are a convention borrowed from accounting packages; what actually gets used
+ * here is "who has owed me longest", which is a sort. Buckets can be added the
+ * day somebody asks to read them.
+ */
+@Injectable()
+export class ReceivableService {
+  constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
+
+  /**
+   * Every invoice with money still on it, longest outstanding first, plus a
+   * total per customer so the list can be read either way round.
+   */
+  async outstanding(
+    filter: { customerId?: string } = {},
+  ): Promise<ReceivablesView> {
+    const sales = await this.prisma.sale.findMany({
+      where: { ...(filter.customerId && { customerId: filter.customerId }) },
+      orderBy: [{ occurredAt: 'asc' }, { number: 'asc' }],
+      select: {
+        id: true,
+        number: true,
+        occurredAt: true,
+        total: true,
+        customer: {
+          select: { id: true, firstName: true, lastName: true, phone: true },
+        },
+        allocations: LIVE_ALLOCATIONS,
+        returns: { select: { refundAmount: true } },
+      },
+    });
+
+    const now = Date.now();
+    const invoices = sales
+      .map((sale) => ({
+        id: sale.id,
+        number: sale.number,
+        occurredAt: sale.occurredAt,
+        customer: sale.customer,
+        total: sale.total,
+        ...saleBalance(sale),
+        daysOutstanding: Math.floor(
+          (now - sale.occurredAt.getTime()) / MS_PER_DAY,
+        ),
+      }))
+      .filter((sale) => sale.balance !== 0);
+
+    const split = splitOwed(invoices.map((sale) => sale.balance));
+
+    return {
+      invoices,
+      byCustomer: groupByCustomer(invoices),
+      /**
+       * Owed to the business. Money owed *back* is excluded, not netted off.
+       *
+       * `groupByCustomer` follows the same rule, so these two agree. They did
+       * not for a while: the grouping netted credits away while this filtered
+       * them out, so the headline read ₦21,000 more than its own breakdown
+       * added up to, and nothing on the screen explained the difference.
+       */
+      totalOutstanding: split.owed,
+      /** The other half: owed back, as a positive number. */
+      totalCredit: split.credit,
+    };
+  }
+
+  /**
+   * One customer's position: their invoices, their payments, and any credit
+   * they are holding from money that was never put against an invoice.
+   */
+  async statement(customerId: string): Promise<StatementView> {
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: customerId, deletedAt: null },
+      select: { id: true, firstName: true, lastName: true, phone: true },
+    });
+    if (!customer) throw new NotFoundException('Customer not found');
+
+    const [{ invoices }, payments] = await Promise.all([
+      this.outstanding({ customerId }),
+      // Voided payments are left out of a statement entirely. This is the
+      // customer's position, not an audit log, and a line claiming money moved
+      // when it never did is worse than no line. The row stays on
+      // `GET /payments`, flagged, which is where the audit trail belongs.
+      this.prisma.payment.findMany({
+        where: { customerId, voidedAt: null },
+        orderBy: [{ occurredAt: 'asc' }],
+        include: { allocations: { select: { amount: true } } },
+      }),
+    ]);
+
+    const credit = payments.reduce(
+      (total, payment) =>
+        total +
+        payment.amount -
+        payment.allocations.reduce((sum, row) => sum + row.amount, 0),
+      0,
+    );
+
+    return {
+      customer,
+      invoices,
+      payments,
+      /** Money received that no invoice has claimed yet. */
+      credit,
+      owed: invoices.reduce((total, sale) => total + sale.balance, 0),
+    };
+  }
+}
+
+function groupByCustomer(
+  invoices: {
+    customer: DebtorCustomer | null;
+    balance: number;
+    daysOutstanding: number;
+  }[],
+): DebtorGroup[] {
+  // `customer` was typed `unknown` here until the dashboard declared a response
+  // type and the compiler objected. It was never genuinely unknown — the select
+  // above says exactly what it is — and widening it meant every caller either
+  // re-narrowed it or, more often, quietly gave up on knowing.
+  const grouped = new Map<string, DebtorGroup>();
+
+  for (const invoice of invoices) {
+    // Walk-ins share one bucket: they have no account to chase, but a walk-in
+    // invoice can still carry a balance if goods went back after payment.
+    const key = invoice.customer?.id ?? 'walk-in';
+    const row = grouped.get(key) ?? {
+      customer: invoice.customer,
+      balance: 0,
+      credit: 0,
+      invoices: 0,
+      oldestDays: 0,
+    };
+
+    // Split rather than summed, which is the whole point of this function
+    // having been wrong. Adding a negative balance in here netted a credit
+    // against unrelated debts — and for the walk-in bucket that is not even
+    // a customer's position, it is several strangers' debts with one
+    // stranger's credit taken off the pile.
+    if (invoice.balance > 0) row.balance += invoice.balance;
+    else row.credit -= invoice.balance;
+
+    row.invoices += 1;
+    row.oldestDays = Math.max(row.oldestDays, invoice.daysOutstanding);
+    grouped.set(key, row);
+  }
+
+  return [...grouped.values()].sort((a, b) => b.oldestDays - a.oldestDays);
+}

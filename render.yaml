@@ -1,0 +1,116 @@
+# Render blueprint — one web service, one Postgres.
+#
+# ## Why one service and not two
+#
+# Auth is httpOnly cookies set `sameSite: 'lax'`, so the browser sends them on
+# same-site requests only. Two Render services would be `dashboard-x.onrender.com`
+# and `api-x.onrender.com`, and `onrender.com` is on the Public Suffix List —
+# making those different *sites*, not just different origins. Sign-in would look
+# like it worked (the tokens come back in the body too) and every request after
+# it would answer 401. So the API serves the built dashboard from its own origin;
+# `serveDashboard` in `src/main.ts` has the full reasoning.
+#
+# ## Before the first deploy
+#
+# 1. **The service name is the hostname**, so this deploys to `reho.onrender.com`.
+#    Render service names are globally unique across `onrender.com`, so if
+#    `reho` is already taken the create will fail and the name here needs a
+#    suffix — decide that *before* the first deploy, because renaming later
+#    changes a URL people have bookmarked.
+# 2. Set the four `sync: false` variables in the Render dashboard — they cannot
+#    be committed or derived. `APP_URL` and `FRONTEND_URL` are the *same* URL
+#    here, because there is one origin; both exist because the mobile app may
+#    later have its own.
+# 3. `RESEND_API_KEY` and `MAIL_FROM` are **required in production** — `env.ts`
+#    refuses to boot without them, because the fallback writes OTPs and
+#    password-reset links into the platform log in plaintext. `MAIL_FROM` needs
+#    a domain verified with Resend, which has lead time; plan for it.
+# 4. **Do not set `OTP_OVERRIDE`** on an instance holding real data. It is a
+#    master key into every account, and paying for the instance does not change
+#    that.
+
+databases:
+  - name: reho-db
+    databaseName: reho
+    user: reho
+    region: frankfurt
+    # Frankfurt is Render's closest region to Lagos. Re-check at deploy time:
+    # the choice was first made when cost was the constraint, and it no longer
+    # is.
+    plan: basic-256mb
+
+services:
+  - type: web
+    name: reho
+    runtime: node
+    region: frankfurt
+    plan: starter
+    branch: main
+    healthCheckPath: /api/v1/health
+
+    # Both halves are built: the API into `dist/`, the dashboard into
+    # `web/dist/`, which is where `serveDashboard` looks for it. `web` has its
+    # own lockfile and its own dependency tree — it shares no code with the API.
+    buildCommand: >-
+      npm ci &&
+      npx prisma generate &&
+      npm run build &&
+      npm ci --prefix web &&
+      npm run build --prefix web
+
+    # Migrations run on boot. `migrate deploy` is idempotent, so a restart or a
+    # second instance is safe, and this avoids needing a pre-deploy hook.
+    startCommand: npm run db:deploy && npm run start:prod
+
+    envVars:
+      # No `engines` field in package.json, so the runtime is pinned here or
+      # Render picks its own default and changes it without telling anyone.
+      - key: NODE_VERSION
+        value: 22.18.0
+
+      - key: NODE_ENV
+        value: production
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: reho-db
+          property: connectionString
+
+      # The pool is capped in code, not with `?connection_limit=` on the URL —
+      # that is a Prisma Rust-engine parameter and this client uses the `pg`
+      # driver adapter, which ignores it. See `PrismaService`.
+      - key: DATABASE_POOL_MAX
+        value: 5
+
+      # Generated once and then held by Render. Rotating any of these signs
+      # everybody out, which is the intended behaviour if one leaks.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_RESET_SECRET
+        generateValue: true
+
+      # Off unless asked for: Swagger is a complete map of the API. `env.ts`
+      # already defaults it closed; this makes the intent visible here too.
+      - key: SWAGGER_ENABLED
+        value: false
+
+      # One origin, so the dashboard is not a cross-origin caller and needs no
+      # entry. This stays for the mobile app and anything else built later —
+      # set it to that client's origin when there is one.
+      - key: CORS_ORIGINS
+        sync: false
+
+      # The service's own https:// URL, known only after the first deploy.
+      # Both are the same value while there is one origin.
+      - key: APP_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+      # Required in production. See note 3 above.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false

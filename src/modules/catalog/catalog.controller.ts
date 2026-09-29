@@ -1,0 +1,419 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
+import { OrgRole } from '@prisma/client';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { CategoryService } from './category.service';
+import { PackagingTypeService } from './packaging-type.service';
+import { PriceTierService } from './price-tier.service';
+import { ProductService } from './product.service';
+import type { UploadedImage } from './product.service';
+import { BarcodeService } from './barcode.service';
+import { ScanService } from './scan.service';
+import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
+import {
+  CreatePackagingTypeDto,
+  UpdatePackagingTypeDto,
+} from './dto/packaging-type.dto';
+import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
+import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
+import { CreateBarcodeDto } from './dto/barcode.dto';
+import { ScanResult } from './dto/scan.response';
+import {
+  CategoryView,
+  PackagingTypeView,
+  PriceTierView,
+  ProductBarcodeView,
+  ProductView,
+  ResolvedUnitPrice,
+} from './dto/product.response';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator';
+
+/** Editing the catalog is a management job; every member may read it. */
+const CATALOG_EDITORS = [OrgRole.owner, OrgRole.manager];
+
+/** 5 MB. A product photo taken on a phone sits well under this. */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Checked here as well as by the CDN, so a wrong file is refused before it is
+ * sent anywhere rather than after.
+ */
+const ACCEPTED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+];
+
+@ApiTags('catalog')
+@ApiBearerAuth('JWT')
+@Controller('categories')
+export class CategoryController {
+  constructor(private readonly categories: CategoryService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List categories' })
+  @ApiOkResponse({ type: [CategoryView] })
+  findAll() {
+    return this.categories.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a category' })
+  @ApiOkResponse({ type: CategoryView })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.categories.findOne(id);
+  }
+
+  @Post()
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({ summary: 'Create a category' })
+  @ApiCreatedResponse({ type: CategoryView })
+  create(@Body() dto: CreateCategoryDto) {
+    return this.categories.create(dto);
+  }
+
+  @Patch(':id')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({ summary: 'Update a category' })
+  @ApiOkResponse({ type: CategoryView })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCategoryDto,
+  ) {
+    return this.categories.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(...CATALOG_EDITORS)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a category' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.categories.remove(id);
+  }
+}
+
+@ApiTags('catalog')
+@ApiBearerAuth('JWT')
+@Controller('packaging-types')
+export class PackagingTypeController {
+  constructor(private readonly packagingTypes: PackagingTypeService) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'List packaging types',
+    description:
+      "The organization's vocabulary for how goods are physically packed. Seeded at registration and editable, which is why it is a table rather than an enum.",
+  })
+  @ApiOkResponse({ type: [PackagingTypeView] })
+  findAll() {
+    return this.packagingTypes.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a packaging type' })
+  @ApiOkResponse({ type: PackagingTypeView })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.packagingTypes.findOne(id);
+  }
+
+  @Post()
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({
+    summary: 'Create a packaging type',
+    description:
+      'Reusing the name of a previously deleted type restores that row rather than failing.',
+  })
+  create(@Body() dto: CreatePackagingTypeDto) {
+    return this.packagingTypes.create(dto);
+  }
+
+  @Patch(':id')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({ summary: 'Update a packaging type' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePackagingTypeDto,
+  ) {
+    return this.packagingTypes.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(...CATALOG_EDITORS)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete a packaging type',
+    description:
+      'Soft delete: products packaged in this form keep reporting it.',
+  })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.packagingTypes.remove(id);
+  }
+}
+@ApiTags('catalog')
+@ApiBearerAuth('JWT')
+@Controller('price-tiers')
+export class PriceTierController {
+  constructor(private readonly tiers: PriceTierService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'List price tiers' })
+  @ApiOkResponse({ type: [PriceTierView] })
+  findAll() {
+    return this.tiers.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a price tier' })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tiers.findOne(id);
+  }
+
+  @Post()
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({ summary: 'Create a price tier' })
+  create(@Body() dto: CreatePriceTierDto) {
+    return this.tiers.create(dto);
+  }
+
+  @Patch(':id')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({ summary: 'Update a price tier' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePriceTierDto,
+  ) {
+    return this.tiers.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(...CATALOG_EDITORS)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a price tier' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tiers.remove(id);
+  }
+}
+
+@ApiTags('catalog')
+@ApiBearerAuth('JWT')
+@Controller('products')
+export class ProductController {
+  constructor(
+    private readonly products: ProductService,
+    private readonly barcodes: BarcodeService,
+  ) {}
+
+  @Get()
+  @ApiQuery({ name: 'categoryId', required: false })
+  @ApiQuery({
+    name: 'packagingTypeId',
+    required: false,
+    description: 'Everything packed in one form, e.g. every pouch',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Matches name or SKU',
+  })
+  @ApiOperation({ summary: 'List products with their units and tier prices' })
+  @ApiOkResponse({ type: [ProductView] })
+  findAll(
+    @Query('categoryId') categoryId?: string,
+    @Query('packagingTypeId') packagingTypeId?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.products.findAll({ categoryId, packagingTypeId, search });
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a product, including its derived VAT split' })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.products.findOneWithTax(id);
+  }
+
+  @Get(':id/price')
+  @ApiQuery({ name: 'unitId', required: true })
+  @ApiQuery({ name: 'tierId', required: false })
+  @ApiOperation({
+    summary: 'Resolve the price of one unit for a tier',
+    description:
+      'Falls back to basePrice x unit factor when the tier has no explicit price for that unit.',
+  })
+  @ApiOkResponse({ type: ResolvedUnitPrice })
+  resolvePrice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('unitId', ParseUUIDPipe) unitId: string,
+    @Query('tierId') tierId?: string,
+  ) {
+    return this.products.resolvePrice(id, unitId, tierId);
+  }
+
+  @Post()
+  @Roles(...CATALOG_EDITORS)
+  @Idempotent(
+    'A retry with the same key returns the original product instead of creating a duplicate.',
+  )
+  @ApiOperation({ summary: 'Create a product with its unit hierarchy' })
+  create(@Body() dto: CreateProductDto) {
+    return this.products.create(dto);
+  }
+
+  @Patch(':id')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({
+    summary: 'Update a product',
+    description:
+      'Prices and barcodes are set here, in `prices` and `barcodes`, rather than through endpoints of their own. Both upsert what they list and leave the rest alone, so naming one unit does not wipe the others.',
+  })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateProductDto,
+  ) {
+    return this.products.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(...CATALOG_EDITORS)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a product' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.products.remove(id);
+  }
+
+  @Post(':id/image')
+  @Roles(...CATALOG_EDITORS)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      // Held in memory rather than written to disk: the buffer goes straight to
+      // the CDN, and a server that never writes uploads has nothing to clean up.
+      limits: { fileSize: MAX_IMAGE_BYTES },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({
+    summary: 'Upload a product photo',
+    description:
+      'Replaces any existing photo, deleting the old one from the CDN afterwards. Returns 503 when image hosting is not configured on this server — set `imageUrl` directly instead if the picture is already hosted somewhere.',
+  })
+  uploadImage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file?: UploadedImage,
+  ) {
+    if (!file) {
+      throw new BadRequestException(
+        'No file was uploaded. Send it as multipart/form-data under the field name "file".',
+      );
+    }
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException(
+        `${file.mimetype} is not an image this server accepts. Use one of: ${ACCEPTED_IMAGE_TYPES.join(', ')}.`,
+      );
+    }
+    return this.products.setImage(id, file);
+  }
+
+  @Delete(':id/image')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({
+    summary: 'Remove a product photo',
+    description:
+      'Only deletes from the CDN when the image was uploaded here; a URL somebody supplied points at a file that is not ours to remove.',
+  })
+  removeImage(@Param('id', ParseUUIDPipe) id: string) {
+    return this.products.removeImage(id);
+  }
+
+  @Get(':id/barcodes')
+  @ApiOperation({ summary: 'List the barcodes on a product' })
+  @ApiOkResponse({ type: [ProductBarcodeView] })
+  listBarcodes(@Param('id', ParseUUIDPipe) id: string) {
+    return this.barcodes.findForProduct(id);
+  }
+
+  @Post(':id/barcodes')
+  @Roles(...CATALOG_EDITORS)
+  @ApiOperation({
+    summary: 'Attach a barcode to one unit of a product',
+    description:
+      'Omit `code` to generate an internal EAN-13 for goods that arrive unbarcoded. GS1 codes are rejected if the check digit does not match.',
+  })
+  @ApiCreatedResponse({ type: ProductBarcodeView })
+  addBarcode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateBarcodeDto,
+  ) {
+    return this.barcodes.create(id, dto);
+  }
+}
+
+@ApiTags('catalog')
+@ApiBearerAuth('JWT')
+@Controller()
+export class ScanController {
+  constructor(
+    private readonly scans: ScanService,
+    private readonly barcodes: BarcodeService,
+  ) {}
+
+  @Get('scan/:code')
+  @ApiQuery({ name: 'tierId', required: false })
+  @ApiOperation({
+    summary: 'Resolve a scanned code to a product, unit and price',
+    description:
+      'The single entry point for scanning. `baseQuantity` is how many base units one scan represents, so a carton code resolves to its full piece count.',
+  })
+  @ApiOkResponse({ type: ScanResult })
+  resolve(@Param('code') code: string, @Query('tierId') tierId?: string) {
+    return this.scans.resolve(code, tierId);
+  }
+
+  @Get('scan/:code/identify')
+  @ApiOperation({
+    summary: 'Report what kind of code this is, without a database lookup',
+  })
+  identify(@Param('code') code: string) {
+    return this.scans.identify(code);
+  }
+
+  @Delete('barcodes/:id')
+  @Roles(...CATALOG_EDITORS)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove a barcode' })
+  @ApiNoContentResponse()
+  removeBarcode(@Param('id', ParseUUIDPipe) id: string) {
+    return this.barcodes.remove(id);
+  }
+}

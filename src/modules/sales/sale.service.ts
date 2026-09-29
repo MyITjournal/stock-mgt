@@ -1,0 +1,627 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { OrgRole, PaymentMethod, StockMovementType } from '@prisma/client';
+import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
+import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
+import { TenantContext } from '../../common/tenancy/tenant-context';
+import {
+  SYNC_LAG_MS,
+  decodeCursor,
+  encodeCursor,
+  keysetWhereCreated,
+  keysetWhereCreatedDesc,
+} from '../../common/pagination/keyset-cursor';
+import { resolveProductUnit } from '../inventory/base-units';
+import { LocationService } from '../inventory/location.service';
+import { StockService, StockWriter } from '../inventory/stock.service';
+import { BankAccountService } from '../payments/bank-account.service';
+import { resolveUnitPrice } from '../catalog/pricing';
+import { CreateSaleDto, SaleLineDto } from './dto/create-sale.dto';
+import { SaleListView, SaleReceiptView, SaleView } from './dto/sale.response';
+import { priceLine, roundCost } from './sale-pricing';
+import {
+  LIVE_ALLOCATIONS,
+  saleBalance,
+  withBalance,
+} from '../payments/balance';
+import type { SaleBalanceInput } from '../payments/balance';
+import { redactCost } from '../../common/authz/cost-visibility';
+
+/**
+ * Who may extend further credit to a customer who already owes.
+ *
+ * The same two roles that can force a stock movement past a shortfall (§5),
+ * because it is the same kind of decision: the write path says no, and someone
+ * accountable overrules it on the record.
+ */
+const CREDIT_OVERRIDE_ROLES: OrgRole[] = [OrgRole.owner, OrgRole.manager];
+
+/** How many sales one page returns when the caller does not say. */
+const DEFAULT_PAGE = 100;
+const MAX_PAGE = 500;
+
+export interface SaleQuery {
+  customerId?: string;
+  locationId?: string;
+  /**
+   * Everything recorded after this point.
+   *
+   * Syncing (`order: 'asc'`): a starting position, ignored when `cursor` is
+   * given, because a cursor is more precise and mixing the two re-sends rows.
+   * Browsing (`order: 'desc'`): an ordinary lower bound, applied alongside the
+   * cursor, because the starting position is the newest row instead.
+   */
+  since?: Date;
+  /** Upper bound. Browsing only — a sync has no reason to stop early. */
+  until?: Date;
+  /**
+   * `asc` is the sync order and the default, so existing clients are
+   * unaffected. `desc` is for a person reading a list, who wants today first.
+   */
+  order?: 'asc' | 'desc';
+  cursor?: string;
+  limit?: number;
+}
+
+const SALE_INCLUDE = {
+  customer: {
+    select: { id: true, firstName: true, lastName: true, phone: true },
+  },
+  location: { select: { id: true, name: true } },
+  tier: { select: { id: true, name: true } },
+  recordedBy: { select: { id: true, firstName: true, lastName: true } },
+  lines: {
+    include: {
+      product: { select: { id: true, name: true, sku: true } },
+      unit: { select: { id: true, name: true, factor: true } },
+    },
+  },
+  returns: true,
+  // A voided payment never settled anything, so it must not appear against the
+  // invoice it briefly claimed — otherwise `withBalance` counts money that was
+  // never taken. Same rule as `LIVE_ALLOCATIONS`, spelled out here because this
+  // selection also carries the payment for display.
+  allocations: {
+    where: { payment: { voidedAt: null } },
+    include: {
+      payment: {
+        select: { id: true, method: true, reference: true, occurredAt: true },
+      },
+    },
+  },
+} as const;
+
+/**
+ * Selling.
+ *
+ * A sale is an invoice with lines, and the only thing that makes it different
+ * from a quote is that it moves stock. That movement is *not* written here: it
+ * goes through `StockService.recordOutbound`, which is the seam
+ * `InventoryModule` exports. FEFO picking, the refusal to sell stock that is
+ * not there, and the owner/manager override all come from that one place, so
+ * selling cannot drift from the rest of the ledger.
+ *
+ * Everything money-shaped on a sale is a snapshot. Prices move, tax rates
+ * change, and a carton is redefined now and then; none of that may rewrite what
+ * a customer paid last week.
+ */
+@Injectable()
+export class SaleService {
+  constructor(
+    @Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma,
+    private readonly stock: StockService,
+    private readonly locations: LocationService,
+    private readonly bankAccounts: BankAccountService,
+  ) {}
+
+  async create(input: CreateSaleDto): Promise<SaleView> {
+    const locationId =
+      input.locationId ?? (await this.locations.resolveDefaultId());
+    await this.locations.assertExists(locationId);
+
+    const tierId = await this.resolveTierId(input.customerId);
+    const saleId = input.id ?? randomUUID();
+    const occurredAt = input.occurredAt
+      ? new Date(input.occurredAt)
+      : new Date();
+    const organizationId = TenantContext.requireOrganizationId();
+    const recordedByUserId = TenantContext.get()?.userId ?? null;
+
+    // Resolved before the transaction opens, because it reads rows the
+    // transaction does not write and can refuse the request outright — a
+    // counter sale paid by transfer still has to say which account took it, or
+    // it is unreconcilable the moment the statement arrives.
+    const paymentMethod = input.payment?.method ?? PaymentMethod.cash;
+    const paymentBankAccountId = await this.bankAccounts.resolveForPayment(
+      paymentMethod,
+      input.payment?.bankAccountId,
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      const writer = tx as unknown as StockWriter;
+      const lines: LineToWrite[] = [];
+
+      for (const line of input.lines) {
+        lines.push(
+          await this.prepareLine(line, {
+            writer,
+            saleId,
+            locationId,
+            tierId,
+            occurredAt,
+            force: input.force,
+            forcedReason: input.forcedReason,
+          }),
+        );
+      }
+
+      const total = sum(lines.map((line) => line.lineTotal));
+      const taxTotal = sum(lines.map((line) => line.taxAmount));
+      const costTotal = sum(lines.map((line) => line.costOfGoodsSold));
+
+      // Omitted means paid in full in cash — the counter sale, which is the
+      // common case. `{ amount: 0 }` is the sale that goes out on credit.
+      const paid = input.payment?.amount ?? total;
+      if (paid > total) {
+        throw new BadRequestException(
+          `Payment (${paid}) is more than the sale total (${total}). Record what the sale was worth; change handed back is not part of it.`,
+        );
+      }
+      if (paid < 0) {
+        throw new BadRequestException(
+          'A sale cannot be recorded with a negative payment. Take goods back through a return instead.',
+        );
+      }
+
+      // Clear what is owed before taking more on credit.
+      if (paid < total && input.customerId) {
+        await this.assertMayTakeCredit(
+          tx,
+          input.customerId,
+          input.creditOverrideReason,
+        );
+      }
+
+      await tx.sale.create({
+        data: {
+          id: saleId,
+          organizationId,
+          number: await this.nextNumber(tx, organizationId),
+          customerId: input.customerId ?? null,
+          locationId,
+          tierId,
+          total,
+          taxTotal,
+          costTotal,
+          note: input.note ?? null,
+          creditOverrideReason: input.creditOverrideReason?.trim() || null,
+          occurredAt,
+          recordedByUserId,
+        },
+      });
+
+      await tx.saleLine.createMany({
+        data: lines.map((line) => ({ ...line, organizationId, saleId })),
+      });
+
+      // Written here rather than left to a second request: a rep at a counter
+      // must be able to record one sale in one round trip, which is the whole
+      // point of the offline constraints in §8.
+      if (paid > 0) {
+        const paymentId = randomUUID();
+        await tx.payment.create({
+          data: {
+            id: paymentId,
+            organizationId,
+            customerId: input.customerId ?? null,
+            // The counter that rang the sale up is the counter that took the
+            // cash, so the end-of-shift cash-up needs no extra input.
+            locationId,
+            amount: paid,
+            method: paymentMethod,
+            bankAccountId: paymentBankAccountId,
+            reference: input.payment?.reference ?? null,
+            occurredAt,
+            recordedByUserId,
+          },
+        });
+        await tx.paymentAllocation.create({
+          data: { organizationId, paymentId, saleId, amount: paid },
+        });
+      }
+    });
+
+    return this.findOne(saleId);
+  }
+
+  /**
+   * One line: what it is, what it costs the customer, and what it cost us.
+   *
+   * The stock movement happens here rather than in a second pass, because the
+   * batches FEFO picks are what decide the cost of goods sold — and picking
+   * line by line is also what makes two lines of the same product draw down the
+   * same batches in order.
+   */
+  private async prepareLine(
+    line: SaleLineDto,
+    ctx: LineContext,
+  ): Promise<LineToWrite> {
+    // One read: the unit, whether it is stocked, and the tier prices. Asking
+    // the catalog to price it separately would fetch the same product again.
+    const { product, unit } = await resolveProductUnit(
+      this.prisma,
+      line.productId,
+      line.unitId,
+      { allowUnstocked: true, withPrices: true },
+    );
+
+    const unitPrice =
+      line.unitPrice ??
+      resolveUnitPrice(product, unit, ctx.tierId ?? undefined).price;
+
+    const priced = priceLine(unitPrice, line.quantity, product.taxRateBps);
+    const baseQuantity = line.quantity * unit.factor;
+
+    // A service or any other non-stocked item is sold, priced and taxed like
+    // everything else; it simply has no stock to take and nothing it cost.
+    if (!product.trackStock) {
+      return {
+        id: line.id,
+        productId: product.id,
+        unitId: unit.id,
+        quantity: line.quantity,
+        unitFactor: unit.factor,
+        baseQuantity,
+        ...priced,
+        costOfGoodsSold: 0,
+        costIsEstimated: false,
+      };
+    }
+
+    const movements = await this.stock.recordOutbound(
+      {
+        productId: product.id,
+        locationId: ctx.locationId,
+        quantity: baseQuantity,
+        type: StockMovementType.sale,
+        occurredAt: ctx.occurredAt,
+        referenceType: 'sale',
+        referenceId: ctx.saleId,
+        force: ctx.force,
+        forcedReason: ctx.forcedReason,
+      },
+      ctx.writer,
+    );
+
+    const picked = await this.stock.costOf(movements, ctx.writer);
+
+    return {
+      id: line.id,
+      productId: product.id,
+      unitId: unit.id,
+      quantity: line.quantity,
+      unitFactor: unit.factor,
+      baseQuantity,
+      ...priced,
+      // Rounded exactly once, here, from the exact fractions of the batches
+      // that actually left. Never `costPrice × quantity` — that is the rounded
+      // average DECISIONS.md §2 forbids as an input.
+      costOfGoodsSold: roundCost(picked.cost),
+      // Flagged when the goods outran their paperwork, so a margin resting on
+      // an estimated rate can be told apart from one resting on an invoice.
+      costIsEstimated: picked.estimated > 0,
+    };
+  }
+
+  /**
+   * The next invoice number, claimed inside the sale's own transaction.
+   *
+   * The increment takes a row lock on the organization, which is what
+   * guarantees two tills cannot be handed the same number. `nextSaleNumber` is
+   * the one to hand out *next*, so the number this sale gets is the value from
+   * before the increment.
+   */
+  private async nextNumber(
+    db: Pick<TenantPrisma, 'organization'>,
+    organizationId: string,
+  ): Promise<string> {
+    // Organization is not tenant-scoped — it *is* the tenant — so this must
+    // name the id rather than rely on the filter every other model gets.
+    const { nextSaleNumber } = await db.organization.update({
+      where: { id: organizationId },
+      data: { nextSaleNumber: { increment: 1 } },
+      select: { nextSaleNumber: true },
+    });
+
+    return `INV-${String(nextSaleNumber - 1).padStart(4, '0')}`;
+  }
+
+  /**
+   * Which price list this sale runs on: the customer's, or the organization's
+   * default. A walk-in has no customer and gets the default, which is what the
+   * seeded "Retail" tier is for.
+   */
+  private async resolveTierId(customerId?: string): Promise<string | null> {
+    if (customerId) {
+      const customer = await this.prisma.customer.findFirst({
+        where: { id: customerId, deletedAt: null },
+        select: { priceTierId: true },
+      });
+      if (!customer) throw new NotFoundException('Customer not found');
+      if (customer.priceTierId) return customer.priceTierId;
+    }
+
+    const fallback = await this.prisma.priceTier.findFirst({
+      where: { deletedAt: null, isDefault: true },
+    });
+    return fallback?.id ?? null;
+  }
+
+  /**
+   * Sales, newest last, paged by keyset so a syncing device can resume exactly
+   * where it stopped. Same shape and the same one-second safety lag as the
+   * stock ledger's delta sync.
+   */
+  async findAll(query: SaleQuery = {}): Promise<SaleListView> {
+    const limit = Math.min(query.limit ?? DEFAULT_PAGE, MAX_PAGE);
+    const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
+    const syncedThrough = new Date(Date.now() - SYNC_LAG_MS);
+
+    const browsing = query.order === 'desc';
+
+    const rows = await this.prisma.sale.findMany({
+      where: {
+        ...(query.customerId && { customerId: query.customerId }),
+        ...(query.locationId && { locationId: query.locationId }),
+        AND: [
+          // The one-second lag is a *sync* safeguard, so browsing skips it.
+          // It exists to stop a forward-walking cursor advancing past a row
+          // that was still committing — unrecoverable, because the cursor
+          // never goes back. Reading newest-first has the opposite exposure:
+          // new rows arrive at the top, above wherever the reader has paged to,
+          // so a late commit is never stepped over.
+          //
+          // This once read "applies to both orders", on the grounds that
+          // letting them disagree would be confusing. That was wrong in a way
+          // only visible on screen: a row written a moment ago is missing from
+          // the list that refetches right after writing it, which reads as a
+          // bug rather than as caution. Found on the payments list in 7.4.
+          ...(browsing ? [] : [{ createdAt: { lte: syncedThrough } }]),
+          ...(browsing
+            ? [
+                // Both bounds are plain filters here; the cursor only says how
+                // far back this reader has walked.
+                ...(query.since ? [{ createdAt: { gte: query.since } }] : []),
+                ...(query.until ? [{ createdAt: { lte: query.until } }] : []),
+                ...keysetWhereCreatedDesc(cursor),
+              ]
+            : keysetWhereCreated(cursor, query.since)),
+        ],
+      },
+      orderBy: browsing
+        ? [{ createdAt: 'desc' }, { id: 'desc' }]
+        : [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: limit,
+      include: SALE_INCLUDE,
+    });
+
+    const last = rows.at(-1);
+
+    return {
+      sales: rows.map((row) => forReading(row)),
+      nextCursor:
+        rows.length === limit && last
+          ? encodeCursor({ at: last.createdAt, id: last.id })
+          : null,
+      syncedThrough,
+      hasMore: rows.length === limit,
+    };
+  }
+
+  async findOne(id: string): Promise<SaleView> {
+    const sale = await this.prisma.sale.findFirst({
+      where: { id },
+      include: SALE_INCLUDE,
+    });
+    if (!sale) throw new NotFoundException('Sale not found');
+    return forReading(sale);
+  }
+
+  /**
+   * Refuses a second helping of credit to a customer who has not cleared the
+   * first.
+   *
+   * **This product does not sell on credit as a matter of course.** Credit
+   * happens — a shop takes goods on Tuesday and pays on Friday — but it is an
+   * exception, and the rule the business actually runs on is that what is owed
+   * is cleared before more goes out. Encoding that here means a rep cannot
+   * quietly let one shop's debt compound across three deliveries, which is how
+   * a distributor's receivables become uncollectable.
+   *
+   * The shape is deliberately the negative-stock override of §5: refuse with a
+   * 409 naming the number, and let an owner or manager through with a reason
+   * that is recorded on the sale. The write path is opinionated; the ledger
+   * still records whatever actually happened.
+   *
+   * Only *positive* balances count. A customer the business owes money to —
+   * goods returned after paying — is not in debt, and blocking their next
+   * purchase over it would be nonsense.
+   */
+  private async assertMayTakeCredit(
+    tx: Pick<TenantPrisma, 'sale'>,
+    customerId: string,
+    creditOverrideReason: string | undefined,
+  ) {
+    const sales = await tx.sale.findMany({
+      where: { customerId },
+      select: {
+        number: true,
+        total: true,
+        allocations: LIVE_ALLOCATIONS,
+        returns: { select: { refundAmount: true } },
+      },
+    });
+
+    const owing = sales
+      .map((sale) => ({ number: sale.number, ...saleBalance(sale) }))
+      .filter((sale) => sale.balance > 0);
+
+    if (owing.length === 0) return;
+
+    const outstanding = owing.reduce((sum, sale) => sum + sale.balance, 0);
+
+    if (!creditOverrideReason?.trim()) {
+      throw new ConflictException(
+        `This customer still owes ${outstanding} on ${owing.length} invoice(s) (${owing
+          .map((sale) => sale.number)
+          .join(
+            ', ',
+          )}). Settle that before selling on credit again, or record the sale as paid.`,
+      );
+    }
+
+    const orgRole = TenantContext.get()?.orgRole;
+    if (!orgRole || !CREDIT_OVERRIDE_ROLES.includes(orgRole)) {
+      throw new ForbiddenException(
+        'Only an owner or manager can extend further credit to a customer who already owes.',
+      );
+    }
+  }
+
+  /**
+   * A flat payload for printing: what a customer is handed, and nothing else.
+   *
+   * Separate from `findOne` because a receipt is a *contract with a printer*,
+   * not a view of the row — it has to keep saying the same things in the same
+   * shape while the sale model underneath keeps growing. Deliberately narrow:
+   * no ids beyond the invoice number, no cost of goods sold, no tier name.
+   */
+  async receipt(id: string): Promise<SaleReceiptView> {
+    const sale = await this.findOne(id);
+
+    return {
+      number: sale.number,
+      occurredAt: sale.occurredAt,
+      customer: sale.customer
+        ? `${sale.customer.firstName} ${sale.customer.lastName ?? ''}`.trim()
+        : null,
+      servedBy: sale.recordedBy
+        ? `${sale.recordedBy.firstName ?? ''} ${sale.recordedBy.lastName ?? ''}`.trim()
+        : null,
+      lines: sale.lines.map((line) => ({
+        description: line.product.name,
+        unit: line.unit.name,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal: line.lineTotal,
+      })),
+      total: sale.total,
+      tax: sale.taxTotal,
+      paid: sale.allocated,
+      balance: sale.balance,
+      note: sale.note,
+    };
+  }
+}
+
+interface LineContext {
+  writer: StockWriter;
+  saleId: string;
+  locationId: string;
+  tierId: string | null;
+  occurredAt: Date;
+  force?: boolean;
+  forcedReason?: string;
+}
+
+interface LineToWrite {
+  id?: string;
+  productId: string;
+  unitId: string;
+  quantity: number;
+  unitFactor: number;
+  baseQuantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  taxRateBps: number;
+  taxAmount: number;
+  costOfGoodsSold: number;
+  costIsEstimated: boolean;
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+/** What these goods cost the business, carried on every sold line. */
+const SALE_LINE_COST_FIELDS = ['costOfGoodsSold', 'costIsEstimated'] as const;
+
+/** The share of that cost which came back with returned goods. */
+const SALE_RETURN_COST_FIELDS = ['costAmount'] as const;
+
+/**
+ * The same cost again, summed onto the invoice header.
+ *
+ * Redacting the lines and leaving this was the whole of the leak: `costTotal`
+ * is the sum of exactly the `costOfGoodsSold` figures removed directly below
+ * it, so a rep who could not read a single line's cost could read all of them
+ * added up, beside the `total` they were sold for. That is the margin on the
+ * invoice, which is the one number §9 closes to a rep.
+ *
+ * Found while declaring this endpoint's response type for the till (§17), which
+ * is the argument for declaring them: the shape had to be written down field by
+ * field before anybody noticed one of the fields should not be there.
+ */
+const SALE_COST_FIELDS = ['costTotal'] as const;
+
+/**
+ * The one seam every sale passes through on its way out of the API: the derived
+ * balance attached, and cost removed for anyone whose role may not see it.
+ *
+ * §12 closes the cost-bearing *reports* to a rep, and `GET /sales` was handing
+ * over the same figures a line at a time — `costOfGoodsSold` per line and
+ * `costAmount` per return are the margin on the invoice. All of them are
+ * snapshots taken at the time of sale, so nothing downstream recomputes them.
+ *
+ * Three fields, not two: the invoice header's `costTotal` is the same money
+ * summed, and it went out in full for a year while the lines beneath it were
+ * being carefully removed.
+ *
+ * Deliberately not folded into `SALE_INCLUDE`: `SaleReturnService` reads the
+ * real `costOfGoodsSold` to apportion cost onto goods handed back, and a
+ * redacted row would leave it computing against `undefined`. It runs its own
+ * query, so redacting at the presentation edge cannot reach it.
+ */
+// `returns` is restated rather than intersected onto `SaleBalanceInput`:
+// intersecting two array types leaves TypeScript indexing only the first, so
+// `costAmount` would vanish from the element type it infers here.
+function forReading<
+  T extends Omit<SaleBalanceInput, 'returns'> & {
+    costTotal: number;
+    lines: readonly {
+      costOfGoodsSold: number;
+      costIsEstimated: boolean;
+    }[];
+    returns: readonly { costAmount: number; refundAmount: number }[];
+  },
+>(sale: T) {
+  // Header first, then the lines and returns inside it. All three carry the
+  // same number at different resolutions, and leaving any one of them is
+  // enough to hand over the margin.
+  const row = redactCost(withBalance(sale), SALE_COST_FIELDS);
+
+  return {
+    ...row,
+    lines: row.lines.map((line) => redactCost(line, SALE_LINE_COST_FIELDS)),
+    returns: row.returns.map((entry) =>
+      redactCost(entry, SALE_RETURN_COST_FIELDS),
+    ),
+  };
+}

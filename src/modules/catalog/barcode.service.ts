@@ -1,0 +1,100 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { BarcodeSymbology } from '@prisma/client';
+import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
+import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
+import { TenantContext } from '../../common/tenancy/tenant-context';
+import { resolveBarcode } from './barcode';
+import { CreateBarcodeDto } from './dto/barcode.dto';
+import { ProductBarcodeView } from './dto/product.response';
+
+@Injectable()
+export class BarcodeService {
+  constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
+
+  async create(
+    productId: string,
+    input: CreateBarcodeDto,
+  ): Promise<ProductBarcodeView> {
+    const unit = await this.prisma.productUnit.findFirst({
+      where: { id: input.unitId, productId },
+    });
+    if (!unit) {
+      throw new BadRequestException(
+        'That unit does not belong to this product',
+      );
+    }
+
+    // Shared with creating a product that carries its barcodes inline, so both
+    // routes reach the same verdict on the same code.
+    const resolved = resolveBarcode(input);
+    if ('error' in resolved) throw new BadRequestException(resolved.error);
+    const { code, symbology } = resolved;
+
+    try {
+      const barcode = await this.prisma.productBarcode.create({
+        data: {
+          ...(input.id && { id: input.id }),
+          organizationId: TenantContext.requireOrganizationId(),
+          productId,
+          unitId: input.unitId,
+          code,
+          symbology,
+          isPrimary: input.isPrimary ?? false,
+        },
+        include: { unit: true },
+      });
+
+      if (barcode.isPrimary)
+        await this.clearOtherPrimaries(unit.id, barcode.id);
+      return barcode;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(
+          `The barcode "${code}" is already assigned to another product in this organization`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  findForProduct(productId: string): Promise<ProductBarcodeView[]> {
+    return this.prisma.productBarcode.findMany({
+      where: { productId },
+      include: { unit: true },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async remove(id: string) {
+    const barcode = await this.prisma.productBarcode.findFirst({
+      where: { id },
+    });
+    if (!barcode) throw new NotFoundException('Barcode not found');
+
+    await this.prisma.productBarcode.delete({ where: { id } });
+  }
+
+  /** One primary code per unit, so label printing is unambiguous. */
+  private async clearOtherPrimaries(unitId: string, keepId: string) {
+    await this.prisma.productBarcode.updateMany({
+      where: { unitId, id: { not: keepId }, isPrimary: true },
+      data: { isPrimary: false },
+    });
+  }
+}
+
+export { BarcodeSymbology };
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error as { code?: string }).code === 'P2002'
+  );
+}

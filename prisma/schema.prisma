@@ -2,67 +2,910 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Connection URL lives in prisma.config.ts (Prisma 7 removed `url` from this
+// block); the runtime client connects via the pg adapter in PrismaService.
 datasource db {
   provider = "postgresql"
 }
 
 model Customer {
-  id         String   @id @default(uuid())
+  id             String @id @default(uuid())
+  organizationId String
+
   firstName  String
   middleName String?
   lastName   String?
   email      String?
   phone      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  sales      Sale[]
 
+  /// Which price list this customer buys on. Null falls back to the
+  /// organization's default tier, which is what a walk-in gets.
+  priceTierId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  priceTier    PriceTier?   @relation(fields: [priceTierId], references: [id], onDelete: SetNull)
+  sales        Sale[]
+  payments     Payment[]
+
+  @@index([organizationId])
+  @@index([priceTierId])
   @@map("customers")
 }
 
-model Product {
-  id          String  @id @default(uuid())
-  name        String
-  price       Float
-  description String?
-  sales       Sale[]
+/// A product category. `parentId` allows nesting, e.g. Beverages > Soft Drinks.
+model Category {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  parentId       String?
 
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[]   @relation("CategoryTree")
+  products     Product[]
+  purchaseTargets PurchaseTarget[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("categories")
+}
+
+/// The physical form of a product's base unit: pouch, tin, sachet, roll, crate.
+///
+/// A per-organization lookup rather than a Prisma enum because the vocabulary
+/// grows with the business, and an enum would need a migration every time a
+/// tenant stocks something in a form nobody had listed.
+///
+/// It describes the *product*, not the unit hierarchy: "Milo 400g Pouch" and
+/// "Milo 800g Pouch" are different products, both packaged as a pouch.
+model PackagingType {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  /// Display order in pickers; ties break on name.
+  sortOrder      Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("packaging_types")
+}
+
+model Product {
+  id              String  @id @default(uuid())
+  organizationId  String
+  /// Stock-keeping unit. Generated from the name when the caller omits it.
+  sku             String
+  name            String
+  description     String?
+  categoryId      String?
+  /// Physical form of the base unit, from the org's PackagingType lookup.
+  packagingTypeId String?
+
+  /// Tax-inclusive price of ONE base unit, in minor units (kobo). Used when no
+  /// ProductPrice row matches the customer's tier.
+  basePrice  Int
+  /// Last known purchase cost of one base unit, refreshed by receiving. A
+  /// cached rounded snapshot **for display only** — never an input to a
+  /// calculation, per DECISIONS.md §2.
+  costPrice  Int?
+  /// VAT rate in basis points: 750 = 7.5%.
+  taxRateBps Int  @default(750)
+
+  /// A picture of the product, for pickers on a phone and the web catalog.
+  ///
+  /// Two fields rather than one: the URL is what clients render, and the
+  /// public id is what lets the old image actually be deleted from the CDN when
+  /// it is replaced. Storing only the URL leaks an orphan on every change.
+  ///
+  /// `imagePublicId` is null when the URL was supplied directly rather than
+  /// uploaded here — a business that already hosts its product shots elsewhere
+  /// should not be forced through our uploader.
+  imageUrl      String?
+  imagePublicId String?
+
+  /// Reorder once stock on hand falls to or below this, in **base units** like
+  /// everything else in the ledger.
+  ///
+  /// Null means nobody has set a level, so the product is simply left off the
+  /// low-stock list. That is deliberately different from a level of `0`, which
+  /// means "tell me the moment this runs out".
+  reorderPoint Int?
+
+  isActive   Boolean @default(true)
+  /// False for services and non-stocked items, which the ledger should ignore.
+  trackStock Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  packagingType     PackagingType?     @relation(fields: [packagingTypeId], references: [id], onDelete: SetNull)
+  units             ProductUnit[]
+  prices            ProductPrice[]
+  saleLines         SaleLine[]
+  barcodes          ProductBarcode[]
+  stockBatches      StockBatch[]
+  stockMovements    StockMovement[]
+  stockBalances     StockBalance[]
+  goodsReceiptLines GoodsReceiptLine[]
+  stocktakeLines    StocktakeLine[]
+  purchaseTargets   PurchaseTarget[]
+
+  @@unique([organizationId, sku])
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([packagingTypeId])
   @@map("products")
 }
 
-model Sale {
-  id         String   @id @default(uuid())
-  productId  String
-  customerId String
-  quantity   Int
-  total      Float
-  createdAt  DateTime @default(now())
-  product    Product  @relation(fields: [productId], references: [id])
-  customer   Customer @relation(fields: [customerId], references: [id])
+/// How a product is packaged and sold: piece, pack, carton.
+///
+/// Per product, because a carton of milk and a carton of soap hold different
+/// counts. Exactly one unit per product is the base (factor 1); all stock is
+/// recorded in base units, which is what the Slice 3 ledger depends on.
+model ProductUnit {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
 
+  name   String
+  /// How many base units this contains. The base unit itself is 1.
+  factor Int
+
+  isBase           Boolean @default(false)
+  /// The unit pre-selected when selling this product.
+  isDefaultSelling Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product           Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  prices            ProductPrice[]
+  barcodes          ProductBarcode[]
+  purchaseTargets   PurchaseTarget[]
+  goodsReceiptLines GoodsReceiptLine[]
+  saleLines         SaleLine[]
+
+  @@unique([organizationId, productId, name])
+  @@index([productId])
+  @@map("product_units")
+}
+
+/// A customer class with its own pricing, e.g. Retail, Wholesale, Distributor.
+model PriceTier {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  isDefault      Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  prices       ProductPrice[]
+  customers    Customer[]
+  sales        Sale[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("price_tiers")
+}
+
+/// A scannable code identifying one *unit* of a product.
+///
+/// Attached to the unit rather than the product because the case and the item
+/// carry different numbers: an ITF-14 on the carton, an EAN-13 on the piece.
+/// That is what lets a scan during goods receiving resolve to "one carton = 24
+/// pieces" instead of one anonymous item.
+///
+/// Unique per organization, not globally: two tenants will stock the same Peak
+/// Milk, and one will invent its own internal code.
+model ProductBarcode {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  unitId         String
+
+  code      String
+  symbology BarcodeSymbology @default(EAN13)
+  /// The code printed on labels for this unit when there are several.
+  isPrimary Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([productId])
+  @@index([unitId])
+  @@map("product_barcodes")
+}
+
+/// INTERNAL is a valid EAN-13 in the GS1 restricted-circulation range (leading
+/// 2), generated for goods that arrive with no barcode of their own.
+enum BarcodeSymbology {
+  EAN13
+  UPC_A
+  EAN8
+  ITF14
+  CODE128
+  QR
+  INTERNAL
+}
+
+/// Price of one `unit` of `product` for customers on `tier`.
+///
+/// Keyed by unit as well as tier on purpose: a carton price is not twelve times
+/// the piece price. Bulk discount is the norm in FMCG, and a model that can only
+/// multiply the base price cannot express it.
+model ProductPrice {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  tierId         String
+  unitId         String
+
+  /// Tax-inclusive, in minor units (kobo), for ONE of that unit.
+  price Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tier         PriceTier    @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId, tierId, unitId])
+  @@index([productId])
+  @@map("product_prices")
+}
+
+/// An invoice: what left the shop, at what price, and what it had cost to buy.
+///
+/// Every money figure here is a **snapshot**. A price list edited next month
+/// must not rewrite what a customer paid last week, which is the same reasoning
+/// `GoodsReceiptLine.unitFactor` already encodes for quantities.
+model Sale {
+  id             String @id @default(uuid())
+  organizationId String
+
+  /// Human-readable and sequential per organization: INV-0001. The number a
+  /// customer quotes on the phone; `id` is the one machines use.
+  number String
+
+  /// Null for a walk-in. Most counter sales are strangers paying cash, and
+  /// inventing a customer row for each one buries the real customers.
+  customerId String?
+  /// Where the stock left from.
+  locationId String
+  /// The tier the prices were resolved against, kept so a sale stays
+  /// explainable after the customer is moved to another price list.
+  tierId     String?
+
+  /// Tax-inclusive, in minor units (kobo). The sum of its lines.
+  total     Int
+  /// The VAT inside `total`, derived by subtraction at sale time and frozen.
+  taxTotal  Int
+  /// Cost of the goods sold, rounded once, per DECISIONS.md §2.
+  costTotal Int
+
+  note String?
+
+  /// Why this sale was allowed to go out on credit to a customer who already
+  /// owed money.
+  ///
+  /// The product does not sell on credit as a matter of course: an outstanding
+  /// balance is meant to be cleared before another is given, and the write path
+  /// refuses a second credit sale with a 409. An owner or manager can override
+  /// that, and the reason is kept here so the exception is reportable rather
+  /// than invisible — the same shape as `StockMovement.forcedReason`.
+  creditOverrideReason String?
+
+  /// When it happened by the recording device's clock — a rep offline at 9am
+  /// syncing at 5pm. `createdAt` is when the server stored it.
+  occurredAt DateTime @default(now())
+
+  recordedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer?           @relation(fields: [customerId], references: [id])
+  location     Location            @relation(fields: [locationId], references: [id])
+  tier         PriceTier?          @relation(fields: [tierId], references: [id])
+  recordedBy   User?               @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  lines        SaleLine[]
+  returns      SaleReturn[]
+  allocations  PaymentAllocation[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([occurredAt])
   @@map("sales")
 }
 
+/// One product on an invoice, priced and costed at the moment it was sold.
+model SaleLine {
+  id             String @id @default(uuid())
+  organizationId String
+  saleId         String
+  productId      String
+  unitId         String
+
+  /// As typed, counted in `unitId` — two cartons, not forty-eight pieces.
+  quantity     Int
+  /// What `unitId` meant at the time. Copied, so redefining a carton later
+  /// cannot retroactively change what this sale took off the shelf.
+  unitFactor   Int
+  /// `quantity * unitFactor`. Converted once, on write.
+  baseQuantity Int
+
+  /// Tax-inclusive price of ONE `unitId`, in kobo. Either resolved from the
+  /// tier or typed in by the seller, which is how a negotiated price is
+  /// recorded — there is no separate discount model.
+  unitPrice Int
+  /// `unitPrice * quantity`.
+  lineTotal Int
+
+  /// The VAT rate and amount at the time of sale, frozen.
+  taxRateBps Int
+  taxAmount  Int
+
+  /// What these goods cost to buy, from the batches FEFO actually picked.
+  /// Rounded exactly once, here, per DECISIONS.md §2. Zero for a product that
+  /// is not stocked.
+  costOfGoodsSold Int
+
+  /// True when some of `costOfGoodsSold` came from an **estimated** rate rather
+  /// than an invoice.
+  ///
+  /// That happens when goods are sold before the delivery they came from was
+  /// recorded: the movement is forced through a shortfall onto a batch that has
+  /// no invoice behind it, so the rate is taken from the product's most recent
+  /// real lot instead. The number is a good guess, not a fact, and a margin
+  /// resting on it should say so rather than read like the others.
+  costIsEstimated Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id])
+  unit         ProductUnit  @relation(fields: [unitId], references: [id])
+  returns      SaleReturn[]
+
+  @@index([organizationId])
+  @@index([saleId])
+  @@index([productId])
+  @@map("sale_lines")
+}
+
+/// Goods coming back. One row per returned line; several returned in one visit
+/// share a `returnGroupId`, the same way a transfer pairs its two movements
+/// rather than growing a header table of its own.
+model SaleReturn {
+  id             String @id @default(uuid())
+  organizationId String
+  saleId         String
+  saleLineId     String
+
+  /// Groups the lines handed back together in one visit.
+  returnGroupId String
+
+  /// In base units, always positive.
+  quantity     Int
+  /// What the customer got back, in kobo. A proportion of the line total.
+  refundAmount Int
+  /// The share of the line's cost that came back with the goods, so margin
+  /// reporting nets out.
+  costAmount   Int
+
+  /// False when the goods came back broken: the refund still happens, but
+  /// nothing returns to sellable stock and no movement is written.
+  restocked Boolean @default(true)
+
+  reason String?
+  note   String?
+
+  occurredAt       DateTime @default(now())
+  recordedByUserId String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  saleLine     SaleLine     @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
+  recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([saleId])
+  @@index([returnGroupId])
+  @@map("sale_returns")
+}
+
+/// Money changing hands, as one event.
+///
+/// One row per thing that actually happened — a ₦50,000 transfer is one
+/// payment, not three, even when it settles three invoices. That is what makes
+/// this reconcilable against a bank statement; the split across invoices lives
+/// in `PaymentAllocation`.
+model Payment {
+  id             String @id @default(uuid())
+  organizationId String
+
+  /// Null when there is no account behind it — cash back to a walk-in who
+  /// returned something.
+  customerId String?
+
+  /// Which counter or van took the money.
+  ///
+  /// Set automatically when a sale banks its own payment, and optional on a
+  /// standalone payment — a transfer that lands in the bank belongs to no
+  /// counter. This is what makes a cash-up at the end of a shift answerable:
+  /// "what did this till take today" is otherwise unanswerable from the data.
+  locationId String?
+
+  /// Signed, in minor units (kobo): positive is money in, negative is money
+  /// handed back. A customer's position is then a plain sum with no branch on
+  /// type, exactly as `StockMovement.quantity` does for stock.
+  amount Int
+
+  method PaymentMethod @default(cash)
+
+  /// Which of the business's accounts the money landed in.
+  ///
+  /// Required for `transfer` and `pos`, forbidden for `cash` — cash never
+  /// touched a bank, and saying it did would be a lie that a reconciliation
+  /// later has to unpick. This is the column that lets a bank statement be laid
+  /// beside these rows and matched, rather than eyeballed on amount and date.
+  ///
+  /// Nullable in the database rather than required, because payments recorded
+  /// before this existed have no account and are still true.
+  bankAccountId String?
+
+  /// The transfer or POS slip number, or the cheque number. What someone quotes
+  /// when they say "I paid on Tuesday".
+  reference String?
+  note      String?
+
+  /// When the money moved, by the recording device's clock. `createdAt` is when
+  /// the server heard about it; offline, the two differ.
+  occurredAt DateTime @default(now())
+
+  recordedByUserId String?
+
+  /// Set when this row should never have existed — a mis-keyed amount, a
+  /// payment recorded against the wrong customer. **Not** how a refund is
+  /// recorded: money genuinely handed back is a negative `Payment`, because it
+  /// is a thing that happened. Voiding says the opposite — nothing happened.
+  ///
+  /// The row is kept and excluded from every balance, so the mistake and its
+  /// correction are both on the record. Nothing is ever hard-deleted here.
+  voidedAt       DateTime?
+  voidedReason   String?
+  voidedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer?           @relation(fields: [customerId], references: [id])
+  location     Location?           @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  bankAccount  BankAccount?        @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  recordedBy   User?               @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  voidedBy     User?               @relation("PaymentVoidedBy", fields: [voidedByUserId], references: [id], onDelete: SetNull)
+  allocations  PaymentAllocation[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([occurredAt])
+  /// The cash-up query: what one counter took over a shift.
+  @@index([organizationId, locationId, occurredAt])
+  /// The delta-sync cursor: keyset paging over (updatedAt, id).
+  ///
+  /// On `updatedAt` rather than `createdAt`, unlike the stock ledger, because a
+  /// payment is mutable — voiding one has to reach a client that already synced
+  /// it. See `keyset-cursor.ts`.
+  @@index([organizationId, updatedAt, id])
+  @@map("payments")
+}
+
+/// How much of a payment settled which invoice.
+///
+/// The allocations of a payment may sum to **less** than the payment. The
+/// remainder is credit sitting on the customer, waiting for the next invoice —
+/// which is a real thing that happens, not an error to reject.
+model PaymentAllocation {
+  id             String @id @default(uuid())
+  organizationId String
+  paymentId      String
+  saleId         String
+
+  /// Signed, following the payment it belongs to.
+  amount Int
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payment      Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([paymentId])
+  @@index([saleId])
+  @@map("payment_allocations")
+}
+
+/// What money was spent on: transport, diesel, salaries.
+///
+/// A per-organization lookup rather than a Prisma enum, for the same reason
+/// `PackagingType` is one: the list grows with the business, and an enum would
+/// need a migration every time somebody starts paying for something new.
+model ExpenseCategory {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  /// Display order in pickers; ties break on name.
+  sortOrder      Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  expenses     Expense[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("expense_categories")
+}
+
+/// Money going out that is not the cost of goods.
+///
+/// Deliberately flat: an amount, a category, a date and who recorded it. No
+/// budgets, no approval flow, no account codes — the moment those appear this
+/// has become the accounting the product exists to avoid. It is here so the
+/// profit view has both halves of its subtraction.
+model Expense {
+  id             String @id @default(uuid())
+  organizationId String
+  categoryId     String
+
+  /// In minor units (kobo). Positive — an expense refunded is a rare enough
+  /// event to record as a note rather than a sign.
+  amount Int
+
+  method PaymentMethod @default(cash)
+
+  /// Who was paid, when it happens to be a supplier already on file.
+  supplierId String?
+
+  reference String?
+  note      String?
+
+  occurredAt       DateTime @default(now())
+  recordedByUserId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     ExpenseCategory @relation(fields: [categoryId], references: [id])
+  supplier     Supplier?       @relation(fields: [supplierId], references: [id])
+  recordedBy   User?           @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([occurredAt])
+  /// The delta-sync cursor, on (updatedAt, id) for the same reason as payments:
+  /// an expense can be edited and soft-deleted after it is written.
+  @@index([organizationId, updatedAt, id])
+  @@map("expenses")
+}
+
+/// How money moved. A Prisma enum rather than a per-tenant lookup, unlike
+/// `PackagingType` and `ExpenseCategory`: this vocabulary is set by the
+/// payment rails, not by what a particular business does.
+enum PaymentMethod {
+  cash
+  transfer
+  pos
+  cheque
+}
+
+/// Records the outcome of a write so a retry returns it instead of repeating it.
+///
+/// Field reps work offline and sync later, so a request that timed out will be
+/// resent — often after the server already committed it. Without this a flaky
+/// connection silently duplicates sales and stock movements.
+model IdempotencyKey {
+  id             String @id @default(uuid())
+  organizationId String
+
+  /// Client-supplied, from the Idempotency-Key header.
+  key         String
+  /// method + the **concrete** request URL, so the same key aimed at a
+  /// different resource is not a match. This held the route *pattern* until
+  /// 2026-09-16, which made every `POST /stocktakes/:id/post` look identical —
+  /// and since that route has no body, its request hash is identical too. One
+  /// key reused across two counts replayed the first answer and posted
+  /// nothing, silently. See DECISIONS.md §13.
+  endpoint    String
+  /// Hash of the request body. The same key with different content is a
+  /// client bug worth reporting rather than silently replaying the old answer.
+  requestHash String
+
+  /// Null while the request is still running. The row is claimed *before* the
+  /// handler runs, so the unique constraint on (organizationId, key) picks one
+  /// winner among concurrent retries and the losers wait instead of doing the
+  /// work a second time. A handler that throws deletes its own row, because a
+  /// request that failed must stay retryable.
+  statusCode   Int?
+  responseBody Json?
+
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+/// A business. Every tenant-scoped row from Slice 2 onward carries organizationId.
+model Organization {
+  id       String @id @default(uuid())
+  name     String
+  slug     String @unique
+  /// ISO 4217. Money is stored as integer minor units of this currency.
+  currency String @default("NGN")
+  timezone String @default("Africa/Lagos")
+
+  /// How many people may hold an **active** membership here.
+  ///
+  /// A column rather than a constant because it is a pricing lever: the basic
+  /// tier is one owner and four cashiers, and moving that line later must not
+  /// need a migration or a deploy. Billing (slice 9) will set it per plan; a
+  /// pilot customer can be granted more without touching code.
+  ///
+  /// Checked when somebody is **added or reactivated, never when they sign in**.
+  /// A business that ends up over its limit keeps working — locking cashiers out
+  /// of a live shop over a subscription is how a customer is lost in an
+  /// afternoon. Suspended members do not hold a seat.
+  maxUsers Int @default(5)
+
+  /// When staff may sign in, as **minutes past midnight** in this business's
+  /// timezone: 480 is 08:00, 1140 is 19:00.
+  ///
+  /// Minutes rather than a time type because the comparison is arithmetic and
+  /// the timezone already lives in `timezone` — a `time` column would invite
+  /// somebody to store an instant and reintroduce the 1am problem from §12.
+  ///
+  /// `closesAt` must be **after** `opensAt`: no window crosses midnight, because
+  /// there is no night shift yet. That constraint is what keeps the check a
+  /// single comparison rather than two ranges, and it is what makes adding
+  /// night shifts a real change later rather than a tweak.
+  opensAt  Int @default(480)
+  closesAt Int @default(1140)
+
+  /// Which days the business opens, 0 = Sunday. All seven by default, because
+  /// that is what was asked for; a shop that closes on Sunday drops the 0.
+  workingDays Int[] @default([0, 1, 2, 3, 4, 5, 6])
+
+  /// The letterhead: what a printed invoice or statement says about the
+  /// business issuing it.
+  ///
+  /// **Every one of these is nullable**, deliberately. A business that has not
+  /// filled in its address still needs to be able to issue an invoice today —
+  /// blocking the document on a profile screen nobody visited would make the
+  /// feature useless to exactly the people it is for. The renderer prints what
+  /// it has and leaves out what it does not.
+  address  String?
+  phone    String?
+  email    String?
+  /// Tax Identification Number. Printed on a VAT invoice where a customer's
+  /// own accounts need it; absent, the invoice is still a valid receipt.
+  taxId    String?
+  /// CAC registration number, conventionally shown as "RC 123456".
+  rcNumber String?
+  /// A logo for the letterhead. A URL rather than an upload, so a business that
+  /// already hosts its brand assets is not forced through our uploader — the
+  /// same reasoning as `Product.imageUrl` in §4.
+  logoUrl  String?
+
+  /// The next invoice number to hand out. Incremented inside the same
+  /// transaction that writes the sale, which takes a row lock and so
+  /// guarantees no gaps and no duplicates. It serialises concurrent sales
+  /// within one business, which at counter volumes costs nothing.
+  nextSaleNumber Int @default(1)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+
+  categories        Category[]
+  packagingTypes    PackagingType[]
+  products          Product[]
+  productUnits      ProductUnit[]
+  priceTiers        PriceTier[]
+  productPrices     ProductPrice[]
+  customers         Customer[]
+  sales             Sale[]
+  saleLines         SaleLine[]
+  saleReturns       SaleReturn[]
+  payments          Payment[]
+  allocations       PaymentAllocation[]
+  expenses          Expense[]
+  expenseCategories ExpenseCategory[]
+  stocktakes        Stocktake[]
+  stocktakeLines    StocktakeLine[]
+  barcodes          ProductBarcode[]
+  idempotencyKeys   IdempotencyKey[]
+  locations         Location[]
+  suppliers         Supplier[]
+  stockBatches      StockBatch[]
+  stockMovements    StockMovement[]
+  stockBalances     StockBalance[]
+  goodsReceipts     GoodsReceipt[]
+  goodsReceiptLines GoodsReceiptLine[]
+  purchaseTargets   PurchaseTarget[]
+  bankAccounts      BankAccount[]
+  supplierBills     SupplierBill[]
+  supplierPayments  SupplierPayment[]
+
+  @@map("organizations")
+}
+
+/// Joins a user to a business, with the role they hold *inside that business*.
+model Membership {
+  id             String           @id @default(uuid())
+  userId         String
+  organizationId String
+  role           OrgRole          @default(sales_rep)
+  status         MembershipStatus @default(active)
+
+  /// This person's own hours, when they differ from the shop's.
+  ///
+  /// **Null means inherit**, which is the point: a business sets 08:00–19:00
+  /// once and everybody follows it, including whoever is hired next week. Hours
+  /// held only per person would need a default for a new starter, and both
+  /// answers are wrong — "any time" quietly exempts the newest employee, "never"
+  /// stops them working on their first morning.
+  ///
+  /// An empty `workingDays` inherits for the same reason; a person who works
+  /// only Saturdays has `[6]`.
+  opensAt     Int?
+  closesAt    Int?
+  workingDays Int[] @default([])
+
+  /// Exempt from hours entirely. The owner is always exempt without this; it is
+  /// here for the manager doing a month-end stocktake and the storekeeper
+  /// receiving a lorry that arrived at nine at night.
+  ignoresWorkingHours Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("memberships")
+}
+
+/// Rotating refresh tokens. Stored as selector + hash so a row can be looked up
+/// without reversing the hash, mirroring ResetPassword. `familyId` groups every
+/// token descended from one login so reuse can revoke the whole chain.
+model RefreshToken {
+  id             String    @id @default(uuid())
+  userId         String
+  organizationId String?
+  tokenSelector  String    @unique
+  tokenHash      String
+  familyId       String
+  userAgent      String?
+  ip             String?
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  replacedById   String?
+  createdAt      DateTime  @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
 model User {
-  id                 String          @id @default(uuid())
-  email              String          @unique
-  password           String?
-  firstName          String?
-  lastName           String?
-  bio                String?
-  photoUrl           String?
-  isPublished        Boolean         @default(false)
-  role               UserRole        @default(user)
-  authProvider       AuthProvider    @default(email)
-  isVerified         Boolean         @default(false)
-  onboardingComplete Boolean         @default(false)
+  id String @id @default(uuid())
+
+  /// Where password resets and receipts go. **Nullable**, because most cashiers
+  /// in this market do not have a working email address, and requiring one meant
+  /// the owner inventing `amina@shop.local` — which made password reset
+  /// permanently impossible for exactly the accounts most likely to need it.
+  ///
+  /// Owners have one; staff usually do not.
+  email    String? @unique
+  /// What a staff member signs in with, when they have no email.
+  ///
+  /// Stored qualified by the organization slug — `amina@adebayo-stores` — so it
+  /// is globally unique for free, and two shops can each have an Amina. It is a
+  /// login name, never an address: nothing is ever sent to it.
+  username String? @unique
+  password String?
+
+  firstName String?
+  lastName  String?
+  bio       String?
+  photoUrl  String?
+
+  /// Platform-level role: is this person staff of the SaaS itself. Distinct from
+  /// OrgRole, which is what they may do inside a given business.
+  role UserRole @default(user)
+
+  authProvider       AuthProvider @default(email)
+  isVerified         Boolean      @default(false)
+  onboardingComplete Boolean      @default(false)
   otpHash            String?
   otpExpiresAt       DateTime?
   lastLoginIp        String?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  deletedAt          DateTime?
-  resetPasswords     ResetPassword[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  resetPasswords ResetPassword[]
+  memberships    Membership[]
+  refreshTokens  RefreshToken[]
+  stockMovements StockMovement[]
+  sales          Sale[]
+  saleReturns    SaleReturn[]
+  payments       Payment[]      @relation("PaymentRecordedBy")
+  voidedPayments Payment[]      @relation("PaymentVoidedBy")
+  supplierBills          SupplierBill[]    @relation("SupplierBillRecordedBy")
+  supplierPayments       SupplierPayment[] @relation("SupplierPaymentRecordedBy")
+  voidedSupplierPayments SupplierPayment[] @relation("SupplierPaymentVoidedBy")
+  stocktakesStarted Stocktake[]     @relation("StocktakeStartedBy")
+  stocktakesPosted  Stocktake[]     @relation("StocktakePostedBy")
+  stocktakeLines    StocktakeLine[]
+  expenses       Expense[]
+  goodsReceipts  GoodsReceipt[]
 
   @@map("users")
 }
@@ -80,12 +923,655 @@ model ResetPassword {
   @@map("reset_passwords")
 }
 
+/// Platform role — staff of the SaaS operator, not of a customer business.
 enum UserRole {
   admin
   user
 }
 
+/// Role held inside one organization.
+enum OrgRole {
+  owner
+  manager
+  sales_rep
+  storekeeper
+  accountant
+}
+
+enum MembershipStatus {
+  active
+  invited
+  suspended
+}
+
 enum AuthProvider {
   email
   google
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (Slice 3)
+//
+// The ledger is append-only: `StockMovement` rows are written and never updated
+// or deleted. Current stock is the sum of those rows, cached in `StockBalance`
+// for speed and rebuildable from the ledger at any time. Quantities everywhere
+// are integers in base units.
+// ---------------------------------------------------------------------------
+
+/// Somewhere stock physically sits: the main store, a shop counter, a van.
+/// A flat list, not a tree — bin-level nesting is more than an FMCG distributor
+/// needs and it slows every balance query.
+model Location {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+
+  /// Where movements land when the caller names no location.
+  isDefault Boolean @default(false)
+  /// Display order in pickers. Ties break on name.
+  sortOrder Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  movements     StockMovement[]
+  balances      StockBalance[]
+  goodsReceipts GoodsReceipt[]
+  payments      Payment[]
+  stocktakes    Stocktake[]
+  sales         Sale[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("locations")
+}
+
+/// A vendor goods are bought from.
+///
+/// There is deliberately no purchase order pointing at it: orders here are
+/// placed by phone and recorded as a goods receipt when the delivery lands.
+/// See DECISIONS.md §6 on why that slice was cut.
+model Supplier {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  phone          String?
+  email          String?
+  address        String?
+  notes          String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batches         StockBatch[]
+  goodsReceipts   GoodsReceipt[]
+  expenses        Expense[]
+  purchaseTargets PurchaseTarget[]
+  bills           SupplierBill[]
+  payments        SupplierPayment[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("suppliers")
+}
+
+/// One received lot of one product. Created per receipt line and never merged
+/// with another delivery — each keeps its own exact invoice total, which is what
+/// makes unit cost honest.
+model StockBatch {
+  id             String  @id @default(uuid())
+  organizationId String
+  productId      String
+  supplierId     String?
+
+  /// The vendor's own lot number, when the carton carries one.
+  lotCode    String?
+  expiryDate DateTime?
+  receivedAt DateTime  @default(now())
+
+  /// What physically arrived, in base units. Stock increases by this.
+  quantityReceived Int
+  /// What the invoice charged for, in base units. Free goods make this smaller
+  /// than quantityReceived.
+  quantityPaidFor  Int
+  /// Exact invoice total in minor units (kobo). The only money stored; unit cost
+  /// is totalCost / quantityReceived, computed on read.
+  totalCost        Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier     Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  movements    StockMovement[]
+  balances     StockBalance[]
+  receiptLine  GoodsReceiptLine?
+
+  @@index([organizationId])
+  @@index([productId])
+  /// FEFO picks on this: earliest expiry first.
+  @@index([organizationId, productId, expiryDate])
+  @@map("stock_batches")
+}
+
+/// The ledger. Append-only: there is no update or delete path anywhere in the
+/// application. A mutable quantity column was rejected — no audit trail, and it
+/// does not merge when three offline devices sync.
+model StockMovement {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  locationId     String
+  batchId        String
+
+  type     StockMovementType
+  /// Signed, in base units: positive brings stock in, negative takes it out.
+  /// A balance is then a plain sum, with no branch on type.
+  quantity Int
+
+  /// Why, for adjustments. Damage and spoilage are movements with a reason,
+  /// never silent decrements.
+  reason StockAdjustmentReason?
+  note   String?
+
+  /// When it happened, by the recording device's clock — a rep offline at 9am
+  /// syncing at 5pm. `createdAt` is when the server stored it; offline, the two
+  /// differ.
+  occurredAt DateTime @default(now())
+
+  /// Who recorded it.
+  recordedByUserId String?
+
+  /// What caused it: "goods_receipt" and the receipt id today, a sale in Slice 5.
+  referenceType String?
+  referenceId   String?
+
+  /// Shared by the two halves of a transfer, so the pair reads as one act.
+  transferGroupId String?
+
+  /// True when an owner or manager pushed this through a shortfall. The reason is
+  /// kept so "we sold stock we had not entered yet" is a line on a report rather
+  /// than a mystery.
+  isForced     Boolean @default(false)
+  forcedReason String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location     Location     @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, productId, locationId])
+  /// The delta-sync cursor: keyset paging over (createdAt, id).
+  @@index([organizationId, createdAt, id])
+  @@index([transferGroupId])
+  @@map("stock_movements")
+}
+
+/// Cached sum of the ledger, at the finest grain FEFO needs. Written in the same
+/// transaction as the movement it reflects, and rebuildable from `StockMovement`
+/// if it ever drifts.
+model StockBalance {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+  locationId     String
+  batchId        String
+
+  /// Base units on hand. May go negative — see the forced-movement path.
+  quantity Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location     Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId, locationId, batchId])
+  @@index([organizationId, productId])
+  @@map("stock_balances")
+}
+
+/// One delivery from one vendor: the paperwork the movements were created from.
+model GoodsReceipt {
+  id             String @id @default(uuid())
+  organizationId String
+  supplierId     String
+  locationId     String
+
+  invoiceNumber String?
+  receivedAt    DateTime @default(now())
+  note          String?
+
+  recordedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  location     Location           @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  recordedBy   User?              @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  lines        GoodsReceiptLine[]
+  bill         SupplierBill?
+
+  @@index([organizationId])
+  @@index([organizationId, receivedAt])
+  @@map("goods_receipts")
+}
+
+/// A line of a delivery. Quantities are stored in base units; `unitId` and
+/// `unitFactor` record what the user actually typed — "20 cartons" — so a later
+/// edit to the unit factor cannot rewrite history.
+model GoodsReceiptLine {
+  id             String @id @default(uuid())
+  organizationId String
+  receiptId      String
+  productId      String
+  unitId         String
+  batchId        String @unique
+
+  /// As entered, in `unitId`.
+  quantityReceivedInUnit Int
+  quantityPaidForInUnit  Int
+  /// The factor applied at write time.
+  unitFactor             Int
+
+  /// The same figures in base units, which is what the ledger moved.
+  quantityReceived Int
+  quantityPaidFor  Int
+  /// Exact invoice total for this line, in minor units (kobo).
+  totalCost        Int
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receipt      GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([receiptId])
+  @@map("goods_receipt_lines")
+}
+
+enum StockMovementType {
+  receipt
+  sale
+  return_in
+  return_out
+  adjustment
+  transfer_in
+  transfer_out
+  damage
+}
+
+/// Why an adjustment happened. Breakage and spoilage are movements with a
+/// reason, so "we lost this much to breakage this month" is answerable.
+/// A physical count: what is actually on the shelf, against what the ledger
+/// believes.
+///
+/// Counting is not adjusting. The count is recorded first and posted second,
+/// because the two are different acts by different people — a storekeeper walks
+/// the aisles, and a manager decides the variance is real before it becomes
+/// movements. Between those two moments the count is just a claim, and an open
+/// stocktake changes nothing about stock on hand.
+///
+/// Posting is what writes to the ledger, as ordinary `adjustment` movements
+/// with reason `count_correction`. Nothing here is a second source of truth for
+/// stock: the ledger stays the only one (§5).
+model Stocktake {
+  id             String @id @default(uuid())
+  organizationId String
+  /// Counts are per location. Counting "everywhere at once" is not a thing
+  /// anybody does with a clipboard.
+  locationId     String
+
+  status StocktakeStatus @default(open)
+  note   String?
+
+  startedAt   DateTime  @default(now())
+  postedAt    DateTime?
+  cancelledAt DateTime?
+
+  startedByUserId String?
+  postedByUserId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  location     Location        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  startedBy    User?           @relation("StocktakeStartedBy", fields: [startedByUserId], references: [id], onDelete: SetNull)
+  postedBy     User?           @relation("StocktakePostedBy", fields: [postedByUserId], references: [id], onDelete: SetNull)
+  lines        StocktakeLine[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([locationId])
+  @@map("stocktakes")
+}
+
+/// One product on a count sheet.
+///
+/// `countedQuantity` is what the person found. `expectedQuantity` is what the
+/// ledger said **at the moment it was counted** — kept as a snapshot so the
+/// sheet still explains itself later, when stock has moved on.
+///
+/// The variance that actually posts is recomputed against live stock inside the
+/// posting transaction. The snapshot is evidence; it is not the arithmetic.
+model StocktakeLine {
+  id             String @id @default(uuid())
+  organizationId String
+  stocktakeId    String
+  productId      String
+
+  /// Base units, like every other quantity in the ledger.
+  countedQuantity  Int
+  /// What the ledger believed when this line was counted.
+  expectedQuantity Int
+
+  note            String?
+  countedByUserId String?
+  countedAt       DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stocktake    Stocktake    @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  countedBy    User?        @relation(fields: [countedByUserId], references: [id], onDelete: SetNull)
+
+  /// One line per product per count: counting a product twice is a correction
+  /// to the first line, not a second opinion.
+  @@unique([stocktakeId, productId])
+  @@index([organizationId])
+  @@index([stocktakeId])
+  @@map("stocktake_lines")
+}
+
+enum StocktakeStatus {
+  open
+  posted
+  cancelled
+}
+
+enum StockAdjustmentReason {
+  damage
+  expiry
+  theft
+  count_correction
+  opening_balance
+  other
+}
+
+/// A monthly offtake quota a vendor sets: "110 cartons of lotions this month".
+///
+/// The owner carries these in their head or on the vendor's sheet, and wants to
+/// know mid-month how far off the pace they are. Progress is counted from goods
+/// **received**, not orders placed — an order the vendor has not delivered is
+/// exactly what still needs chasing, so it belongs in "remaining".
+///
+/// Deliberately *not* a purchase order in a smaller hat. See DECISIONS.md §6.
+model PurchaseTarget {
+  id             String @id @default(uuid())
+  organizationId String
+  /// Whose scheme this is. Targets are always a vendor's, never the shop's own.
+  supplierId     String
+
+  /// Exactly one of these is set, enforced by a CHECK constraint.
+  ///
+  /// A category target covers the products in that category that do **not**
+  /// carry a target of their own — otherwise the same carton advances both, and
+  /// the rollup reads high. Whatever summarises these must subtract, not sum.
+  /// The named category only: children are not included.
+  categoryId String?
+  productId  String?
+
+  /// First instant of the target month, in the organization's timezone. The
+  /// vendor's scheme runs on calendar months, not a rolling thirty days, so
+  /// this is resolved through `period.ts` like every other window.
+  periodStart DateTime
+
+  /// In **base units**, like everything else the ledger counts.
+  targetQuantity Int
+  /// What the owner typed it in — "110 cartons" reads back as cartons even
+  /// though it is stored as pieces.
+  displayUnitId  String?
+  /// The factor at write time, so redefining a carton later cannot silently
+  /// restate a target that was already agreed. Same rule as GoodsReceiptLine.
+  unitFactor     Int    @default(1)
+
+  /// Optional value quota in kobo, for schemes written in money rather than
+  /// cases. Achieved value sums GoodsReceiptLine.totalCost, never
+  /// costPrice x quantity, which §2 forbids as an input.
+  targetValue Int?
+
+  note String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  displayUnit  ProductUnit? @relation(fields: [displayUnitId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, supplierId, periodStart])
+  @@map("purchase_targets")
+}
+
+/// A bank account the business is paid into.
+///
+/// Set up by the owner, and there are usually several — five is not unusual,
+/// because a business spreads collections across banks so a customer can pay
+/// into whichever they already bank with, and keeps POS settlement separate
+/// from transfers.
+///
+/// This exists so reconciliation is a join rather than a guess: pull the
+/// statement for one account, lay it beside the payments recorded against that
+/// account for the same dates, and the two either agree or name their
+/// difference. Without it a transfer says only that money arrived somewhere.
+model BankAccount {
+  id             String @id @default(uuid())
+  organizationId String
+
+  /// As the customer would recognise it — "Guaranty Trust Bank".
+  bankName      String
+  /// The name on the account, which a customer transferring money must match.
+  accountName   String
+  accountNumber String
+
+  /// The bank's own code, where the owner knows it. Free text rather than an
+  /// enum: the list changes with mergers, and a wrong enum blocks a real
+  /// account. It earns its place when a statement is pulled through a bank API
+  /// and has to be matched back to one of these rows.
+  bankCode String?
+
+  /// Pre-selected when recording a payment, and printed first on an invoice.
+  isDefault Boolean @default(false)
+  /// A closed account stops being offered without vanishing from history.
+  isActive  Boolean @default(true)
+  /// Display order in pickers; ties break on bank name.
+  sortOrder Int     @default(0)
+
+  note String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments        Payment[]
+  supplierPayments SupplierPayment[]
+
+  /// One row per account number at a bank. The same number at two different
+  /// banks is a different account, so both columns are in the key.
+  @@unique([organizationId, bankName, accountNumber])
+  @@index([organizationId])
+  @@map("bank_accounts")
+}
+
+/// What the business owes a vendor for goods already received.
+///
+/// The mirror of a `Sale` on the money-out side, and the reason §6 allowed
+/// vendor bills back: "what do I owe this supplier" became a question somebody
+/// actually asked. It is **not** the purchasing slice that was cut — there is
+/// no order to raise and no order to close out. A bill is a record of a debt
+/// that already exists because the goods are already on the shelf.
+///
+/// **Receipt is goods, bill is money.** `GoodsReceipt` stays the record of what
+/// physically arrived and what its lines cost; this row is what the vendor is
+/// owed for it. They are separate for the same reason a sale and its payment
+/// are separate, and because an opening balance has no receipt at all.
+model SupplierBill {
+  id             String @id @default(uuid())
+  organizationId String
+  supplierId     String
+
+  /// The delivery this bill is for, when there is one.
+  ///
+  /// **Null for an opening balance** — what was already owed on the day the
+  /// business started using this system. Those must not create a goods
+  /// receipt: the stock they brought in was received (and probably sold) long
+  /// before, and inventing movements for it would break the one invariant the
+  /// smoke suite exists to protect, that every movement sums to the stock
+  /// levels.
+  goodsReceiptId String? @unique
+
+  /// The vendor's own invoice number, as printed on their paperwork. What
+  /// somebody quotes on the phone when they ring about payment.
+  invoiceNumber String?
+
+  /// What the vendor is owed, in minor units (kobo).
+  ///
+  /// Defaults to the sum of the receipt's line totals but is stored in its own
+  /// right, because a vendor invoice routinely carries amounts that cannot be
+  /// a stock line — a delivery charge, a settlement discount. Without this the
+  /// figure here would drift from the vendor's own statement, and a payables
+  /// total nobody can reconcile is worse than none.
+  ///
+  /// Deliberately does **not** feed inventory cost. What the goods cost comes
+  /// from `GoodsReceiptLine.totalCost` per §2, and a delivery charge is not
+  /// part of what a carton cost.
+  amountDue Int
+
+  /// When the vendor supplied the goods, which is the date their statement
+  /// will show. Not `createdAt`: an opening balance is entered today for a
+  /// delivery that happened weeks ago.
+  issuedAt DateTime @default(now())
+
+  /// When the business intends to settle, if it has said.
+  ///
+  /// Nullable on purpose. Owners here name a date and move it; a required
+  /// field would make everyone type a lie. The list sorts on how long a bill
+  /// has been outstanding, which is a fact, exactly as §11 decided for
+  /// receivables — buckets and overdue flags can follow the day somebody asks
+  /// to read them.
+  dueDate DateTime?
+
+  note             String?
+  recordedByUserId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  goodsReceipt GoodsReceipt?     @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+  recordedBy   User?             @relation("SupplierBillRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  payments     SupplierPayment[]
+
+  @@index([organizationId])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, issuedAt])
+  /// Delta sync pages on `updatedAt`: a bill is mutable, because paying it
+  /// changes what it owes. See `keyset-cursor.ts`.
+  @@index([organizationId, updatedAt, id])
+  @@map("supplier_bills")
+}
+
+/// Money paid out to a vendor.
+///
+/// **One payment settles exactly one bill.** The customer side carries a
+/// separate allocation table because a single transfer routinely settles three
+/// invoices there; this side does not work that way — payment is either on
+/// delivery or against one specific supply — so a `billId` column says it
+/// directly. Adding allocations later is a migration, and a table nobody needs
+/// is a join every query pays for. Same reasoning as §11's refusal to build
+/// 30/60/90 buckets before anyone asked to read them.
+model SupplierPayment {
+  id             String @id @default(uuid())
+  organizationId String
+  billId         String
+
+  /// Denormalised from the bill so "what have I paid this vendor" does not
+  /// need a join, and so a payment keeps naming its vendor if a bill is ever
+  /// corrected. Always equal to `bill.supplierId`; the service sets both.
+  supplierId String
+
+  /// In minor units (kobo). **Unsigned, unlike `Payment.amount`.** Money coming
+  /// back from a vendor is not something this business does — a mis-key is
+  /// corrected by voiding, which says the payment never happened. If vendor
+  /// refunds ever become real, they arrive as a negative amount here and this
+  /// comment is the note explaining why the column was ready for it.
+  amount Int
+
+  method PaymentMethod @default(cash)
+
+  /// Which of the business's accounts the money left from.
+  ///
+  /// Required for `transfer` and `pos`, forbidden for `cash`, and never
+  /// defaulted — the same rule as `Payment.bankAccountId` and enforced by the
+  /// same `BankAccountService.resolveForPayment`, because a wrong account only
+  /// surfaces at reconciliation.
+  bankAccountId String?
+
+  reference String?
+  note      String?
+
+  occurredAt DateTime @default(now())
+
+  recordedByUserId String?
+
+  /// Set when this payment should never have been recorded. The row is kept
+  /// and excluded from every balance, so the mistake and its correction are
+  /// both on the record.
+  voidedAt       DateTime?
+  voidedReason   String?
+  voidedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bill         SupplierBill @relation(fields: [billId], references: [id], onDelete: Restrict)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  bankAccount  BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  recordedBy   User?        @relation("SupplierPaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  voidedBy     User?        @relation("SupplierPaymentVoidedBy", fields: [voidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([billId])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, occurredAt])
+  /// Delta sync pages on `updatedAt`, because voiding mutates the row.
+  @@index([organizationId, updatedAt, id])
+  @@map("supplier_payments")
 }

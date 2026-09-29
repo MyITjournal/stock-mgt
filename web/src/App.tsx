@@ -1,0 +1,138 @@
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from './auth/AuthProvider';
+import { RequireAuth } from './auth/RequireAuth';
+import { SignInPage } from './auth/SignInPage';
+import { Layout } from './components/Layout';
+import { ApiError } from './api/client';
+import { Home, LandingRedirect } from './auth/Landing';
+import { TillPage } from './till/TillPage';
+import { SalesPage } from './sales/SalesPage';
+import { SaleDetailPage } from './sales/SaleDetailPage';
+import { CustomersPage } from './customers/CustomersPage';
+import { CustomerDetailPage } from './customers/CustomerDetailPage';
+import { MoneyLayout } from './money/MoneyLayout';
+import { ReceivablesPage } from './money/ReceivablesPage';
+import { PaymentsPage } from './money/PaymentsPage';
+import { BankAccountsPage } from './money/BankAccountsPage';
+import { PayablesPage } from './money/PayablesPage';
+import { SupplierPaymentsPage } from './money/SupplierPaymentsPage';
+import { ExpensesPage } from './money/ExpensesPage';
+import { StockLayout } from './catalog/StockLayout';
+import { ProductsPage } from './catalog/ProductsPage';
+import { ProductDetailPage } from './catalog/ProductDetailPage';
+import { CatalogSetupPage } from './catalog/CatalogSetupPage';
+import { LevelsPage } from './stock/LevelsPage';
+import { MovementsPage } from './stock/MovementsPage';
+import { ReceiptsPage } from './stock/ReceiptsPage';
+import { ReceiptDetailPage } from './stock/ReceiptDetailPage';
+import { ReceiveDeliveryPage } from './stock/ReceiveDeliveryPage';
+import { CountsPage } from './stock/CountsPage';
+import { CountSheetPage } from './stock/CountSheetPage';
+import { PlacesPage } from './stock/PlacesPage';
+import { ReportsLayout } from './reports/ReportsLayout';
+import { ProfitPage } from './reports/ProfitPage';
+import { SalesReportPage } from './reports/SalesReportPage';
+import { PurchasesPage } from './reports/PurchasesPage';
+import { CollectionsPage } from './reports/CollectionsPage';
+import { StockReportPage } from './reports/StockReportPage';
+import { MoversPage } from './reports/MoversPage';
+import { TargetsPage } from './reports/TargetsPage';
+import { SettingsLayout } from './settings/SettingsLayout';
+import { BusinessPage } from './settings/BusinessPage';
+import { HoursPage } from './settings/HoursPage';
+import { StaffPage } from './settings/StaffPage';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // The client already retried once behind a refreshed session. Retrying a
+      // 401, 403 or 409 again would only repeat a decision the server has
+      // already made — and a 409 here is a rule, not a glitch.
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && error.status < 500) return false;
+        return failureCount < 2;
+      },
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+/**
+ * Routes through slice 7.5b.
+ *
+ * Everything is real now except reports and settings, which land in 7.6 and are
+ * stubbed so the navigation is honest about what is coming rather than hiding
+ * it — and so the last slice drops its screens into routes that already exist.
+ */
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/sign-in" element={<SignInPage />} />
+
+            <Route element={<RequireAuth />}>
+              <Route element={<Layout />}>
+                <Route index element={<Home />} />
+                <Route path="till" element={<TillPage />} />
+                <Route path="sales" element={<SalesPage />} />
+                <Route path="sales/:id" element={<SaleDetailPage />} />
+                <Route path="customers" element={<CustomersPage />} />
+                <Route path="customers/:id" element={<CustomerDetailPage />} />
+                <Route path="money" element={<MoneyLayout />}>
+                  <Route index element={<ReceivablesPage />} />
+                  <Route path="payments" element={<PaymentsPage />} />
+                  <Route path="payables" element={<PayablesPage />} />
+                  <Route path="paid" element={<SupplierPaymentsPage />} />
+                  <Route path="expenses" element={<ExpensesPage />} />
+                  <Route path="accounts" element={<BankAccountsPage />} />
+                </Route>
+                <Route path="stock" element={<StockLayout />}>
+                  <Route index element={<ProductsPage />} />
+                  <Route path="levels" element={<LevelsPage />} />
+                  <Route path="receipts" element={<ReceiptsPage />} />
+                  <Route path="movements" element={<MovementsPage />} />
+                  <Route path="counts" element={<CountsPage />} />
+                  <Route path="places" element={<PlacesPage />} />
+                  <Route path="setup" element={<CatalogSetupPage />} />
+                </Route>
+
+                {/* Detail and entry screens sit outside the tab strip: they are
+                    somewhere you went from a list, not another tab. */}
+                <Route
+                  path="stock/products/:id"
+                  element={<ProductDetailPage />}
+                />
+                <Route path="stock/receive" element={<ReceiveDeliveryPage />} />
+                <Route
+                  path="stock/receipts/:id"
+                  element={<ReceiptDetailPage />}
+                />
+                <Route path="stock/counts/:id" element={<CountSheetPage />} />
+                <Route path="reports" element={<ReportsLayout />}>
+                  <Route index element={<ProfitPage />} />
+                  <Route path="sales" element={<SalesReportPage />} />
+                  <Route path="purchases" element={<PurchasesPage />} />
+                  <Route path="collections" element={<CollectionsPage />} />
+                  <Route path="stock" element={<StockReportPage />} />
+                  <Route path="movers" element={<MoversPage />} />
+                  <Route path="targets" element={<TargetsPage />} />
+                </Route>
+                <Route path="settings" element={<SettingsLayout />}>
+                  <Route index element={<BusinessPage />} />
+                  <Route path="hours" element={<HoursPage />} />
+                  <Route path="staff" element={<StaffPage />} />
+                </Route>
+              </Route>
+            </Route>
+
+            <Route path="*" element={<LandingRedirect />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
