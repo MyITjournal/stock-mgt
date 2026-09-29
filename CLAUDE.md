@@ -299,6 +299,27 @@ that item's free-tier assumptions: no cold starts, no expiring database, no warm
 smoke. `OTP_OVERRIDE` stays **test-instance-only regardless of tier**, because paying for the
 instance does not stop it being a master key into every account.
 
+**`render.yaml` is written (2026-09-29): Postgres plus exactly one web service, and the "one" is
+load-bearing.** The API serves the built dashboard from its own origin (`serveDashboard` in
+`src/main.ts`), because auth is httpOnly cookies set `sameSite: 'lax'` and **`onrender.com` is on
+the Public Suffix List** — two services would be two *sites*, so the cookie would never be sent.
+That failure looks like success: login returns tokens in the body too, so signing in would appear
+to work and every request after it would 401. **Do not split them** without moving to a custom
+domain with `COOKIE_DOMAIN` set. Three details: the SPA fallback is plain Express middleware so it
+runs *before* Nest's router and must step aside for the API prefix and `/docs` explicitly; it
+refuses paths containing a dot, so a missing asset 404s as itself instead of turning a failed
+deploy into a blank page; and `VITE_API_URL` is **`/api/v1`** in production, relative on purpose.
+
+**Two things must be set before the first deploy, and neither can be committed.** `RESEND_API_KEY`
+and `MAIL_FROM` are **required in production** — `env.ts` refuses to boot without them — and
+`MAIL_FROM` needs a domain verified with Resend, which has lead time. And the service name in
+`render.yaml` is the hostname, so **rename it to the product's name before deploying**, not after.
+
+**`?connection_limit=` on the database URL does nothing here** — it is a Prisma Rust query-engine
+parameter, and `PrismaService` uses the `pg` driver adapter, whose pool takes `max` from its
+config. It is `DATABASE_POOL_MAX` (default 5). The older §15 note said otherwise and was wrong;
+the symptom would have been intermittent `too many connections` against a plan that looked right.
+
 On printing generally: thermal receipts (Bluetooth ESC/POS) are the mobile app's job — the server
 cannot reach a paired printer — and `GET /sales/:id/receipt` is already the stable payload for
 it. PDFs are the server's job. Barcode label sheets are deferred. See §6.

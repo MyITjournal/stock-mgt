@@ -1925,19 +1925,65 @@ Two small things 7.2 left behind, neither blocking:
    scaling rather than a follow-up.** `@nestjs/throttler` takes a storage adapter, so the change
    is a provider and a connection string, not a rewrite.
 
-1. **Deploy to Render**, free tier, decided 2026-08-30 — before buying a domain, since
-   `*.onrender.com` is a working URL and a domain is a rename rather than a prerequisite. Planned
-   but not built: a version-controlled `render.yaml` (web service + Postgres, region **Frankfurt**
-   as the closest to Lagos), build `npm ci && npx prisma generate && npm run build`, start
-   `npm run db:deploy && npm run start:prod` — migrations on boot, since `migrate deploy` is
-   idempotent and the free tier has no pre-deploy hook — and the existing `/api/v1/health` as the
-   health check.
+1. **Deploy to Render**, decided 2026-08-30 — before buying a domain, since `*.onrender.com` is a
+   working URL and a domain is a rename rather than a prerequisite. **`render.yaml` was written
+   2026-09-29** (Postgres + **one** web service, region **Frankfurt** as the closest to Lagos),
+   build `npm ci && npx prisma generate && npm run build && npm ci --prefix web && npm run build
+   --prefix web`, start `npm run db:deploy && npm run start:prod` — migrations on boot, since
+   `migrate deploy` is idempotent and there is no pre-deploy hook — and the existing
+   `/api/v1/health` as the health check.
+
+   ### One service, because `sameSite: 'lax'` decides the architecture
+
+   This item was written before the dashboard existed and planned for the API alone. The obvious
+   completion — a static site beside the web service — **would have shipped a deployment that
+   could not hold a session.**
+
+   Auth is httpOnly cookies set `sameSite: 'lax'` (`auth.controller.ts`), and the dashboard calls
+   the API with `credentials: 'include'`. Two Render services are `dashboard-x.onrender.com` and
+   `api-x.onrender.com`, and **`onrender.com` is on the Public Suffix List** — so those are
+   different *sites*, not merely different origins, and a Lax cookie is not sent on a cross-site
+   fetch. `COOKIE_DOMAIN=.onrender.com` cannot rescue it either: browsers reject a cookie scoped
+   to a public suffix.
+
+   **The failure would have been worse than an outage**, because it looks like success.
+   `POST /auth/login` returns the tokens in the body as well as the cookies, so signing in would
+   have appeared to work and every request after it would have answered 401.
+
+   So the API serves `web/dist` from its own origin — `serveDashboard` in `src/main.ts`, using
+   `useStaticAssets` plus an SPA fallback, with no new dependency since the app was already a
+   `NestExpressApplication`. Three consequences worth knowing:
+
+   - **The fallback runs before Nest's router**, because that is where plain Express middleware
+     sits. It therefore steps aside explicitly for the API prefix and for `/docs` rather than
+     relying on being reached last, and it **refuses paths containing a dot** so a missing
+     `/assets/index-abc.js` 404s as itself. Resolving it to the HTML shell instead turns a failed
+     deploy into a blank page with no error in it.
+   - **`VITE_API_URL` is `/api/v1` in production** (`web/.env.production`) — relative, so the
+     browser never makes a cross-site request at all.
+   - **It survives a custom domain later**, which `sameSite: 'none'` would not have done: Safari
+     blocks third-party cookies by default and Chrome is phasing them out. The two rejected
+     alternatives are recorded because the cheap one is the one that fails in eighteen months.
+
+   Verified against a running server on 2026-09-29: deep links (`/till`, `/sales/:id`) serve the
+   shell, the API and Swagger are not shadowed, a missing asset 404s as JSON rather than HTML, and
+   a login through the cookie jar alone answers `GET /auth/me` with 200.
 
    Four things already known about it:
 
    - **`NODE_VERSION` must be pinned.** There is no `engines` field in `package.json`.
-   - **`?connection_limit=5` on the database URL.** Prisma sizes its pool from CPU count and will
-     exhaust a free Postgres's connection cap.
+   - ~~**`?connection_limit=5` on the database URL.**~~ — **corrected 2026-09-29, and it would
+     have done nothing.** `connection_limit` is a **Prisma Rust query-engine** parameter, and this
+     client does not use that engine: `PrismaService` goes through the `pg` driver adapter, whose
+     pool is `node-postgres` and which takes its size from `max` in the pool config. `pg` does not
+     recognise `connection_limit`, so the URL parameter is ignored and the pool quietly stays at
+     its default of ten per process. The symptom would not have been a clear error but
+     intermittent `too many connections` under ordinary load, against a plan that looked
+     correctly configured. It is now `DATABASE_POOL_MAX` (default 5), passed as `max`.
+
+     The general lesson: **advice carried forward from one library's configuration does not
+     survive swapping the library underneath it.** The adapter changed; the note about tuning it
+     did not.
    - **`OTP_OVERRIDE` (already in `env.ts`, honoured at `auth.service.ts:392`) makes smoke run
      unattended against Render** — no Resend account, no log scraping, since `smoke.mjs` cannot
      read a `server.log` that lives on someone else's machine. ⚠️ **It is also a backdoor into any
