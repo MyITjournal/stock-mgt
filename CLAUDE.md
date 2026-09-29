@@ -310,6 +310,13 @@ runs *before* Nest's router and must step aside for the API prefix and `/docs` e
 refuses paths containing a dot, so a missing asset 404s as itself instead of turning a failed
 deploy into a blank page; and `VITE_API_URL` is **`/api/v1`** in production, relative on purpose.
 
+**The product is called Reho** (decided 2026-09-29) — the short form of the owner's registered
+business name, so the entity, the domain and the sender address all line up, and there is nothing
+to license. It is deliberately a **house brand rather than a descriptive product name**, because
+the loan app and the bank statement parser are queued behind this one: `Reho` can carry all three,
+where a name describing stock control could not. The repo stays `stock-mgt`; a repository name and
+a product name are allowed to differ and renaming buys nothing.
+
 **Two things must be set before the first deploy, and neither can be committed.** `RESEND_API_KEY`
 and `MAIL_FROM` are **required in production** — `env.ts` refuses to boot without them — and
 `MAIL_FROM` needs a domain verified with Resend, which has lead time. And the service name in
