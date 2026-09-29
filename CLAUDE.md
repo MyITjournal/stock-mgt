@@ -310,12 +310,22 @@ runs *before* Nest's router and must step aside for the API prefix and `/docs` e
 refuses paths containing a dot, so a missing asset 404s as itself instead of turning a failed
 deploy into a blank page; and `VITE_API_URL` is **`/api/v1`** in production, relative on purpose.
 
-**The product is called Reho** (decided 2026-09-29) — the short form of the owner's registered
-business name, so the entity, the domain and the sender address all line up, and there is nothing
-to license. It is deliberately a **house brand rather than a descriptive product name**, because
-the loan app and the bank statement parser are queued behind this one: `Reho` can carry all three,
-where a name describing stock control could not. The repo stays `stock-mgt`; a repository name and
-a product name are allowed to differ and renaming buys nothing.
+**The product is called Reho** (decided 2026-09-29), short for **Rehoboth** — the owner's CAC
+registered business name is *This Is Rehoboth*, so the entity and the product share a root and
+there is nothing to license. It is deliberately a **house brand rather than a descriptive product
+name**, because the loan app and the bank statement parser are queued behind this one: `Reho` can
+carry all three, where a name describing stock control could not.
+
+Two things about the root are worth keeping, because they are the brand's only real material.
+**Rehoboth means "broad places" — room to grow** (Genesis 26:22, the well nobody fought over:
+*"now the Lord has made room for us, and we shall be fruitful"*). That is a straight line to what
+the product sells a shop owner, and it is where any tagline should start. And **the shortening is
+load-bearing commercially, not only aesthetically**: Nigeria is roughly half Muslim and northern
+FMCG distribution is real territory, so `Reho` travels where the full name carries a particular
+signal. The decision to shorten was already right; this is why.
+
+The repo stays `stock-mgt`; a repository name and a product name are allowed to differ and
+renaming buys nothing.
 
 **Two things must be set before the first deploy, and neither can be committed.** `RESEND_API_KEY`
 and `MAIL_FROM` are **required in production** — `env.ts` refuses to boot without them — and
