@@ -77,9 +77,9 @@ async function bootstrap() {
 
   if (env.SWAGGER_ENABLED) {
     const config = new DocumentBuilder()
-      .setTitle('Stock Mgt API')
-      .setDescription('Sales and inventory management for FMCG businesses')
-      .setVersion('0.1')
+      .setTitle('Reho API')
+      .setDescription('Sales and inventory for FMCG businesses')
+      .setVersion('1.0')
       .addBearerAuth(
         { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
         'JWT',
