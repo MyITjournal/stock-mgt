@@ -38,7 +38,7 @@ export function Layout() {
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
-          <span className="text-sm font-semibold text-slate-900">stock-mgt</span>
+          <span className="text-sm font-semibold text-slate-900">Reho</span>
 
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto">
             {items.map((item) => (

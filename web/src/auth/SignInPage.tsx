@@ -62,7 +62,17 @@ export function SignInPage() {
         onSubmit={onSubmit}
         className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
       >
-        <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
+        {/*
+          The product name belongs here and nowhere else in the auth flow: this
+          is the one screen somebody reaches by typing the address in, so it is
+          the only place that has to say what they have arrived at. Inside, the
+          frame says it once in the header and the shop's own name does the rest
+          — an invoice carries the business's letterhead, not ours.
+        */}
+        <p className="text-sm font-semibold tracking-wide text-slate-900">
+          Reho
+        </p>
+        <h1 className="mt-3 text-xl font-semibold text-slate-900">Sign in</h1>
         <p className="mt-1 text-sm text-slate-500">
           Use your email address, or the username your manager gave you.
         </p>
