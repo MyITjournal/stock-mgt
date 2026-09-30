@@ -300,8 +300,25 @@ that item's free-tier assumptions: no cold starts, no expiring database, no warm
 smoke. `OTP_OVERRIDE` stays **test-instance-only regardless of tier**, because paying for the
 instance does not stop it being a master key into every account.
 
-**`render.yaml` is written (2026-09-29): Postgres plus exactly one web service, and the "one" is
-load-bearing.** The API serves the built dashboard from its own origin (`serveDashboard` in
+**The database is Supabase and hosting is Render's *free* tier** (decided 2026-09-30, superseding
+the paid-tier note above). Three consequences are load-bearing:
+
+- **Use the Supabase *session-mode pooler*, never the direct connection.**
+  `aws-0-<region>.pooler.supabase.com:5432`. The direct host (`db.<ref>.supabase.co`) is
+  **IPv6-only** and Render's outbound is IPv4, so it fails with ENOTFOUND or a hang — which reads
+  like a bad password rather than a bad address family. The **transaction** pooler (port 6543) is
+  also wrong: `prisma migrate deploy` fails against it with "prepared statement does not exist".
+  Session mode behaves like ordinary Postgres, so **one string serves both** the runtime client and
+  `prisma.config.ts`, with no `directUrl` to keep in step.
+- **Render's free tier has no shell** — SSH is paid-only. So `dist/cli/admin` runs **from a laptop**
+  against the Supabase URL, not from a Render shell. This is why Supabase rescues the free tier:
+  a free *Render* database is internal-only and the CLI could never reach it.
+- **Free means cold starts again** (~50s after ~15 minutes idle), which **un-supersedes** §15
+  item 1's free-tier notes. It also means the in-memory rate-limit counters reset on every cold
+  start (§15 item 0), and that Supabase free projects pause after about a week idle.
+
+**`render.yaml` is written (2026-09-29, revised 2026-09-30): exactly one web service and no
+`databases:` block, and the "one service" is load-bearing.** The API serves the built dashboard from its own origin (`serveDashboard` in
 `src/main.ts`), because auth is httpOnly cookies set `sameSite: 'lax'` and **`onrender.com` is on
 the Public Suffix List** — two services would be two *sites*, so the cookie would never be sent.
 That failure looks like success: login returns tokens in the body too, so signing in would appear
@@ -341,7 +358,9 @@ later inherits it. It guards four paths, and the fourth is the one that gets mis
 sign-in is a signup path that never mints a code**, so it would sail past any check aimed at the
 emailed routes. Both of its doors are gated — no user, and no active membership.
 
-Accounts are created with **`node dist/cli/admin create-org`** and recovered with
+Accounts are created **from a laptop, not from a Render shell** — the free tier has none — by
+pointing `DATABASE_URL` at the same Supabase session-pooler string the service uses. They are
+created with **`node dist/cli/admin create-org`** and recovered with
 **`set-password`** (`src/cli/admin.ts`, npm scripts `org:create` / `org:password`). It boots a Nest
 application context so it calls the real `AuthService.createVerifiedOwner`, which shares
 `seedOrganizationDefaults` — a hand-made business must be indistinguishable from a registered one,

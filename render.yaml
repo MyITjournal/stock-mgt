@@ -1,4 +1,4 @@
-# Render blueprint — one web service, one Postgres.
+# Render blueprint — one free web service. The database is Supabase, not Render.
 #
 # ## Why one service and not two
 #
@@ -10,6 +10,48 @@
 # it would answer 401. So the API serves the built dashboard from its own origin;
 # `serveDashboard` in `src/main.ts` has the full reasoning.
 #
+# ## Why there is no `databases:` block
+#
+# The database is Supabase. That is not only a preference — it is what makes the
+# free tier workable, because **Render's free tier has no shell** (SSH is a paid
+# feature). Accounts are created with `dist/cli/admin`, and with a Render
+# database that would be unreachable: free Render Postgres is internal-only. A
+# Supabase database is reachable from anywhere, so the CLI runs from a laptop
+# with the same connection string this service uses.
+#
+# ## ⚠ Which Supabase connection string
+#
+# **The session-mode pooler, not the direct connection.**
+#
+#   postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+#
+# Supabase's *direct* connection (`db.<ref>.supabase.co:5432`) is **IPv6-only**,
+# and Render's outbound is IPv4 — it fails with ENOTFOUND or hangs, which reads
+# like a wrong password rather than a wrong address family.
+#
+# Session mode (port **5432** on the `pooler` host) behaves like an ordinary
+# Postgres connection: prepared statements work, and `prisma migrate deploy`
+# works. **Transaction mode (port 6543) does not** — migrations fail against it
+# with "prepared statement does not exist". Since `prisma.config.ts` and the
+# runtime client both read `DATABASE_URL`, one session-mode string serves both
+# and there is no second `directUrl` to keep in step.
+#
+# Put the Supabase project in a region near this service (Frankfurt/eu-central)
+# — every query crosses that gap.
+#
+# ## What the free tier costs, and what to watch
+#
+# - **The service spins down after ~15 minutes idle**, and the next request pays
+#   roughly 50 seconds of cold start. Tolerable for a pilot, painful at a till.
+#   Moving to Starter ($7/mo) removes it, and also restores shell access.
+# - **Rate-limit counters live in memory**, so every cold start resets them
+#   (DECISIONS.md §15 item 0). Close to harmless on one instance; a blocker for
+#   running two.
+# - **Supabase free projects pause after ~a week of inactivity.** A shop using
+#   it daily never hits this; a demo left alone over a holiday does.
+# - **512MB of build RAM.** This build runs two `npm ci` and two builds. If it
+#   starts failing on memory, that is the first thing to suspect.
+#
 # ## Before the first deploy
 #
 # 1. **The service name is the hostname**, so this deploys to `reho.onrender.com`.
@@ -17,37 +59,24 @@
 #    `reho` is already taken the create will fail and the name here needs a
 #    suffix — decide that *before* the first deploy, because renaming later
 #    changes a URL people have bookmarked.
-# 2. Set the three `sync: false` variables in the Render dashboard — they cannot
-#    be committed or derived. `APP_URL` and `FRONTEND_URL` are the *same* URL
-#    here, because there is one origin; both exist because the mobile app may
-#    later have its own.
+# 2. Set the four `sync: false` variables in the Render dashboard. `APP_URL` and
+#    `FRONTEND_URL` are the *same* URL here, because there is one origin; both
+#    exist because the mobile app may later have its own.
 # 3. **No mail provider is needed**, because `SELF_SERVE_SIGNUP` is `false`
 #    below. Nothing on this instance can mint a verification code or a reset
-#    token, so there is no secret for the log fallback to leak. Accounts are
-#    created with `node dist/cli/admin create-org` from the Render shell.
-#    Turning signup on later means configuring `RESEND_API_KEY` and `MAIL_FROM`
-#    in the same change — `env.ts` refuses to boot on signup-on with mail-off,
-#    because registering would create accounts whose codes go nowhere.
+#    token, so there is no secret for the log fallback to leak. Turning signup on
+#    later means configuring `RESEND_API_KEY` and `MAIL_FROM` in the same change
+#    — `env.ts` refuses to boot on signup-on with mail-off, because registering
+#    would create accounts whose codes go nowhere.
 # 4. **Do not set `OTP_OVERRIDE`** on an instance holding real data. It is a
-#    master key into every account, and paying for the instance does not change
-#    that.
-
-databases:
-  - name: reho-db
-    databaseName: reho
-    user: reho
-    region: frankfurt
-    # Frankfurt is Render's closest region to Lagos. Re-check at deploy time:
-    # the choice was first made when cost was the constraint, and it no longer
-    # is.
-    plan: basic-256mb
+#    master key into every account, and the tier does not change that.
 
 services:
   - type: web
     name: reho
     runtime: node
     region: frankfurt
-    plan: starter
+    plan: free
     branch: main
     healthCheckPath: /api/v1/health
 
@@ -62,7 +91,8 @@ services:
       npm run build --prefix web
 
     # Migrations run on boot. `migrate deploy` is idempotent, so a restart or a
-    # second instance is safe, and this avoids needing a pre-deploy hook.
+    # cold start is safe — which matters more on the free tier, where restarts
+    # are routine rather than exceptional.
     startCommand: npm run db:deploy && npm run start:prod
 
     envVars:
@@ -74,14 +104,16 @@ services:
       - key: NODE_ENV
         value: production
 
+      # The Supabase **session-mode pooler** string. See the warning above: the
+      # direct connection is IPv6-only and will not resolve from here, and the
+      # transaction pooler breaks `prisma migrate deploy`.
       - key: DATABASE_URL
-        fromDatabase:
-          name: reho-db
-          property: connectionString
+        sync: false
 
       # The pool is capped in code, not with `?connection_limit=` on the URL —
       # that is a Prisma Rust-engine parameter and this client uses the `pg`
-      # driver adapter, which ignores it. See `PrismaService`.
+      # driver adapter, which ignores it. See `PrismaService`. Five is also the
+      # right order of magnitude for a pooled Supabase free project.
       - key: DATABASE_POOL_MAX
         value: 5
 
@@ -117,17 +149,20 @@ services:
       # mail provider — `register`, `resend-otp` and `forgot-password` all
       # refuse, so nothing mints a secret that would need delivering.
       #
-      # Accounts are created with the CLI, from the Render shell:
-      #   node dist/cli/admin create-org --org "Adebayo Stores" \
+      # Accounts are created **from a laptop**, not from a Render shell — the
+      # free tier has none — pointing the CLI at the same Supabase URL:
+      #
+      #   DATABASE_URL="<the session-pooler string>" \
+      #     node dist/cli/admin create-org --org "Adebayo Stores" \
       #     --first Ade --last Bayo --email owner@example.com
       #
-      # And a forgotten owner password is recovered with:
-      #   node dist/cli/admin set-password --email owner@example.com
+      # And a forgotten owner password:
       #
-      # Owners change their own password from the dashboard afterwards, through
-      # POST /auth/change-password. That endpoint is the reason this is
-      # survivable: without it, a password handed over at setup would be
-      # permanent.
+      #   DATABASE_URL="..." node dist/cli/admin set-password --email owner@example.com
+      #
+      # Owners change their own password from the dashboard afterwards, at
+      # /settings/password. That screen is the reason this is survivable:
+      # without it, a password handed over at setup would be permanent.
       - key: SELF_SERVE_SIGNUP
         value: false
 
