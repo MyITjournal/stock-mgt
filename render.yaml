@@ -17,14 +17,17 @@
 #    `reho` is already taken the create will fail and the name here needs a
 #    suffix — decide that *before* the first deploy, because renaming later
 #    changes a URL people have bookmarked.
-# 2. Set the four `sync: false` variables in the Render dashboard — they cannot
+# 2. Set the three `sync: false` variables in the Render dashboard — they cannot
 #    be committed or derived. `APP_URL` and `FRONTEND_URL` are the *same* URL
 #    here, because there is one origin; both exist because the mobile app may
 #    later have its own.
-# 3. `RESEND_API_KEY` and `MAIL_FROM` are **required in production** — `env.ts`
-#    refuses to boot without them, because the fallback writes OTPs and
-#    password-reset links into the platform log in plaintext. `MAIL_FROM` needs
-#    a domain verified with Resend, which has lead time; plan for it.
+# 3. **No mail provider is needed**, because `SELF_SERVE_SIGNUP` is `false`
+#    below. Nothing on this instance can mint a verification code or a reset
+#    token, so there is no secret for the log fallback to leak. Accounts are
+#    created with `node dist/cli/admin create-org` from the Render shell.
+#    Turning signup on later means configuring `RESEND_API_KEY` and `MAIL_FROM`
+#    in the same change — `env.ts` refuses to boot on signup-on with mail-off,
+#    because registering would create accounts whose codes go nowhere.
 # 4. **Do not set `OTP_OVERRIDE`** on an instance holding real data. It is a
 #    master key into every account, and paying for the instance does not change
 #    that.
@@ -109,8 +112,25 @@ services:
       - key: FRONTEND_URL
         sync: false
 
-      # Required in production. See note 3 above.
-      - key: RESEND_API_KEY
-        sync: false
-      - key: MAIL_FROM
-        sync: false
+      # Nobody signs themselves up: onboarding is hands-on, and the dashboard
+      # has no sign-up screen anyway. This is what lets the service run with no
+      # mail provider — `register`, `resend-otp` and `forgot-password` all
+      # refuse, so nothing mints a secret that would need delivering.
+      #
+      # Accounts are created with the CLI, from the Render shell:
+      #   node dist/cli/admin create-org --org "Adebayo Stores" \
+      #     --first Ade --last Bayo --email owner@example.com
+      #
+      # And a forgotten owner password is recovered with:
+      #   node dist/cli/admin set-password --email owner@example.com
+      #
+      # Owners change their own password from the dashboard afterwards, through
+      # POST /auth/change-password. That endpoint is the reason this is
+      # survivable: without it, a password handed over at setup would be
+      # permanent.
+      - key: SELF_SERVE_SIGNUP
+        value: false
+
+      # Deliberately absent: RESEND_API_KEY and MAIL_FROM. Add them in the same
+      # change that sets SELF_SERVE_SIGNUP=true, never before or after — the
+      # boot check ties the two together on purpose.

@@ -42,6 +42,7 @@ import { SettingsLayout } from './settings/SettingsLayout';
 import { BusinessPage } from './settings/BusinessPage';
 import { HoursPage } from './settings/HoursPage';
 import { StaffPage } from './settings/StaffPage';
+import { PasswordPage } from './settings/PasswordPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -125,6 +126,7 @@ export default function App() {
                   <Route index element={<BusinessPage />} />
                   <Route path="hours" element={<HoursPage />} />
                   <Route path="staff" element={<StaffPage />} />
+                  <Route path="password" element={<PasswordPage />} />
                 </Route>
               </Route>
             </Route>

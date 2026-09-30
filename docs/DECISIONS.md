@@ -3198,3 +3198,116 @@ click, so its coverage was unknown. Two sections carry most of the value:
 Adding Vitest and Testing Library to `web/` would let a pure rule like `landingPath` be tested —
 the root jest config is scoped to `src` and `test` and deliberately cannot see `web/` — but that
 is a toolchain decision rather than a fix, and it was not made here.
+
+---
+
+## 20. Nobody signs themselves up
+
+2026-09-30, while preparing the deploy. The question that started it was narrow — *how do we
+deploy without Resend?* — and the answer turned out not to be a different mail provider.
+
+### The rule was never "mail must be configured"
+
+`env.ts` refused to boot a production instance without `RESEND_API_KEY` and `MAIL_FROM`, and §9
+recorded why: the `MailService` fallback writes verification codes and password-reset URLs into
+the platform log in plaintext, which is an account-takeover path for anyone who can read logs.
+
+That requirement was right, and it was also **one implementation of a more general rule**. The
+rule is *no secret may reach a log*. Configuring a provider satisfies it by giving every minted
+secret somewhere safe to go. Closing every path that can **mint** one satisfies it better, because
+then there is nothing to leak rather than somewhere safe to put it.
+
+So production must now be one of two honest shapes, and the third is refused at boot:
+
+| `SELF_SERVE_SIGNUP` | Mail | |
+|---|---|---|
+| `true` | configured | fine — strangers register, codes get delivered |
+| `false` | absent | fine — **nothing mints a code** |
+| `true` | absent | **refused** — registering creates accounts whose codes go nowhere |
+
+### Why this was available at all
+
+**The dashboard has no sign-up screen.** Sign-in is the only auth UI — no register, no
+forgot-password, no OTP entry. `/auth/register` exists in the API and nothing in the product calls
+it, so turning it off removed a capability the product did not have.
+
+It is worth being precise about what deploying *with* Resend would have bought. With no sign-up
+screen, onboarding a shop would have been: call `/auth/register` with the owner's address, they
+receive a code, they read it back to you, you call `/auth/verify-otp`. That is a worse version of a
+script with a stranger in the loop. **The mail provider would have been infrastructure for a
+funnel that does not exist**, and the go-to-market in `MARKET.md` is hands-on selling, not a
+funnel.
+
+### Checked in the service, not on the route
+
+`assertSelfServeSignup()` lives in `auth/self-serve.ts` and is called from `register`, `resendOtp`
+and `forgotPassword` — inside the service. A controller guard would have covered the three
+endpoints that exist today; this covers the three *operations*, which is what the rule is actually
+about. A future route reaching one of those paths inherits the refusal without anybody remembering
+to decorate it.
+
+That ordering is what `env.ts` is standing on. If any path could still mint a code with mail
+unconfigured, the logging fallback is exactly the hole the original requirement closed.
+
+**The fourth path is the one that gets missed.** Google sign-in creates a user and an organization
+and **never mints a code**, so it would have sailed past a check aimed at the emailed routes. Both
+of its doors are gated — no user, and an existing user with no active membership — while somebody
+who already has an account and a business signs in untouched.
+
+### The gap this uncovered: nobody could change their own password
+
+There was no `change-password` endpoint. It had never mattered, because anybody who wanted a
+different password could go the long way round through `forgot-password`.
+
+Closing that route made the absence load-bearing: **a password handed to an owner at setup would
+have been permanent**, changeable only by us running a script. That is not a product, and it would
+have been discovered by a customer.
+
+`POST /auth/change-password` is authenticated, demands the current password, and revokes every
+session. The current password is required because **an access token is fifteen minutes of
+authority and a password is permanent** — an unattended till, a borrowed phone or a session left
+open on a shared machine all hand somebody a token, and none of them should be enough to take an
+account away from its owner.
+
+The general lesson: **turning a feature off tests whether anything was quietly depending on it.**
+Self-serve password reset was carrying a job nobody had named.
+
+### The CLI, and why it shares the seeding
+
+`src/cli/admin.ts` — `create-org` and `set-password`, wired as `org:create` and `org:password`. It
+boots a Nest application context rather than talking to Prisma directly, so it calls the real
+`AuthService.createVerifiedOwner`, which shares `seedOrganizationDefaults` with registration.
+
+That sharing is deliberate and has been paid for once already: Google sign-up used to create an
+organization and stop, leaving businesses with no default price tier and nowhere to put a price
+(§14). **A business created by hand must be indistinguishable from one that registered itself**,
+or the accounts we create are subtly different from the ones we test, and the difference surfaces
+in front of a customer.
+
+Two rules about it:
+
+- **Neither method has an HTTP route, and neither should get one.** `createVerifiedOwner` is
+  `register` with the verification removed, and `setPasswordByIdentifier` is a password change
+  without the old password — over the network that is account takeover with extra steps. Reaching
+  the CLI already means holding the database.
+- **The password is prompted for, never a flag.** An argument lands in shell history and in the
+  process list.
+
+### What this costs, stated plainly
+
+- **You are the signup mechanism.** Fine at pilot scale, a ceiling at a few hundred shops.
+- **You own owner password resets.** An owner who forgets theirs messages you. At ten shops that
+  is arguably a useful support touchpoint; at two hundred it is a pager.
+- **Running the CLI needs production database access** — the Render shell, or the external
+  connection string on a laptop. Normal, but it is a real key on a real machine.
+- **`npm run smoke` registers an organization**, so it cannot run against an instance with signup
+  off. This makes two instances a requirement rather than a nicety: a test instance with signup on
+  and `OTP_OVERRIDE` set, and production with signup off and no mail. §15 already assumed the test
+  instance; this makes it mandatory.
+
+And what it buys: the deploy stops being blocked on a domain purchase, DNS records and a provider
+account, and two public unauthenticated write endpoints disappear along with most of the
+account-enumeration surface.
+
+**It is fully reversible.** Set the mail variables, flip the flag, redeploy — in one change,
+because the boot check ties them together. No migration, no data change.

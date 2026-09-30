@@ -174,6 +174,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change your own password, knowing the current one */
+        post: operations["AuthController_changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/reset-password": {
         parameters: {
             query?: never;
@@ -1953,6 +1970,22 @@ export interface components {
         ForgotPasswordDto: {
             /** @example owner@example.com */
             email: string;
+        };
+        ChangePasswordDto: {
+            /**
+             * @description The password being used now. Required because a session is not the same authority as a password.
+             * @example correct-horse-battery
+             */
+            currentPassword: string;
+            /**
+             * @description The new password. At least 8 characters.
+             * @example a-much-better-one
+             */
+            newPassword: string;
+        };
+        ChangePasswordResponse: {
+            /** @example Password changed. Everyone signed in as you has been signed out. */
+            message: string;
         };
         ResetPasswordDto: {
             /** @description The token from the reset email link */
@@ -5808,6 +5841,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    AuthController_changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangePasswordResponse"];
+                };
             };
         };
     };

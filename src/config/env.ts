@@ -64,6 +64,25 @@ const envSchema = z.object({
   COOKIE_DOMAIN: z.string().default(''),
   OTP_OVERRIDE: z.string().optional(),
 
+  /**
+   * Whether a stranger may create an account and an organization for
+   * themselves.
+   *
+   * **Off is how this launches**, because onboarding is hands-on: a shop is
+   * sold to, walked through and set up by someone, not funnelled. The dashboard
+   * has no sign-up screen at all, so with this off the three endpoints below
+   * stop being reachable in every sense rather than just in practice.
+   *
+   * It is not a convenience toggle. It is what lets production boot with no
+   * mail provider configured — see the production rules below. Turning it on
+   * without configuring mail is refused at boot, because a `register` that
+   * cannot deliver its code creates an account nobody can ever sign in to.
+   */
+  SELF_SERVE_SIGNUP: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+
   CLIENT_ID: z.string().min(1).optional(),
   CLIENT_SECRET: z.string().min(1).optional(),
   GOOGLE_CALLBACK_URL: z.url().optional(),
@@ -98,18 +117,38 @@ function withoutEmptyStrings(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * Refused at boot rather than warned about, for the same reason `OTP_OVERRIDE`
  * is refused at boot: a note is not a control, and the failure is silent until
  * somebody has already been locked out of their own business.
+ *
+ * ## Why mail is conditional rather than always required
+ *
+ * The rule being protected is not "mail must be configured" — it is **no
+ * secret may reach a log**. Configuring a provider is one way to hold that.
+ * Turning off every path that can *mint* such a secret is a stronger way,
+ * because then there is nothing to leak rather than somewhere safe to put it.
+ *
+ * So production must satisfy one of two shapes, and both are honest:
+ *
+ * - `SELF_SERVE_SIGNUP=true` — strangers can register, so codes and reset
+ *   links get generated, so a mail provider is **required**.
+ * - `SELF_SERVE_SIGNUP=false` — nothing generates them, so mail is optional
+ *   and its absence costs nothing.
+ *
+ * The combination that is refused is signup **on** with mail **off**: that
+ * boots an instance where registering creates an account whose code goes
+ * nowhere, which is an account nobody can ever sign in to.
  */
 const productionSchema = envSchema.superRefine((value, ctx) => {
   if (value.NODE_ENV !== 'production') return;
 
-  for (const key of ['RESEND_API_KEY', 'MAIL_FROM'] as const) {
-    if (!value[key]) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [key],
-        message:
-          'required in production — without it, verification codes and password-reset links are written to the log instead of being sent',
-      });
+  if (value.SELF_SERVE_SIGNUP) {
+    for (const key of ['RESEND_API_KEY', 'MAIL_FROM'] as const) {
+      if (!value[key]) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [key],
+          message:
+            'required in production while SELF_SERVE_SIGNUP is true — without it, verification codes and password-reset links are written to the log instead of being sent. Set SELF_SERVE_SIGNUP=false if accounts are created by hand instead.',
+        });
+      }
     }
   }
 });

@@ -85,13 +85,18 @@ export class UserModelAction {
   }
 
   /**
-   * The password hash, for signing in — the one caller that legitimately needs
-   * it, named so that any other use stands out in a review.
+   * The password hash, for signing in and for changing a password — the two
+   * callers that legitimately need it, named so that any other use stands out
+   * in a review.
    *
-   * Takes an email **or** a username, because a cashier has only the second.
+   * Takes an email **or** a username, because a cashier has only the second,
+   * **or** an id, because changing your own password starts from a session
+   * rather than from something typed. The id form is not a widening of what is
+   * reachable: it is the same `select`, and the caller already had to prove who
+   * they were to get the id.
    */
   async getCredentials(
-    identifier: { email: string } | { username: string },
+    identifier: { email: string } | { username: string } | { id: string },
   ): Promise<UserCredentials | null> {
     const user = await this.prisma.user.findUnique({
       where: identifier,
