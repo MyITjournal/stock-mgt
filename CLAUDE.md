@@ -223,7 +223,8 @@ manager, accountant — a cashier could otherwise cover a till shortage with a r
 staff password or suspending someone revokes their sessions**, since the owner believes they have
 just locked that person out; **`switchOrganization` is the third path that mints a session and
 checks working hours** — a fourth would need the same line; and **`RESEND_API_KEY` and `MAIL_FROM`
-are required in production**, because the log fallback writes OTPs and reset links in plaintext.
+are required in production *while self-serve signup is on*** (amended 2026-09-30 — see below),
+because the log fallback writes OTPs and reset links in plaintext.
 `npm audit` is at **0 vulnerabilities**: the nine deferred advisories were all transitive and closed
 with `overrides`, keeping Prisma 7 and NestJS 11 — **still never run `npm audit fix --force`**.
 
@@ -327,10 +328,36 @@ signal. The decision to shorten was already right; this is why.
 The repo stays `stock-mgt`; a repository name and a product name are allowed to differ and
 renaming buys nothing.
 
-**Two things must be set before the first deploy, and neither can be committed.** `RESEND_API_KEY`
-and `MAIL_FROM` are **required in production** — `env.ts` refuses to boot without them — and
-`MAIL_FROM` needs a domain verified with Resend, which has lead time. And the service name in
+**Nobody signs themselves up, and that is what lets production run with no mail provider** (2026-09-30).
+`SELF_SERVE_SIGNUP=false` on the hosted instance. The rule being protected was never "mail must be
+configured" — it is **no secret may reach a log**, and closing every path that can *mint* one holds
+that more strongly than configuring somewhere safe to send it. So `env.ts` demands `RESEND_API_KEY`
+and `MAIL_FROM` **only while signup is on**, and refuses the one combination that strands people:
+signup **on** with mail **off**, which registers accounts whose codes go nowhere.
+
+`assertSelfServeSignup()` in `src/modules/auth/self-serve.ts` is checked **in the service, not on
+the route** — the rule is about minting a code or a reset token, not about a URL, so a route added
+later inherits it. It guards four paths, and the fourth is the one that gets missed: **Google
+sign-in is a signup path that never mints a code**, so it would sail past any check aimed at the
+emailed routes. Both of its doors are gated — no user, and no active membership.
+
+Accounts are created with **`node dist/cli/admin create-org`** and recovered with
+**`set-password`** (`src/cli/admin.ts`, npm scripts `org:create` / `org:password`). It boots a Nest
+application context so it calls the real `AuthService.createVerifiedOwner`, which shares
+`seedOrganizationDefaults` — a hand-made business must be indistinguishable from a registered one,
+and the Google path already proved once what happens when it is not. Neither method has an HTTP
+route and neither should get one: over the network, `setPasswordByIdentifier` is account takeover.
+
+**`POST /auth/change-password` exists because of this** (authenticated, current password required,
+revokes every session). With `forgot-password` closed, a password handed to an owner at setup would
+otherwise be permanent and only we could change it. The current password is demanded because **an
+access token is fifteen minutes of authority and a password is permanent** — an unattended till
+should not be enough to take an account away from its owner.
+
+**One thing must be set before the first deploy and cannot be committed:** the service name in
 `render.yaml` is the hostname, so **rename it to the product's name before deploying**, not after.
+Turning signup on later is a single change that must set the flag *and* both mail variables
+together; the boot check ties them deliberately.
 
 **`?connection_limit=` on the database URL does nothing here** — it is a Prisma Rust query-engine
 parameter, and `PrismaService` uses the `pg` driver adapter, whose pool takes `max` from its
@@ -599,6 +626,13 @@ npm run build
 npm run db:studio
 
 npm run smoke          # end-to-end against a running server; see below
+
+# Creating and recovering accounts on an instance with SELF_SERVE_SIGNUP=false.
+# Needs a build first; the password is always prompted for, never a flag, so it
+# stays out of shell history and the process list.
+node dist/cli/admin create-org --org "Adebayo Stores" \
+  --first Ade --last Bayo --email owner@example.com
+node dist/cli/admin set-password --email owner@example.com
 ```
 
 `npm run smoke` needs the OTP. It prompts for it, or reads it from the server's log when told
