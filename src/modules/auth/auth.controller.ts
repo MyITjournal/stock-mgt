@@ -9,7 +9,12 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -27,6 +32,10 @@ import { ResendOtpDto } from './dto/resend-otp.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SwitchOrganizationDto } from './dto/switch-organization.dto';
+import {
+  ChangePasswordDto,
+  ChangePasswordResponse,
+} from './dto/change-password.dto';
 
 const ACCESS_COOKIE = 'access_token';
 const REFRESH_COOKIE = 'refresh_token';
@@ -193,6 +202,35 @@ export class AuthController {
   @ApiOperation({ summary: 'Email a password reset link' })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.auth.forgotPassword(dto.email);
+  }
+
+  /**
+   * Changing your own password, which until now was only possible by going
+   * round through a reset email. That route is closed entirely on an instance
+   * where self-serve signup is off, so this is the only way an owner can
+   * change the password they were given at setup.
+   */
+  @ApiBearerAuth('JWT')
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  // Tighter than login's five: this one is authenticated, so the limiter keys
+  // on the person rather than the address, and nobody changes their password
+  // three times a minute. It is here because the endpoint verifies an argon2
+  // hash, which is deliberately expensive to compute.
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Change your own password, knowing the current one',
+  })
+  @ApiOkResponse({ type: ChangePasswordResponse })
+  changePassword(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.auth.changePassword(
+      userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 
   @Public()
