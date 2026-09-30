@@ -21,6 +21,7 @@ import { DEFAULT_PRICE_TIER } from '../catalog/price-tier.service';
 import { defaultPackagingTypeRows } from '../catalog/packaging-type.service';
 import { defaultLocationRow } from '../inventory/location.service';
 import { defaultExpenseCategoryRows } from '../expenses/expense-category.service';
+import { assertSelfServeSignup } from './self-serve';
 import { TokenContext, TokenPair, TokenService } from './token.service';
 import {
   HOURS_INCLUDE,
@@ -68,6 +69,8 @@ export class AuthService {
    * The duplicate-email semantics of that method are preserved below.
    */
   async register(dto: RegisterDto) {
+    assertSelfServeSignup();
+
     const email = dto.email.toLowerCase();
     const existing = await this.users.findByEmail(email);
 
@@ -139,6 +142,138 @@ export class AuthService {
   }
 
   /**
+   * Creates a business and its owner, already verified, with no code sent.
+   *
+   * ## Why this is not `register` with a flag
+   *
+   * It has no HTTP route and never will. `register` is a public endpoint whose
+   * entire job is to prove somebody controls the address they claimed;
+   * threading a "skip that" parameter through it would put the bypass one
+   * missing check away from being reachable by the people it exists to verify.
+   * A separate method with no controller cannot be called over the network at
+   * all — the only caller is the CLI, which already has the database.
+   *
+   * ## Why it deliberately shares `seedOrganizationDefaults`
+   *
+   * A business set up this way must be indistinguishable from one that
+   * registered itself, or the accounts we create by hand are subtly different
+   * from the ones we test — missing a price tier, a location, an expense
+   * category — and the difference only shows up in front of a customer. That
+   * has happened once already: Google sign-up created an organization and
+   * stopped, leaving businesses with nowhere to put a price.
+   *
+   * Takes an email **or** a username, matching staff: an owner in this market
+   * may have neither an address nor any use for one.
+   */
+  async createVerifiedOwner(input: {
+    organizationName: string;
+    firstName: string;
+    lastName: string;
+    password: string;
+    email?: string;
+    username?: string;
+  }) {
+    if (!input.email && !input.username) {
+      throw new BadRequestException(
+        'Give the owner an email or a username — they need something to sign in with.',
+      );
+    }
+
+    const email = input.email?.toLowerCase() ?? null;
+    const slug = slugify(input.organizationName);
+    // Qualified by the slug exactly as staff usernames are, which is what makes
+    // a bare `amina` globally unique without a second uniqueness scheme.
+    const username = input.username
+      ? `${input.username.toLowerCase()}@${slug}`
+      : null;
+
+    const clash = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(email ? [{ email }] : []),
+          ...(username ? [{ username }] : []),
+        ],
+      },
+      select: { email: true, username: true },
+    });
+    if (clash) {
+      throw new ConflictException(
+        clash.email === email
+          ? `${email} already has an account.`
+          : `The username ${username} is taken.`,
+      );
+    }
+
+    const passwordHash = await argon2.hash(input.password);
+
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email,
+          username,
+          password: passwordHash,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          authProvider: AuthProvider.email,
+          role: UserRole.user,
+          // Verified on creation, because the verification this skips is
+          // "does this person control that address" — and the answer is that
+          // we set the account up for them ourselves.
+          isVerified: true,
+        },
+      });
+
+      const organization = await tx.organization.create({
+        data: { name: input.organizationName, slug },
+      });
+
+      await tx.membership.create({
+        data: {
+          userId: user.id,
+          organizationId: organization.id,
+          role: OrgRole.owner,
+          status: MembershipStatus.active,
+        },
+      });
+
+      await this.seedOrganizationDefaults(tx, organization.id);
+
+      return {
+        userId: user.id,
+        email: user.email,
+        username: user.username,
+        organizationId: organization.id,
+        organizationName: organization.name,
+        organizationSlug: organization.slug,
+      };
+    });
+  }
+
+  /**
+   * Sets somebody's password without their old one, and signs them out.
+   *
+   * The recovery path for an instance with self-serve signup off, where
+   * `forgot-password` is closed. No HTTP route, for the same reason as
+   * {@link createVerifiedOwner}: over the network this would be account
+   * takeover with extra steps. The CLI is the only caller, and reaching the CLI
+   * already means holding the database.
+   */
+  async setPasswordByIdentifier(
+    identifier: { email: string } | { username: string },
+    newPassword: string,
+  ) {
+    const credentials = await this.users.findCredentials(identifier);
+    if (!credentials) {
+      throw new BadRequestException('No account matches that identifier.');
+    }
+
+    await this.users.updatePassword(credentials.id, newPassword);
+    await this.tokens.revokeAllForUser(credentials.id);
+
+    return { userId: credentials.id };
+  }
+
+  /**
    * What a new business needs before the app is usable: a default price tier
    * for prices to hang off, the packaging vocabulary, somewhere for stock to
    * sit, and something to file spending under.
@@ -187,6 +322,8 @@ export class AuthService {
   }
 
   async resendOtp(email: string) {
+    assertSelfServeSignup();
+
     const user = await this.users.findByEmail(email.toLowerCase());
 
     // Always report success — otherwise this endpoint enumerates accounts.
@@ -286,6 +423,8 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
+    assertSelfServeSignup();
+
     const user = await this.users.findByEmail(email.toLowerCase());
     const response = {
       message: 'If that account exists, a reset link has been sent.',
@@ -336,6 +475,62 @@ export class AuthService {
   }
 
   /**
+   * Changing your own password, knowing the current one.
+   *
+   * ## Why this exists
+   *
+   * It was missing, and its absence only became load-bearing when self-serve
+   * signup could be turned off. With signup on, somebody who wanted a different
+   * password could go the long way round through `forgot-password`. With it
+   * off, that route is closed — so without this, a password handed to an owner
+   * at setup would be the password they were stuck with forever, and the only
+   * way to change it would be to ask us to run a script.
+   *
+   * It is worth having regardless. A shared or overheard password is an
+   * ordinary thing in a shop, and the fix for it should not be a support
+   * request.
+   *
+   * ## Why the current password is required
+   *
+   * An access token is fifteen minutes of authority; a password is permanent.
+   * An unattended till, a borrowed phone, a session left open on a shared
+   * machine — all of those hand someone a token, and none of them should be
+   * enough to take the account away from its owner. Knowing the current
+   * password is what separates "using this session" from "becoming this user".
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const credentials = await this.users.findCredentials({ id: userId });
+    if (!credentials?.password) {
+      // A Google-only account has no password to check against, so there is
+      // nothing here to change and no safe way to set one from a session alone.
+      throw new BadRequestException(
+        'This account signs in with Google and has no password to change.',
+      );
+    }
+
+    if (!(await argon2.verify(credentials.password, currentPassword))) {
+      throw new UnauthorizedException('That is not your current password.');
+    }
+
+    await this.users.updatePassword(userId, newPassword);
+
+    // Same rule as every other password change in this codebase: a new password
+    // must stop the sessions the old one opened, or a refresh token issued
+    // before it goes on renewing for up to seven days. That is the whole point
+    // when the reason for changing it is that somebody else knows it.
+    await this.tokens.revokeAllForUser(userId);
+
+    return {
+      message:
+        'Password changed. Everyone signed in as you has been signed out.',
+    };
+  }
+
+  /**
    * Google sign-in. A first-time Google user gets an organization named after
    * them, matching what email registration does.
    */
@@ -346,7 +541,13 @@ export class AuthService {
     const email = profile.email.toLowerCase();
     let user = await this.users.findByEmail(email);
 
+    // Google sign-in is a *signup* path for anybody it has not seen before, and
+    // one that never mints a code — so it would sail straight past a check that
+    // only guarded the emailed routes. Somebody who already has an account and
+    // a business signs in as normal; the refusal lands only where a new one
+    // would be created.
     if (!user) {
+      assertSelfServeSignup();
       user = await this.users.createGoogleUser({
         email,
         firstName: profile.firstName,
@@ -363,6 +564,11 @@ export class AuthService {
     });
 
     if (!membership) {
+      // Same rule, second door: an existing user with no active membership is
+      // about to have a business created for them, which is the other half of
+      // signing up.
+      assertSelfServeSignup();
+
       const name = [profile.firstName, profile.lastName]
         .filter(Boolean)
         .join(' ');
