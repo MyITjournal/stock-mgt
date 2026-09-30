@@ -3311,3 +3311,67 @@ account-enumeration surface.
 
 **It is fully reversible.** Set the mail variables, flip the flag, redeploy — in one change,
 because the boot check ties them together. No migration, no data change.
+
+---
+
+## 21. Supabase, and back to the free tier
+
+2026-09-30, at deploy time. Two choices made together, and they turn out to depend on each other.
+
+### The free tier has no shell, and Supabase is what makes that survivable
+
+Render's SSH and dashboard shell are **paid-only**. §20 had just made an operator CLI the way
+accounts get created, and the plan said to run it from the Render shell — which on the free tier
+does not exist.
+
+A Render free Postgres would have made that fatal: it is reachable only from inside Render, so
+with no shell there is no way to reach the database at all. **Supabase is reachable from
+anywhere**, so the CLI runs from a laptop against the same connection string the service uses.
+
+Neither choice would have worked alone. Free tier plus Render Postgres has no route in; paid tier
+plus either would have been fine. That is worth noticing because the two decisions arrived
+separately and the dependency is invisible from either one.
+
+### ⚠ The connection string is the trap
+
+Supabase offers three, and **two of them are wrong here**:
+
+- **Direct** (`db.<ref>.supabase.co:5432`) — **IPv6-only**. Render's outbound is IPv4, so this
+  fails with `ENOTFOUND` or simply hangs. The symptom looks like a wrong password or a firewall,
+  not like an address-family mismatch, which is what makes it expensive to diagnose.
+- **Transaction pooler** (port **6543**) — IPv4 and fine for queries, but `prisma migrate deploy`
+  fails against it with *"prepared statement does not exist"*. Migrations run on boot here, so
+  this would fail every deploy.
+- **Session pooler** (`aws-0-<region>.pooler.supabase.com:5432`) — **the right one.** IPv4, and it
+  behaves like an ordinary Postgres connection, so prepared statements and migrations both work.
+
+Session mode also happens to fit the shape this codebase already has. `prisma.config.ts` and the
+runtime client both read `DATABASE_URL`, so **one string serves both** and there is no `directUrl`
+to drift out of step — which is the usual Prisma-plus-Supabase failure, where migrations and
+queries quietly point at different databases.
+
+`DATABASE_POOL_MAX=5` (§15) turns out to be right for this too: session mode holds a real server
+connection per client, so a small cap is what keeps a free project inside its allowance.
+
+### What going back to free un-supersedes
+
+§15 item 1 recorded free-tier consequences and then struck them through when the plan moved to a
+paid tier on 2026-09-19. They are live again:
+
+- **Cold starts**, ~50s after roughly 15 minutes idle. Tolerable for a pilot and genuinely bad at
+  a till, which is the strongest argument for Starter ($7/mo) once a real shop is using it — that
+  also restores the shell.
+- **In-memory rate limiting resets on every cold start** (§15 item 0), which on this tier means
+  routinely rather than rarely. Still close to harmless on one instance, still a blocker for two.
+- **512MB of build memory**, against a build that runs two `npm ci` and two builds.
+
+And one that is new, from Supabase rather than Render: **free projects pause after about a week of
+inactivity.** A shop using it daily never notices; a demo left over a holiday does.
+
+### The general shape
+
+Both traps here are the same kind: **a default that is correct in the vendor's documentation and
+wrong in this combination.** Supabase's own quickstart hands you the direct connection string, and
+it works perfectly from a laptop on an IPv6 network. It fails only where this runs. Copying the
+documented default would have produced a deploy that failed with an error naming neither Supabase
+nor IPv6.
