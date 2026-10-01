@@ -21,7 +21,7 @@ import { DEFAULT_PRICE_TIER } from '../catalog/price-tier.service';
 import { defaultPackagingTypeRows } from '../catalog/packaging-type.service';
 import { defaultLocationRow } from '../inventory/location.service';
 import { defaultExpenseCategoryRows } from '../expenses/expense-category.service';
-import { assertSelfServeSignup } from './self-serve';
+import { assertMailAvailable, assertSelfServeSignup } from './self-serve';
 import { TokenContext, TokenPair, TokenService } from './token.service';
 import {
   HOURS_INCLUDE,
@@ -70,6 +70,7 @@ export class AuthService {
    */
   async register(dto: RegisterDto) {
     assertSelfServeSignup();
+    assertMailAvailable();
 
     const email = dto.email.toLowerCase();
     const existing = await this.users.findByEmail(email);
@@ -181,11 +182,18 @@ export class AuthService {
 
     const email = input.email?.toLowerCase() ?? null;
     const slug = slugify(input.organizationName);
-    // Qualified by the slug exactly as staff usernames are, which is what makes
-    // a bare `amina` globally unique without a second uniqueness scheme.
-    const username = input.username
-      ? `${input.username.toLowerCase()}@${slug}`
-      : null;
+    /**
+     * An owner's username is **plain**, where a staff username is qualified by
+     * the shop's slug (`amina@adebayo-stores-f84554`).
+     *
+     * The qualification exists because an owner names their own staff and two
+     * shops will both have an `amina`; nobody types those usernames by choice,
+     * they are handed over. An owner picks their own at sign-up and has to type
+     * it from memory every morning, so it is globally unique instead — and they
+     * are told at sign-up if the one they wanted is taken, which is the ordinary
+     * bargain everywhere else on the internet.
+     */
+    const username = input.username?.toLowerCase().trim() || null;
 
     const clash = await this.prisma.user.findFirst({
       where: {
@@ -247,6 +255,53 @@ export class AuthService {
         organizationSlug: organization.slug,
       };
     });
+  }
+
+  /**
+   * Creating your own shop, with a username and a password and nothing else.
+   *
+   * ## Why this is a second entry point rather than a flag on `register`
+   *
+   * `register` exists to prove somebody controls an address they claimed: it
+   * mints a code, sends it, and withholds the account until it comes back.
+   * Every line of it is about that proof. Threading "skip the proof" through it
+   * would put the bypass one missing check away from the people it exists to
+   * verify — and the two paths have genuinely different prerequisites, since
+   * this one needs no mail provider at all.
+   *
+   * ## It shares the whole of `createVerifiedOwner`
+   *
+   * So a shop somebody makes for themselves is indistinguishable from one made
+   * with the CLI, down to the default price tier and the starter locations.
+   * That sharing has been paid for once already: Google sign-up used to create
+   * an organization and stop, leaving businesses with nowhere to put a price.
+   *
+   * ## Signed in immediately, and the hours do not stop them
+   *
+   * Tokens are issued in the same call, because a sign-up that ends at a login
+   * screen is a sign-up half the people abandon. A brand-new shop defaults to
+   * 08:00–19:00, so somebody signing up at ten at night would be refused — but
+   * `WorkingHoursService` exempts owners, and the only member of a new shop is
+   * its owner.
+   */
+  async signUp(
+    input: {
+      organizationName: string;
+      firstName: string;
+      lastName: string;
+      username: string;
+      password: string;
+      email?: string;
+    },
+    context: TokenContext = {},
+  ): Promise<TokenPair> {
+    assertSelfServeSignup();
+
+    const created = await this.createVerifiedOwner(input);
+    this.logger.log(
+      `New shop "${created.organizationName}" (${created.organizationSlug}) signed up`,
+    );
+    return this.issueForUser(created.userId, context);
   }
 
   /**
@@ -322,7 +377,7 @@ export class AuthService {
   }
 
   async resendOtp(email: string) {
-    assertSelfServeSignup();
+    assertMailAvailable();
 
     const user = await this.users.findByEmail(email.toLowerCase());
 
@@ -423,7 +478,7 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
-    assertSelfServeSignup();
+    assertMailAvailable();
 
     const user = await this.users.findByEmail(email.toLowerCase());
     const response = {

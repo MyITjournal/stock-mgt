@@ -144,28 +144,31 @@ services:
       - key: FRONTEND_URL
         sync: false
 
-      # Nobody signs themselves up: onboarding is hands-on, and the dashboard
-      # has no sign-up screen anyway. This is what lets the service run with no
-      # mail provider — `register`, `resend-otp` and `forgot-password` all
-      # refuse, so nothing mints a secret that would need delivering.
+      # Anyone can create their own shop, at /sign-up, with a username and a
+      # password. That path mints no verification code, so it needs no mail
+      # provider — which is what makes this deployment possible at all.
       #
-      # Accounts are created **from a laptop**, not from a Render shell — the
-      # free tier has none — pointing the CLI at the same Supabase URL:
+      # Set it to false to close an instance to new shops: a demonstration, or
+      # one customer's private deployment.
+      - key: SELF_SERVE_SIGNUP
+        value: true
+
+      # Deliberately absent: RESEND_API_KEY and MAIL_FROM.
+      #
+      # Without them the paths that *send* something close themselves and say
+      # so — emailed registration, resending a code, and password reset answer
+      # 503 `EMAIL_UNAVAILABLE`. Username sign-up is untouched. Adding both
+      # turns those back on with no other change.
+      #
+      # ⚠ The consequence worth knowing: until they are set, **a shop owner who
+      # forgets their password cannot recover it themselves.** The sign-up form
+      # offers an optional email for exactly this reason — whoever fills it in
+      # can self-reset the day a provider exists; whoever skipped it needs us.
+      # Until then recovery is done from a laptop, not a Render shell (the free
+      # tier has none), against the same Supabase URL:
       #
       #   DATABASE_URL="<the session-pooler string>" \
-      #     node dist/cli/admin create-org --org "Adebayo Stores" \
-      #     --first Ade --last Bayo --email owner@example.com
+      #     node dist/cli/admin set-password --username adebayo
       #
-      # And a forgotten owner password:
-      #
-      #   DATABASE_URL="..." node dist/cli/admin set-password --email owner@example.com
-      #
-      # Owners change their own password from the dashboard afterwards, at
-      # /settings/password. That screen is the reason this is survivable:
-      # without it, a password handed over at setup would be permanent.
-      - key: SELF_SERVE_SIGNUP
-        value: false
-
-      # Deliberately absent: RESEND_API_KEY and MAIL_FROM. Add them in the same
-      # change that sets SELF_SERVE_SIGNUP=true, never before or after — the
-      # boot check ties the two together on purpose.
+      # Owners change their own password from the dashboard at
+      # /settings/password, which is the ordinary path and needs no mail.

@@ -35,6 +35,8 @@ export interface AuthState {
   /** True until the first `GET /auth/me` settles, so guards do not flash. */
   loading: boolean;
   signIn: (credentials: SignInInput) => Promise<void>;
+  /** Creates a shop and signs its owner straight in. No code, no email. */
+  signUp: (input: SignUpInput) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -43,6 +45,16 @@ export interface SignInInput {
   email?: string;
   username?: string;
   password: string;
+}
+
+export interface SignUpInput {
+  organizationName: string;
+  firstName: string;
+  lastName: string;
+  username: string;
+  password: string;
+  /** Optional. Nothing is sent to it; it is what enables a future self-reset. */
+  email?: string;
 }
 
 export const AuthContext = createContext<AuthState | null>(null);
@@ -97,6 +109,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadSession],
   );
 
+  /**
+   * Same shape as {@link signIn} deliberately: create, then ask who we are.
+   *
+   * The session comes back as httpOnly cookies that JavaScript cannot read, so
+   * the only way to learn the sign-up worked is to ask. Reusing loadSession
+   * also means a new shop lands wherever an existing one would.
+   */
+  const signUp = useCallback(
+    async (input: SignUpInput) => {
+      await api.post('/auth/sign-up', input);
+      await loadSession();
+    },
+    [loadSession],
+  );
+
   const signOut = useCallback(async () => {
     try {
       await api.post('/auth/logout', {});
@@ -109,8 +136,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, loading, signIn, signOut }),
-    [user, loading, signIn, signOut],
+    () => ({ user, loading, signIn, signUp, signOut }),
+    [user, loading, signIn, signUp, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

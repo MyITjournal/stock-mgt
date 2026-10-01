@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth, useLandingPath } from './useAuth';
 import { Field, Input } from '../components/Field';
@@ -113,6 +113,12 @@ export function SignInPage() {
         <Button type="submit" className="mt-6 w-full" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
+        <p className="mt-6 text-center text-sm text-slate-500">
+          No shop yet?{' '}
+          <Link to="/sign-up" className="font-medium text-slate-900 underline">
+            Create one
+          </Link>
+        </p>
       </form>
     </main>
   );

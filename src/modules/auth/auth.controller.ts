@@ -25,6 +25,7 @@ import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { GoogleProfile } from './strategies/google.strategy';
 import { env } from '../../config/env';
 import { RegisterDto } from './dto/register.dto';
+import { SignUpDto } from './dto/sign-up.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -86,6 +87,30 @@ export class AuthController {
   @ApiOperation({ summary: 'Create an account and its organization' })
   register(@Body() dto: RegisterDto) {
     return this.auth.register(dto);
+  }
+
+  /**
+   * Creating a shop with a username and a password, no email required.
+   *
+   * Separate from `register` on purpose — that one proves somebody controls an
+   * address, and every line of it is about that proof. This one needs no mail
+   * provider, which is what lets it work on an instance that has none.
+   *
+   * Three a minute rather than login's five: a person creates a shop once, and
+   * the endpoint writes an organization plus a dozen seeded rows, so it is the
+   * cheapest thing here to abuse and the least likely to be repeated honestly.
+   */
+  @Public()
+  @Post('sign-up')
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Create a shop and its owner, with no email' })
+  async signUp(
+    @Body() dto: SignUpDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pair = await this.auth.signUp(dto, AuthController.context(req));
+    return this.respondWithTokens(res, pair);
   }
 
   @Public()
