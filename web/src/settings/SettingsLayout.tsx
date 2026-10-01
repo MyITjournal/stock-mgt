@@ -4,14 +4,20 @@ const TABS = [
   { to: '/settings', label: 'Business', end: true },
   { to: '/settings/hours', label: 'Opening hours' },
   { to: '/settings/staff', label: 'Staff' },
+  { to: '/settings/password', label: 'Your password' },
 ];
 
 /**
  * The settings section.
  *
- * Three screens, and the split follows who changes what and how often: the
+ * Four screens, and the split follows who changes what and how often: the
  * letterhead is set once and printed on every document, the hours gate signing
  * in, and staff is the only place that mints credentials.
+ *
+ * Your password is the odd one out and deliberately sits here anyway: it is the
+ * only settings screen a cashier has business on, because everybody has a
+ * password. On the hosted instance it is also the *only* way anybody changes
+ * one, since self-serve reset is off (DECISIONS.md §20).
  *
  * Reading is open to every member — a rep issuing an invoice needs the details
  * that go on it — but writing is owner or manager, and staff writes are owner

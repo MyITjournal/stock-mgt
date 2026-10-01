@@ -98,7 +98,9 @@ export class UsersService {
    * actually needed. Every other read goes through a `select` that cannot
    * return it at all.
    */
-  findCredentials(identifier: { email: string } | { username: string }) {
+  findCredentials(
+    identifier: { email: string } | { username: string } | { id: string },
+  ) {
     return this.userModelAction.getCredentials(identifier);
   }
 

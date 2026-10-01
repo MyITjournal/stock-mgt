@@ -3198,3 +3198,180 @@ click, so its coverage was unknown. Two sections carry most of the value:
 Adding Vitest and Testing Library to `web/` would let a pure rule like `landingPath` be tested —
 the root jest config is scoped to `src` and `test` and deliberately cannot see `web/` — but that
 is a toolchain decision rather than a fix, and it was not made here.
+
+---
+
+## 20. Nobody signs themselves up
+
+2026-09-30, while preparing the deploy. The question that started it was narrow — *how do we
+deploy without Resend?* — and the answer turned out not to be a different mail provider.
+
+### The rule was never "mail must be configured"
+
+`env.ts` refused to boot a production instance without `RESEND_API_KEY` and `MAIL_FROM`, and §9
+recorded why: the `MailService` fallback writes verification codes and password-reset URLs into
+the platform log in plaintext, which is an account-takeover path for anyone who can read logs.
+
+That requirement was right, and it was also **one implementation of a more general rule**. The
+rule is *no secret may reach a log*. Configuring a provider satisfies it by giving every minted
+secret somewhere safe to go. Closing every path that can **mint** one satisfies it better, because
+then there is nothing to leak rather than somewhere safe to put it.
+
+So production must now be one of two honest shapes, and the third is refused at boot:
+
+| `SELF_SERVE_SIGNUP` | Mail | |
+|---|---|---|
+| `true` | configured | fine — strangers register, codes get delivered |
+| `false` | absent | fine — **nothing mints a code** |
+| `true` | absent | **refused** — registering creates accounts whose codes go nowhere |
+
+### Why this was available at all
+
+**The dashboard has no sign-up screen.** Sign-in is the only auth UI — no register, no
+forgot-password, no OTP entry. `/auth/register` exists in the API and nothing in the product calls
+it, so turning it off removed a capability the product did not have.
+
+It is worth being precise about what deploying *with* Resend would have bought. With no sign-up
+screen, onboarding a shop would have been: call `/auth/register` with the owner's address, they
+receive a code, they read it back to you, you call `/auth/verify-otp`. That is a worse version of a
+script with a stranger in the loop. **The mail provider would have been infrastructure for a
+funnel that does not exist**, and the go-to-market in `MARKET.md` is hands-on selling, not a
+funnel.
+
+### Checked in the service, not on the route
+
+`assertSelfServeSignup()` lives in `auth/self-serve.ts` and is called from `register`, `resendOtp`
+and `forgotPassword` — inside the service. A controller guard would have covered the three
+endpoints that exist today; this covers the three *operations*, which is what the rule is actually
+about. A future route reaching one of those paths inherits the refusal without anybody remembering
+to decorate it.
+
+That ordering is what `env.ts` is standing on. If any path could still mint a code with mail
+unconfigured, the logging fallback is exactly the hole the original requirement closed.
+
+**The fourth path is the one that gets missed.** Google sign-in creates a user and an organization
+and **never mints a code**, so it would have sailed past a check aimed at the emailed routes. Both
+of its doors are gated — no user, and an existing user with no active membership — while somebody
+who already has an account and a business signs in untouched.
+
+### The gap this uncovered: nobody could change their own password
+
+There was no `change-password` endpoint. It had never mattered, because anybody who wanted a
+different password could go the long way round through `forgot-password`.
+
+Closing that route made the absence load-bearing: **a password handed to an owner at setup would
+have been permanent**, changeable only by us running a script. That is not a product, and it would
+have been discovered by a customer.
+
+`POST /auth/change-password` is authenticated, demands the current password, and revokes every
+session. The current password is required because **an access token is fifteen minutes of
+authority and a password is permanent** — an unattended till, a borrowed phone or a session left
+open on a shared machine all hand somebody a token, and none of them should be enough to take an
+account away from its owner.
+
+The general lesson: **turning a feature off tests whether anything was quietly depending on it.**
+Self-serve password reset was carrying a job nobody had named.
+
+### The CLI, and why it shares the seeding
+
+`src/cli/admin.ts` — `create-org` and `set-password`, wired as `org:create` and `org:password`. It
+boots a Nest application context rather than talking to Prisma directly, so it calls the real
+`AuthService.createVerifiedOwner`, which shares `seedOrganizationDefaults` with registration.
+
+That sharing is deliberate and has been paid for once already: Google sign-up used to create an
+organization and stop, leaving businesses with no default price tier and nowhere to put a price
+(§14). **A business created by hand must be indistinguishable from one that registered itself**,
+or the accounts we create are subtly different from the ones we test, and the difference surfaces
+in front of a customer.
+
+Two rules about it:
+
+- **Neither method has an HTTP route, and neither should get one.** `createVerifiedOwner` is
+  `register` with the verification removed, and `setPasswordByIdentifier` is a password change
+  without the old password — over the network that is account takeover with extra steps. Reaching
+  the CLI already means holding the database.
+- **The password is prompted for, never a flag.** An argument lands in shell history and in the
+  process list.
+
+### What this costs, stated plainly
+
+- **You are the signup mechanism.** Fine at pilot scale, a ceiling at a few hundred shops.
+- **You own owner password resets.** An owner who forgets theirs messages you. At ten shops that
+  is arguably a useful support touchpoint; at two hundred it is a pager.
+- **Running the CLI needs production database access** — the Render shell, or the external
+  connection string on a laptop. Normal, but it is a real key on a real machine.
+- **`npm run smoke` registers an organization**, so it cannot run against an instance with signup
+  off. This makes two instances a requirement rather than a nicety: a test instance with signup on
+  and `OTP_OVERRIDE` set, and production with signup off and no mail. §15 already assumed the test
+  instance; this makes it mandatory.
+
+And what it buys: the deploy stops being blocked on a domain purchase, DNS records and a provider
+account, and two public unauthenticated write endpoints disappear along with most of the
+account-enumeration surface.
+
+**It is fully reversible.** Set the mail variables, flip the flag, redeploy — in one change,
+because the boot check ties them together. No migration, no data change.
+
+---
+
+## 21. Supabase, and back to the free tier
+
+2026-09-30, at deploy time. Two choices made together, and they turn out to depend on each other.
+
+### The free tier has no shell, and Supabase is what makes that survivable
+
+Render's SSH and dashboard shell are **paid-only**. §20 had just made an operator CLI the way
+accounts get created, and the plan said to run it from the Render shell — which on the free tier
+does not exist.
+
+A Render free Postgres would have made that fatal: it is reachable only from inside Render, so
+with no shell there is no way to reach the database at all. **Supabase is reachable from
+anywhere**, so the CLI runs from a laptop against the same connection string the service uses.
+
+Neither choice would have worked alone. Free tier plus Render Postgres has no route in; paid tier
+plus either would have been fine. That is worth noticing because the two decisions arrived
+separately and the dependency is invisible from either one.
+
+### ⚠ The connection string is the trap
+
+Supabase offers three, and **two of them are wrong here**:
+
+- **Direct** (`db.<ref>.supabase.co:5432`) — **IPv6-only**. Render's outbound is IPv4, so this
+  fails with `ENOTFOUND` or simply hangs. The symptom looks like a wrong password or a firewall,
+  not like an address-family mismatch, which is what makes it expensive to diagnose.
+- **Transaction pooler** (port **6543**) — IPv4 and fine for queries, but `prisma migrate deploy`
+  fails against it with *"prepared statement does not exist"*. Migrations run on boot here, so
+  this would fail every deploy.
+- **Session pooler** (`aws-0-<region>.pooler.supabase.com:5432`) — **the right one.** IPv4, and it
+  behaves like an ordinary Postgres connection, so prepared statements and migrations both work.
+
+Session mode also happens to fit the shape this codebase already has. `prisma.config.ts` and the
+runtime client both read `DATABASE_URL`, so **one string serves both** and there is no `directUrl`
+to drift out of step — which is the usual Prisma-plus-Supabase failure, where migrations and
+queries quietly point at different databases.
+
+`DATABASE_POOL_MAX=5` (§15) turns out to be right for this too: session mode holds a real server
+connection per client, so a small cap is what keeps a free project inside its allowance.
+
+### What going back to free un-supersedes
+
+§15 item 1 recorded free-tier consequences and then struck them through when the plan moved to a
+paid tier on 2026-09-19. They are live again:
+
+- **Cold starts**, ~50s after roughly 15 minutes idle. Tolerable for a pilot and genuinely bad at
+  a till, which is the strongest argument for Starter ($7/mo) once a real shop is using it — that
+  also restores the shell.
+- **In-memory rate limiting resets on every cold start** (§15 item 0), which on this tier means
+  routinely rather than rarely. Still close to harmless on one instance, still a blocker for two.
+- **512MB of build memory**, against a build that runs two `npm ci` and two builds.
+
+And one that is new, from Supabase rather than Render: **free projects pause after about a week of
+inactivity.** A shop using it daily never notices; a demo left over a holiday does.
+
+### The general shape
+
+Both traps here are the same kind: **a default that is correct in the vendor's documentation and
+wrong in this combination.** Supabase's own quickstart hands you the direct connection string, and
+it works perfectly from a laptop on an IPv6 network. It fails only where this runs. Copying the
+documented default would have produced a deploy that failed with an error naming neither Supabase
+nor IPv6.
