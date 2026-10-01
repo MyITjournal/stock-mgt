@@ -319,3 +319,36 @@ ten minutes, do these.
 Write it down as you go rather than fixing as you go — a sweep that stops to fix finds the first
 bug and not the seventh. The §18 record is the format: what the screen did, what it should have
 done, and the general rule underneath it, because the rule is what stops it coming back.
+
+---
+
+## L. Sign-up (added with §22)
+
+The screen a real customer meets first, and the only one they see before deciding whether to
+bother. Sign out before starting.
+
+**93. Go to `/sign-in` and click "Create one".** [gate] The link is there and reaches `/sign-up`.
+
+**94. Create a shop** with a name, your name, a username and a password, leaving the email blank.
+**[gate] You end up signed in and inside the app**, not back at a login screen.
+
+**95. [gate] The new shop works immediately** — open the till, add a product, ring up a sale.
+A shop created this way must be indistinguishable from one created any other way: it needs its
+default price tier and a location, or nothing can be priced or stocked.
+
+**96. Sign out and sign back in with that username.** [gate] It works, and the username is the
+plain one you chose — not `yourname@shop-slug`.
+
+**97. [gate] Try to create a second shop with the same username.** Refused, saying the username is
+taken — not a silent second account, and not a server error.
+
+**98. [gate] Try a username with a space or an `@` in it.** Refused before it is sent.
+
+**99. [gate] Read the email box's hint.** It must say that nothing is sent to it and that it is
+what lets you reset your own password later. This is the one irreversible choice on the form and
+the person making it has to understand it.
+
+**100. Create a shop *with* an email.** [gate] It is accepted and you are signed in the same way.
+
+**101. [gate] On a phone-width window, the whole form is usable** — every box reachable, nothing
+cut off, the button visible without scrolling sideways.

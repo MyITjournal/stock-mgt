@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/sign-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a shop and its owner, with no email */
+        post: operations["AuthController_signUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/verify-otp": {
         parameters: {
             query?: never;
@@ -1934,6 +1951,29 @@ export interface components {
              * @example Adebayo Stores
              */
             organizationName: string;
+        };
+        SignUpDto: {
+            /**
+             * @description The shop or business name.
+             * @example Adebayo Stores
+             */
+            organizationName: string;
+            /** @example Ade */
+            firstName: string;
+            /** @example Bayo */
+            lastName: string;
+            /**
+             * @description What you will sign in with. Letters, numbers, dot, dash and underscore.
+             * @example adebayo
+             */
+            username: string;
+            /** @example correct-horse-battery */
+            password: string;
+            /**
+             * @description Optional. Nothing is sent to it now; it is what will let you reset your own password later.
+             * @example owner@example.com
+             */
+            email?: string;
         };
         VerifyOtpDto: {
             /** @example owner@example.com */
@@ -5669,6 +5709,27 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RegisterDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuthController_signUp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignUpDto"];
             };
         };
         responses: {

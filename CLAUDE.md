@@ -345,18 +345,41 @@ signal. The decision to shorten was already right; this is why.
 The repo stays `stock-mgt`; a repository name and a product name are allowed to differ and
 renaming buys nothing.
 
-**Nobody signs themselves up, and that is what lets production run with no mail provider** (2026-09-30).
-`SELF_SERVE_SIGNUP=false` on the hosted instance. The rule being protected was never "mail must be
-configured" — it is **no secret may reach a log**, and closing every path that can *mint* one holds
-that more strongly than configuring somewhere safe to send it. So `env.ts` demands `RESEND_API_KEY`
-and `MAIL_FROM` **only while signup is on**, and refuses the one combination that strands people:
-signup **on** with mail **off**, which registers accounts whose codes go nowhere.
+**Anyone can create their own shop, with no email and no mail provider** (§22, 2026-10-01 —
+superseding the 2026-09-30 note that closed signup). `POST /auth/sign-up` and the `/sign-up` screen
+take a shop name, a name, a username and a password, create the owner and the shop, and sign them
+in on the same request. `SELF_SERVE_SIGNUP=true` on the hosted instance.
 
-`assertSelfServeSignup()` in `src/modules/auth/self-serve.ts` is checked **in the service, not on
-the route** — the rule is about minting a code or a reset token, not about a URL, so a route added
-later inherits it. It guards four paths, and the fourth is the one that gets missed: **Google
-sign-in is a signup path that never mints a code**, so it would sail past any check aimed at the
-emailed routes. Both of its doors are gated — no user, and no active membership.
+**Two guards in `src/modules/auth/self-serve.ts`, because these are two questions.**
+`assertSelfServeSignup()` asks *may a stranger create an account* — it gates username sign-up,
+emailed registration and **both** doors of Google sign-in (the one that gets missed: Google creates
+an account while never minting a code, so it sails past any check aimed at the emailed routes).
+`assertMailAvailable()` asks *can this instance deliver what it is about to mint* — it gates
+`register`, `resend-otp` and `forgot-password`, and answers **503 `EMAIL_UNAVAILABLE`**, not 403,
+because the caller did nothing wrong. `forgot-password` is recovery, not signup, and now sits
+behind the second guard only.
+
+**`env.ts` no longer refuses to boot without mail, and that is a narrowing not a loosening.** The
+rule was never "mail must be configured" — it is **no path may mint a secret it cannot deliver**.
+That is now checked per request, immediately before the secret is created, instead of once per
+process at boot.
+
+⚠ **The trap, worth knowing because it is easy to repeat**: the first version defined "can deliver"
+as "a provider is configured", which closed `register` on every developer machine and took
+`npm run smoke` with it — smoke registers an org and reads the code out of the server log.
+**Outside production the log *is* the delivery mechanism.** `canDeliverSecrets()` says so. The
+general shape: **a check asking "is this configured" rather than "can this succeed" will refuse the
+case where success arrives by another route.**
+
+**An owner's username is plain; a staff username stays qualified by the shop slug.** Staff
+usernames are qualified because an owner names their own people and two shops both have an `amina`
+— nobody types those by choice, they are handed over. An owner picks their own and types it every
+morning, so it is globally unique and they are told at sign-up if it is taken.
+
+⚠ **A shop owner with no email still cannot recover their own password.** The sign-up form offers
+an optional email for exactly that: nothing is sent to it today, and the day a provider is
+configured whoever filled it in can self-reset while whoever skipped it needs the CLI. The form
+says so on screen.
 
 Accounts are created **from a laptop, not from a Render shell** — the free tier has none — by
 pointing `DATABASE_URL` at the same Supabase session-pooler string the service uses. They are

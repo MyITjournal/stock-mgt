@@ -3375,3 +3375,73 @@ wrong in this combination.** Supabase's own quickstart hands you the direct conn
 it works perfectly from a laptop on an IPv6 network. It fails only where this runs. Copying the
 documented default would have produced a deploy that failed with an error naming neither Supabase
 nor IPv6.
+
+---
+
+## 22. Anyone can create their own shop
+
+2026-10-01, before the first deploy. §20 closed self-serve signup so production could run with no
+mail provider, and recorded the cost honestly: *"you become the signup mechanism."* The owner read
+that and decided it was the wrong trade — shops should not have to wait on a person to be set up.
+
+### Two questions that were being asked as one
+
+`SELF_SERVE_SIGNUP=false` switched off `register`, `resend-otp` and `forgot-password` together,
+and that was what allowed a mail-less deployment. It was right while **email was the only way to
+sign up**. It stops being right the moment a shop can be created with a username, because the
+single flag was conflating:
+
+- *May a stranger create an account?* — a product decision.
+- *Can this instance deliver an email?* — a configuration fact.
+
+Username sign-up needs the first and not the second. So `auth/self-serve.ts` now has two guards.
+`assertSelfServeSignup()` gates account creation — username sign-up, emailed registration, and
+**both** doors of Google sign-in. `assertMailAvailable()` gates every path that mints a secret,
+and answers **503 `EMAIL_UNAVAILABLE`** rather than 403: the caller did nothing wrong and the
+answer may be different tomorrow.
+
+`forgot-password` moved under the second guard only, which is more correct than where it was —
+it is recovery, not signup, and it never belonged behind a signup flag.
+
+### The invariant moved rather than weakened
+
+`env.ts` no longer refuses to boot without a mail provider. That looks like a loosening and is the
+opposite: the rule was never *"mail must be configured"*, it was **no path may mint a secret it
+cannot deliver** — an account whose code goes nowhere is an account nobody can sign in to.
+
+Before, that was enforced by a process-wide question at boot. Now it is enforced per request,
+immediately before the secret is created, by the guard on the path that creates it. The bad
+combination is impossible by construction rather than by configuration.
+
+### ⚠ The trap this walked into, and what caught it
+
+The first version defined "can deliver" as "a provider is configured". That closed `register` on
+**every developer machine in the project** and took `npm run smoke` with it — smoke sets up its
+organization through `register` and reads the code back out of the server log.
+
+**Outside production the log *is* the delivery mechanism.** `MailService` writing the code to the
+console is not a degraded fallback; it is the documented local loop. `canDeliverSecrets()` says so
+explicitly, and two tests pin both halves.
+
+The general shape is worth keeping: **a check that asks "is this configured" instead of "can this
+succeed" will refuse the case where success arrives by a different route.**
+
+### A username is plain for an owner, qualified for staff
+
+`createVerifiedOwner` used to qualify an owner's username with the shop slug, exactly as staff
+usernames are — `ade@adebayo-stores-f84554`. That is right for staff and wrong for an owner.
+
+Staff usernames are qualified because an owner names their own people and two shops will both have
+an `amina`; nobody types those by choice, they are handed over. **An owner picks their own at
+sign-up and types it from memory every morning**, so it is globally unique instead, and they are
+told at sign-up if the one they wanted is taken — the ordinary bargain everywhere else.
+
+### What this does not fix, and the form says so
+
+**A shop owner with no email still cannot recover their own password.** Sign-up offers an optional
+email for exactly this reason: nothing is sent to it today, and the day a provider is configured,
+whoever filled it in can self-reset while whoever skipped it still needs us. That is on the screen
+rather than discovered later, because it is their choice and they cannot reverse it themselves.
+
+The CLI stays as the recovery path, and `POST /auth/change-password` (§20) stays as the ordinary
+one.

@@ -1,11 +1,11 @@
 /**
- * The boot rules, which are the thing standing behind "production may run with
- * no mail provider".
+ * The boot rules.
  *
- * Worth testing rather than reading, because the failure they prevent is
- * silent: an instance that boots happily and then mints verification codes it
- * cannot deliver, or worse, writes them to the log. Nothing downstream would
- * complain.
+ * These used to refuse production without a mail provider whenever self-serve
+ * signup was on. That moved into `auth/self-serve.ts`, which can ask the
+ * narrower question — *can this request deliver what it is about to create* —
+ * immediately before creating it. These tests pin the consequence: an instance
+ * with no mail provider **boots**, and username sign-up works on it.
  */
 
 type LoadedEnv = { SELF_SERVE_SIGNUP: boolean; NODE_ENV: string };
@@ -42,40 +42,35 @@ function loadWith(overrides: Record<string, string>): LoadedEnv | Error {
   }
 }
 
-const PRODUCTION_WITHOUT_MAIL = {
-  NODE_ENV: 'production',
-  RESEND_API_KEY: '',
-  MAIL_FROM: '',
-};
+const NO_MAIL = { RESEND_API_KEY: '', MAIL_FROM: '' };
 
 describe('environment boot rules', () => {
-  it('refuses production when signup is on and mail is not configured', () => {
+  /**
+   * The configuration this actually deploys with. It used to be refused.
+   */
+  it('boots production with signup on and no mail provider', () => {
     const result = loadWith({
-      ...PRODUCTION_WITHOUT_MAIL,
+      NODE_ENV: 'production',
       SELF_SERVE_SIGNUP: 'true',
+      ...NO_MAIL,
     });
 
-    expect(result).toBeInstanceOf(Error);
-    expect((result as Error).message).toContain('RESEND_API_KEY');
-    expect((result as Error).message).toContain('MAIL_FROM');
+    expect(result).not.toBeInstanceOf(Error);
+    expect((result as LoadedEnv).SELF_SERVE_SIGNUP).toBe(true);
   });
 
-  /**
-   * The whole point of the flag. Nothing can mint a verification code or a
-   * reset token, so there is no secret for the log fallback to leak and no
-   * reason to demand a provider.
-   */
-  it('allows production with no mail when signup is off', () => {
+  it('boots production with signup off and no mail provider', () => {
     const result = loadWith({
-      ...PRODUCTION_WITHOUT_MAIL,
+      NODE_ENV: 'production',
       SELF_SERVE_SIGNUP: 'false',
+      ...NO_MAIL,
     });
 
     expect(result).not.toBeInstanceOf(Error);
     expect((result as LoadedEnv).SELF_SERVE_SIGNUP).toBe(false);
   });
 
-  it('allows production with signup on once mail is configured', () => {
+  it('boots production with mail configured', () => {
     const result = loadWith({
       NODE_ENV: 'production',
       SELF_SERVE_SIGNUP: 'true',
@@ -84,31 +79,37 @@ describe('environment boot rules', () => {
     });
 
     expect(result).not.toBeInstanceOf(Error);
-    expect((result as LoadedEnv).SELF_SERVE_SIGNUP).toBe(true);
   });
 
-  /**
-   * Development keeps the logging fallback, which is what makes the local loop
-   * and `npm run smoke` work without a provider at all.
-   */
   it('leaves mail optional outside production', () => {
-    const result = loadWith({
-      NODE_ENV: 'development',
-      RESEND_API_KEY: '',
-      MAIL_FROM: '',
-    });
-
-    expect(result).not.toBeInstanceOf(Error);
+    expect(
+      loadWith({ NODE_ENV: 'development', ...NO_MAIL }),
+    ).not.toBeInstanceOf(Error);
   });
 
   /**
-   * The safe default is the one that cannot strand an account. Defaulting to
+   * The safe default is the one that cannot strand a customer. Defaulting to
    * *off* would mean a deployment that forgot the variable silently stopped
-   * accepting signups; defaulting to *on* means it refuses to boot until
-   * somebody says which shape they meant.
+   * accepting new shops, with nothing to indicate why.
    */
-  it('defaults signup on, so the omission is loud rather than silent', () => {
+  it('defaults signup on', () => {
     const result = loadWith({ NODE_ENV: 'development' });
     expect((result as LoadedEnv).SELF_SERVE_SIGNUP).toBe(true);
+  });
+
+  /** The invariants that are still enforced at boot. */
+  it('still refuses a database URL that is missing', () => {
+    const result = loadWith({ NODE_ENV: 'production', DATABASE_URL: '' });
+    expect(result).toBeInstanceOf(Error);
+    expect((result as Error).message).toContain('DATABASE_URL');
+  });
+
+  it('still refuses a JWT secret that is too short', () => {
+    const result = loadWith({
+      NODE_ENV: 'production',
+      JWT_ACCESS_SECRET: 'short',
+    });
+    expect(result).toBeInstanceOf(Error);
+    expect((result as Error).message).toContain('JWT_ACCESS_SECRET');
   });
 });

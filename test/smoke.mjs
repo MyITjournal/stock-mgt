@@ -2333,6 +2333,46 @@ async function main() {
   await api('GET', `/users/${viewer.sub}`, { token: other.token, expect: 404 });
   check('another organization cannot read that user at all', true);
 
+  step(43, 'Sign-up: a shop creates itself with no email at all');
+
+  // The path a real customer takes. It mints no verification code, so it has to
+  // work on an instance with no mail provider — which is how this deploys.
+  const shopSuffix = Date.now().toString(36).slice(-6);
+  const shopUser = 'owner' + shopSuffix;
+  const signUpBody = {
+    organizationName: 'Self Serve ' + shopSuffix,
+    firstName: 'Self',
+    lastName: 'Serve',
+    username: shopUser,
+    password: 'correct-horse-battery',
+  };
+
+  const signedUp = await api('POST', '/auth/sign-up', { body: signUpBody, expect: [200, 201] });
+  const selfToken = signedUp.data.accessToken;
+  check('signing up returns a session immediately', typeof selfToken === 'string' && selfToken.length > 20);
+
+  const selfMe = (await api('GET', '/auth/me', { token: selfToken })).data;
+  eq('and the new member is an owner', selfMe.orgRole, 'owner');
+  check('whose email claim is null, because they gave none', selfMe.email === null, JSON.stringify(selfMe.email));
+
+  // The sharing with the CLI path is the point: a self-made shop must be
+  // indistinguishable from one we made, or the accounts differ in ways that
+  // only surface in front of a customer.
+  const selfTiers = (await api('GET', '/price-tiers', { token: selfToken })).data;
+  check('the new shop was seeded with a default price tier', Array.isArray(selfTiers) && selfTiers.length >= 1, JSON.stringify(selfTiers?.length));
+  const selfLocations = (await api('GET', '/locations', { token: selfToken })).data;
+  check('and somewhere to put stock', Array.isArray(selfLocations) && selfLocations.length >= 1);
+
+  // Globally unique, and refused rather than silently suffixed.
+  await api('POST', '/auth/sign-up', { body: { ...signUpBody, organizationName: 'Another Shop' }, expect: 409 });
+  check('a username already taken is refused with a 409', true);
+
+  // Signing in again with that username is deliberately *not* checked here.
+  // Login allows five attempts a minute per address and the staff section
+  // already spends them; a sixth at the end of the run fails with a 429 that
+  // looks like a sign-up bug and is not one. The username login path is
+  // covered there, by the cashiers who have no email either.
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

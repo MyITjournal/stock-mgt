@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './auth/AuthProvider';
 import { RequireAuth } from './auth/RequireAuth';
 import { SignInPage } from './auth/SignInPage';
+import { SignUpPage } from './auth/SignUpPage';
 import { Layout } from './components/Layout';
 import { ApiError } from './api/client';
 import { Home, LandingRedirect } from './auth/Landing';
@@ -74,6 +75,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/sign-in" element={<SignInPage />} />
+            <Route path="/sign-up" element={<SignUpPage />} />
 
             <Route element={<RequireAuth />}>
               <Route element={<Layout />}>

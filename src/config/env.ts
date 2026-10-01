@@ -68,15 +68,17 @@ const envSchema = z.object({
    * Whether a stranger may create an account and an organization for
    * themselves.
    *
-   * **Off is how this launches**, because onboarding is hands-on: a shop is
-   * sold to, walked through and set up by someone, not funnelled. The dashboard
-   * has no sign-up screen at all, so with this off the three endpoints below
-   * stop being reachable in every sense rather than just in practice.
+   * **On**, now that there is a sign-up screen needing no mail provider. It
+   * governs the three paths that create an account for a stranger: username
+   * sign-up, emailed registration, and both doors of Google sign-in.
    *
-   * It is not a convenience toggle. It is what lets production boot with no
-   * mail provider configured — see the production rules below. Turning it on
-   * without configuring mail is refused at boot, because a `register` that
-   * cannot deliver its code creates an account nobody can ever sign in to.
+   * It no longer governs `forgot-password`, which is recovery rather than
+   * signup and is gated on mail being configured instead. Nor does it decide
+   * whether mail is required at boot — see the production rules below. That
+   * question now belongs to each path that actually sends something.
+   *
+   * Turn it off to close an instance to new shops entirely, which is what a
+   * demonstration or a single customer's private deployment would want.
    */
   SELF_SERVE_SIGNUP: z
     .enum(['true', 'false'])
@@ -118,39 +120,39 @@ function withoutEmptyStrings(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * is refused at boot: a note is not a control, and the failure is silent until
  * somebody has already been locked out of their own business.
  *
- * ## Why mail is conditional rather than always required
+ * ## Why mail is no longer required at all
  *
- * The rule being protected is not "mail must be configured" — it is **no
- * secret may reach a log**. Configuring a provider is one way to hold that.
- * Turning off every path that can *mint* such a secret is a stronger way,
- * because then there is nothing to leak rather than somewhere safe to put it.
+ * The rule being protected is not "mail must be configured" — it is **no path
+ * may mint a secret it cannot deliver**. An account whose verification code
+ * goes nowhere is an account nobody can ever sign in to.
  *
- * So production must satisfy one of two shapes, and both are honest:
+ * This file used to hold that rule by refusing to boot: signup on meant mail
+ * required. That worked while **email was the only way to sign up**. Once a
+ * shop can be created with a username and a password, refusing to boot would
+ * demand a mail provider for a path that never sends anything.
  *
- * - `SELF_SERVE_SIGNUP=true` — strangers can register, so codes and reset
- *   links get generated, so a mail provider is **required**.
- * - `SELF_SERVE_SIGNUP=false` — nothing generates them, so mail is optional
- *   and its absence costs nothing.
+ * So the rule moved to where it can be precise. `assertMailAvailable()` in
+ * `auth/self-serve.ts` guards each path that mints a secret — emailed
+ * registration, resending a code, password reset — and answers 503 when there
+ * is no provider. Username sign-up is unaffected, because it mints nothing.
  *
- * The combination that is refused is signup **on** with mail **off**: that
- * boots an instance where registering creates an account whose code goes
- * nowhere, which is an account nobody can ever sign in to.
+ * **This is a narrower control, not a weaker one.** Before, the check was "is
+ * mail configured *somewhere* in this process"; now it is "can *this request*
+ * deliver what it is about to create", asked immediately before creating it.
+ * The combination that used to be refused at boot — registering into a void —
+ * is now impossible by construction rather than by configuration.
+ *
+ * `MailService` keeps its own guard as the last line: asked to send in
+ * production with nothing configured, it logs that delivery failed and
+ * deliberately never logs the contents.
  */
 const productionSchema = envSchema.superRefine((value, ctx) => {
   if (value.NODE_ENV !== 'production') return;
 
-  if (value.SELF_SERVE_SIGNUP) {
-    for (const key of ['RESEND_API_KEY', 'MAIL_FROM'] as const) {
-      if (!value[key]) {
-        ctx.addIssue({
-          code: 'custom',
-          path: [key],
-          message:
-            'required in production while SELF_SERVE_SIGNUP is true — without it, verification codes and password-reset links are written to the log instead of being sent. Set SELF_SERVE_SIGNUP=false if accounts are created by hand instead.',
-        });
-      }
-    }
-  }
+  // Deliberately empty of mail checks. Kept as the place production-only rules
+  // go, because the next one will want somewhere to live and `superRefine` on
+  // a schema with no refinements is easy to delete by accident.
+  void ctx;
 });
 
 function loadEnv(): z.infer<typeof envSchema> {
