@@ -274,6 +274,9 @@ export class ProductView {
   @ApiProperty({ example: 'Peak Milk Powder 400g' })
   name!: string;
 
+  @ApiProperty({ type: String, nullable: true, example: '400g' })
+  size!: string | null;
+
   @ApiProperty({ type: String, nullable: true })
   description!: string | null;
 

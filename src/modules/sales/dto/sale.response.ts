@@ -67,6 +67,9 @@ class SoldProductRef {
 
   @ApiProperty({ example: 'PEAK-400G' })
   sku!: string;
+
+  @ApiProperty({ type: String, nullable: true, example: '400g' })
+  size!: string | null;
 }
 
 class SoldUnitRef {
@@ -392,6 +395,15 @@ export class SaleListView {
 export class ReceiptLineView {
   @ApiProperty({ example: 'Peak Milk Powder 400g' })
   description!: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '400g',
+    description:
+      'Its own field rather than folded into `description`, so a printer that predates it keeps working and one that knows it can lay it out. Read live from the product, like the name.',
+  })
+  size!: string | null;
 
   @ApiProperty({ example: 'carton' })
   unit!: string;

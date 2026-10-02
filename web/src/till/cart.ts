@@ -35,6 +35,8 @@ export interface CartLine {
   saleLineId: string;
   productId: string;
   productName: string;
+  /** "400g" — shown beside the name, never edited here. */
+  size: string | null;
   sku: string;
   unitId: string;
   unitName: string;

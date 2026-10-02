@@ -139,6 +139,7 @@ export function TillPage() {
         addToCart(current, {
           productId: scan.product.id,
           productName: scan.product.name,
+          size: scan.product.size,
           sku: scan.product.sku,
           unitId: scan.unit.id,
           unitName: scan.unit.name,
@@ -177,6 +178,7 @@ export function TillPage() {
           addToCart(current, {
             productId: product.id,
             productName: product.name,
+            size: product.size,
             sku: product.sku,
             unitId: unit.id,
             unitName: unit.name,
@@ -418,6 +420,11 @@ export function TillPage() {
                         <span className="font-medium text-slate-900">
                           {product.name}
                         </span>
+                        {product.size && (
+                          <span className="ml-2 text-slate-600">
+                            {product.size}
+                          </span>
+                        )}
                         <span className="ml-2 text-xs text-slate-500">
                           {product.sku}
                         </span>

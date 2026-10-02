@@ -83,6 +83,7 @@ export function ProductForm({
   const editing = product !== null;
 
   const [name, setName] = useState(product?.name ?? '');
+  const [size, setSize] = useState(product?.size ?? '');
   const [sku, setSku] = useState(product?.sku ?? '');
   const [categoryId, setCategoryId] = useState(product?.categoryId ?? '');
   const [packagingTypeId, setPackagingTypeId] = useState(
@@ -152,6 +153,9 @@ export function ProductForm({
       // touched, and make an audit of what changed impossible to read.
       const body = {
         name: name.trim(),
+        // Always sent, even blank: on an edit, '' is how a size is cleared,
+        // and leaving it out would mean "keep the old one".
+        size: size.trim(),
         ...(sku.trim() && { sku: sku.trim() }),
         ...(categoryId && { categoryId }),
         ...(packagingTypeId && { packagingTypeId }),
@@ -264,6 +268,20 @@ export function ProductForm({
               onChange={(event) => setName(event.target.value)}
               autoFocus
               required
+            />
+          </Field>
+
+          <Field
+            label="Size"
+            htmlFor="p-size"
+            hint="Optional — 400g, 33cl, 1L. Shown beside the name."
+          >
+            <Input
+              id="p-size"
+              value={size}
+              maxLength={40}
+              onChange={(event) => setSize(event.target.value)}
+              placeholder="400g"
             />
           </Field>
 

@@ -118,6 +118,7 @@ export class ProductService {
       organizationId: context.organizationId,
       sku: context.sku,
       name: input.name,
+      size: input.size?.trim() || null,
       description: input.description ?? null,
       categoryId: input.categoryId ?? null,
       packagingTypeId: input.packagingTypeId ?? null,
@@ -163,6 +164,11 @@ export class ProductService {
               name: { contains: options.search, mode: 'insensitive' as const },
             },
             { sku: { contains: options.search, mode: 'insensitive' as const } },
+            // So "400g" finds every 400g product, whether or not the size
+            // was also typed into the name.
+            {
+              size: { contains: options.search, mode: 'insensitive' as const },
+            },
           ],
         }),
       },
@@ -211,6 +217,10 @@ export class ProductService {
         data: {
           ...(input.sku !== undefined && { sku: input.sku }),
           ...(input.name !== undefined && { name: input.name }),
+          // Omitted leaves it alone; '' clears it — the letterhead rule.
+          ...(input.size !== undefined && {
+            size: input.size.trim() || null,
+          }),
           ...(input.description !== undefined && {
             description: input.description,
           }),

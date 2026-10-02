@@ -434,3 +434,24 @@ stays on the row you typed it in.
 
 **122. Save, then edit the product.** [gate] The saved units and prices have no ×. Click Add unit
 — the new, unsaved row does have one.
+
+---
+
+## P. Product size, and stock on the products list
+
+**123. Add a product with Size `400g`.** [gate] The products list shows `400g` beside the name,
+in lighter text, and nowhere on the list can it be edited.
+
+**124. Type `400g` in the products search.** [gate] It finds that product even though `400g` is
+not in its name.
+
+**125. At the till, search for it and add it.** [gate] The search result and the cart line both
+show `400g` beside the name, and the cart offers no box to change it.
+
+**126. Finish the sale.** [gate] The receipt shows `400g` beside the name.
+
+**127. Edit the product and empty the Size box, then save.** [gate] The size is gone from the
+list — clearing works, it does not silently keep the old one.
+
+**128. [gate] The products list has an On hand column.** A product with a delivery recorded shows
+the quantity and its base unit; one with none shows a grey 0; a service shows a dash.

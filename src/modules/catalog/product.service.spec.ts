@@ -225,6 +225,59 @@ describe('ProductService packaging types', () => {
       }),
     );
   });
+
+  describe('size', () => {
+    const created = () =>
+      (prisma.product.create.mock.calls[0] as [{ data: { size: unknown } }])[0]
+        .data.size;
+    const updated = () =>
+      (prisma.product.update.mock.calls[0] as [{ data: object }])[0].data;
+
+    it('stores the size, trimmed', async () => {
+      await asOrg(() =>
+        service.create({
+          name: 'Peak Milk',
+          size: ' 400g ',
+          basePrice: 350000,
+          units: [{ name: 'tin', factor: 1 }],
+        }),
+      );
+      expect(created()).toBe('400g');
+    });
+
+    it('stores null for a blank or missing size, never an empty string', async () => {
+      await asOrg(() =>
+        service.create({
+          name: 'Peak Milk',
+          size: '   ',
+          basePrice: 350000,
+          units: [{ name: 'tin', factor: 1 }],
+        }),
+      );
+      expect(created()).toBeNull();
+    });
+
+    it('clears the size on an update that sends an empty string', async () => {
+      await asOrg(() => service.update('prod-1', { size: '' }));
+      expect(updated()).toEqual(expect.objectContaining({ size: null }));
+    });
+
+    it('leaves the size alone on an update that does not mention it', async () => {
+      await asOrg(() => service.update('prod-1', { name: 'Peak Milk Tin' }));
+      expect(updated()).not.toHaveProperty('size');
+    });
+
+    it('finds products by size as well as name and SKU', async () => {
+      await service.findAll({ search: '400g' });
+
+      const [args] = prisma.product.findMany.mock.calls[0] as [
+        { where: { OR: object[] } },
+      ];
+      expect(args.where.OR).toContainEqual({
+        size: { contains: '400g', mode: 'insensitive' },
+      });
+    });
+  });
 });
 
 describe('ProductService inline prices and barcodes', () => {

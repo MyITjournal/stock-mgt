@@ -132,6 +132,16 @@ export class CreateProductDto {
   @MaxLength(200)
   name!: string;
 
+  @ApiPropertyOptional({
+    example: '400g',
+    description:
+      'Plain text shown beside the name — "400g", "33cl", "1L". Send an empty string to clear it.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  size?: string;
+
   @ApiPropertyOptional({ example: 'Powdered milk, 400g tin' })
   @IsOptional()
   @IsString()

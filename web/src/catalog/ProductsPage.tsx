@@ -13,6 +13,7 @@ import { ProductForm } from './ProductForm';
 
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
+type StockLevelRow = components['schemas']['StockLevelRow'];
 
 /**
  * What the business sells.
@@ -46,6 +47,19 @@ export function ProductsPage() {
     queryKey: ['categories'],
     queryFn: () => api.get<CategoryView[]>('/categories'),
   });
+
+  // One request for the whole shop, summed per product across locations —
+  // the same sum the product page shows, without a request per row. Lots are
+  // left out: this column is a count, and the lots are a click away.
+  const { data: levels = [] } = useQuery({
+    queryKey: ['stock-levels', 'all'],
+    queryFn: () => api.get<StockLevelRow[]>('/stock/levels'),
+  });
+  const onHand = new Map<string, number>();
+  for (const row of levels) {
+    onHand.set(row.product.id, (onHand.get(row.product.id) ?? 0) + row.quantity);
+  }
+  const columns = seesCost ? 6 : 5;
 
   return (
     <Page
@@ -84,6 +98,7 @@ export function ProductsPage() {
             <tr>
               <th className="px-4 py-2 font-medium">Product</th>
               <th className="px-4 py-2 font-medium">Units</th>
+              <th className="px-4 py-2 text-right font-medium">On hand</th>
               <th className="px-4 py-2 text-right font-medium">Base price</th>
               {seesCost && (
                 <th className="px-4 py-2 text-right font-medium">Cost</th>
@@ -94,14 +109,14 @@ export function ProductsPage() {
           <tbody className="divide-y divide-slate-100">
             {isPending && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={columns} className="px-4 py-8 text-center text-slate-500">
                   Loading…
                 </td>
               </tr>
             )}
             {!isPending && products.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={columns} className="px-4 py-8 text-center text-slate-500">
                   Nothing matches that.
                 </td>
               </tr>
@@ -115,6 +130,11 @@ export function ProductsPage() {
                 <td className="px-4 py-3">
                   <div className="font-medium text-slate-900">
                     {product.name}
+                    {product.size && (
+                      <span className="ml-2 font-normal text-slate-500">
+                        {product.size}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-500">
                     {product.sku}
@@ -130,6 +150,12 @@ export function ProductsPage() {
                         : `${unit.name} × ${unit.factor}`,
                     )
                     .join(', ')}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <OnHand
+                    product={product}
+                    quantity={onHand.get(product.id) ?? 0}
+                  />
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Money value={product.basePrice} />
@@ -194,6 +220,33 @@ export function ProductsPage() {
         />
       )}
     </Page>
+  );
+}
+
+/**
+ * Stock on hand, in base units because that is what stock is counted in (§5).
+ *
+ * A service has no stock to count, so it shows a dash rather than a zero — a
+ * zero would read as "sold out" and send somebody to reorder a delivery charge.
+ * Negative is possible (a forced sale ran past the ledger) and is shown in red
+ * rather than hidden, because it is the thing somebody needs to fix.
+ */
+function OnHand({
+  product,
+  quantity,
+}: {
+  product: ProductView;
+  quantity: number;
+}) {
+  if (!product.trackStock) return <span className="text-slate-400">—</span>;
+  const base = product.units.find((unit) => unit.isBase)?.name;
+  return (
+    <span
+      className={`tabular-nums ${quantity < 0 ? 'text-red-600' : quantity === 0 ? 'text-slate-400' : 'text-slate-900'}`}
+    >
+      {quantity}
+      {base && <span className="ml-1 text-xs text-slate-500">{base}</span>}
+    </span>
   );
 }
 

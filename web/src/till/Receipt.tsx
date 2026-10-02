@@ -58,7 +58,12 @@ export function Receipt({
             {receipt.lines.map((line, index) => (
               <tr key={index}>
                 <td className="py-2">
-                  <div className="text-slate-900">{line.description}</div>
+                  <div className="text-slate-900">
+                    {line.description}
+                    {line.size && (
+                      <span className="ml-1.5 text-slate-600">{line.size}</span>
+                    )}
+                  </div>
                   <div className="text-xs text-slate-500">
                     {line.quantity} × {line.unit} @{' '}
                     <Money value={line.unitPrice} />

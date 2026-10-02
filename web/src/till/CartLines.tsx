@@ -60,6 +60,11 @@ export function CartLines({
               <td className="px-4 py-3">
                 <div className="font-medium text-slate-900">
                   {line.productName}
+                  {line.size && (
+                    <span className="ml-2 font-normal text-slate-600">
+                      {line.size}
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-slate-500">{line.sku}</div>
                 {!line.isTierPrice && (

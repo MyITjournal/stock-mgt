@@ -93,6 +93,9 @@ model Product {
   /// Stock-keeping unit. Generated from the name when the caller omits it.
   sku             String
   name            String
+  /// "400g", "33cl", "1L" — plain text, shown beside the name. Nothing computes
+  /// with it, so it is not a number and a unit; null when nobody set one.
+  size            String?
   description     String?
   categoryId      String?
   /// Physical form of the base unit, from the org's PackagingType lookup.

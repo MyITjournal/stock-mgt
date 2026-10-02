@@ -629,6 +629,12 @@ deleted** and **the base unit never moves**, since stock is counted in it. Price
 at all: an unpriced unit falls back to `basePrice × factor`, which is the carton overcharge §4
 exists to prevent. Barcodes *can* be deleted.
 
+**`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
+shown read-only beside the name on the products list, the till and the receipt (its own `size`
+field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank
+is stored as null; on an edit, omitted leaves it and `''` clears it; search matches it. The
+products list also shows **On hand**, summed from one `GET /stock/levels`.
+
 **A category in use cannot be deleted** (§4, 2026-10-02). `DELETE /categories/:id` is a 409 naming
 the count while any product — retired ones included — or sub-category is still in it; leaving the
 products pointing at a hidden row makes three screens disagree, and clearing `categoryId` rewrites

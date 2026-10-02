@@ -367,6 +367,31 @@ a descriptive label that no report groups by, and worth revisiting if anybody is
 Price tiers still have no delete on screen: removing one changes what the customers on it pay, and
 that is its own decision.
 
+### Size is plain text, and on hand is on the list
+
+Asked 2026-10-02: there was nowhere to say a product is 400g except inside its name. `Product.size`
+is a **nullable free-text column** — `400g`, `33cl`, `1L` — set on the product form and shown,
+read-only, beside the name on the products list, the till (search results and cart) and the
+receipt. Not on PDF invoices, by the owner's choice.
+
+**Text, not a number and a unit**, because nothing computes with it: no price per gram, no
+conversion. Structure would cost a picker on every product for no answer anybody asks. If sizes
+ever become options of one product (Milo 400g / 800g / 1kg), that is v2's variants (`PRD-V2.md`),
+and a text column does not stand in its way.
+
+Three details: a blank size is stored as **null, never `''`**; on an edit, **omitted leaves it,
+`''` clears it** (the letterhead rule); and **search matches size** as well as name and SKU. The
+receipt carries it as **its own field**, not folded into `description`, because the receipt is a
+contract with a printer and a printer that predates the field must keep working. Like the name, it
+is read live from the product rather than snapshotted on the sale line.
+
+The products list also gained **On hand**, from one `GET /stock/levels` summed per product — the
+same sum the product page already showed. A service shows a dash rather than a zero, because zero
+reads as "sold out".
+
+A delivery the shop **charges the customer for** stays what §4 below says: a product with
+`trackStock` off. A delivery the shop **pays for** is an expense and never a product.
+
 ### A service is a product with the stock flag off, not a category
 
 Asked on 2026-09-27: a delivery to Ikeja is charged for and appears on an invoice, but it is not

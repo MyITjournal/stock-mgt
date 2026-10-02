@@ -79,7 +79,7 @@ const SALE_INCLUDE = {
   recordedBy: { select: { id: true, firstName: true, lastName: true } },
   lines: {
     include: {
-      product: { select: { id: true, name: true, sku: true } },
+      product: { select: { id: true, name: true, sku: true, size: true } },
       unit: { select: { id: true, name: true, factor: true } },
     },
   },
@@ -517,6 +517,7 @@ export class SaleService {
         : null,
       lines: sale.lines.map((line) => ({
         description: line.product.name,
+        size: line.product.size,
         unit: line.unit.name,
         quantity: line.quantity,
         unitPrice: line.unitPrice,

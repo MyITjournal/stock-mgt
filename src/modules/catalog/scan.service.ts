@@ -49,6 +49,7 @@ export class ScanService {
         id: product.id,
         sku: product.sku,
         name: product.name,
+        size: product.size,
         trackStock: product.trackStock,
       },
       unit: { id: unit.id, name: unit.name, factor: unit.factor },

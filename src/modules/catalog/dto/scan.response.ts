@@ -26,6 +26,9 @@ class ScannedProduct {
   @ApiProperty({ example: 'Peak Milk Powder 400g' })
   name!: string;
 
+  @ApiProperty({ type: String, nullable: true, example: '400g' })
+  size!: string | null;
+
   @ApiProperty({
     description:
       'False for a service or a non-stocked line, which sells without touching the ledger.',
