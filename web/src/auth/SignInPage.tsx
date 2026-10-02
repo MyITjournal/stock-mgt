@@ -57,7 +57,7 @@ export function SignInPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-slate-50 px-4">
       <form
         onSubmit={onSubmit}
         className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
@@ -69,9 +69,7 @@ export function SignInPage() {
           frame says it once in the header and the shop's own name does the rest
           — an invoice carries the business's letterhead, not ours.
         */}
-        <p className="text-sm font-semibold tracking-wide text-slate-900">
-          Reho
-        </p>
+        <Link to="/" className="text-base font-semibold tracking-tight text-brand-700">Reho</Link>
         <h1 className="mt-3 text-xl font-semibold text-slate-900">Sign in</h1>
         <p className="mt-1 text-sm text-slate-500">
           Use your email address, or the username your manager gave you.
@@ -115,7 +113,7 @@ export function SignInPage() {
         </Button>
         <p className="mt-6 text-center text-sm text-slate-500">
           No shop yet?{' '}
-          <Link to="/sign-up" className="font-medium text-slate-900 underline">
+          <Link to="/sign-up" className="font-medium text-brand-700 underline">
             Create one
           </Link>
         </p>

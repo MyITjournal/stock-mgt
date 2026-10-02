@@ -10,7 +10,7 @@ interface NavItem {
 }
 
 const NAV: readonly NavItem[] = [
-  { to: '/', label: 'Home', costOnly: true },
+  { to: '/home', label: 'Home', costOnly: true },
   { to: '/till', label: 'Till' },
   { to: '/sales', label: 'Sales' },
   { to: '/customers', label: 'Customers' },
@@ -38,18 +38,18 @@ export function Layout() {
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
-          <span className="text-sm font-semibold text-slate-900">Reho</span>
+          <span className="text-sm font-semibold tracking-tight text-brand-700">Reho</span>
 
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto">
             {items.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.to === '/'}
+                end={item.to === '/home'}
                 className={({ isActive }) =>
                   `rounded-md px-3 py-1.5 text-sm transition ${
                     isActive
-                      ? 'bg-slate-900 text-white'
+                      ? 'bg-brand-600 text-white'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`
                 }

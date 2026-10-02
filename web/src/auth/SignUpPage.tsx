@@ -72,12 +72,12 @@ export function SignUpPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-slate-50 px-4 py-10">
       <form
         onSubmit={onSubmit}
         className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
       >
-        <p className="text-sm font-semibold tracking-wide text-slate-900">Reho</p>
+        <Link to="/" className="text-base font-semibold tracking-tight text-brand-700">Reho</Link>
         <h1 className="mt-3 text-xl font-semibold text-slate-900">
           Create your shop
         </h1>
@@ -174,7 +174,7 @@ export function SignUpPage() {
 
         <p className="mt-4 text-center text-sm text-slate-500">
           Already have a shop?{' '}
-          <Link to="/sign-in" className="font-medium text-slate-900 underline">
+          <Link to="/sign-in" className="font-medium text-brand-700 underline">
             Sign in
           </Link>
         </p>

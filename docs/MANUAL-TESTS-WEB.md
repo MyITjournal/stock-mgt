@@ -352,3 +352,40 @@ the person making it has to understand it.
 
 **101. [gate] On a phone-width window, the whole form is usable** — every box reachable, nothing
 cut off, the button visible without scrolling sideways.
+
+---
+
+## M. The landing page and the moved home screen
+
+`/` is now the landing page and the dashboard's home moved to `/home`. That is the same shape of
+change as §19's bug — three paths deciding where somebody goes — so these are the gates.
+
+**102. Signed out, open `/`.** [gate] The landing page, not a password box. Headline, two buttons,
+no error.
+
+**103. [gate] Signed out, open `/home`.** You are sent to sign in, not shown an empty frame.
+
+**104. Sign in as the owner.** [gate] You land on the dashboard home — and the address bar says
+**`/home`**, not `/`.
+
+**105. [gate] While signed in, type `/` in the address bar.** You are sent straight to your own
+starting screen. **It must not flicker the landing page first, and it must not loop.** This is the
+one that would break if any signed-in role ever resolved to `/` again.
+
+**106. [gate] Signed in as a sales_rep, type `/`.** You land on the till. As a storekeeper, on
+stock. Neither sees the landing page, neither sees the dashboard home.
+
+**107. [gate] Signed in, type a nonsense URL.** You land on your own starting screen, not the
+landing page and not an error.
+
+**108. [gate] Signed out, type a nonsense URL.** You land on the landing page.
+
+**109. From the landing page, click "Create your shop"**, then from sign-up click "Sign in", then
+click the **Reho** wordmark. [gate] All three links go where they say, and the wordmark returns you
+to `/`.
+
+**110. [gate] The Home tab in the nav still works and is still hidden from a rep.** It points at
+`/home` now; a rep must not see it at all.
+
+**111. [gate] On a phone-width window the landing page is usable** — headline readable, buttons
+reachable, nothing cut off sideways.

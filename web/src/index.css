@@ -1,13 +1,78 @@
 @import 'tailwindcss';
 
 /*
- * Tailwind v4 needs no config file: the theme lives in CSS and the Vite plugin
- * scans the source for class names. Project-wide tokens would go in an
- * `@theme` block here rather than in a `tailwind.config.js`.
+ * The design tokens.
+ *
+ * Tailwind v4 needs no config file: the theme lives here and the Vite plugin
+ * scans the source for class names.
+ *
+ * ## Why there was nothing here before, and why that was the problem
+ *
+ * Every screen used Tailwind's `slate` greys directly, plus red for errors.
+ * That read as "monochrome", but the real issue was not an absence of colour —
+ * it was that **colour meant nothing**. Nothing identified the product, and on
+ * a dense screen nothing pulled the eye to what mattered.
+ *
+ * ## Why green, and why so little of it
+ *
+ * Reho is short for Rehoboth — *broad places*, room to grow. Green reads as
+ * growth and as money, and is familiar in Nigeria without being a flag
+ * pastiche so long as it stays restrained.
+ *
+ * Restraint is the point. This is a till somebody looks at for eight hours.
+ * Colour is spent on three things only: the brand itself, the one action on a
+ * screen worth taking, and figures that carry a state. Everything else stays
+ * grey, because a screen where everything is emphasised has no emphasis.
  */
+
+@theme {
+  /*
+   * Brand green. 600 is the resting state, 700 the hover — dark enough that
+   * white text on it clears WCAG AA at body size, which a mid-green does not.
+   */
+  --color-brand-50: #f0f7f3;
+  --color-brand-100: #dcebe3;
+  --color-brand-200: #bbd8c8;
+  --color-brand-300: #8fbda6;
+  --color-brand-400: #5f9d81;
+  --color-brand-500: #3f8265;
+  --color-brand-600: #2d6a51;
+  --color-brand-700: #245442;
+  --color-brand-800: #1f4436;
+  --color-brand-900: #1b392e;
+  --color-brand-950: #0c1f18;
+
+  /*
+   * Amber, for attention that is not yet a failure: stock running low, a bill
+   * coming due. Deliberately distinct from red, which stays for refusals.
+   */
+  --color-accent-50: #fdf8ed;
+  --color-accent-100: #f8ebcc;
+  --color-accent-400: #d9a040;
+  --color-accent-500: #c4852a;
+  --color-accent-600: #a66a1f;
+  --color-accent-700: #85521c;
+
+  /*
+   * System fonts, not a web font.
+   *
+   * A downloaded typeface is 15-40kB and arrives *after* the first paint, so
+   * text reflows once it lands. On a Lagos mobile connection that is a real
+   * cost for a cosmetic gain, and this is a tool people open every day rather
+   * than a brochure they see once.
+   */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+}
 
 html,
 body,
 #root {
   height: 100%;
+}
+
+body {
+  /* Keeps numerals aligned in tables without every cell asking for it. */
+  font-variant-numeric: tabular-nums;
 }

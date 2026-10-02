@@ -7,6 +7,7 @@ import { SignUpPage } from './auth/SignUpPage';
 import { Layout } from './components/Layout';
 import { ApiError } from './api/client';
 import { Home, LandingRedirect } from './auth/Landing';
+import { HomePage } from './home/HomePage';
 import { TillPage } from './till/TillPage';
 import { SalesPage } from './sales/SalesPage';
 import { SaleDetailPage } from './sales/SaleDetailPage';
@@ -74,12 +75,19 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            {/*
+              Public, and outside RequireAuth on purpose. `/` is the landing
+              page for a stranger and a redirect for anyone signed in — see
+              `auth/Landing.tsx`. The dashboard's own home moved to `/home`
+              when `/` stopped being the app.
+            */}
+            <Route path="/" element={<Home />} />
             <Route path="/sign-in" element={<SignInPage />} />
             <Route path="/sign-up" element={<SignUpPage />} />
 
             <Route element={<RequireAuth />}>
               <Route element={<Layout />}>
-                <Route index element={<Home />} />
+                <Route path="home" element={<HomePage />} />
                 <Route path="till" element={<TillPage />} />
                 <Route path="sales" element={<SalesPage />} />
                 <Route path="sales/:id" element={<SaleDetailPage />} />

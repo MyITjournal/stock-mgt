@@ -42,9 +42,20 @@ export function useSeesCost(): boolean {
  * A rep starts at the till and a storekeeper at stock, because those are the
  * screens each of them opens the app to use. An accountant sees cost, so the
  * dashboard is genuinely their morning.
+ *
+ * ## `/` is the landing page now, which is why the dashboard moved to `/home`
+ *
+ * The front door has to explain what this is to somebody who has never heard
+ * of it, so it cannot also be the shop's morning figures. **No signed-in role
+ * resolves to `/` any more**, and that is what stops `/` bouncing a signed-in
+ * person back to itself forever — the redirect there is safe precisely because
+ * every answer below is somewhere inside.
  */
 export function landingPath(role: OrgRole | undefined): string {
-  if (role === undefined || SEES_COST.includes(role)) return '/';
+  // Signed out: the front door, which explains what this is. Everybody signed
+  // in goes somewhere inside, so this is the only case that returns `/`.
+  if (role === undefined) return '/';
+  if (SEES_COST.includes(role)) return '/home';
   return role === 'storekeeper' ? '/stock' : '/till';
 }
 
