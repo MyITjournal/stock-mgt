@@ -83,11 +83,23 @@ services:
     # Both halves are built: the API into `dist/`, the dashboard into
     # `web/dist/`, which is where `serveDashboard` looks for it. `web` has its
     # own lockfile and its own dependency tree — it shares no code with the API.
+    #
+    # ⚠ `--include=dev` is load-bearing, on **both** installs. `NODE_ENV` is
+    # `production` here — correctly, since it is what keeps Swagger shut, makes
+    # cookies secure and makes `OTP_OVERRIDE` be ignored — and **npm reads that
+    # variable too**, skipping `devDependencies` when it is set. `nest`,
+    # `typescript` and `vite` all live there, because they build the app rather
+    # than run it.
+    #
+    # Without the flag the build fails at `nest build` with `sh: 1: nest: not
+    # found`, which reads like a broken image rather than a dependency that was
+    # deliberately not installed. `prisma` sits in `dependencies`, so
+    # `prisma generate` succeeds first and the failure looks even stranger.
     buildCommand: >-
-      npm ci &&
+      npm ci --include=dev &&
       npx prisma generate &&
       npm run build &&
-      npm ci --prefix web &&
+      npm ci --include=dev --prefix web &&
       npm run build --prefix web
 
     # Migrations run on boot. `migrate deploy` is idempotent, so a restart or a
