@@ -12,9 +12,17 @@ import { Link } from 'react-router-dom';
  *
  * ## What it leads with
  *
- * The problem, in the words a shop owner would use, not a feature list.
- * "Stop running your shop out of a notebook" lands because it describes their
- * Tuesday. "Inventory and sales management" describes a category of software.
+ * The debts, in the words a shop owner has actually heard. The first headline
+ * was "Stop running your shop out of a notebook", which every entrant in this
+ * market uses — Better Tailor almost verbatim (MARKET.md §1). Nobody claims
+ * customer credit, and it is the deepest thing here: allocations, void versus
+ * refund, and a balance that holds the next credit sale. "I'll pay you on
+ * Friday" is a sentence every shop owner has been told; "Which Friday?" is the
+ * one they did not get to say.
+ *
+ * The card under it shows rather than tells — longest-owed first, because that
+ * is how `GET /receivables` sorts and the question people actually ask (§5).
+ * Its names and amounts are invented; keep them plainly illustrative.
  *
  * ## What it deliberately does not do
  *
@@ -50,13 +58,18 @@ export function LandingPage() {
 
       {/* -- The pitch ------------------------------------------------------ */}
       <section className="mx-auto max-w-3xl px-6 pb-16 pt-12 text-center sm:pt-20">
-        <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-          Stop running your shop out of a notebook.
+        <h1 className="tracking-tight">
+          <span className="block text-2xl font-medium italic text-slate-500 sm:text-3xl">
+            “I’ll pay you on Friday.”
+          </span>
+          <span className="mt-3 block text-5xl font-semibold leading-tight text-brand-700 sm:text-7xl">
+            Which Friday?
+          </span>
         </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-600">
-          Reho keeps your sales, your stock and who owes you money in one place
-          — so you know what you sold today, what is running out, and who still
-          has not paid.
+        <p className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-slate-600">
+          Reho remembers every debt — who, how much, which invoice, and since
+          when. Oldest first, so you know who to call today. Your sales and your
+          stock live in the same place.
         </p>
 
         <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
@@ -82,11 +95,17 @@ export function LandingPage() {
         <p className="mt-4 text-sm text-slate-500">
           No card, no email needed. You will be using it in under a minute.
         </p>
+
+        <OwedCard />
       </section>
 
       {/* -- What it actually does ------------------------------------------ */}
       <section className="border-y border-slate-200 bg-brand-50/60">
         <div className="mx-auto grid max-w-5xl gap-8 px-6 py-14 sm:grid-cols-3">
+          <Feature
+            title="Chase what you are owed"
+            body="Who owes you, longest first. Record payments against the invoices they settle, print a statement, and hold the next credit sale until the last one is paid."
+          />
           <Feature
             title="Sell at the counter"
             body="Scan or search, pick the unit, take cash or transfer. Prices come from your own price list, so a carton never gets charged as twelve pieces."
@@ -94,10 +113,6 @@ export function LandingPage() {
           <Feature
             title="Know what you have"
             body="Every delivery, sale and breakage is recorded. See what is low before it runs out, and what expires before it does."
-          />
-          <Feature
-            title="Chase what you are owed"
-            body="Who owes you, longest first. Record payments against invoices and send a statement over WhatsApp."
           />
         </div>
       </section>
@@ -128,6 +143,53 @@ export function LandingPage() {
           </Link>
         </div>
       </footer>
+    </div>
+  );
+}
+
+/** Invented customers, shaped like the real receivables screen. */
+const OWED = [
+  { name: 'Mama Chidi Provisions', invoices: 3, amount: '₦184,500', days: 41 },
+  { name: 'Emeka & Sons', invoices: 1, amount: '₦62,000', days: 19 },
+  { name: 'Alhaja Kudi', invoices: 2, amount: '₦27,250', days: 6 },
+];
+
+function OwedCard() {
+  return (
+    <div
+      className="mx-auto mt-14 max-w-md rounded-xl border border-slate-200 bg-white text-left shadow-sm"
+      aria-label="Example: who owes you"
+    >
+      <div className="flex items-baseline justify-between border-b border-slate-100 px-5 py-3">
+        <span className="text-sm font-semibold text-slate-900">Who owes you</span>
+        <span className="text-xs text-slate-500">longest first</span>
+      </div>
+      <ul className="divide-y divide-slate-100">
+        {OWED.map((row, index) => (
+          <li key={row.name} className="flex items-center justify-between gap-4 px-5 py-3">
+            <div>
+              <div className="text-sm font-medium text-slate-900">{row.name}</div>
+              <div className="text-xs text-slate-500">
+                {row.invoices} {row.invoices === 1 ? 'invoice' : 'invoices'}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-semibold tabular-nums text-slate-900">
+                {row.amount}
+              </div>
+              <div
+                className={`text-xs ${index === 0 ? 'font-medium text-accent-700' : 'text-slate-500'}`}
+              >
+                {row.days} days
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="border-t border-slate-100 bg-brand-50/60 px-5 py-3 text-xs text-brand-800">
+        Mama Chidi’s next credit sale waits until this is settled — unless you
+        say otherwise.
+      </p>
     </div>
   );
 }

@@ -218,7 +218,9 @@ careful modelling, not a screen.
 Two consequences worth acting on rather than noting:
 
 1. **The landing page headline should move** from replacing a notebook to the debts. The notebook
-   line is what every entrant says; the debts line is currently unclaimed.
+   line is what every entrant says; the debts line is currently unclaimed. **Done 2026-10-02:**
+   the headline is now *"I'll pay you on Friday." — Which Friday?*, over a mock "who owes you"
+   card sorted longest-first, and the debts feature leads the three.
 2. **The mobile app moved up the list.** It was queued behind v2's variants and preorder. A phone
    at the counter is table stakes in this market, and a competitor shipping one while we ship web
    only is the clearest gap on the board.
