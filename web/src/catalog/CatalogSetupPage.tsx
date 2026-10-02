@@ -42,6 +42,7 @@ export function CatalogSetupPage() {
           queryKey="categories"
           path="/categories"
           canEdit={isManager}
+          removeNote="A category with products in it cannot be removed — move them to another category first."
         />
         <SetupList
           title="Packaging types"
@@ -49,6 +50,7 @@ export function CatalogSetupPage() {
           queryKey="packaging-types"
           path="/packaging-types"
           canEdit={isManager}
+          removeNote="Removing one takes it off the list for new products. Products already packed that way keep it."
         />
         <TierList canEdit={isManager} />
       </div>
@@ -62,16 +64,21 @@ function SetupList({
   queryKey,
   path,
   canEdit,
+  removeNote,
 }: {
   title: string;
   hint: string;
   queryKey: string;
   path: string;
   canEdit: boolean;
+  removeNote: string;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // The row awaiting a yes. The button sits beside the name, so one stray
+  // click should not be enough.
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const { data: rows = [], isPending } = useQuery({
     queryKey: [queryKey],
@@ -92,6 +99,21 @@ function SetupList({
       ),
   });
 
+  // A 409 here is a rule, not a fault: the server names what is still in the
+  // way, and that message is what the person needs to read.
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete<void>(`${path}/${id}`),
+    onSuccess: () => {
+      afterWrite(queryClient);
+      setError(null);
+    },
+    onError: (caught) =>
+      setError(
+        caught instanceof ApiError ? caught.message : 'Could not remove that.',
+      ),
+    onSettled: () => setConfirming(null),
+  });
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (name.trim()) create.mutate();
@@ -110,11 +132,54 @@ function SetupList({
             <li className="text-slate-400">None yet.</li>
           )}
           {rows.map((row) => (
-            <li key={row.id} className="text-slate-700">
-              {row.name}
+            <li
+              key={row.id}
+              className="flex min-h-8 items-center justify-between gap-2 text-slate-700"
+            >
+              {confirming === row.id ? (
+                <>
+                  <span>Remove {row.name}?</span>
+                  <span className="flex gap-1">
+                    <Button
+                      variant="danger"
+                      onClick={() => remove.mutate(row.id)}
+                      disabled={remove.isPending}
+                    >
+                      Remove
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setConfirming(null)}
+                      disabled={remove.isPending}
+                    >
+                      Keep
+                    </Button>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>{row.name}</span>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setError(null);
+                        setConfirming(row.id);
+                      }}
+                      aria-label={`Remove ${row.name}`}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </>
+              )}
             </li>
           ))}
         </ul>
+      )}
+
+      {canEdit && rows.length > 0 && (
+        <p className="mt-2 text-xs text-slate-500">{removeNote}</p>
       )}
 
       {canEdit && (

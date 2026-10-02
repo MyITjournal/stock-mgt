@@ -389,3 +389,29 @@ to `/`.
 
 **111. [gate] On a phone-width window the landing page is usable** — headline readable, buttons
 reachable, nothing cut off sideways.
+
+---
+
+## N. Removing a category or packaging type
+
+The screen used to add these and never remove them. A category with products in it is refused on
+purpose — the alternatives leave screens disagreeing or rewrite past reports (DECISIONS §4).
+
+**112. As the owner, open Categories & tiers.** [gate] Every category and packaging type has a
+**Remove** button, and a note under each list says what removing means.
+
+**113. Click Remove on an empty category.** It asks *"Remove Toys?"* with **Remove** and **Keep**.
+Click **Keep**. [gate] Nothing is removed.
+
+**114. Click Remove, then Remove again.** [gate] It leaves the list, and it is gone from the
+category picker on the product form and the filter on the products list.
+
+**115. Add the same name again.** [gate] It is accepted — no "already exists" error for a category
+you cannot see.
+
+**116. Remove a category a product is in.** [gate] It stays, and a red message says how many
+products are in it and to move them first. Move the product to another category, try again, and
+it goes.
+
+**117. [gate] Signed in as a sales_rep or storekeeper**, the page shows the lists with no Remove
+buttons.

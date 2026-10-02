@@ -337,6 +337,36 @@ what it was. That leaves the name occupied as far as the unique constraint is co
 **re-creating a deleted type revives that row** rather than returning a 409 naming something the
 caller cannot see in any list.
 
+### A category in use cannot be deleted
+
+Found 2026-10-02: the dashboard could add a category and never remove one. `DELETE /categories/:id`
+had existed since Slice 2; the screen simply never got a button. Building the button raised the
+question the route had been dodging: **what happens to the products still in it?**
+
+**Refused with a 409 while any product or sub-category is still in it**, naming the count — *"12
+products are in "Beverages". Move them to another category first."* The two alternatives are both
+worse:
+
+- **Delete and leave the products pointing at it.** The product page still says "Beverages",
+  while its edit form shows no category and the products filter cannot find it. Three screens,
+  three answers.
+- **Delete and clear `categoryId`.** Past sales move to "uncategorised" in every report — history
+  rewritten by a tidy-up.
+
+Same rule as a bank account with payments against it. **Retired products count** (only deleted ones
+are excluded), because a retired product's page still shows its category. And **re-adding a
+deleted name revives that row**, as packaging types already did — the soft delete keeps the name
+occupied under `@@unique([organizationId, name])`, and without the revive, re-creating "Beverages"
+returned a 409 naming a category the caller could not see.
+
+**Packaging types were deliberately left as they were**: deletable while in use, with products
+keeping the reference (the docstring on `remove` says so). The same screen now deletes them too,
+and says that products already packed that way keep it. The edit form then shows the packaging box
+empty for such a product, which is the same disagreement the category rule avoids — acceptable for
+a descriptive label that no report groups by, and worth revisiting if anybody is confused by it.
+Price tiers still have no delete on screen: removing one changes what the customers on it pay, and
+that is its own decision.
+
 ### A service is a product with the stock flag off, not a category
 
 Asked on 2026-09-27: a delivery to Ikeja is charged for and appears on an invoice, but it is not

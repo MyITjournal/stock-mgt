@@ -627,6 +627,13 @@ deleted** and **the base unit never moves**, since stock is counted in it. Price
 at all: an unpriced unit falls back to `basePrice × factor`, which is the carton overcharge §4
 exists to prevent. Barcodes *can* be deleted.
 
+**A category in use cannot be deleted** (§4, 2026-10-02). `DELETE /categories/:id` is a 409 naming
+the count while any product — retired ones included — or sub-category is still in it; leaving the
+products pointing at a hidden row makes three screens disagree, and clearing `categoryId` rewrites
+past reports. Re-adding a deleted name **revives** the row, as packaging types already did, since
+the soft delete keeps the name under the unique constraint. Packaging types stay deletable while in
+use, on purpose. Both now have a Remove button on *Categories & tiers*; price tiers do not.
+
 **A service is a product with `trackStock` off, never a category** (§4). A delivery charge is
 priced, taxed and invoiced like anything else; the sale path returns the line without calling
 `recordOutbound` and records `costOfGoodsSold: 0`, and reorder alerts, stocktakes and stock

@@ -1,3 +1,4 @@
+
 import {
   BadRequestException,
   Body,
@@ -113,7 +114,12 @@ export class CategoryController {
   @Delete(':id')
   @Roles(...CATALOG_EDITORS)
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a category' })
+  @ApiOperation({
+    summary: 'Delete a category',
+    description:
+      'Refused with a 409 while any product (retired ones included) or sub-category is still in it — move them first. Adding the same name later revives the deleted row.',
+  })
+  @ApiNoContentResponse()
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.categories.remove(id);
   }

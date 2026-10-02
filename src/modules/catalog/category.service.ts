@@ -18,6 +18,23 @@ export class CategoryService {
   async create(input: CreateCategoryDto): Promise<CategoryView> {
     if (input.parentId) await this.findOneOrFail(input.parentId);
 
+    // A name freed by a soft delete is still occupied as far as the unique
+    // constraint is concerned, so re-adding "Beverages" would 409 on a row the
+    // caller cannot see. Revive it instead — the same rule packaging types use.
+    const buried = await this.prisma.category.findFirst({
+      where: { name: input.name, deletedAt: { not: null } },
+    });
+    if (buried) {
+      return this.prisma.category.update({
+        where: { id: buried.id },
+        data: {
+          deletedAt: null,
+          description: input.description ?? null,
+          parentId: input.parentId ?? null,
+        },
+      });
+    }
+
     try {
       return await this.prisma.category.create({
         data: {
@@ -70,9 +87,36 @@ export class CategoryService {
     }
   }
 
-  /** Soft delete: products keep pointing at the row for historical reporting. */
+  /**
+   * Soft delete, refused while anything still files under the category.
+   *
+   * Letting it through would leave products pointing at a row the pickers no
+   * longer list: the product page would still say "Beverages" while its edit
+   * form showed no category and the filter could not find it. Clearing
+   * `categoryId` instead would move past sales to "uncategorised" in every
+   * report. So the person moves the products first — the same rule a bank
+   * account with payments against it follows. Retired products count, because
+   * their pages still show the category.
+   */
   async remove(id: string) {
-    await this.findOneOrFail(id);
+    const category = await this.findOneOrFail(id);
+
+    const [products, children] = await Promise.all([
+      this.prisma.product.count({ where: { categoryId: id, deletedAt: null } }),
+      this.prisma.category.count({ where: { parentId: id, deletedAt: null } }),
+    ]);
+    if (products > 0 || children > 0) {
+      const blockers = [
+        products > 0 &&
+          `${products} ${products === 1 ? 'product' : 'products'}`,
+        children > 0 &&
+          `${children} ${children === 1 ? 'sub-category' : 'sub-categories'}`,
+      ].filter(Boolean);
+      throw new ConflictException(
+        `${blockers.join(' and ')} ${products + children === 1 ? 'is' : 'are'} in "${category.name}". Move ${products + children === 1 ? 'it' : 'them'} to another category first.`,
+      );
+    }
+
     await this.prisma.category.update({
       where: { id },
       data: { deletedAt: new Date() },
