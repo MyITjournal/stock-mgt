@@ -26,6 +26,57 @@ The distribution platforms above optimise *buying from brands*. They do not do w
 
 **The gap is the mid-sized distributor** — too big for a notebook, too small for an enterprise DMS, and not served by a marketplace that wants to sell them goods rather than tools.
 
+### A direct competitor now exists, and it is selling software for a fee
+
+Found 2026-10-02, the day after deploying: **[Mayloo](https://getmayloo.com)**, in beta with a
+30-day free trial and no card. It is the thing §1 above said nobody was doing — **inventory
+software sold to Nigerian small businesses as a subscription**, rather than a marketplace
+monetising the trade flow.
+
+Its stated verticals are *pharmacies, cosmetics, mini supermarkets, agro and commodity traders*.
+That is this product's market in the same words.
+
+**⚠ The claims are from a marketing page, not a product.** What follows compares what Reho has
+*built* against what Mayloo *advertises*. Such a page overstates what works and omits what it has
+not thought to mention, so this is a map of positioning, not a feature audit.
+
+**What they claim that we also have**: point of sale taking cash and transfer, barcode scanning,
+expiry tracking, low-stock alerts, multiple unit and pack pricing, suppliers, multi-location,
+expenses, margin and best-seller reporting, invoices to customers. The overlap is close to total.
+
+**What they claim that we do not have**: an **Android app**, synced with a web dashboard. That is
+the real gap. A counter in a Nigerian shop is frequently a phone, and this is web only. The API
+was built offline-first for exactly that app — idempotency keys and client-supplied ids, §8 — so
+the foundation is laid and the app is not.
+
+**What we have that their page never mentions** — and this is the whole of the differentiation:
+
+- **Customer credit.** Receivables oldest-first, payments allocated to named invoices, void kept
+  distinct from refund, statements, and an unsettled balance gating the next credit sale (§6).
+  Their page does not mention owing at all. In a shop that sells on trust, that is not a feature
+  gap, it is half the business.
+- **Money owed to vendors** — supplier bills, payments, payables (§16).
+- **Cost that is actually correct** (§2) — exact invoice totals rather than rounded averages, cost
+  of goods snapshotted per sale, goods sold before their delivery flagged rather than costed at
+  zero. On a 2–3% margin that difference *is* the signal.
+- **VAT derived from tax-inclusive prices** (§12), so revenue is not overstated by 7.5%.
+- **Operational control** (§9) — roles, cost hidden from reps, working hours gating sign-in,
+  stocktake counted by one person and posted by another.
+
+### What that changes
+
+**The category sentence is now crowded.** "Inventory software for Nigerian shops" describes at
+least two products. **"Knows exactly who owes you and what you owe" still describes one**, and
+that is where the positioning and the landing-page headline should sit — not on replacing a
+notebook, which is the generic claim every entrant makes.
+
+It also raises the stakes on §3's price anchors. A competitor with a 30-day no-card trial sets the
+expectation this product will be judged against, before anybody has been asked to pay.
+
+And it strengthens the trust line below: Mayloo is new and unproven in a market where **Kippa took
+users' records offline**. *Your data is exportable and yours* is worth more against a young
+competitor than against an incumbent.
+
 ---
 
 ## 2. The preorder market (what the PRD is in)
@@ -147,10 +198,30 @@ Finish stock-mgt v1 (PDFs, then deploy), then build preorder on this backend, **
 
 ## 7. Re-check before launch
 
+- ~~Whether anybody is selling inventory software to Nigerian shops for a fee~~ — **answered
+  2026-10-02: yes.** [Mayloo](https://getmayloo.com) is in beta, same verticals, same core, with an
+  Android app we do not have. Written up in §1. **Re-check it periodically rather than once**: it
+  is in beta now, so what it actually does will move.
 - Whether OmniOne has moved down-market into what this product does
 - Whether any WhatsApp vendor tool has added preorder allocation (the whole wedge)
-- Current Bumpa pricing and whether anyone has undercut it
+- Current Bumpa pricing and whether anyone has undercut it — **and now Mayloo's**, once it leaves
+  beta and publishes one
 - Whether Kippa's collapse left distrust worth addressing directly — *"your data is exportable and yours"* is a cheap and honest differentiator against a company that took users' records offline
+
+### The finding that should change something
+
+A competitor existing is not news. **A competitor existing whose public pitch never mentions
+customer credit** is, because that is the deepest thing this product has and the hardest to copy
+quickly — allocations, void versus refund, and a balance that gates the next sale are weeks of
+careful modelling, not a screen.
+
+Two consequences worth acting on rather than noting:
+
+1. **The landing page headline should move** from replacing a notebook to the debts. The notebook
+   line is what every entrant says; the debts line is currently unclaimed.
+2. **The mobile app moved up the list.** It was queued behind v2's variants and preorder. A phone
+   at the counter is table stakes in this market, and a competitor shipping one while we ship web
+   only is the clearest gap on the board.
 
 ---
 
@@ -161,6 +232,10 @@ Finish stock-mgt v1 (PDFs, then deploy), then build preorder on this backend, **
 - [OmniOne launch](https://techafricanews.com/2026/05/06/omnibiz-africa-launches-omnione-to-digitize-nigerias-fmcg-trade-network/) ·
   [OmniRetail](https://omniretail.africa/)
 - [Bumpa pricing](https://www.getbumpa.com/pricing)
+- [Mayloo](https://getmayloo.com) · [Mayloo beta](https://beta.getmayloo.com/) — read 2026-10-02
+- [Better Tailor](https://usebettertailor.com) — adjacent, not a competitor: same market and the
+  same "stop using notebooks and WhatsApp" framing, aimed at tailors, waitlist only as of
+  2026-10-02. Worth watching for how that pitch lands.
 - [OffaBuy](https://offabuy.com/) · [VendorDesk](https://vendordesk.com.ng/) ·
   [Tracepos](https://blog.tracepos.net/how-to-track-whatsapp-orders/) · [WhatsOrder](https://whatsorder.com/)
 - [HotWax preorder allocation](https://www.hotwax.co/solution/pre-orders/) ·
