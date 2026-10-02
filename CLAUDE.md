@@ -621,7 +621,9 @@ and a trap the moment one could be typed, because a scanner will never produce a
 and the code simply never scans. Existing rows are not re-validated.
 
 **Units, prices and barcodes upsert and never delete what a request does not list** (§4), and the
-product form must not imply otherwise — a remove button would silently do nothing. Units can be
+product form must not imply otherwise — a remove button on a *saved* row would silently do nothing.
+A row added in the form and **not yet saved** has a × that really removes it (2026-10-02), because
+it exists only in the form; a mistyped "Add unit" used to have to be saved and lived with. Units can be
 added and their `factor` changed (safe, because `SaleLine.unitFactor` is a snapshot), but **never
 deleted** and **the base unit never moves**, since stock is counted in it. Prices cannot be deleted
 at all: an unpriced unit falls back to `basePrice × factor`, which is the carton overcharge §4

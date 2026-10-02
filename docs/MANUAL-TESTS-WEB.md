@@ -415,3 +415,22 @@ it goes.
 
 **117. [gate] Signed in as a sales_rep or storekeeper**, the page shows the lists with no Remove
 buttons.
+
+---
+
+## O. Taking back a unit or price added by mistake
+
+A row added on the product form and not yet saved can be removed. A saved one still cannot (§4).
+
+**118. Add a product, click Add unit twice, then × the first new row.** [gate] That row goes, and
+the one below it keeps what you typed in it — its name and factor do not jump up a row.
+
+**119. [gate] The base unit (`piece`) has no ×**, even on a brand-new product.
+
+**120. Add a price on a new unit, then × the unit.** [gate] Its price row goes with it.
+
+**121. Add two prices, type an amount in the second, × the first.** [gate] The amount you typed
+stays on the row you typed it in.
+
+**122. Save, then edit the product.** [gate] The saved units and prices have no ×. Click Add unit
+— the new, unsaved row does have one.

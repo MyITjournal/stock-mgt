@@ -16,7 +16,13 @@ type CategoryView = components['schemas']['CategoryView'];
 type PackagingTypeView = components['schemas']['PackagingTypeView'];
 type PriceTierView = components['schemas']['PriceTierView'];
 
+/*
+ * `key` is a React key and nothing else — it is never sent. Rows can be removed
+ * from the middle of the list, and keyed by index the row below would inherit
+ * the removed one's half-typed price.
+ */
 interface UnitDraft {
+  key: string;
   name: string;
   factor: number;
   existing: boolean;
@@ -24,6 +30,7 @@ interface UnitDraft {
 }
 
 interface PriceDraft {
+  key: string;
   unit: string;
   tierId: string;
   price: number | null;
@@ -40,8 +47,11 @@ interface PriceDraft {
  * form is easy to get wrong: a list with remove buttons would *imply*
  * replace-all, and removing a row would silently do nothing at all.
  *
- * So nothing here offers to remove a unit or a price, and the form says why
- * rather than leaving somebody to discover it:
+ * So nothing here offers to remove a *saved* unit or price, and the form says
+ * why rather than leaving somebody to discover it. A row added in this sitting
+ * and not yet saved is another matter: it exists only in the form, so its ×
+ * really does remove it, and a mistyped "Add unit" no longer has to be saved
+ * and lived with.
  *
  * - **Units cannot be deleted** because movements, sale lines and receipt lines
  *   point at them; removing one would orphan history that is meant to be
@@ -93,17 +103,27 @@ export function ProductForm({
   const [units, setUnits] = useState<UnitDraft[]>(
     product
       ? product.units.map((unit) => ({
+          key: unit.id,
           name: unit.name,
           factor: unit.factor,
           existing: true,
           isBase: unit.isBase,
         }))
-      : [{ name: 'piece', factor: 1, existing: false, isBase: true }],
+      : [
+          {
+            key: crypto.randomUUID(),
+            name: 'piece',
+            factor: 1,
+            existing: false,
+            isBase: true,
+          },
+        ],
   );
 
   const [prices, setPrices] = useState<PriceDraft[]>(
     product
       ? product.prices.map((price) => ({
+          key: price.id,
           unit: price.unit.name,
           tierId: price.tierId,
           price: price.price,
@@ -181,13 +201,37 @@ export function ProductForm({
   const addUnit = () =>
     setUnits((current) => [
       ...current,
-      { name: '', factor: 1, existing: false, isBase: false },
+      {
+        key: crypto.randomUUID(),
+        name: '',
+        factor: 1,
+        existing: false,
+        isBase: false,
+      },
     ]);
+
+  // Unsaved prices on the unit go with it: they are keyed by unit name, and
+  // left behind they would point at a unit the request no longer creates.
+  const removeUnit = (key: string) => {
+    const removed = units.find((unit) => unit.key === key);
+    setUnits((current) => current.filter((unit) => unit.key !== key));
+    if (removed) {
+      setPrices((current) =>
+        current.filter(
+          (price) => price.existing || price.unit !== removed.name,
+        ),
+      );
+    }
+  };
+
+  const removePrice = (key: string) =>
+    setPrices((current) => current.filter((price) => price.key !== key));
 
   const addPrice = () =>
     setPrices((current) => [
       ...current,
       {
+        key: crypto.randomUUID(),
         unit: units[0]?.name ?? '',
         tierId: tiers.find((tier) => tier.isDefault)?.id ?? tiers[0]?.id ?? '',
         price: null,
@@ -370,13 +414,14 @@ export function ProductForm({
           </div>
           <p className="mt-1 text-xs text-slate-500">
             Exactly one unit has a factor of 1 — that is the base, and stock is
-            counted in it. Units can be added and their factor changed, but{' '}
-            <strong>never removed</strong>: sales and movements point at them.
+            counted in it. A unit added by mistake can be taken off with × until
+            you save; after that it is <strong>never removed</strong>, because
+            sales and movements point at it.
           </p>
 
           <div className="mt-3 space-y-2">
             {units.map((unit, index) => (
-              <div key={index} className="flex items-center gap-3">
+              <div key={unit.key} className="flex items-center gap-3">
                 <Input
                   aria-label={`Unit ${index + 1} name`}
                   value={unit.name}
@@ -408,6 +453,12 @@ export function ProductForm({
                 <span className="w-24 text-xs text-slate-500">
                   {unit.isBase ? 'base unit' : `= ${unit.factor} base`}
                 </span>
+                {/* The base unit stays even unsaved: a product needs one. */}
+                <RemoveRow
+                  show={!unit.existing && !unit.isBase}
+                  label={`Remove unit ${unit.name || index + 1}`}
+                  onClick={() => removeUnit(unit.key)}
+                />
               </div>
             ))}
           </div>
@@ -430,8 +481,9 @@ export function ProductForm({
           </div>
           <p className="mt-1 text-xs text-slate-500">
             A unit with no price here falls back to base price × factor, which
-            is right for a sachet and usually wrong for a carton. Prices can be
-            changed but <strong>not removed</strong> — set the right number
+            is right for a sachet and usually wrong for a carton. A price added
+            by mistake can be taken off with × until you save; after that it can
+            be changed but <strong>not removed</strong> — set the right number
             instead of clearing it.
           </p>
 
@@ -442,7 +494,7 @@ export function ProductForm({
               </p>
             )}
             {prices.map((price, index) => (
-              <div key={index} className="flex items-center gap-3">
+              <div key={price.key} className="flex items-center gap-3">
                 <Select
                   aria-label={`Price ${index + 1} unit`}
                   value={price.unit}
@@ -496,6 +548,11 @@ export function ProductForm({
                   }
                   className="w-32 text-right"
                 />
+                <RemoveRow
+                  show={!price.existing}
+                  label={`Remove price ${index + 1}`}
+                  onClick={() => removePrice(price.key)}
+                />
               </div>
             ))}
           </div>
@@ -541,5 +598,34 @@ export function ProductForm({
         </div>
       </form>
     </div>
+  );
+}
+
+/**
+ * The × on an unsaved row. Saved rows get an empty slot of the same width, so
+ * the columns stay lined up whether a row can be removed or not.
+ */
+function RemoveRow({
+  show,
+  label,
+  onClick,
+}: {
+  show: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  if (!show) return <span className="w-7 shrink-0" aria-hidden="true" />;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title="Remove — this row has not been saved yet"
+      className="w-7 shrink-0 rounded-md p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-slate-200"
+    >
+      <span aria-hidden="true" className="block h-4 leading-4">
+        ×
+      </span>
+    </button>
   );
 }
