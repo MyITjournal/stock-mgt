@@ -62,6 +62,11 @@ export class OrganizationService {
         ...(input.workingDays !== undefined && {
           workingDays: input.workingDays,
         }),
+        // Defaults only, so nothing else moves: no price list is added or
+        // removed, and products already set up stay as they are.
+        ...(input.businessType !== undefined && {
+          businessType: input.businessType,
+        }),
       },
       select: ORGANIZATION_FIELDS,
     });
@@ -79,6 +84,7 @@ const ORGANIZATION_FIELDS = {
   currency: true,
   timezone: true,
   maxUsers: true,
+  businessType: true,
   address: true,
   phone: true,
   email: true,

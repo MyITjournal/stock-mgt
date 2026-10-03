@@ -214,8 +214,10 @@ async function main() {
 
   // -- Slice 2: catalog ----------------------------------------------------
   step(2, 'Catalog: the seeded defaults, then a category, a tier and a product');
-  // Registration seeds what a business needs before its catalog is usable: a
-  // default price tier for prices to hang off, and the packaging vocabulary.
+  // Registration seeds what a business needs before its catalog is usable: the
+  // price lists for its kind of trading, and the packaging vocabulary. The
+  // emailed register path never asks the kind of shop, so this one is mixed —
+  // Retail as the default, and Wholesale beside it (§22).
   const seededTypes = (await api('GET', '/packaging-types', { token: t })).data;
   const seededTiers = (await api('GET', '/price-tiers', { token: t })).data;
   // DEFAULT_PACKAGING_TYPES in packaging-type.service.ts: piece..keg.
@@ -225,16 +227,21 @@ async function main() {
     seededTypes.at(0)?.name === 'piece' && seededTypes.at(-1)?.name === 'keg',
     seededTypes.map((p) => p.name).join(', '),
   );
-  eq('and exactly one price tier', seededTiers.length, 1);
-  eq('which is Retail, and is the default', seededTiers[0].name, 'Retail');
-  eq('Retail is flagged default', seededTiers[0].isDefault, true);
+  eq('and two price tiers, because a shop that never said is mixed', seededTiers.length, 2);
+  const seededDefault = seededTiers.filter((x) => x.isDefault);
+  eq('exactly one of them is the default', seededDefault.length, 1);
+  eq('and it is Retail, for the walk-in', seededDefault[0]?.name, 'Retail');
+  const tier = seededTiers.find((x) => x.name === 'Wholesale');
+  check('the other is Wholesale, not the default', !!tier && !tier.isDefault);
 
   const packaging = seededTypes.find((p) => p.name === 'tin');
   check('"tin" is one of the seeded packaging types', !!packaging);
 
   const category = (await api('POST', '/categories', { token: t, body: { name: 'Beverages' } })).data;
-  const tier = (await api('POST', '/price-tiers', { token: t, body: { name: 'Wholesale' } })).data;
-  check('a category and a second tier created', !!category.id && !!tier.id);
+  // Wholesale is already there, so a list is added under another name — the
+  // point is that adding one still works, not which one it is.
+  const trade = (await api('POST', '/price-tiers', { token: t, body: { name: 'Trade' } })).data;
+  check('a category and a third tier created', !!category.id && !!trade.id);
 
   const product = (
     await api('POST', '/products', {
@@ -2246,10 +2253,12 @@ async function main() {
     theirLocations.filter((l) => l.name === "Ibrahim's Van").length,
     0,
   );
-  eq(
-    'and its own tier, not the Wholesale one',
-    (await api('GET', '/price-tiers', { token: other.token })).data.length,
-    1,
+  const theirTiers = (await api('GET', '/price-tiers', { token: other.token })).data;
+  eq('and its own two tiers', theirTiers.length, 2);
+  check(
+    "not the first org's Trade list",
+    !theirTiers.some((x) => x.name === 'Trade'),
+    theirTiers.map((x) => x.name).join(', '),
   );
   eq(
     'no sales leak either',

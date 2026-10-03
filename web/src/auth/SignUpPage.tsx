@@ -4,6 +4,8 @@ import { ApiError } from '../api/client';
 import { useAuth, useLandingPath } from './useAuth';
 import { Field, Input } from '../components/Field';
 import { Button } from '../components/Button';
+import { BusinessTypeChoice } from '../components/BusinessTypeChoice';
+import type { BusinessType } from '../lib/businessTypes';
 
 /**
  * Creating a shop, with no email and nothing to wait for.
@@ -22,6 +24,14 @@ import { Button } from '../components/Button';
  * provider is configured, whoever filled it in can reset theirs, and whoever
  * skipped it still cannot. That is said on the screen rather than discovered
  * later, because it is their choice to make and it is not reversible by them.
+ *
+ * ## Why the kind of shop is asked, and why nothing is pre-selected
+ *
+ * It decides the price lists the shop starts with and how a new product's
+ * units begin — a wholesaler should not have to untick "sold at the till" on
+ * every piece it will never sell. It locks nothing and can be changed in
+ * Settings, but a default nobody chose is a default nobody notices, so the
+ * button stays disabled until one is picked.
  */
 export function SignUpPage() {
   const { user, signUp } = useAuth();
@@ -33,6 +43,7 @@ export function SignUpPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
+  const [businessType, setBusinessType] = useState<BusinessType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -43,7 +54,8 @@ export function SignUpPage() {
     firstName.trim() &&
     lastName.trim() &&
     username.trim().length >= 3 &&
-    password.length >= 8;
+    password.length >= 8 &&
+    businessType !== null;
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -57,6 +69,7 @@ export function SignUpPage() {
         lastName: lastName.trim(),
         username: username.trim().toLowerCase(),
         password,
+        businessType: businessType ?? undefined,
         // Omitted rather than sent empty: the server treats absent as 'none',
         // and an empty string would fail its email check.
         ...(email.trim() ? { email: email.trim() } : {}),
@@ -95,6 +108,22 @@ export function SignUpPage() {
               autoComplete="organization"
             />
           </Field>
+
+          <fieldset>
+            <legend className="block text-sm font-medium text-slate-700">
+              What kind of shop is it?
+            </legend>
+            <div className="mt-1">
+              <BusinessTypeChoice
+                value={businessType}
+                onChange={setBusinessType}
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              It sets how your price lists and products start out. Every
+              feature is open either way, and you can change it later.
+            </p>
+          </fieldset>
 
           <div className="flex gap-3">
             <Field label="First name" htmlFor="first">

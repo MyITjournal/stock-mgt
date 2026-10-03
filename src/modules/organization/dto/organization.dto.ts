@@ -1,8 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { BusinessType } from '@prisma/client';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -128,4 +130,14 @@ export class UpdateOrganizationDto {
   @Min(0, { each: true })
   @Max(6, { each: true })
   workingDays?: number[];
+
+  @ApiPropertyOptional({
+    enum: BusinessType,
+    enumName: 'BusinessType',
+    description:
+      'Changes the defaults for products created from now on. Existing products and price lists are left exactly as they are.',
+  })
+  @IsOptional()
+  @IsEnum(BusinessType, { message: 'Choose retail, wholesale or both.' })
+  businessType?: BusinessType;
 }

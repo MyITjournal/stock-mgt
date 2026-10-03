@@ -455,3 +455,23 @@ list — clearing works, it does not silently keep the old one.
 
 **128. [gate] The products list has an On hand column.** A product with a delivery recorded shows
 the quantity and its base unit; one with none shows a grey 0; a service shows a dash.
+
+---
+
+## Q. What kind of shop
+
+**129. Open sign-up.** [gate] "What kind of shop is it?" offers Retail shop, Wholesale or
+distributor, and Both, each with a line saying what it means. **Nothing is pre-selected**, and
+Create shop stays disabled until one is picked.
+
+**130. Create a Wholesale shop.** [gate] Categories & tiers shows one price list, *Wholesale*,
+marked default.
+
+**131. Create a shop as Both.** [gate] Two price lists, *Retail* (default) and *Wholesale*.
+
+**132. Settings → Business, as the owner.** [gate] A "How you trade" section shows the type you
+chose. Change it and save — it says saved, and the price lists on Categories & tiers are unchanged.
+
+**133. [gate] The same screen as a sales_rep** shows the type as text, with nothing to change.
+
+**134. [gate] On a phone-width window** the three choices on sign-up stack and stay readable.

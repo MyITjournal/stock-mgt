@@ -371,6 +371,13 @@ as "a provider is configured", which closed `register` on every developer machin
 general shape: **a check asking "is this configured" rather than "can this succeed" will refuse the
 case where success arrives by another route.**
 
+**Sign-up asks what kind of shop it is** (§22, 2026-10-03): `Organization.businessType` is
+`retail`, `wholesale` or `mixed` ("Both"). **It sets starting defaults and locks no feature** — today
+the price lists seeded (`defaultPriceTierRows`: Retail / Wholesale / both with Retail default), next
+how a new product's units begin. Changing it in Settings moves nothing already set up and adds or
+removes no price list. Existing shops, `register`, Google and a client that omits it get `mixed`;
+the CLI takes `--type`. It is **not** the subscription plan — that stays `maxUsers`.
+
 **An owner's username is plain; a staff username stays qualified by the shop slug.** Staff
 usernames are qualified because an owner names their own people and two shops both have an `amina`
 — nobody types those by choice, they are handed over. An owner picks their own and types it every

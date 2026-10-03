@@ -3500,3 +3500,41 @@ rather than discovered later, because it is their choice and they cannot reverse
 
 The CLI stays as the recovery path, and `POST /auth/change-password` (§20) stays as the ordinary
 one.
+
+### The kind of shop sets defaults, never features
+
+Added 2026-10-03. Sign-up asks **what kind of shop it is** — `retail`, `wholesale` or `mixed`
+(shown as "Both") — and stores it on `Organization.businessType`. It came out of the wholesale
+units discussion: a distributor never sells the single piece, and should not have to say so on
+every product it creates.
+
+**It changes starting points, and locks nothing.** A wholesaler sometimes breaks a carton and a
+retailer sometimes takes a bulk order; a type that hid features would turn both into a wall. What
+it decides today is the price lists a new shop is seeded with — `defaultPriceTierRows` in
+`price-tier.service.ts`, exactly one default each:
+
+| Type | Seeded | Default |
+|---|---|---|
+| retail | Retail | Retail |
+| wholesale | Wholesale | Wholesale — its walk-in is a trader |
+| mixed | Retail, Wholesale | Retail — the customer nobody set up is a walk-in |
+
+The units work that follows (§4) will read it for how a new product's units begin.
+
+Four details:
+
+- **Changing it later moves nothing.** `PATCH /organization` takes it (owner/manager, like the
+  rest of that screen) and no price list is added or removed — a list with prices in it is not
+  something to delete behind somebody's back. The settings screen says so.
+- **Existing shops are `mixed`**, the column default, which is exactly how the app behaved before
+  the question existed. Note they keep the single Retail list they were seeded with.
+- **Optional on the wire, required on the screen.** An older client that never asks still signs
+  up, as `mixed`; the sign-up form keeps its button disabled until a type is picked, because a
+  default nobody chose is a default nobody notices. The emailed `register` path and Google never
+  ask and get `mixed`; the CLI takes `--type`.
+- **It is not the subscription plan.** What a shop pays for stays `maxUsers` (§9). Tying
+  features to the type would mean a wholesaler on a small plan could not sell cartons.
+
+`SignUpInput` in the dashboard was a hand-written copy of the request shape; it is now the
+generated `SignUpDto` type, because a copy is exactly where a new field gets forgotten while the
+compiler stays quiet.

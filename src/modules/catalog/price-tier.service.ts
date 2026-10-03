@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { BusinessType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { PriceTierView } from './dto/product.response';
@@ -12,6 +13,35 @@ import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
 
 /** Every organization gets this on registration, so pricing always has a home. */
 export const DEFAULT_PRICE_TIER = 'Retail';
+
+export const WHOLESALE_PRICE_TIER = 'Wholesale';
+
+/**
+ * The price lists a new shop starts with, by the kind of trading it does.
+ *
+ * Exactly one is the default — walk-ins and anyone with no tier are priced on
+ * it. A shop doing both starts with both lists and Retail as the default,
+ * because the customer nobody has set up is the walk-in, and a walk-in pays
+ * retail. A wholesaler's default is Wholesale for the same reason: its walk-in
+ * is a trader. Changing the business type later adds or removes nothing — a
+ * price list with prices in it is not something to delete behind somebody's back.
+ */
+export function defaultPriceTierRows(
+  organizationId: string,
+  businessType: BusinessType,
+) {
+  switch (businessType) {
+    case BusinessType.retail:
+      return [{ organizationId, name: DEFAULT_PRICE_TIER, isDefault: true }];
+    case BusinessType.wholesale:
+      return [{ organizationId, name: WHOLESALE_PRICE_TIER, isDefault: true }];
+    case BusinessType.mixed:
+      return [
+        { organizationId, name: DEFAULT_PRICE_TIER, isDefault: true },
+        { organizationId, name: WHOLESALE_PRICE_TIER, isDefault: false },
+      ];
+  }
+}
 
 @Injectable()
 export class PriceTierService {
