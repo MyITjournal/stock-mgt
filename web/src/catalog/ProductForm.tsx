@@ -70,6 +70,10 @@ interface PriceDraft {
  *   factor`, which is right for a sachet and wrong for a carton — the silent
  *   overcharge the per-unit price list exists to prevent. Change a price rather
  *   than removing it.
+ * - **The base price is optional, and empty means no fallback at all.** A unit
+ *   with no price of its own then has no price, and the till will not sell it
+ *   until it gets one — never a guess. That is what a distributor wants: it
+ *   never sells the counted-in unit, so a price for it means nothing.
  * - **Barcodes can be added and deleted**, because they have endpoints of
  *   their own and detaching a code strands nothing. They are handled in
  *   `Barcodes` below, which writes immediately rather than on Save — that
@@ -201,7 +205,9 @@ export function ProductForm({
         ...(sku.trim() && { sku: sku.trim() }),
         ...(categoryId && { categoryId }),
         ...(packagingTypeId && { packagingTypeId }),
-        ...(basePrice !== null && { basePrice }),
+        // On an edit the box is always sent, so emptying it clears the
+        // fallback (null). A new product simply has none until one is typed.
+        ...(editing ? { basePrice } : basePrice !== null && { basePrice }),
         taxRateBps,
         trackStock,
         ...(reorderPoint.trim() !== '' && {
@@ -426,9 +432,13 @@ export function ProductForm({
           </Field>
 
           <Field
-            label="Base price"
+            label={`Price per ${baseName} (optional)`}
             htmlFor="p-base-price"
-            hint="Tax-inclusive, for one base unit."
+            hint={
+              basePrice === null
+                ? `Empty: a unit with no price below cannot be sold until you give it one. Right if you never sell by the ${baseName}.`
+                : `Tax-inclusive. A unit with no price below is charged this × its size.`
+            }
           >
             <MoneyInput
               id="p-base-price"
@@ -710,8 +720,10 @@ export function ProductForm({
             </Button>
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            A unit with no price here falls back to base price × factor, which
-            is right for a sachet and usually wrong for a carton. A price added
+            {basePrice === null
+              ? 'A unit with no price here cannot be sold until it has one — the till will not guess.'
+              : `A unit with no price here is charged the price per ${baseName} × its size, which is right for a sachet and usually wrong for a carton.`}{' '}
+            A price added
             by mistake can be taken off with × until you save; after that it can
             be changed but <strong>not removed</strong> — set the right number
             instead of clearing it.
@@ -720,7 +732,9 @@ export function ProductForm({
           <div className="mt-3 space-y-2">
             {prices.length === 0 && (
               <p className="text-xs text-slate-400">
-                No tier prices. Every unit will use base price × factor.
+                {basePrice === null
+                  ? 'No prices yet. Nothing can be sold until a unit has one.'
+                  : `No prices yet. Every unit will be charged the price per ${baseName} × its size.`}
               </p>
             )}
             {prices.map((price, index) => (

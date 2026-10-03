@@ -135,7 +135,7 @@ export class ProductService {
       description: input.description ?? null,
       categoryId: input.categoryId ?? null,
       packagingTypeId: input.packagingTypeId ?? null,
-      basePrice: input.basePrice,
+      basePrice: input.basePrice ?? null,
       costPrice: input.costPrice ?? null,
       ...(input.taxRateBps !== undefined && { taxRateBps: input.taxRateBps }),
       ...(input.trackStock !== undefined && { trackStock: input.trackStock }),
@@ -211,7 +211,10 @@ export class ProductService {
     const product = await this.findOneOrFail(id);
     return {
       ...product,
-      tax: splitTaxInclusive(product.basePrice, product.taxRateBps),
+      tax:
+        product.basePrice === null
+          ? null
+          : splitTaxInclusive(product.basePrice, product.taxRateBps),
     };
   }
 
@@ -581,7 +584,8 @@ export class ProductService {
 
   /**
    * Price of one `unitId` for `tierId`, falling back to the base price scaled
-   * by the unit factor when no tier row exists.
+   * by the unit factor when no tier row exists — and `null` when there is no
+   * base price either.
    *
    * The fallback is a convenience, not a rule: a real carton price is normally
    * *below* factor x base, which is exactly why ProductPrice is keyed by unit.

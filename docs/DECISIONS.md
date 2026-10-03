@@ -438,6 +438,37 @@ Separately, the walkthrough asked for a portion's price **without** a `tierId` a
 `basePrice × factor` fallback: ₦2,100 for a half carton that sells for ₦20,500. The till always
 sends the tier, so it never saw this — but it is the case for making the base price optional next.
 
+### No base price means no fallback, never a guess
+
+Added 2026-10-03. `Product.basePrice` is **nullable**. With one, a unit that has no price of its
+own is charged `basePrice × factor`, as before. **Without one there is no fallback**:
+`resolveUnitPrice` answers `price: null`, the till refuses to add that unit and says to ask a
+manager to price it, and a sale that names no `unitPrice` for it is a 400.
+
+Why: the portions walkthrough asked for a half-carton price without a tier and got the fallback —
+**₦2,100 for a half carton of Peak that sells for ₦20,500**, because the base price was a sachet
+price. A distributor never sells the counted-in unit, so a price for it means nothing, and any
+number typed there to satisfy a required box becomes a silent wrong price on every unpriced
+portion. This is the §4 carton overcharge in its purest form.
+
+Details:
+
+- **A price the seller names is still accepted** for an unpriced unit — that is what was agreed,
+  not a guess. Only the server's own derivation refuses.
+- **Zero is a price, null is not.** A free sample is a decision; an empty box is the absence of one.
+- **On an edit, `null` clears it**; omitting it leaves it alone. The form always sends the box on
+  an edit for that reason.
+- **Existing products keep their base price** — the migration only drops `NOT NULL`.
+- **`scan.service` used its own copy of the pricing rule**; it now calls `resolveUnitPrice`. A
+  rule change reaching two callers and missing the third is exactly how the fallback would have
+  survived in scans alone.
+
+**Found on the way, not fixed — a real gap for a mixed shop.** The till's own docstring and §17
+say naming a customer re-prices the cart. **It does not.** `tierId` follows the customer, but
+lines already in the cart keep the price they were added at; only lines added afterwards use the
+customer's tier. So a cashier who scans first and picks the wholesale customer second charges
+retail. A correct rule written next to code that does the opposite — the §19 lesson again.
+
 ### Size is plain text, and on hand is on the list
 
 Asked 2026-10-02: there was nowhere to say a product is 400g except inside its name. `Product.size`

@@ -544,7 +544,7 @@ export interface paths {
         };
         /**
          * Resolve the price of one unit for a tier
-         * @description Falls back to basePrice x unit factor when the tier has no explicit price for that unit.
+         * @description Falls back to basePrice x unit factor when the tier has no explicit price for that unit, and answers price: null when the product has no base price either — that unit cannot be sold until it is priced.
          */
         get: operations["ProductController_resolvePrice"];
         put?: never;
@@ -2357,10 +2357,10 @@ export interface components {
             /** Format: uuid */
             packagingTypeId: string | null;
             /**
-             * @description Tax-inclusive price of one **base** unit, in kobo. A unit without a tier row falls back to `basePrice × factor`, which is right for a sachet and wrong for a carton (§4).
+             * @description Tax-inclusive price of one **base** unit, in kobo. A unit without a tier row falls back to `basePrice × factor`, which is right for a sachet and wrong for a carton (§4). **Null means no fallback** — an unpriced unit cannot be sold.
              * @example 50000
              */
-            basePrice: number;
+            basePrice: number | null;
             /** @description What one base unit last cost to buy. **Absent** for a role that may not see cost (§9); **null** when nothing has been bought yet. Never an input to stock valuation, which §2 values from lot totals instead. */
             costPrice?: number | null;
             /**
@@ -2409,13 +2409,13 @@ export interface components {
              */
             baseQuantity: number;
             /**
-             * @description Tax-inclusive, in kobo.
+             * @description Tax-inclusive, in kobo. **Null when the unit has no price** — no tier row and no base price to fall back on. The till refuses to sell it rather than guess.
              * @example 1200000
              */
-            price: number;
+            price: number | null;
             /** @description False means no tier priced this unit and the price is `basePrice × factor` — right for a sachet, wrong for a carton. The till surfaces it so a wrong carton price is caught before the sale (§4). */
             isTierPrice: boolean;
-            tax: components["schemas"]["UnitTaxSplit"];
+            tax: components["schemas"]["UnitTaxSplit"] | null;
         };
         ProductUnitInput: {
             /** @example carton */
@@ -2503,7 +2503,7 @@ export interface components {
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
              * @example 250000
              */
-            basePrice: number;
+            basePrice?: Record<string, never>;
             /**
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
              * @example 200000
@@ -2593,7 +2593,7 @@ export interface components {
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
              * @example 250000
              */
-            basePrice?: number;
+            basePrice?: Record<string, never>;
             /**
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
              * @example 200000
@@ -2721,13 +2721,13 @@ export interface components {
              */
             baseQuantity: number;
             /**
-             * @description Tax-inclusive price for one of `unit`, in kobo.
+             * @description Tax-inclusive price for one of `unit`, in kobo. Null when the unit has no price and the product no base price to fall back on — the till refuses it.
              * @example 1200000
              */
-            price: number;
+            price: number | null;
             /** @description True when a tier row priced this exact unit. False means the price is `basePrice × factor`, which is right for a sachet and wrong for a carton — the till shows it so a wrong carton price is visible before the sale, not after (§4). */
             isTierPrice: boolean;
-            tax: components["schemas"]["TaxSplit"];
+            tax: components["schemas"]["TaxSplit"] | null;
         };
         LocationView: {
             /** Format: uuid */

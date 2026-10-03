@@ -12,6 +12,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { MAX_PRODUCT_CHILDREN } from '../../../common/pagination/request-limits';
@@ -172,8 +173,15 @@ export class CreateProductDto {
   @IsUUID()
   packagingTypeId?: string;
 
-  @IsMoney({ example: 250000 })
-  basePrice!: number;
+  /**
+   * Optional, and `null` clears it. Without one, a unit with no price of its
+   * own simply has no price, and the till will not sell it until it gets one —
+   * the right answer for a distributor, who never sells the counted-in unit.
+   */
+  @ValidateIf((_, value) => value !== null)
+  @IsOptional()
+  @IsMoney({ example: 250000, optional: true })
+  basePrice?: number | null;
 
   @IsOptional()
   @IsMoney({ example: 200000, optional: true })

@@ -96,10 +96,13 @@ export class ScanResult {
   baseQuantity!: number;
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
     example: 1200000,
-    description: 'Tax-inclusive price for one of `unit`, in kobo.',
+    description:
+      'Tax-inclusive price for one of `unit`, in kobo. Null when the unit has no price and the product no base price to fall back on — the till refuses it.',
   })
-  price!: number;
+  price!: number | null;
 
   @ApiProperty({
     description:
@@ -107,6 +110,6 @@ export class ScanResult {
   })
   isTierPrice!: boolean;
 
-  @ApiProperty({ type: () => TaxSplit })
-  tax!: TaxSplit;
+  @ApiProperty({ type: () => TaxSplit, nullable: true })
+  tax!: TaxSplit | null;
 }

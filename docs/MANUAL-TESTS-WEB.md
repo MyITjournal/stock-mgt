@@ -529,3 +529,22 @@ The cart shows `1/2 carton` at its own price, and the receipt prints `1/2 carton
 
 **148. Print that sale's PDF invoice.** [gate] The unit reads `1/2 carton` — no missing
 character where the fraction is.
+
+---
+
+## T. No base price, no guessing
+
+**149. Add a product counted in `sachet` with `carton` (210) and a `1/2 carton` portion. Leave
+"Price per sachet" empty and price only the carton.** [gate] It saves. The hint under the empty box
+says a unit with no price cannot be sold until it has one.
+
+**150. At the till, add it and switch the line to `1/2 carton`.** [gate] A message says it has no
+price for the 1/2 carton yet; the line stays a carton at the carton price.
+
+**151. Scan a barcode on the `1/2 carton`.** [gate] The same message, and nothing is added.
+
+**152. Give the 1/2 carton a price on the product, then sell one.** [gate] It goes in at that
+price.
+
+**153. Edit an older product that has a base price, empty the box, save.** [gate] Its unpriced
+units now refuse at the till; type a price back in and they sell again.

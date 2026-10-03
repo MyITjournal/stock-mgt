@@ -228,6 +228,40 @@ describe('SaleService', () => {
       ).rejects.toThrow(/not sold by the piece/);
     });
 
+    it('refuses an unpriced unit on a product with no base price, rather than guess', async () => {
+      countedNotSold();
+      const product = (await prisma.product.findFirst()) as object;
+      prisma.product.findFirst.mockResolvedValue({
+        ...product,
+        basePrice: null,
+        prices: [],
+      });
+      await expect(
+        sell({ lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 1 }] }),
+      ).rejects.toThrow(/no price for the carton/);
+    });
+
+    it('still sells it at a price the seller named', async () => {
+      countedNotSold();
+      const product = (await prisma.product.findFirst()) as object;
+      prisma.product.findFirst.mockResolvedValue({
+        ...product,
+        basePrice: null,
+        prices: [],
+      });
+      await sell({
+        lines: [
+          {
+            productId: PRODUCT,
+            unitId: CARTON,
+            quantity: 1,
+            unitPrice: 5_000_000,
+          },
+        ],
+      });
+      expect(writtenLine()).toMatchObject({ unitPrice: 5_000_000 });
+    });
+
     it('sells the default selling unit — not the base — when no unit is named', async () => {
       countedNotSold();
       await sell({ lines: [{ productId: PRODUCT, quantity: 2 }] });

@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
-import { splitTaxInclusive } from '../../common/money/money';
+import { resolveUnitPrice } from './pricing';
 import { detectSymbology, normaliseCode } from './barcode';
 import { ScanResult } from './dto/scan.response';
 
@@ -36,11 +36,10 @@ export class ScanService {
 
     const { product, unit } = barcode;
 
-    // Tier price for this exact unit, else the base price scaled by the factor.
-    const tiered = tierId
-      ? product.prices.find((p) => p.tierId === tierId && p.unitId === unit.id)
-      : undefined;
-    const price = tiered ? tiered.price : product.basePrice * unit.factor;
+    // The same rule as GET /products/:id/price and the sale path, not a copy
+    // of it: this used to repeat the arithmetic inline, which is exactly how a
+    // change to the rule reaches two callers and misses the third.
+    const priced = resolveUnitPrice(product, unit, tierId);
 
     return {
       code,
@@ -60,9 +59,9 @@ export class ScanService {
       },
       // Scanning a carton must add 24 pieces to stock, not 1 anonymous item.
       baseQuantity: unit.factor,
-      price,
-      isTierPrice: Boolean(tiered),
-      tax: splitTaxInclusive(price, product.taxRateBps),
+      price: priced.price,
+      isTierPrice: priced.isTierPrice,
+      tax: priced.tax,
     };
   }
 
