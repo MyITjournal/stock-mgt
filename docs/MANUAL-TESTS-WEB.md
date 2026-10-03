@@ -548,3 +548,17 @@ price.
 
 **153. Edit an older product that has a base price, empty the box, save.** [gate] Its unpriced
 units now refuse at the till; type a price back in and they sell again.
+
+---
+
+## U. On hand in the shop's units
+
+**154. Record a delivery of 14 cartons, 2 rolls and 5 sachets of a product counted in sachets
+(roll 10, carton 210).** [gate] The products list's On hand reads **14 carton, 2 roll, 5 sachet**.
+Hovering it shows **2,965 sachet in all**.
+
+**155. Give the product a `1/2 carton` portion and sell one.** [gate] On hand reads **13 carton,
+13 roll** — never "1/2 carton".
+
+**156. [gate] A product that has sold past its stock** shows its shortfall in red, signed once in
+front: **−1 carton, 2 roll**.

@@ -10,6 +10,7 @@ import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ProductForm } from './ProductForm';
+import { describeCount } from '../lib/quantity';
 
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
@@ -229,7 +230,10 @@ export function ProductsPage() {
 }
 
 /**
- * Stock on hand, in base units because that is what stock is counted in (§5).
+ * Stock on hand, counted in base units (§5) and **said** in the units a shop
+ * uses — "14 carton, 2 roll, 5 sachet" rather than 2,965 — by `describeCount`.
+ * Display only: the exact base count is on hover, and nothing is computed
+ * from the words.
  *
  * A service has no stock to count, so it shows a dash rather than a zero — a
  * zero would read as "sold out" and send somebody to reorder a delivery charge.
@@ -244,13 +248,15 @@ function OnHand({
   quantity: number;
 }) {
   if (!product.trackStock) return <span className="text-slate-400">—</span>;
-  const base = product.units.find((unit) => unit.isBase)?.name;
+  const base = product.units.find((unit) => unit.isBase)?.name ?? '';
+  // Biggest unit first — "14 carton, 2 roll, 5 sachet" — with the exact count
+  // in the counted-in unit on hover, for whoever is reconciling a count sheet.
   return (
     <span
+      title={`${quantity.toLocaleString()} ${base} in all`}
       className={`tabular-nums ${quantity < 0 ? 'text-red-600' : quantity === 0 ? 'text-slate-400' : 'text-slate-900'}`}
     >
-      {quantity}
-      {base && <span className="ml-1 text-xs text-slate-500">{base}</span>}
+      {describeCount(quantity, product.units)}
     </span>
   );
 }
