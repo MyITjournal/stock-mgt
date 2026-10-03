@@ -491,6 +491,15 @@ The products list also gained **On hand**, from one `GET /stock/levels` summed p
 same sum the product page already showed. A service shows a dash rather than a zero, because zero
 reads as "sold out".
 
+**On hand is said in the shop's units** (2026-10-04). A distributor counts Peak 14g in sachets, so
+the raw figure is 2,965 and unreadable; the list now says **"14 carton, 2 roll, 5 sachet"** —
+`describeCount` in `web/src/lib/quantity.ts`, biggest unit first, with the exact count on hover.
+Display only; nothing is computed from the words. Two choices: **portions are skipped**
+(`1/2 carton` would give "14 carton, 1 1/2 carton", which nobody says) — detected by the `n/m `
+prefix the portion helper names them with — and **the counted-in unit is always the last step**, so
+the parts add back to the count exactly. Verified live: after a half carton is sold the list reads
+"13 carton, 13 roll" — the loose sachets and the opened roll's remainder make a whole roll.
+
 A delivery the shop **charges the customer for** stays what §4 below says: a product with
 `trackStock` off. A delivery the shop **pays for** is an expense and never a product.
 

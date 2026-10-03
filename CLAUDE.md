@@ -664,7 +664,9 @@ customer second, and the cart charges retail.
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
 field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank
 is stored as null; on an edit, omitted leaves it and `''` clears it; search matches it. The
-products list also shows **On hand**, summed from one `GET /stock/levels`.
+products list also shows **On hand**, summed from one `GET /stock/levels` and said in the shop's
+units — "14 carton, 2 roll, 5 sachet" — by `describeCount` (`web/src/lib/quantity.ts`), skipping
+`1/2 …` portions, exact count on hover. Display only.
 
 **A category in use cannot be deleted** (§4, 2026-10-02). `DELETE /categories/:id` is a 409 naming
 the count while any product — retired ones included — or sub-category is still in it; leaving the
