@@ -11,13 +11,14 @@ import {
   MembershipStatus,
   OrgRole,
   UserRole,
+  BusinessType,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UsersService, EMAIL_ALREADY_EXISTS } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
-import { DEFAULT_PRICE_TIER } from '../catalog/price-tier.service';
+import { defaultPriceTierRows } from '../catalog/price-tier.service';
 import { defaultPackagingTypeRows } from '../catalog/packaging-type.service';
 import { defaultLocationRow } from '../inventory/location.service';
 import { defaultExpenseCategoryRows } from '../expenses/expense-category.service';
@@ -127,7 +128,11 @@ export class AuthService {
         },
       });
 
-      await this.seedOrganizationDefaults(tx, organization.id);
+      await this.seedOrganizationDefaults(
+        tx,
+        organization.id,
+        organization.businessType,
+      );
 
       return { user, organization };
     });
@@ -173,6 +178,8 @@ export class AuthService {
     password: string;
     email?: string;
     username?: string;
+    /** Omitted by the paths that never ask — they get `mixed`, today's behaviour. */
+    businessType?: BusinessType;
   }) {
     if (!input.email && !input.username) {
       throw new BadRequestException(
@@ -232,7 +239,11 @@ export class AuthService {
       });
 
       const organization = await tx.organization.create({
-        data: { name: input.organizationName, slug },
+        data: {
+          name: input.organizationName,
+          slug,
+          ...(input.businessType && { businessType: input.businessType }),
+        },
       });
 
       await tx.membership.create({
@@ -244,7 +255,11 @@ export class AuthService {
         },
       });
 
-      await this.seedOrganizationDefaults(tx, organization.id);
+      await this.seedOrganizationDefaults(
+        tx,
+        organization.id,
+        organization.businessType,
+      );
 
       return {
         userId: user.id,
@@ -292,6 +307,7 @@ export class AuthService {
       username: string;
       password: string;
       email?: string;
+      businessType?: BusinessType;
     },
     context: TokenContext = {},
   ): Promise<TokenPair> {
@@ -329,8 +345,8 @@ export class AuthService {
   }
 
   /**
-   * What a new business needs before the app is usable: a default price tier
-   * for prices to hang off, the packaging vocabulary, somewhere for stock to
+   * What a new business needs before the app is usable: the price lists for
+   * its kind of trading (one of them the default) for prices to hang off, the packaging vocabulary, somewhere for stock to
    * sit, and something to file spending under.
    *
    * Both registration paths call it. Google sign-up used to create the
@@ -347,9 +363,10 @@ export class AuthService {
       'priceTier' | 'packagingType' | 'location' | 'expenseCategory'
     >,
     organizationId: string,
+    businessType: BusinessType,
   ) {
-    await db.priceTier.create({
-      data: { organizationId, name: DEFAULT_PRICE_TIER, isDefault: true },
+    await db.priceTier.createMany({
+      data: defaultPriceTierRows(organizationId, businessType),
     });
     await db.packagingType.createMany({
       data: defaultPackagingTypeRows(organizationId),
@@ -641,7 +658,11 @@ export class AuthService {
           status: MembershipStatus.active,
         },
       });
-      await this.seedOrganizationDefaults(this.prisma, organization.id);
+      await this.seedOrganizationDefaults(
+        this.prisma,
+        organization.id,
+        organization.businessType,
+      );
     }
 
     if (context.ip) await this.users.updateLastLoginIp(user.id, context.ip);

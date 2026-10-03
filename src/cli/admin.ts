@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { BusinessType } from '@prisma/client';
 import { NestFactory } from '@nestjs/core';
 import * as readline from 'node:readline';
 import { AppModule } from '../app.module';
@@ -28,6 +29,11 @@ import { AuthService } from '../modules/auth/auth.service';
  *
  *   node dist/cli/admin create-org --org "Corner Shop" \
  *     --first Amina --last Bello --username amina
+ *
+ *   node dist/cli/admin create-org --org "Bello Distributors" \
+ *     --first Musa --last Bello --username musa --type wholesale
+ *
+ * `--type` is retail, wholesale or mixed, and defaults to mixed.
  *
  *   node dist/cli/admin set-password --email owner@example.com
  *   node dist/cli/admin set-password --username amina@corner-shop-a1b2c3
@@ -183,6 +189,7 @@ async function createOrg(auth: AuthService, args: Map<string, string>) {
   const lastName = args.get('last');
   const email = args.get('email');
   const username = args.get('username');
+  const type = args.get('type') ?? BusinessType.mixed;
 
   if (!organizationName || !firstName || !lastName) {
     throw new Error(
@@ -191,6 +198,10 @@ async function createOrg(auth: AuthService, args: Map<string, string>) {
   }
   if (!email && !username) {
     throw new Error('Give the owner an --email or a --username.');
+  }
+  // Checked before the password prompt, so a typo costs nothing to retype.
+  if (!(Object.values(BusinessType) as string[]).includes(type)) {
+    throw new Error('--type must be retail, wholesale or mixed.');
   }
 
   const password = await readNewPassword();
@@ -202,6 +213,7 @@ async function createOrg(auth: AuthService, args: Map<string, string>) {
     password,
     email,
     username,
+    businessType: type as BusinessType,
   });
 
   process.stdout.write(
@@ -210,6 +222,7 @@ async function createOrg(auth: AuthService, args: Map<string, string>) {
       `Created "${result.organizationName}".`,
       `  organization  ${result.organizationId}`,
       `  slug          ${result.organizationSlug}`,
+      `  trades as     ${type}`,
       `  owner         ${result.userId}`,
       `  signs in with ${result.email ?? result.username ?? '(none)'}`,
       '',

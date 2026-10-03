@@ -7,6 +7,11 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
+import { BusinessTypeChoice } from '../components/BusinessTypeChoice';
+import {
+  businessTypeLabel,
+  type BusinessType,
+} from '../lib/businessTypes';
 
 type OrganizationView = components['schemas']['OrganizationView'];
 
@@ -24,6 +29,11 @@ type OrganizationView = components['schemas']['OrganizationView'];
  * history; rewinding the invoice counter would produce duplicate numbers. They
  * are displayed rather than hidden because somebody checking what their
  * invoices will say needs to see them.
+ *
+ * **The kind of shop is editable, and changes defaults only.** It decides how a
+ * *new* product's units start out; nothing already set up moves, and no price
+ * list is added or removed. The screen says so, because "I changed it and my
+ * products did not change" is otherwise the first support question.
  */
 export function BusinessPage() {
   const { data, isPending } = useQuery({
@@ -59,9 +69,11 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
     rcNumber: data.rcNumber ?? '',
     logoUrl: data.logoUrl ?? '',
   });
+  const [businessType, setBusinessType] = useState<BusinessType>(
+    data.businessType,
+  );
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-
 
   const save = useMutation({
     mutationFn: () =>
@@ -75,6 +87,7 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
         taxId: form.taxId.trim(),
         rcNumber: form.rcNumber.trim(),
         logoUrl: form.logoUrl.trim(),
+        businessType,
       }),
     onSuccess: () => {
       afterWrite(queryClient);
@@ -189,6 +202,32 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
               disabled={!canEdit}
             />
           </Field>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-semibold text-slate-900">
+            How you trade
+          </h2>
+          {canEdit ? (
+            <div className="mt-3">
+              <BusinessTypeChoice
+                value={businessType}
+                onChange={(next) => {
+                  setBusinessType(next);
+                  setSaved(false);
+                }}
+              />
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-slate-900">
+              {businessTypeLabel(businessType)}
+            </p>
+          )}
+          <p className="mt-2 text-xs text-slate-500">
+            This sets how new products start out. Products you have already
+            set up, and your price lists, stay exactly as they are. Every
+            feature is open whichever you choose.
+          </p>
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">

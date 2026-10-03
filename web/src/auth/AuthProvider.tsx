@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ApiError, api, setSessionLostHandler } from '../api/client';
+import type { components } from '../api/schema';
 
 /**
  * The roles a person holds inside one business, mirroring `OrgRole` on the
@@ -47,15 +48,12 @@ export interface SignInInput {
   password: string;
 }
 
-export interface SignUpInput {
-  organizationName: string;
-  firstName: string;
-  lastName: string;
-  username: string;
-  password: string;
-  /** Optional. Nothing is sent to it; it is what enables a future self-reset. */
-  email?: string;
-}
+/**
+ * The generated request shape, not a copy of it: this was hand-written until
+ * the business type was added, and a copy is the one place a new field gets
+ * forgotten while the compiler stays quiet.
+ */
+export type SignUpInput = components['schemas']['SignUpDto'];
 
 export const AuthContext = createContext<AuthState | null>(null);
 

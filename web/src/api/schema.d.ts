@@ -1955,6 +1955,11 @@ export interface components {
              */
             organizationName: string;
         };
+        /**
+         * @description What kind of trading the shop does. Sets the price lists it starts with and how new products begin; it locks nothing, and the owner can change it later.
+         * @enum {string}
+         */
+        BusinessType: "retail" | "wholesale" | "mixed";
         SignUpDto: {
             /**
              * @description The shop or business name.
@@ -1977,6 +1982,11 @@ export interface components {
              * @example owner@example.com
              */
             email?: string;
+            /**
+             * @description What kind of trading the shop does. Sets the price lists it starts with and how new products begin; it locks nothing, and the owner can change it later.
+             * @default mixed
+             */
+            businessType: components["schemas"]["BusinessType"];
         };
         VerifyOtpDto: {
             /** @example owner@example.com */
@@ -5509,6 +5519,8 @@ export interface components {
              * @example 5
              */
             maxUsers: number;
+            /** @description Retail, wholesale or mixed. Sets starting defaults only — every feature is open to every type. */
+            businessType: components["schemas"]["BusinessType"];
             address: string | null;
             phone: string | null;
             email: string | null;
@@ -5590,6 +5602,8 @@ export interface components {
              *     ]
              */
             workingDays?: string[];
+            /** @description Changes the defaults for products created from now on. Existing products and price lists are left exactly as they are. */
+            businessType?: components["schemas"]["BusinessType"];
         };
         /** @enum {string} */
         OrgRole: "owner" | "manager" | "sales_rep" | "storekeeper" | "accountant";
