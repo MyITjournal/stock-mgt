@@ -475,3 +475,34 @@ chose. Change it and save — it says saved, and the price lists on Categories &
 **133. [gate] The same screen as a sales_rep** shows the type as text, with nothing to change.
 
 **134. [gate] On a phone-width window** the three choices on sign-up stack and stay readable.
+
+---
+
+## R. Counted in, and sold at the till
+
+Run these in a shop created as **Wholesale** unless a step says otherwise.
+
+**135. Add a product.** [gate] The first unit row says **counted in**, not "base unit". Rename it
+`sachet`, add `roll` (10) and `carton` (210). Without touching any box, the sachet's **Sold** box
+is unticked and the other two are ticked.
+
+**136. [gate] "Till picks first" offers only roll and carton**, plus *Automatic — the biggest sold
+unit*. Save. The products list shows `sachet (not sold)` in the Units column.
+
+**137. Edit it and untick every Sold box.** [gate] An amber note says to tick at least one, and
+Save is disabled.
+
+**138. At the till, search for it and add it.** [gate] It goes in as a **carton**, and the unit
+picker on the line offers roll and carton — never sachet.
+
+**139. Scan the sachet's barcode.** [gate] A message says it is not sold by the sachet and to scan
+the pack or carton. Nothing is added to the cart.
+
+**140. Scan a carton or roll barcode, then open the line's unit picker.** [gate] After a moment it
+offers the product's other sold units too — this used to stay stuck on the one scanned.
+
+**141. Record a delivery of it, counted in sachets.** [gate] The delivery form still offers
+sachet — counting is not selling.
+
+**142. In a shop created as Retail, add a product with piece and carton.** [gate] Both boxes start
+ticked, and *Automatic* says *the smallest sold unit*.

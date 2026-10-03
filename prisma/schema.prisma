@@ -175,8 +175,13 @@ model ProductUnit {
   factor Int
 
   isBase           Boolean @default(false)
-  /// The unit pre-selected when selling this product.
+  /// The unit pre-selected when selling this product. Exactly one per product,
+  /// and always a sellable one — `chooseDefaultSellingUnit` settles it.
   isDefaultSelling Boolean @default(false)
+  /// Offered at the till. Counting is not selling: a distributor counts Peak
+  /// 14g in sachets and never sells one, so its base unit is not sellable.
+  /// Deliveries, counts and adjustments still use every unit.
+  isSellable       Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

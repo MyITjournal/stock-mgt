@@ -72,8 +72,8 @@ describe('SaleService', () => {
             { tierId: WHOLESALE, unitId: CARTON, price: WHOLESALE_PRICE },
           ],
           units: [
-            { id: PIECE, name: 'piece', factor: 1 },
-            { id: CARTON, name: 'carton', factor: 24 },
+            { id: PIECE, name: 'piece', factor: 1, isSellable: true },
+            { id: CARTON, name: 'carton', factor: 24, isSellable: true },
           ],
         }),
       },
@@ -199,6 +199,42 @@ describe('SaleService', () => {
     });
   });
 
+  describe('units not sold at the till', () => {
+    /** A distributor's Peak: counted in pieces, sold only by the carton. */
+    const countedNotSold = () =>
+      prisma.product.findFirst.mockResolvedValue({
+        id: PRODUCT,
+        name: 'Peak Milk 400g',
+        trackStock: true,
+        taxRateBps: 750,
+        basePrice: 250_000,
+        prices: [{ tierId: RETAIL, unitId: CARTON, price: CARTON_PRICE }],
+        units: [
+          { id: PIECE, name: 'piece', factor: 1, isSellable: false },
+          {
+            id: CARTON,
+            name: 'carton',
+            factor: 24,
+            isSellable: true,
+            isDefaultSelling: true,
+          },
+        ],
+      });
+
+    it('refuses to sell a unit that is only counted in', async () => {
+      countedNotSold();
+      await expect(
+        sell({ lines: [{ productId: PRODUCT, unitId: PIECE, quantity: 2 }] }),
+      ).rejects.toThrow(/not sold by the piece/);
+    });
+
+    it('sells the default selling unit — not the base — when no unit is named', async () => {
+      countedNotSold();
+      await sell({ lines: [{ productId: PRODUCT, quantity: 2 }] });
+      expect(writtenLine()).toMatchObject({ unitFactor: 24, baseQuantity: 48 });
+    });
+  });
+
   it('prices from the tier and freezes the tax it implies', async () => {
     await sell();
 
@@ -273,7 +309,7 @@ describe('SaleService', () => {
       taxRateBps: 750,
       basePrice: 500_000,
       prices: [],
-      units: [{ id: PIECE, name: 'service', factor: 1 }],
+      units: [{ id: PIECE, name: 'service', factor: 1, isSellable: true }],
     });
 
     await sell({ lines: [{ productId: PRODUCT, quantity: 1 }] });

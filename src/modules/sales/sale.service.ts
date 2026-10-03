@@ -259,7 +259,7 @@ export class SaleService {
       this.prisma,
       line.productId,
       line.unitId,
-      { allowUnstocked: true, withPrices: true },
+      { allowUnstocked: true, withPrices: true, forSale: true },
     );
 
     const unitPrice =

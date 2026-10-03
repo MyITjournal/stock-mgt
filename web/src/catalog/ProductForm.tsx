@@ -10,11 +10,13 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
+import { previewIsSellable } from '../lib/sellingUnits';
 
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
 type PackagingTypeView = components['schemas']['PackagingTypeView'];
 type PriceTierView = components['schemas']['PriceTierView'];
+type OrganizationView = components['schemas']['OrganizationView'];
 
 /*
  * `key` is a React key and nothing else — it is never sent. Rows can be removed
@@ -27,6 +29,12 @@ interface UnitDraft {
   factor: number;
   existing: boolean;
   isBase: boolean;
+  /**
+   * Null until somebody ticks or unticks it. An untouched box shows the
+   * server's default for this kind of shop and sends nothing, so that default
+   * is the one stored rather than the form's copy of it.
+   */
+  isSellable: boolean | null;
 }
 
 interface PriceDraft {
@@ -70,6 +78,13 @@ interface PriceDraft {
  *
  * The base unit also cannot move once set: stock is recorded in base units, so
  * changing which unit that is would reinterpret every quantity in the ledger.
+ *
+ * **The base unit is shown as "Counted in", not "base"**, because counting is
+ * not selling. To a shop owner "base" means the smallest thing they sell; here
+ * it means the smallest piece that can be left on a shelf. A distributor counts
+ * Peak 14g in sachets — half a carton leaves half a roll behind — and never
+ * sells one, which is what the "Sold" box on each unit is for. The kind of
+ * shop (§22) decides how that box starts out.
  */
 export function ProductForm({
   product,
@@ -109,6 +124,7 @@ export function ProductForm({
           factor: unit.factor,
           existing: true,
           isBase: unit.isBase,
+          isSellable: unit.isSellable,
         }))
       : [
           {
@@ -117,9 +133,34 @@ export function ProductForm({
             factor: 1,
             existing: false,
             isBase: true,
+            isSellable: null,
           },
         ],
   );
+
+  // The unit the till picks first, by name. '' leaves it to the server —
+  // the biggest sold unit for a wholesaler, the smallest for anyone else.
+  const initialDefault =
+    product?.units.find((unit) => unit.isDefaultSelling)?.name ?? '';
+  const [defaultUnit, setDefaultUnit] = useState(initialDefault);
+
+  // Every member may read the organization, so this works for any role that
+  // can open the form. Until it arrives, mixed previews today's behaviour.
+  const { data: organization } = useQuery({
+    queryKey: ['organization'],
+    queryFn: () => api.get<OrganizationView>('/organization'),
+  });
+  const businessType = organization?.businessType ?? 'mixed';
+
+  const sold = (unit: UnitDraft) =>
+    unit.isSellable ?? previewIsSellable(unit, units.length, businessType);
+  const baseName = units.find((row) => row.isBase)?.name.trim() || 'base';
+  const soldNames = units
+    .filter((unit) => unit.name.trim() && sold(unit))
+    .map((unit) => unit.name.trim());
+  // A default that stopped being sold falls back to "automatic" rather than
+  // being sent and refused.
+  const effectiveDefault = soldNames.includes(defaultUnit) ? defaultUnit : '';
 
   const [prices, setPrices] = useState<PriceDraft[]>(
     product
@@ -165,7 +206,17 @@ export function ProductForm({
         ...(reorderPoint.trim() !== '' && {
           reorderPoint: Number(reorderPoint),
         }),
-        units: units.map((unit) => ({ name: unit.name, factor: unit.factor })),
+        units: units.map((unit) => ({
+          name: unit.name,
+          factor: unit.factor,
+          // Only a box somebody touched is sent: an untouched one is the
+          // server's default to decide, and for a saved unit, omitting it
+          // leaves it as it is.
+          ...(unit.isSellable !== null && { isSellable: unit.isSellable }),
+          ...(effectiveDefault &&
+            effectiveDefault !== initialDefault &&
+            unit.name === effectiveDefault && { isDefaultSelling: true }),
+        })),
         ...(prices.some((price) => price.price !== null) && {
           prices: prices
             .filter((price) => price.price !== null)
@@ -211,6 +262,7 @@ export function ProductForm({
         factor: 1,
         existing: false,
         isBase: false,
+        isSellable: null,
       },
     ]);
 
@@ -431,10 +483,13 @@ export function ProductForm({
             </Button>
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            Exactly one unit has a factor of 1 — that is the base, and stock is
-            counted in it. A unit added by mistake can be taken off with × until
-            you save; after that it is <strong>never removed</strong>, because
-            sales and movements point at it.
+            The unit with a factor of 1 is what stock is{' '}
+            <strong>counted in</strong> — the smallest piece that can be left on
+            your shelf. It does not have to be something you sell: untick{' '}
+            <em>Sold</em> and the till never offers it. A unit added by mistake
+            can be taken off with × until you save; after that it is{' '}
+            <strong>never removed</strong>, because sales and movements point at
+            it.
           </p>
 
           <div className="mt-3 space-y-2">
@@ -469,8 +524,30 @@ export function ProductForm({
                   className="w-28"
                 />
                 <span className="w-24 text-xs text-slate-500">
-                  {unit.isBase ? 'base unit' : `= ${unit.factor} base`}
+                  {unit.isBase
+                    ? 'counted in'
+                    : `= ${unit.factor} ${baseName}`}
                 </span>
+                <label
+                  className="flex w-16 shrink-0 items-center gap-1.5 text-xs text-slate-600"
+                  title="Offered at the till. Deliveries and counts use every unit regardless."
+                >
+                  <input
+                    type="checkbox"
+                    checked={sold(unit)}
+                    onChange={(event) =>
+                      setUnits((current) =>
+                        current.map((row) =>
+                          row.key === unit.key
+                            ? { ...row, isSellable: event.target.checked }
+                            : row,
+                        ),
+                      )
+                    }
+                    aria-label={`Sell ${unit.name || 'this unit'} at the till`}
+                  />
+                  Sold
+                </label>
                 {/* The base unit stays even unsaved: a product needs one. */}
                 <RemoveRow
                   show={!unit.existing && !unit.isBase}
@@ -480,6 +557,38 @@ export function ProductForm({
               </div>
             ))}
           </div>
+
+          {soldNames.length === 0 ? (
+            <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs text-amber-800">
+              Tick <em>Sold</em> on at least one unit, or the till will have
+              nothing to sell this product in.
+            </p>
+          ) : (
+            <div className="mt-3 max-w-xs">
+              <Field
+                label="Till picks first"
+                htmlFor="p-default-unit"
+                hint="The unit a product goes into the cart in when it is picked from search."
+              >
+                <Select
+                  id="p-default-unit"
+                  value={effectiveDefault}
+                  onChange={(event) => setDefaultUnit(event.target.value)}
+                >
+                  <option value="">
+                    {businessType === 'wholesale'
+                      ? 'Automatic — the biggest sold unit'
+                      : 'Automatic — the smallest sold unit'}
+                  </option>
+                  {soldNames.map((unitName) => (
+                    <option key={unitName} value={unitName}>
+                      {unitName}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          )}
         </section>
 
         {/* -- Prices ------------------------------------------------------ */}
@@ -605,7 +714,12 @@ export function ProductForm({
           </Button>
           <Button
             type="submit"
-            disabled={save.isPending || !name.trim() || units.length === 0}
+            disabled={
+              save.isPending ||
+              !name.trim() ||
+              units.length === 0 ||
+              soldNames.length === 0
+            }
           >
             {save.isPending
               ? 'Saving…'
