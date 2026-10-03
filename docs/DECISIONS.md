@@ -463,11 +463,27 @@ Details:
   rule change reaching two callers and missing the third is exactly how the fallback would have
   survived in scans alone.
 
-**Found on the way, not fixed — a real gap for a mixed shop.** The till's own docstring and §17
-say naming a customer re-prices the cart. **It does not.** `tierId` follows the customer, but
-lines already in the cart keep the price they were added at; only lines added afterwards use the
-customer's tier. So a cashier who scans first and picks the wholesale customer second charges
-retail. A correct rule written next to code that does the opposite — the §19 lesson again.
+**Found on the way, fixed separately (2026-10-04) — a real gap for a mixed shop.** The till's own
+docstring and §17 said naming a customer re-prices the cart. **It did not.** `tierId` followed the
+customer, but lines already in the cart kept the price they were added at; only lines added
+afterwards used the customer's tier. So a cashier who scanned first and picked the wholesale
+customer second charged retail. A correct rule written next to code that does the opposite — the
+§19 lesson again.
+
+**The fix: picking a customer on another tier re-prices the whole cart** (`repriceCart` in
+`TillPage`, rules in `applyRepricing` in `till/cart.ts`). Triggered from the customer change itself,
+not an effect, one `GET /products/:id/price` per line. Four rules:
+
+- **A price somebody typed stands.** A line whose price differs from its list price was agreed at
+  the counter; it keeps it, and only its list price moves, so it still shows as overridden.
+- **A line the new list cannot price keeps its old price and is named** — *"Lotion (carton) has no
+  price on the Wholesale list, so it keeps its previous price. Check before taking payment."* —
+  never silently left at retail.
+- **Payment waits.** "Take payment" is disabled while prices are moving, so a sale cannot be
+  recorded half re-priced.
+- **Only the latest choice lands.** A run counter discards answers for a customer the cashier has
+  already changed away from, and starting a new sale cancels one in flight. A line whose unit
+  changed while its price was in flight is left alone.
 
 ### Size is plain text, and on hand is on the list
 

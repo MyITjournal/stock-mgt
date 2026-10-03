@@ -9,12 +9,14 @@ import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import {
   addToCart,
+  applyRepricing,
   cartTotal,
   removeLine,
   toSaleLines,
   updateLine,
   type CartLine,
   type UnitOption,
+  type Repriced,
 } from './cart';
 import { ScanBox } from './ScanBox';
 import { CartLines } from './CartLines';
@@ -43,8 +45,10 @@ type PriceTierView = components['schemas']['PriceTierView'];
  *    product search (DECISIONS.md §17).
  * 2. **The browser never works out a price.** Switching a piece to a carton, or
  *    naming a customer who buys on another tier, re-prices through
- *    `GET /products/:id/price`. The one arithmetic exception is the running
- *    total, which is exact because prices are tax-inclusive (§2).
+ *    `GET /products/:id/price` — the whole cart, not only the next line
+ *    (`repriceCart`; until 2026-10-04 this sentence was true of new lines
+ *    only). The one arithmetic exception is the running total, which is exact
+ *    because prices are tax-inclusive (§2).
  * 3. **A 409 is a rule, not an error.** Not enough stock, or a customer who
  *    still owes, both come back as refusals an owner or manager may override
  *    with a reason — and the reason is the override (§5, §6).
@@ -59,6 +63,12 @@ export function TillPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // True while the cart is being moved onto another price list. Payment waits
+  // for it: taking money mid-way would record the old prices.
+  const [repricing, setRepricing] = useState(false);
+  // Which re-pricing is current. A customer changed twice in quick succession
+  // starts two; only the answer for the latest choice may land.
+  const repriceRun = useRef(0);
   const [completed, setCompleted] = useState<SaleReceiptView | null>(null);
   const [override, setOverride] = useState<{
     kind: OverrideKind;
@@ -99,12 +109,95 @@ export function TillPage() {
    * back at `basePrice × factor`, which is right for a sachet and wrong for a
    * carton, and the till would quietly overcharge for cartons (§4).
    */
-  const tierId = useMemo(() => {
-    const customer = customers.find((row) => row.id === payment.customerId);
-    return (
-      customer?.priceTierId ?? tiers.find((tier) => tier.isDefault)?.id ?? null
-    );
-  }, [customers, payment.customerId, tiers]);
+  const tierFor = useCallback(
+    (customerId: string | null) => {
+      const customer = customers.find((row) => row.id === customerId);
+      return (
+        customer?.priceTierId ??
+        tiers.find((tier) => tier.isDefault)?.id ??
+        null
+      );
+    },
+    [customers, tiers],
+  );
+  const tierId = useMemo(
+    () => tierFor(payment.customerId),
+    [tierFor, payment.customerId],
+  );
+
+  /**
+   * Moves every line already in the cart onto another price list.
+   *
+   * Naming a customer who buys on another tier changes the price of goods
+   * already scanned, not only of the next ones — a cashier who rings up a
+   * trade customer's order and then picks them from the list must not charge
+   * retail. This used to be promised in the docstring above and not done.
+   *
+   * Priced on the server, one request per line, like every other price (§4);
+   * the cart's rules for what moves and what stays are `applyRepricing`.
+   */
+  const repriceCart = useCallback(
+    async (nextTierId: string | null, cart: readonly CartLine[]) => {
+      if (cart.length === 0) return;
+      const run = ++repriceRun.current;
+      setRepricing(true);
+      setError(null);
+      try {
+        const priced: Repriced[] = await Promise.all(
+          cart.map(async (line) => {
+            const result = await api.get<ResolvedUnitPrice>(
+              `/products/${line.productId}/price?unitId=${line.unitId}` +
+                (nextTierId ? `&tierId=${nextTierId}` : ''),
+            );
+            return {
+              key: line.key,
+              unitId: line.unitId,
+              price: result.price,
+              isTierPrice: result.isTierPrice,
+            };
+          }),
+        );
+        if (run !== repriceRun.current) return;
+
+        setLines((current) => applyRepricing(current, priced).lines);
+        // Worked out from the answers, not from inside the updater above:
+        // React may run that later, and a list read from it here could be
+        // empty — the warning would silently never show.
+        const unpriced = cart.filter((line) =>
+          priced.some((row) => row.key === line.key && row.price === null),
+        );
+        const tierName =
+          tiers.find((tier) => tier.id === nextTierId)?.name ?? 'this';
+        if (unpriced.length > 0) {
+          setError(
+            `${unpriced.map((line) => `${line.productName} (${line.unitName})`).join(', ')} ${unpriced.length === 1 ? 'has' : 'have'} no price on the ${tierName} list, so ${unpriced.length === 1 ? 'it keeps its' : 'they keep their'} previous price. Check before taking payment.`,
+          );
+        } else {
+          setNotice(`Prices moved to the ${tierName} list.`);
+        }
+      } catch (caught) {
+        if (run === repriceRun.current) {
+          setError(
+            `Could not update the prices for this customer — ${messageFor(caught)} Pick the customer again to retry.`,
+          );
+        }
+      } finally {
+        if (run === repriceRun.current) setRepricing(false);
+      }
+    },
+    [tiers],
+  );
+
+  /** The payment panel's changes, re-pricing the cart when the tier moves. */
+  const changePayment = useCallback(
+    (next: PaymentState) => {
+      setPayment(next);
+      if (next.customerId === payment.customerId) return;
+      const nextTierId = tierFor(next.customerId);
+      if (nextTierId !== tierId) void repriceCart(nextTierId, lines);
+    },
+    [payment.customerId, tierFor, tierId, repriceCart, lines],
+  );
 
   const total = cartTotal(lines);
 
@@ -381,6 +474,10 @@ export function TillPage() {
     setError(null);
     setNotice(null);
     saleId.current = crypto.randomUUID();
+    // A re-pricing still in flight belongs to the sale just abandoned; this
+    // makes its answer stale so it cannot speak up on the new one.
+    repriceRun.current += 1;
+    setRepricing(false);
   }, []);
 
   if (completed) {
@@ -489,11 +586,11 @@ export function TillPage() {
 
         <PaymentPanel
           state={payment}
-          onChange={setPayment}
+          onChange={changePayment}
           total={total}
           customers={customers}
           accounts={accounts}
-          busy={busy}
+          busy={busy || repricing}
           canSubmit={canSubmit}
           onSubmit={() => void submit()}
         />

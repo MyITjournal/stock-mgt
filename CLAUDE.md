@@ -656,9 +656,13 @@ The arithmetic is in `web/src/lib/portions.ts`.
 **No base price means no fallback** (§4, 2026-10-03). `Product.basePrice` is nullable; with none,
 a unit without its own price has `price: null` from `resolveUnitPrice` — the one pricing rule, now
 also used by scans — and the till refuses it rather than guess. A seller-named `unitPrice` is still
-accepted. Zero is a price; null is not. ⚠ **Open gap:** naming a customer does **not** re-price
-lines already in the cart, though the till's docstring says it does — scan first, pick a wholesale
-customer second, and the cart charges retail.
+accepted. Zero is a price; null is not.
+
+**Picking a customer on another tier re-prices the whole cart** (§4, fixed 2026-10-04 — the
+docstring promised it from the till's first version while only new lines moved). `applyRepricing` in `till/cart.ts`:
+a typed price stands, a line the new list cannot price keeps its old price **and is named**, a line
+that changed unit mid-flight is left alone. Payment is disabled while prices move, and a run
+counter lets only the latest customer choice land.
 
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
