@@ -562,3 +562,24 @@ Hovering it shows **2,965 sachet in all**.
 
 **156. [gate] A product that has sold past its stock** shows its shortfall in red, signed once in
 front: **−1 carton, 2 roll**.
+
+---
+
+## V. Naming a customer re-prices the cart
+
+Use a shop created as **Both**, with a product priced on Retail **and** Wholesale, a second priced
+on Retail only, and a customer on the Wholesale list.
+
+**157. Ring up both products with no customer.** They go in at Retail prices.
+
+**158. Pick the wholesale customer.** [gate] The first product's line **changes to its Wholesale
+price** and a note says prices moved to the Wholesale list. The second keeps its price and a red
+message names it as having no Wholesale price.
+
+**159. [gate] While the prices are changing, Take payment is greyed out.**
+
+**160. Type your own price on a line, then switch the customer back to walk-in.** [gate] Your
+typed price stays; the other lines go back to Retail.
+
+**161. Pick a customer, then quickly pick a different one.** [gate] The cart ends on the second
+customer's prices, never the first's.
