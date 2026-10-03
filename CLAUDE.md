@@ -371,6 +371,13 @@ as "a provider is configured", which closed `register` on every developer machin
 general shape: **a check asking "is this configured" rather than "can this succeed" will refuse the
 case where success arrives by another route.**
 
+**Sign-up asks what kind of shop it is** (§22, 2026-10-03): `Organization.businessType` is
+`retail`, `wholesale` or `mixed` ("Both"). **It sets starting defaults and locks no feature** — today
+the price lists seeded (`defaultPriceTierRows`: Retail / Wholesale / both with Retail default), next
+how a new product's units begin. Changing it in Settings moves nothing already set up and adds or
+removes no price list. Existing shops, `register`, Google and a client that omits it get `mixed`;
+the CLI takes `--type`. It is **not** the subscription plan — that stays `maxUsers`.
+
 **An owner's username is plain; a staff username stays qualified by the shop slug.** Staff
 usernames are qualified because an owner names their own people and two shops both have an `amina`
 — nobody types those by choice, they are handed over. An owner picks their own and types it every
@@ -629,11 +636,41 @@ deleted** and **the base unit never moves**, since stock is counted in it. Price
 at all: an unpriced unit falls back to `basePrice × factor`, which is the carton overcharge §4
 exists to prevent. Barcodes *can* be deleted.
 
+**Counting is not selling** (§4, 2026-10-03). The base unit is what stock is **counted in** — the
+smallest piece that can be left on a shelf — and the form calls it that. `ProductUnit.isSellable`
+says whether the till offers a unit: Peak 14g is counted in sachets because half a carton leaves
+half a roll behind, and a distributor never sells a sachet. Rules in `catalog/selling-units.ts`: a
+wholesaler's base starts unsold, a product's only unit is always sold, at least one unit must be
+sold, and **exactly one sold unit is the default**, settled after every unit write. **Only selling
+checks it** (`resolveProductUnit` with `forSale`, which also picks the default selling unit rather
+than the base when no unit is named); deliveries, counts, adjustments and returns use every unit.
+The form sends `isSellable` only for a box somebody touched, so the server's default is the one
+stored.
+
+**A portion is a unit** (§4, 2026-10-03). *Add a portion* on the product form makes `1/2 carton`,
+`1/6 carton` and so on as ordinary units with their own factor and price — never a fractional
+quantity, so the ledger stays whole. The form refuses one that is not whole (*"½ of a carton is
+10 and 1/2 rolls"*) and names it with a slash, not `½`, because the PDF fonts have no ⅓ or ⅙.
+The arithmetic is in `web/src/lib/portions.ts`.
+
+**No base price means no fallback** (§4, 2026-10-03). `Product.basePrice` is nullable; with none,
+a unit without its own price has `price: null` from `resolveUnitPrice` — the one pricing rule, now
+also used by scans — and the till refuses it rather than guess. A seller-named `unitPrice` is still
+accepted. Zero is a price; null is not.
+
+**Picking a customer on another tier re-prices the whole cart** (§4, fixed 2026-10-04 — the
+docstring promised it from the till's first version while only new lines moved). `applyRepricing` in `till/cart.ts`:
+a typed price stands, a line the new list cannot price keeps its old price **and is named**, a line
+that changed unit mid-flight is left alone. Payment is disabled while prices move, and a run
+counter lets only the latest customer choice land.
+
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
 field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank
 is stored as null; on an edit, omitted leaves it and `''` clears it; search matches it. The
-products list also shows **On hand**, summed from one `GET /stock/levels`.
+products list also shows **On hand**, summed from one `GET /stock/levels` and said in the shop's
+units — "14 carton, 2 roll, 5 sachet" — by `describeCount` (`web/src/lib/quantity.ts`), skipping
+`1/2 …` portions, exact count on hover. Display only.
 
 **A category in use cannot be deleted** (§4, 2026-10-02). `DELETE /categories/:id` is a 409 naming
 the count while any product — retired ones included — or sub-category is still in it; leaving the

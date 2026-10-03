@@ -269,7 +269,7 @@ export class ProductController {
   @ApiOperation({
     summary: 'Resolve the price of one unit for a tier',
     description:
-      'Falls back to basePrice x unit factor when the tier has no explicit price for that unit.',
+      'Falls back to basePrice x unit factor when the tier has no explicit price for that unit, and answers price: null when the product has no base price either — that unit cannot be sold until it is priced.',
   })
   @ApiOkResponse({ type: ResolvedUnitPrice })
   resolvePrice(

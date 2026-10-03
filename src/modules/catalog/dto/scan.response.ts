@@ -48,6 +48,12 @@ class ScannedUnit {
     description: 'How many base units one of these is. The base unit is 1.',
   })
   factor!: number;
+
+  @ApiProperty({
+    description:
+      'Whether the till may sell this unit. A code on an unsold unit — the single sachet a distributor never sells — still resolves, so a delivery can scan it; the till refuses it.',
+  })
+  isSellable!: boolean;
 }
 
 class TaxSplit {
@@ -90,10 +96,13 @@ export class ScanResult {
   baseQuantity!: number;
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
     example: 1200000,
-    description: 'Tax-inclusive price for one of `unit`, in kobo.',
+    description:
+      'Tax-inclusive price for one of `unit`, in kobo. Null when the unit has no price and the product no base price to fall back on — the till refuses it.',
   })
-  price!: number;
+  price!: number | null;
 
   @ApiProperty({
     description:
@@ -101,6 +110,6 @@ export class ScanResult {
   })
   isTierPrice!: boolean;
 
-  @ApiProperty({ type: () => TaxSplit })
-  tax!: TaxSplit;
+  @ApiProperty({ type: () => TaxSplit, nullable: true })
+  tax!: TaxSplit | null;
 }

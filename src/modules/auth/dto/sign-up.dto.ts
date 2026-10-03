@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { BusinessType } from '@prisma/client';
 import {
   IsEmail,
+  IsEnum,
   IsOptional,
   IsString,
   Matches,
@@ -77,4 +79,22 @@ export class SignUpDto {
   @IsEmail({}, { message: 'That does not look like an email address.' })
   @MaxLength(255)
   email?: string;
+
+  /**
+   * Optional on the wire so an older client that never asks still signs up —
+   * it gets `mixed`, which is how every shop behaved before the question
+   * existed. The sign-up screen always sends it.
+   */
+  @ApiPropertyOptional({
+    enum: BusinessType,
+    enumName: 'BusinessType',
+    default: BusinessType.mixed,
+    description:
+      'What kind of trading the shop does. Sets the price lists it starts with and how new products begin; it locks nothing, and the owner can change it later.',
+  })
+  @IsOptional()
+  @IsEnum(BusinessType, {
+    message: 'Choose retail, wholesale or both.',
+  })
+  businessType?: BusinessType;
 }

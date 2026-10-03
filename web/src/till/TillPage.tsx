@@ -9,11 +9,14 @@ import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import {
   addToCart,
+  applyRepricing,
   cartTotal,
   removeLine,
   toSaleLines,
   updateLine,
   type CartLine,
+  type UnitOption,
+  type Repriced,
 } from './cart';
 import { ScanBox } from './ScanBox';
 import { CartLines } from './CartLines';
@@ -42,8 +45,10 @@ type PriceTierView = components['schemas']['PriceTierView'];
  *    product search (DECISIONS.md §17).
  * 2. **The browser never works out a price.** Switching a piece to a carton, or
  *    naming a customer who buys on another tier, re-prices through
- *    `GET /products/:id/price`. The one arithmetic exception is the running
- *    total, which is exact because prices are tax-inclusive (§2).
+ *    `GET /products/:id/price` — the whole cart, not only the next line
+ *    (`repriceCart`; until 2026-10-04 this sentence was true of new lines
+ *    only). The one arithmetic exception is the running total, which is exact
+ *    because prices are tax-inclusive (§2).
  * 3. **A 409 is a rule, not an error.** Not enough stock, or a customer who
  *    still owes, both come back as refusals an owner or manager may override
  *    with a reason — and the reason is the override (§5, §6).
@@ -58,6 +63,12 @@ export function TillPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // True while the cart is being moved onto another price list. Payment waits
+  // for it: taking money mid-way would record the old prices.
+  const [repricing, setRepricing] = useState(false);
+  // Which re-pricing is current. A customer changed twice in quick succession
+  // starts two; only the answer for the latest choice may land.
+  const repriceRun = useRef(0);
   const [completed, setCompleted] = useState<SaleReceiptView | null>(null);
   const [override, setOverride] = useState<{
     kind: OverrideKind;
@@ -98,12 +109,95 @@ export function TillPage() {
    * back at `basePrice × factor`, which is right for a sachet and wrong for a
    * carton, and the till would quietly overcharge for cartons (§4).
    */
-  const tierId = useMemo(() => {
-    const customer = customers.find((row) => row.id === payment.customerId);
-    return (
-      customer?.priceTierId ?? tiers.find((tier) => tier.isDefault)?.id ?? null
-    );
-  }, [customers, payment.customerId, tiers]);
+  const tierFor = useCallback(
+    (customerId: string | null) => {
+      const customer = customers.find((row) => row.id === customerId);
+      return (
+        customer?.priceTierId ??
+        tiers.find((tier) => tier.isDefault)?.id ??
+        null
+      );
+    },
+    [customers, tiers],
+  );
+  const tierId = useMemo(
+    () => tierFor(payment.customerId),
+    [tierFor, payment.customerId],
+  );
+
+  /**
+   * Moves every line already in the cart onto another price list.
+   *
+   * Naming a customer who buys on another tier changes the price of goods
+   * already scanned, not only of the next ones — a cashier who rings up a
+   * trade customer's order and then picks them from the list must not charge
+   * retail. This used to be promised in the docstring above and not done.
+   *
+   * Priced on the server, one request per line, like every other price (§4);
+   * the cart's rules for what moves and what stays are `applyRepricing`.
+   */
+  const repriceCart = useCallback(
+    async (nextTierId: string | null, cart: readonly CartLine[]) => {
+      if (cart.length === 0) return;
+      const run = ++repriceRun.current;
+      setRepricing(true);
+      setError(null);
+      try {
+        const priced: Repriced[] = await Promise.all(
+          cart.map(async (line) => {
+            const result = await api.get<ResolvedUnitPrice>(
+              `/products/${line.productId}/price?unitId=${line.unitId}` +
+                (nextTierId ? `&tierId=${nextTierId}` : ''),
+            );
+            return {
+              key: line.key,
+              unitId: line.unitId,
+              price: result.price,
+              isTierPrice: result.isTierPrice,
+            };
+          }),
+        );
+        if (run !== repriceRun.current) return;
+
+        setLines((current) => applyRepricing(current, priced).lines);
+        // Worked out from the answers, not from inside the updater above:
+        // React may run that later, and a list read from it here could be
+        // empty — the warning would silently never show.
+        const unpriced = cart.filter((line) =>
+          priced.some((row) => row.key === line.key && row.price === null),
+        );
+        const tierName =
+          tiers.find((tier) => tier.id === nextTierId)?.name ?? 'this';
+        if (unpriced.length > 0) {
+          setError(
+            `${unpriced.map((line) => `${line.productName} (${line.unitName})`).join(', ')} ${unpriced.length === 1 ? 'has' : 'have'} no price on the ${tierName} list, so ${unpriced.length === 1 ? 'it keeps its' : 'they keep their'} previous price. Check before taking payment.`,
+          );
+        } else {
+          setNotice(`Prices moved to the ${tierName} list.`);
+        }
+      } catch (caught) {
+        if (run === repriceRun.current) {
+          setError(
+            `Could not update the prices for this customer — ${messageFor(caught)} Pick the customer again to retry.`,
+          );
+        }
+      } finally {
+        if (run === repriceRun.current) setRepricing(false);
+      }
+    },
+    [tiers],
+  );
+
+  /** The payment panel's changes, re-pricing the cart when the tier moves. */
+  const changePayment = useCallback(
+    (next: PaymentState) => {
+      setPayment(next);
+      if (next.customerId === payment.customerId) return;
+      const nextTierId = tierFor(next.customerId);
+      if (nextTierId !== tierId) void repriceCart(nextTierId, lines);
+    },
+    [payment.customerId, tierFor, tierId, repriceCart, lines],
+  );
 
   const total = cartTotal(lines);
 
@@ -113,18 +207,20 @@ export function TillPage() {
    * A scan resolves one unit, which is all the fast path needs — the line is in
    * the cart before this returns. The picker is only useful once the rest of
    * the units are known, so it loads them without holding up the scan.
+   *
+   * Matched by product, not by line key. It used to be handed a key minted
+   * here, but `addToCart` mints its own, so the lookup found nothing and the
+   * picker after a scan never widened past the scanned unit. Every line of
+   * the product gets the same list, which is also true.
    */
-  const loadUnits = useCallback(async (productId: string, key: string) => {
+  const loadUnits = useCallback(async (productId: string) => {
     try {
       const product = await api.get<ProductView>(`/products/${productId}`);
+      const units = sellableUnits(product);
       setLines((current) =>
-        updateLine(current, key, {
-          units: product.units.map((unit) => ({
-            id: unit.id,
-            name: unit.name,
-            factor: unit.factor,
-          })),
-        }),
+        current.map((line) =>
+          line.productId === productId ? { ...line, units } : line,
+        ),
       );
     } catch {
       // The line is already usable in the unit that was scanned. Failing to
@@ -134,7 +230,20 @@ export function TillPage() {
 
   const addScanned = useCallback(
     (scan: ScanResult) => {
-      const key = crypto.randomUUID();
+      // A code on a unit only counted in — the single sachet a distributor
+      // never sells. The server would refuse the sale; saying so now is kinder
+      // than letting it reach the checkout.
+      if (!scan.unit.isSellable) {
+        setError(
+          `${scan.product.name} is not sold by the ${scan.unit.name}. Scan the pack or carton instead, or pick it from the search.`,
+        );
+        return;
+      }
+      if (scan.price === null) {
+        setError(unpricedMessage(scan.product.name, scan.unit.name));
+        return;
+      }
+      const price = scan.price;
       setLines((current) =>
         addToCart(current, {
           productId: scan.product.id,
@@ -145,12 +254,12 @@ export function TillPage() {
           unitName: scan.unit.name,
           units: [scan.unit],
           quantity: 1,
-          unitPrice: scan.price,
-          listPrice: scan.price,
+          unitPrice: price,
+          listPrice: price,
           isTierPrice: scan.isTierPrice,
         }),
       );
-      void loadUnits(scan.product.id, key);
+      void loadUnits(scan.product.id);
     },
     [loadUnits],
   );
@@ -160,12 +269,13 @@ export function TillPage() {
       setBusy(true);
       setError(null);
       try {
+        // Only units sold at the till: counting is not selling, and the base
+        // unit a distributor counts in may be one it never sells.
+        const sellable = product.units.filter((row) => row.isSellable);
         const unit =
-          product.units.find((row) => row.isDefaultSelling) ??
-          product.units.find((row) => row.isBase) ??
-          product.units[0];
+          sellable.find((row) => row.isDefaultSelling) ?? sellable[0];
         if (!unit) {
-          setError(`${product.name} has no sellable unit.`);
+          setError(`${product.name} has no unit that is sold at the till.`);
           return;
         }
 
@@ -173,6 +283,11 @@ export function TillPage() {
           `/products/${product.id}/price?unitId=${unit.id}` +
             (tierId ? `&tierId=${tierId}` : ''),
         );
+        const price = priced.price;
+        if (price === null) {
+          setError(unpricedMessage(product.name, unit.name));
+          return;
+        }
 
         setLines((current) =>
           addToCart(current, {
@@ -182,14 +297,10 @@ export function TillPage() {
             sku: product.sku,
             unitId: unit.id,
             unitName: unit.name,
-            units: product.units.map((row) => ({
-              id: row.id,
-              name: row.name,
-              factor: row.factor,
-            })),
+            units: sellableUnits(product),
             quantity: 1,
-            unitPrice: priced.price,
-            listPrice: priced.price,
+            unitPrice: price,
+            listPrice: price,
             isTierPrice: priced.isTierPrice,
           }),
         );
@@ -262,12 +373,19 @@ export function TillPage() {
           `/products/${line.productId}/price?unitId=${unitId}` +
             (tierId ? `&tierId=${tierId}` : ''),
         );
+        const price = priced.price;
+        if (price === null) {
+          // The line stays in the unit it was in, at the price it had —
+          // switching it to a unit with no price would leave nothing to charge.
+          setError(unpricedMessage(line.productName, unit.name));
+          return;
+        }
         setLines((current) =>
           updateLine(current, key, {
             unitId,
             unitName: unit.name,
-            unitPrice: priced.price,
-            listPrice: priced.price,
+            unitPrice: price,
+            listPrice: price,
             isTierPrice: priced.isTierPrice,
           }),
         );
@@ -356,6 +474,10 @@ export function TillPage() {
     setError(null);
     setNotice(null);
     saleId.current = crypto.randomUUID();
+    // A re-pricing still in flight belongs to the sale just abandoned; this
+    // makes its answer stale so it cannot speak up on the new one.
+    repriceRun.current += 1;
+    setRepricing(false);
   }, []);
 
   if (completed) {
@@ -464,11 +586,11 @@ export function TillPage() {
 
         <PaymentPanel
           state={payment}
-          onChange={setPayment}
+          onChange={changePayment}
           total={total}
           customers={customers}
           accounts={accounts}
-          busy={busy}
+          busy={busy || repricing}
           canSubmit={canSubmit}
           onSubmit={() => void submit()}
         />
@@ -510,4 +632,22 @@ function kindOfConflict(message: string): OverrideKind {
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   return 'Something went wrong. Try again.';
+}
+
+/** The units the till may offer for a product, smallest first. */
+function sellableUnits(product: ProductView): UnitOption[] {
+  return product.units
+    .filter((unit) => unit.isSellable)
+    .sort((a, b) => a.factor - b.factor)
+    .map((unit) => ({ id: unit.id, name: unit.name, factor: unit.factor }));
+}
+
+/**
+ * What the till says about a unit with no price: no tier row, and no base
+ * price to fall back on. The server would refuse the sale anyway; saying so
+ * when the item is added is kinder than at the checkout, and the till never
+ * fills the gap with a guess.
+ */
+function unpricedMessage(productName: string, unitName: string): string {
+  return `${productName} has no price for the ${unitName} yet. Ask a manager to set one on the product.`;
 }

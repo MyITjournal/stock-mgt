@@ -455,3 +455,131 @@ list — clearing works, it does not silently keep the old one.
 
 **128. [gate] The products list has an On hand column.** A product with a delivery recorded shows
 the quantity and its base unit; one with none shows a grey 0; a service shows a dash.
+
+---
+
+## Q. What kind of shop
+
+**129. Open sign-up.** [gate] "What kind of shop is it?" offers Retail shop, Wholesale or
+distributor, and Both, each with a line saying what it means. **Nothing is pre-selected**, and
+Create shop stays disabled until one is picked.
+
+**130. Create a Wholesale shop.** [gate] Categories & tiers shows one price list, *Wholesale*,
+marked default.
+
+**131. Create a shop as Both.** [gate] Two price lists, *Retail* (default) and *Wholesale*.
+
+**132. Settings → Business, as the owner.** [gate] A "How you trade" section shows the type you
+chose. Change it and save — it says saved, and the price lists on Categories & tiers are unchanged.
+
+**133. [gate] The same screen as a sales_rep** shows the type as text, with nothing to change.
+
+**134. [gate] On a phone-width window** the three choices on sign-up stack and stay readable.
+
+---
+
+## R. Counted in, and sold at the till
+
+Run these in a shop created as **Wholesale** unless a step says otherwise.
+
+**135. Add a product.** [gate] The first unit row says **counted in**, not "base unit". Rename it
+`sachet`, add `roll` (10) and `carton` (210). Without touching any box, the sachet's **Sold** box
+is unticked and the other two are ticked.
+
+**136. [gate] "Till picks first" offers only roll and carton**, plus *Automatic — the biggest sold
+unit*. Save. The products list shows `sachet (not sold)` in the Units column.
+
+**137. Edit it and untick every Sold box.** [gate] An amber note says to tick at least one, and
+Save is disabled.
+
+**138. At the till, search for it and add it.** [gate] It goes in as a **carton**, and the unit
+picker on the line offers roll and carton — never sachet.
+
+**139. Scan the sachet's barcode.** [gate] A message says it is not sold by the sachet and to scan
+the pack or carton. Nothing is added to the cart.
+
+**140. Scan a carton or roll barcode, then open the line's unit picker.** [gate] After a moment it
+offers the product's other sold units too — this used to stay stuck on the one scanned.
+
+**141. Record a delivery of it, counted in sachets.** [gate] The delivery form still offers
+sachet — counting is not selling.
+
+**142. In a shop created as Retail, add a product with piece and carton.** [gate] Both boxes start
+ticked, and *Automatic* says *the smallest sold unit*.
+
+---
+
+## S. Adding a portion
+
+**143. Add a product counted in `sachet`, with `roll` (10) and `carton` (210).** [gate] An *Add a
+portion* row appears under the units, offering ½ ⅓ ¼ ⅙ of a roll or a carton — never of the
+sachet.
+
+**144. Pick ½ of a carton and click Add.** [gate] A new row appears named **`1/2 carton`** with
+factor **105**, its Sold box ticked. Do the same for ⅙ — `1/6 carton`, factor 35.
+
+**145. Click Add again for ½ of a carton.** [gate] A red line says the product already has one.
+
+**146. Start another product counted in `roll` with `carton` (21), and ask for ½ of a carton.**
+[gate] It is refused, saying ½ of a carton is **10 and 1/2 rolls**, and suggesting you count in
+something smaller.
+
+**147. Save the first product with a price on `1/2 carton`, then sell one at the till.** [gate]
+The cart shows `1/2 carton` at its own price, and the receipt prints `1/2 carton`.
+
+**148. Print that sale's PDF invoice.** [gate] The unit reads `1/2 carton` — no missing
+character where the fraction is.
+
+---
+
+## T. No base price, no guessing
+
+**149. Add a product counted in `sachet` with `carton` (210) and a `1/2 carton` portion. Leave
+"Price per sachet" empty and price only the carton.** [gate] It saves. The hint under the empty box
+says a unit with no price cannot be sold until it has one.
+
+**150. At the till, add it and switch the line to `1/2 carton`.** [gate] A message says it has no
+price for the 1/2 carton yet; the line stays a carton at the carton price.
+
+**151. Scan a barcode on the `1/2 carton`.** [gate] The same message, and nothing is added.
+
+**152. Give the 1/2 carton a price on the product, then sell one.** [gate] It goes in at that
+price.
+
+**153. Edit an older product that has a base price, empty the box, save.** [gate] Its unpriced
+units now refuse at the till; type a price back in and they sell again.
+
+---
+
+## U. On hand in the shop's units
+
+**154. Record a delivery of 14 cartons, 2 rolls and 5 sachets of a product counted in sachets
+(roll 10, carton 210).** [gate] The products list's On hand reads **14 carton, 2 roll, 5 sachet**.
+Hovering it shows **2,965 sachet in all**.
+
+**155. Give the product a `1/2 carton` portion and sell one.** [gate] On hand reads **13 carton,
+13 roll** — never "1/2 carton".
+
+**156. [gate] A product that has sold past its stock** shows its shortfall in red, signed once in
+front: **−1 carton, 2 roll**.
+
+---
+
+## V. Naming a customer re-prices the cart
+
+Use a shop created as **Both**, with a product priced on Retail **and** Wholesale, a second priced
+on Retail only, and a customer on the Wholesale list.
+
+**157. Ring up both products with no customer.** They go in at Retail prices.
+
+**158. Pick the wholesale customer.** [gate] The first product's line **changes to its Wholesale
+price** and a note says prices moved to the Wholesale list. The second keeps its price and a red
+message names it as having no Wholesale price.
+
+**159. [gate] While the prices are changing, Take payment is greyed out.**
+
+**160. Type your own price on a line, then switch the customer back to walk-in.** [gate] Your
+typed price stays; the other lines go back to Retail.
+
+**161. Pick a customer, then quickly pick a different one.** [gate] The cart ends on the second
+customer's prices, never the first's.

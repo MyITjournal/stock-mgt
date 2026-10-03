@@ -367,6 +367,124 @@ a descriptive label that no report groups by, and worth revisiting if anybody is
 Price tiers still have no delete on screen: removing one changes what the customers on it pay, and
 that is its own decision.
 
+### Counting is not selling: `isSellable` on every unit
+
+Raised 2026-10-03 by a distributor: the product form asked for a price per *piece*, and a
+wholesaler never sells pieces. The cases that shaped it:
+
+| Product | Counted in | Sold at the till |
+|---|---|---|
+| Peak 14g — 10 sachets a roll, 21 rolls a carton | sachet | roll, ⅙, ⅓, ½ carton, carton |
+| Peak 360g — 12 a carton | piece | piece, ¼ carton, ½ carton, carton |
+| 3 Crowns evaporated — 24 a tray | tin | 3s, half dozen, dozen, tray |
+| Roll-on 50ml — 6 a pack, 30 a carton | piece | ½ pack, pack, ½ carton, carton |
+
+**Peak 14g is the one that decides it.** The owner's instinct was that the base is the roll,
+because no sachet — not even half a roll — is ever sold on its own. But half a carton is 10½
+rolls, so selling one leaves half a roll on the shelf, and stock has to be able to say so. Stock
+is counted in sachets; the till simply never offers one. **The base unit is the smallest piece that
+can be left on a shelf, not the smallest thing sold**, and the form now calls it "Counted in"
+because "base" means "what I sell" to a shop owner.
+
+So `ProductUnit.isSellable` (default true), and three rules in `catalog/selling-units.ts`, pure:
+
+- **How a box starts, when nobody ticked it:** a wholesaler's base unit starts unsold, every other
+  unit sold, and a product's *only* unit is always sold — a delivery counted in `trip` has nothing
+  else. The form shows this as a preview and **sends nothing for an untouched box**, so the
+  server's rule is the one stored, not the form's copy of it.
+- **At least one unit must be sold**, or the product cannot be sold at all — a 400.
+- **Exactly one default, and it is sold.** `isDefaultSelling` used to be set per unit with nothing
+  stopping two; it is now settled after every unit write: the unit asked for, else the current
+  default while still sold, else the largest sold unit for a wholesaler and the smallest for
+  anyone else. Asking for an unsold unit as the default is a 400, not a silent override.
+
+**Only selling asks.** `resolveProductUnit(…, { forSale: true })` refuses an unsold unit and, for a
+line with no `unitId`, takes the default selling unit instead of the base — which would otherwise
+have sold a distributor a single sachet. Deliveries, counts, adjustments, transfers and **returns**
+use every unit: a line sold before a unit was unticked can still come back. A barcode on an unsold
+unit **still scans** (a delivery needs it) and carries `isSellable: false`; the till refuses it
+with a message saying to scan the pack or carton.
+
+Existing units were all migrated as sold, so nothing changed for any product already set up.
+
+**A bug found on the way:** after a scan, the till was meant to load the product's other units in
+the background so the cashier could switch from roll to carton. It never did — it looked the line
+up by a key it minted itself, while `addToCart` mints its own. It now matches by product.
+
+### A portion is a unit, and the form does the arithmetic
+
+Added 2026-10-03. Half a carton, a sixth of a carton, half a pack are **ordinary units with their
+own factor and their own price** — the product form's *Add a portion* row (½, ⅓, ¼, ⅙ of any
+bigger unit) only works out the factor and the name. Nothing on the server knows a unit was made
+that way.
+
+**Not a fractional quantity.** Typing `0.5` against a carton was the other road, and it is worse
+on both counts: in this trade half a carton is rarely exactly half the carton price, so it needs a
+price of its own, and every quantity stays a whole number, which the ledger and smoke's sum-check
+depend on. Peak 14g, verified end to end: one carton in (210 sachets), then ½ carton, ⅙ carton and
+two rolls out, leaves exactly 50.
+
+Three details, all in `web/src/lib/portions.ts`:
+
+- **Refused when it does not come out whole**, and the message says the number: *"½ of a carton
+  is 10 and 1/2 rolls"*. While the product is new the fix is to count in something smaller; once
+  saved the counted-in unit cannot change, so the message says the portion cannot be made.
+- **Named `1/2 carton`, never `½ carton`.** Unit names print on PDF invoices and thermal receipts,
+  and the PDF's built-in fonts have no ⅓ or ⅙ — the same reason money prints as NGN. The picker
+  shows ½; the stored name uses a slash.
+- **Only bigger units are offered** as the whole — half of one sachet is never whole.
+
+Separately, the walkthrough asked for a portion's price **without** a `tierId` and got the
+`basePrice × factor` fallback: ₦2,100 for a half carton that sells for ₦20,500. The till always
+sends the tier, so it never saw this — but it is the case for making the base price optional next.
+
+### No base price means no fallback, never a guess
+
+Added 2026-10-03. `Product.basePrice` is **nullable**. With one, a unit that has no price of its
+own is charged `basePrice × factor`, as before. **Without one there is no fallback**:
+`resolveUnitPrice` answers `price: null`, the till refuses to add that unit and says to ask a
+manager to price it, and a sale that names no `unitPrice` for it is a 400.
+
+Why: the portions walkthrough asked for a half-carton price without a tier and got the fallback —
+**₦2,100 for a half carton of Peak that sells for ₦20,500**, because the base price was a sachet
+price. A distributor never sells the counted-in unit, so a price for it means nothing, and any
+number typed there to satisfy a required box becomes a silent wrong price on every unpriced
+portion. This is the §4 carton overcharge in its purest form.
+
+Details:
+
+- **A price the seller names is still accepted** for an unpriced unit — that is what was agreed,
+  not a guess. Only the server's own derivation refuses.
+- **Zero is a price, null is not.** A free sample is a decision; an empty box is the absence of one.
+- **On an edit, `null` clears it**; omitting it leaves it alone. The form always sends the box on
+  an edit for that reason.
+- **Existing products keep their base price** — the migration only drops `NOT NULL`.
+- **`scan.service` used its own copy of the pricing rule**; it now calls `resolveUnitPrice`. A
+  rule change reaching two callers and missing the third is exactly how the fallback would have
+  survived in scans alone.
+
+**Found on the way, fixed separately (2026-10-04) — a real gap for a mixed shop.** The till's own
+docstring and §17 said naming a customer re-prices the cart. **It did not.** `tierId` followed the
+customer, but lines already in the cart kept the price they were added at; only lines added
+afterwards used the customer's tier. So a cashier who scanned first and picked the wholesale
+customer second charged retail. A correct rule written next to code that does the opposite — the
+§19 lesson again.
+
+**The fix: picking a customer on another tier re-prices the whole cart** (`repriceCart` in
+`TillPage`, rules in `applyRepricing` in `till/cart.ts`). Triggered from the customer change itself,
+not an effect, one `GET /products/:id/price` per line. Four rules:
+
+- **A price somebody typed stands.** A line whose price differs from its list price was agreed at
+  the counter; it keeps it, and only its list price moves, so it still shows as overridden.
+- **A line the new list cannot price keeps its old price and is named** — *"Lotion (carton) has no
+  price on the Wholesale list, so it keeps its previous price. Check before taking payment."* —
+  never silently left at retail.
+- **Payment waits.** "Take payment" is disabled while prices are moving, so a sale cannot be
+  recorded half re-priced.
+- **Only the latest choice lands.** A run counter discards answers for a customer the cashier has
+  already changed away from, and starting a new sale cancels one in flight. A line whose unit
+  changed while its price was in flight is left alone.
+
 ### Size is plain text, and on hand is on the list
 
 Asked 2026-10-02: there was nowhere to say a product is 400g except inside its name. `Product.size`
@@ -388,6 +506,15 @@ is read live from the product rather than snapshotted on the sale line.
 The products list also gained **On hand**, from one `GET /stock/levels` summed per product — the
 same sum the product page already showed. A service shows a dash rather than a zero, because zero
 reads as "sold out".
+
+**On hand is said in the shop's units** (2026-10-04). A distributor counts Peak 14g in sachets, so
+the raw figure is 2,965 and unreadable; the list now says **"14 carton, 2 roll, 5 sachet"** —
+`describeCount` in `web/src/lib/quantity.ts`, biggest unit first, with the exact count on hover.
+Display only; nothing is computed from the words. Two choices: **portions are skipped**
+(`1/2 carton` would give "14 carton, 1 1/2 carton", which nobody says) — detected by the `n/m `
+prefix the portion helper names them with — and **the counted-in unit is always the last step**, so
+the parts add back to the count exactly. Verified live: after a half carton is sold the list reads
+"13 carton, 13 roll" — the loose sachets and the opened roll's remainder make a whole roll.
 
 A delivery the shop **charges the customer for** stays what §4 below says: a product with
 `trackStock` off. A delivery the shop **pays for** is an expense and never a product.
@@ -3500,3 +3627,41 @@ rather than discovered later, because it is their choice and they cannot reverse
 
 The CLI stays as the recovery path, and `POST /auth/change-password` (§20) stays as the ordinary
 one.
+
+### The kind of shop sets defaults, never features
+
+Added 2026-10-03. Sign-up asks **what kind of shop it is** — `retail`, `wholesale` or `mixed`
+(shown as "Both") — and stores it on `Organization.businessType`. It came out of the wholesale
+units discussion: a distributor never sells the single piece, and should not have to say so on
+every product it creates.
+
+**It changes starting points, and locks nothing.** A wholesaler sometimes breaks a carton and a
+retailer sometimes takes a bulk order; a type that hid features would turn both into a wall. What
+it decides today is the price lists a new shop is seeded with — `defaultPriceTierRows` in
+`price-tier.service.ts`, exactly one default each:
+
+| Type | Seeded | Default |
+|---|---|---|
+| retail | Retail | Retail |
+| wholesale | Wholesale | Wholesale — its walk-in is a trader |
+| mixed | Retail, Wholesale | Retail — the customer nobody set up is a walk-in |
+
+The units work that follows (§4) will read it for how a new product's units begin.
+
+Four details:
+
+- **Changing it later moves nothing.** `PATCH /organization` takes it (owner/manager, like the
+  rest of that screen) and no price list is added or removed — a list with prices in it is not
+  something to delete behind somebody's back. The settings screen says so.
+- **Existing shops are `mixed`**, the column default, which is exactly how the app behaved before
+  the question existed. Note they keep the single Retail list they were seeded with.
+- **Optional on the wire, required on the screen.** An older client that never asks still signs
+  up, as `mixed`; the sign-up form keeps its button disabled until a type is picked, because a
+  default nobody chose is a default nobody notices. The emailed `register` path and Google never
+  ask and get `mixed`; the CLI takes `--type`.
+- **It is not the subscription plan.** What a shop pays for stays `maxUsers` (§9). Tying
+  features to the type would mean a wholesaler on a small plan could not sell cartons.
+
+`SignUpInput` in the dashboard was a hand-written copy of the request shape; it is now the
+generated `SignUpDto` type, because a copy is exactly where a new field gets forgotten while the
+compiler stays quiet.

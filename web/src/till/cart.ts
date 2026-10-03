@@ -158,3 +158,55 @@ export function toSaleLines(lines: readonly CartLine[]) {
     unitPrice: line.unitPrice,
   }));
 }
+
+/** One line's price on the cart's new price list, as the server gave it. */
+export interface Repriced {
+  key: string;
+  /** The unit that was priced — the line may have changed unit since. */
+  unitId: string;
+  /** Null when the new list has no price for that unit and no fallback. */
+  price: Minor | null;
+  isTierPrice: boolean;
+}
+
+/**
+ * The cart moved onto another price list — the customer named buys on a
+ * different tier — and the server has priced each line on it.
+ *
+ * Three rules:
+ *
+ * - **A price somebody typed stands.** A line whose price differs from its
+ *   list price was agreed at the counter; it keeps that price, and only its
+ *   list price moves, so the till still shows it as overridden and can put it
+ *   back.
+ * - **A line the new list cannot price keeps its old price** and is returned
+ *   in `unpriced`, so the till can say so out loud rather than charge a walk-in
+ *   price to a trade customer in silence.
+ * - **A line that changed unit while the prices were in flight is left alone**:
+ *   it was priced for a unit it is no longer in.
+ */
+export function applyRepricing(
+  lines: readonly CartLine[],
+  repriced: readonly Repriced[],
+): { lines: CartLine[]; unpriced: CartLine[] } {
+  const byKey = new Map(repriced.map((row) => [row.key, row]));
+  const unpriced: CartLine[] = [];
+
+  const next = lines.map((line) => {
+    const row = byKey.get(line.key);
+    if (!row || row.unitId !== line.unitId) return line;
+    if (row.price === null) {
+      unpriced.push(line);
+      return line;
+    }
+    const agreed = line.unitPrice !== line.listPrice;
+    return {
+      ...line,
+      unitPrice: agreed ? line.unitPrice : row.price,
+      listPrice: row.price,
+      isTierPrice: row.isTierPrice,
+    };
+  });
+
+  return { lines: next, unpriced };
+}

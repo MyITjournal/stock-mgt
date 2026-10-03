@@ -544,7 +544,7 @@ export interface paths {
         };
         /**
          * Resolve the price of one unit for a tier
-         * @description Falls back to basePrice x unit factor when the tier has no explicit price for that unit.
+         * @description Falls back to basePrice x unit factor when the tier has no explicit price for that unit, and answers price: null when the product has no base price either — that unit cannot be sold until it is priced.
          */
         get: operations["ProductController_resolvePrice"];
         put?: never;
@@ -1955,6 +1955,11 @@ export interface components {
              */
             organizationName: string;
         };
+        /**
+         * @description What kind of trading the shop does. Sets the price lists it starts with and how new products begin; it locks nothing, and the owner can change it later.
+         * @enum {string}
+         */
+        BusinessType: "retail" | "wholesale" | "mixed";
         SignUpDto: {
             /**
              * @description The shop or business name.
@@ -1977,6 +1982,11 @@ export interface components {
              * @example owner@example.com
              */
             email?: string;
+            /**
+             * @description What kind of trading the shop does. Sets the price lists it starts with and how new products begin; it locks nothing, and the owner can change it later.
+             * @default mixed
+             */
+            businessType: components["schemas"]["BusinessType"];
         };
         VerifyOtpDto: {
             /** @example owner@example.com */
@@ -2277,6 +2287,8 @@ export interface components {
             factor: number;
             /** @description The one unit with `factor = 1`. */
             isBase: boolean;
+            /** @description Offered at the till. The base unit is what stock is counted in, which is not necessarily something the shop sells. */
+            isSellable: boolean;
             /** @description What the till offers first. */
             isDefaultSelling: boolean;
             /** Format: date-time */
@@ -2345,10 +2357,10 @@ export interface components {
             /** Format: uuid */
             packagingTypeId: string | null;
             /**
-             * @description Tax-inclusive price of one **base** unit, in kobo. A unit without a tier row falls back to `basePrice × factor`, which is right for a sachet and wrong for a carton (§4).
+             * @description Tax-inclusive price of one **base** unit, in kobo. A unit without a tier row falls back to `basePrice × factor`, which is right for a sachet and wrong for a carton (§4). **Null means no fallback** — an unpriced unit cannot be sold.
              * @example 50000
              */
-            basePrice: number;
+            basePrice: number | null;
             /** @description What one base unit last cost to buy. **Absent** for a role that may not see cost (§9); **null** when nothing has been bought yet. Never an input to stock valuation, which §2 values from lot totals instead. */
             costPrice?: number | null;
             /**
@@ -2397,13 +2409,13 @@ export interface components {
              */
             baseQuantity: number;
             /**
-             * @description Tax-inclusive, in kobo.
+             * @description Tax-inclusive, in kobo. **Null when the unit has no price** — no tier row and no base price to fall back on. The till refuses to sell it rather than guess.
              * @example 1200000
              */
-            price: number;
+            price: number | null;
             /** @description False means no tier priced this unit and the price is `basePrice × factor` — right for a sachet, wrong for a carton. The till surfaces it so a wrong carton price is caught before the sale (§4). */
             isTierPrice: boolean;
-            tax: components["schemas"]["UnitTaxSplit"];
+            tax: components["schemas"]["UnitTaxSplit"] | null;
         };
         ProductUnitInput: {
             /** @example carton */
@@ -2414,10 +2426,15 @@ export interface components {
              */
             factor: number;
             /**
-             * @description Pre-selected when selling this product.
+             * @description Pre-selected when selling this product. At most one unit should ask; it must be sold at the till. Left out, the current default stands, or one is chosen — the largest sold unit for a wholesaler, the smallest otherwise.
              * @example false
              */
             isDefaultSelling?: boolean;
+            /**
+             * @description Offered at the till. Left out on a new unit, it is sold — except a wholesaler’s base unit, which starts unsold, and a product’s only unit, which is always sold. At least one unit must be sold. Deliveries, counts and adjustments use every unit regardless.
+             * @example true
+             */
+            isSellable?: boolean;
         };
         ProductPriceInput: {
             /**
@@ -2486,7 +2503,7 @@ export interface components {
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
              * @example 250000
              */
-            basePrice: number;
+            basePrice?: Record<string, never>;
             /**
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
              * @example 200000
@@ -2576,7 +2593,7 @@ export interface components {
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
              * @example 250000
              */
-            basePrice?: number;
+            basePrice?: Record<string, never>;
             /**
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
              * @example 200000
@@ -2678,6 +2695,8 @@ export interface components {
              * @example 24
              */
             factor: number;
+            /** @description Whether the till may sell this unit. A code on an unsold unit — the single sachet a distributor never sells — still resolves, so a delivery can scan it; the till refuses it. */
+            isSellable: boolean;
         };
         TaxSplit: {
             /** @description What the customer pays. Prices are stored tax-inclusive (§2). */
@@ -2702,13 +2721,13 @@ export interface components {
              */
             baseQuantity: number;
             /**
-             * @description Tax-inclusive price for one of `unit`, in kobo.
+             * @description Tax-inclusive price for one of `unit`, in kobo. Null when the unit has no price and the product no base price to fall back on — the till refuses it.
              * @example 1200000
              */
-            price: number;
+            price: number | null;
             /** @description True when a tier row priced this exact unit. False means the price is `basePrice × factor`, which is right for a sachet and wrong for a carton — the till shows it so a wrong carton price is visible before the sale, not after (§4). */
             isTierPrice: boolean;
-            tax: components["schemas"]["TaxSplit"];
+            tax: components["schemas"]["TaxSplit"] | null;
         };
         LocationView: {
             /** Format: uuid */
@@ -5509,6 +5528,8 @@ export interface components {
              * @example 5
              */
             maxUsers: number;
+            /** @description Retail, wholesale or mixed. Sets starting defaults only — every feature is open to every type. */
+            businessType: components["schemas"]["BusinessType"];
             address: string | null;
             phone: string | null;
             email: string | null;
@@ -5590,6 +5611,8 @@ export interface components {
              *     ]
              */
             workingDays?: string[];
+            /** @description Changes the defaults for products created from now on. Existing products and price lists are left exactly as they are. */
+            businessType?: components["schemas"]["BusinessType"];
         };
         /** @enum {string} */
         OrgRole: "owner" | "manager" | "sales_rep" | "storekeeper" | "accountant";

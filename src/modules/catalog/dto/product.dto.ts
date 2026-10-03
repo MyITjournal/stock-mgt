@@ -12,6 +12,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { MAX_PRODUCT_CHILDREN } from '../../../common/pagination/request-limits';
@@ -36,11 +37,21 @@ export class ProductUnitInput {
 
   @ApiPropertyOptional({
     example: false,
-    description: 'Pre-selected when selling this product.',
+    description:
+      'Pre-selected when selling this product. At most one unit should ask; it must be sold at the till. Left out, the current default stands, or one is chosen — the largest sold unit for a wholesaler, the smallest otherwise.',
   })
   @IsOptional()
   @IsBoolean()
   isDefaultSelling?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Offered at the till. Left out on a new unit, it is sold — except a wholesaler’s base unit, which starts unsold, and a product’s only unit, which is always sold. At least one unit must be sold. Deliveries, counts and adjustments use every unit regardless.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isSellable?: boolean;
 }
 
 /**
@@ -162,8 +173,15 @@ export class CreateProductDto {
   @IsUUID()
   packagingTypeId?: string;
 
-  @IsMoney({ example: 250000 })
-  basePrice!: number;
+  /**
+   * Optional, and `null` clears it. Without one, a unit with no price of its
+   * own simply has no price, and the till will not sell it until it gets one —
+   * the right answer for a distributor, who never sells the counted-in unit.
+   */
+  @ValidateIf((_, value) => value !== null)
+  @IsOptional()
+  @IsMoney({ example: 250000, optional: true })
+  basePrice?: number | null;
 
   @IsOptional()
   @IsMoney({ example: 200000, optional: true })

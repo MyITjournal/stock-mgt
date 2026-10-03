@@ -102,8 +102,12 @@ model Product {
   packagingTypeId String?
 
   /// Tax-inclusive price of ONE base unit, in minor units (kobo). Used when no
-  /// ProductPrice row matches the customer's tier.
-  basePrice  Int
+  /// ProductPrice row matches the customer's tier — as `basePrice × factor`.
+  /// **Null means no fallback**: a unit with no price of its own cannot be
+  /// sold until it is given one. A distributor never sells the counted-in
+  /// unit, so a price for it means nothing, and guessing a half carton as
+  /// 105 × a sachet price is the carton overcharge §4 exists to prevent.
+  basePrice  Int?
   /// Last known purchase cost of one base unit, refreshed by receiving. A
   /// cached rounded snapshot **for display only** — never an input to a
   /// calculation, per DECISIONS.md §2.
@@ -175,8 +179,13 @@ model ProductUnit {
   factor Int
 
   isBase           Boolean @default(false)
-  /// The unit pre-selected when selling this product.
+  /// The unit pre-selected when selling this product. Exactly one per product,
+  /// and always a sellable one — `chooseDefaultSellingUnit` settles it.
   isDefaultSelling Boolean @default(false)
+  /// Offered at the till. Counting is not selling: a distributor counts Peak
+  /// 14g in sachets and never sells one, so its base unit is not sellable.
+  /// Deliveries, counts and adjustments still use every unit.
+  isSellable       Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -250,6 +259,14 @@ model ProductBarcode {
 
 /// INTERNAL is a valid EAN-13 in the GS1 restricted-circulation range (leading
 /// 2), generated for goods that arrive with no barcode of their own.
+/// Retail sells to the final customer, often in single pieces; wholesale sells
+/// packs and cartons and never the single piece; mixed does both.
+enum BusinessType {
+  retail
+  wholesale
+  mixed
+}
+
 enum BarcodeSymbology {
   EAN13
   UPC_A
@@ -706,6 +723,13 @@ model Organization {
   /// of a live shop over a subscription is how a customer is lost in an
   /// afternoon. Suspended members do not hold a seat.
   maxUsers Int @default(5)
+
+  /// What kind of trading the shop does. It sets **starting defaults** — the
+  /// price lists seeded at sign-up, and how a new product's units begin — and
+  /// never locks a feature away: a wholesaler sometimes breaks a carton and a
+  /// retailer sometimes takes a bulk order. Shops that existed before it are
+  /// `mixed`, which is exactly how the app behaved until then.
+  businessType BusinessType @default(mixed)
 
   /// When staff may sign in, as **minutes past midnight** in this business's
   /// timezone: 480 is 08:00, 1140 is 19:00.

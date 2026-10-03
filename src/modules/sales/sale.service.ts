@@ -259,12 +259,20 @@ export class SaleService {
       this.prisma,
       line.productId,
       line.unitId,
-      { allowUnstocked: true, withPrices: true },
+      { allowUnstocked: true, withPrices: true, forSale: true },
     );
 
+    // A price the seller named is what was agreed, and stands. Otherwise the
+    // price list decides — and an unpriced unit on a product with no base
+    // price has no answer, which is a refusal rather than a guess.
     const unitPrice =
       line.unitPrice ??
       resolveUnitPrice(product, unit, ctx.tierId ?? undefined).price;
+    if (unitPrice === null) {
+      throw new BadRequestException(
+        `"${product.name}" has no price for the ${unit.name}. Set one on the product before selling it.`,
+      );
+    }
 
     const priced = priceLine(unitPrice, line.quantity, product.taxRateBps);
     const baseQuantity = line.quantity * unit.factor;

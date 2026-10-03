@@ -11,7 +11,8 @@ import { TenantContext } from '../../common/tenancy/tenant-context';
 import { redactCost, redactCostAll } from '../../common/authz/cost-visibility';
 import { splitTaxInclusive } from '../../common/money/money';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
-import { BarcodeSymbology } from '@prisma/client';
+import { BarcodeSymbology, BusinessType } from '@prisma/client';
+import { chooseDefaultSellingUnit, defaultIsSellable } from './selling-units';
 import { resolveBarcode } from './barcode';
 import { resolveUnitPrice } from './pricing';
 import { ProductView, ResolvedUnitPrice } from './dto/product.response';
@@ -72,12 +73,20 @@ export class ProductService {
     // held a write lock while it was being decided.
     const defaultTierId = await this.resolveDefaultTier(input.prices);
     const barcodes = resolveBarcodeInputs(input.barcodes);
+    const businessType = await this.businessType();
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
         const product = await tx.product.create({
-          data: this.productData(input, { organizationId, sku }),
+          data: this.productData(input, { organizationId, sku, businessType }),
           include: { units: true },
+        });
+
+        await this.settleSellingUnits(tx, {
+          productId: product.id,
+          requestedDefault: input.units.find((unit) => unit.isDefaultSelling)
+            ?.name,
+          businessType,
         });
 
         const unitIdByName = new Map(
@@ -111,7 +120,11 @@ export class ProductService {
   /** The scalar columns, shared by create and the transaction above. */
   private productData(
     input: CreateProductDto,
-    context: { organizationId: string; sku: string },
+    context: {
+      organizationId: string;
+      sku: string;
+      businessType: BusinessType;
+    },
   ) {
     return {
       ...(input.id && { id: input.id }),
@@ -122,7 +135,7 @@ export class ProductService {
       description: input.description ?? null,
       categoryId: input.categoryId ?? null,
       packagingTypeId: input.packagingTypeId ?? null,
-      basePrice: input.basePrice,
+      basePrice: input.basePrice ?? null,
       costPrice: input.costPrice ?? null,
       ...(input.taxRateBps !== undefined && { taxRateBps: input.taxRateBps }),
       ...(input.trackStock !== undefined && { trackStock: input.trackStock }),
@@ -138,7 +151,12 @@ export class ProductService {
           // The factor-1 unit is the base; assertExactlyOneBaseUnit has
           // already guaranteed there is exactly one.
           isBase: unit.factor === 1,
-          isDefaultSelling: unit.isDefaultSelling ?? unit.factor === 1,
+          isSellable:
+            unit.isSellable ??
+            defaultIsSellable(unit, input.units.length, context.businessType),
+          // Settled once every unit exists, by settleSellingUnits: which one
+          // is the default depends on which are sold.
+          isDefaultSelling: false,
         })),
       },
     };
@@ -193,7 +211,10 @@ export class ProductService {
     const product = await this.findOneOrFail(id);
     return {
       ...product,
-      tax: splitTaxInclusive(product.basePrice, product.taxRateBps),
+      tax:
+        product.basePrice === null
+          ? null
+          : splitTaxInclusive(product.basePrice, product.taxRateBps),
     };
   }
 
@@ -253,10 +274,18 @@ export class ProductService {
         // Units first: a request may add a unit and price it in one go, so the
         // new unit has to exist before the name lookup below can find it.
         if (input.units?.length) {
+          const businessType = await this.businessType();
           await this.writeUnits(tx, {
             productId: id,
             organizationId,
             units: input.units,
+            businessType,
+          });
+          await this.settleSellingUnits(tx, {
+            productId: id,
+            requestedDefault: input.units.find((unit) => unit.isDefaultSelling)
+              ?.name,
+            businessType,
           });
         }
 
@@ -340,6 +369,7 @@ export class ProductService {
       productId: string;
       organizationId: string;
       units: ProductUnitInput[];
+      businessType: BusinessType;
     },
   ): Promise<void> {
     const existing = await tx.productUnit.findMany({
@@ -391,16 +421,63 @@ export class ProductService {
           name: row.name,
           factor: row.factor,
           isBase: row.factor === 1,
-          isDefaultSelling: row.isDefaultSelling ?? row.factor === 1,
+          // A unit added to an existing product: there are already others,
+          // so only the business type decides.
+          isSellable:
+            row.isSellable ??
+            defaultIsSellable(row, merged.size, args.businessType),
+          isDefaultSelling: false,
         },
         update: {
           factor: row.factor,
-          ...(row.isDefaultSelling !== undefined && {
-            isDefaultSelling: row.isDefaultSelling,
-          }),
+          ...(row.isSellable !== undefined && { isSellable: row.isSellable }),
         },
       });
     }
+  }
+
+  /**
+   * Leaves the product with at least one unit sold at the till and exactly one
+   * default, which is one of the sold ones. Run after every write that can
+   * change units — see `chooseDefaultSellingUnit` for how it decides.
+   *
+   * Settled here rather than trusted from the request because the request is
+   * a *change*: a PATCH unticking the carton says nothing about which unit
+   * should take over as the default, and must still leave one.
+   */
+  private async settleSellingUnits(
+    tx: TransactionClient,
+    args: {
+      productId: string;
+      requestedDefault: string | undefined;
+      businessType: BusinessType;
+    },
+  ): Promise<void> {
+    const units = await tx.productUnit.findMany({
+      where: { productId: args.productId },
+    });
+    const chosen = chooseDefaultSellingUnit(
+      units,
+      args.requestedDefault,
+      args.businessType,
+    );
+    await tx.productUnit.updateMany({
+      where: { productId: args.productId, id: { not: chosen } },
+      data: { isDefaultSelling: false },
+    });
+    await tx.productUnit.update({
+      where: { id: chosen },
+      data: { isDefaultSelling: true },
+    });
+  }
+
+  /** The shop's kind of trading, which sets how a new unit starts out (§22). */
+  private async businessType(): Promise<BusinessType> {
+    const organization = await this.prisma.organization.findFirst({
+      where: { id: TenantContext.requireOrganizationId() },
+      select: { businessType: true },
+    });
+    return organization?.businessType ?? BusinessType.mixed;
   }
 
   /**
@@ -507,7 +584,8 @@ export class ProductService {
 
   /**
    * Price of one `unitId` for `tierId`, falling back to the base price scaled
-   * by the unit factor when no tier row exists.
+   * by the unit factor when no tier row exists — and `null` when there is no
+   * base price either.
    *
    * The fallback is a convenience, not a rule: a real carton price is normally
    * *below* factor x base, which is exactly why ProductPrice is keyed by unit.

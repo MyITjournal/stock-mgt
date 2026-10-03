@@ -122,6 +122,12 @@ export class ProductUnitView {
   @ApiProperty({ description: 'The one unit with `factor = 1`.' })
   isBase!: boolean;
 
+  @ApiProperty({
+    description:
+      'Offered at the till. The base unit is what stock is counted in, which is not necessarily something the shop sells.',
+  })
+  isSellable!: boolean;
+
   @ApiProperty({ description: 'What the till offers first.' })
   isDefaultSelling!: boolean;
 
@@ -246,10 +252,13 @@ export class ResolvedUnitPrice {
   baseQuantity!: number;
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
     example: 1200000,
-    description: 'Tax-inclusive, in kobo.',
+    description:
+      'Tax-inclusive, in kobo. **Null when the unit has no price** — no tier row and no base price to fall back on. The till refuses to sell it rather than guess.',
   })
-  price!: number;
+  price!: number | null;
 
   @ApiProperty({
     description:
@@ -257,8 +266,8 @@ export class ResolvedUnitPrice {
   })
   isTierPrice!: boolean;
 
-  @ApiProperty({ type: () => UnitTaxSplit })
-  tax!: UnitTaxSplit;
+  @ApiProperty({ type: () => UnitTaxSplit, nullable: true })
+  tax!: UnitTaxSplit | null;
 }
 
 export class ProductView {
@@ -289,9 +298,11 @@ export class ProductView {
   @ApiProperty({
     example: 50000,
     description:
-      'Tax-inclusive price of one **base** unit, in kobo. A unit without a tier row falls back to `basePrice × factor`, which is right for a sachet and wrong for a carton (§4).',
+      'Tax-inclusive price of one **base** unit, in kobo. A unit without a tier row falls back to `basePrice × factor`, which is right for a sachet and wrong for a carton (§4). **Null means no fallback** — an unpriced unit cannot be sold.',
+    type: Number,
+    nullable: true,
   })
-  basePrice!: number;
+  basePrice!: number | null;
 
   @ApiPropertyOptional({
     type: Number,

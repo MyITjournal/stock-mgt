@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { BusinessType } from '@prisma/client';
 
 /**
  * The business, and the letterhead a printed document carries.
@@ -52,6 +53,14 @@ export class OrganizationView {
       'How many **active** people this plan covers — a column rather than a constant, so the tier line moves without a migration (§9). Checked when somebody is added or reactivated, never when they sign in: a business over its limit keeps working. Exposed so the staff screen can say "4 of 5" rather than letting an owner discover the ceiling by hitting a 409.',
   })
   maxUsers!: number;
+
+  @ApiProperty({
+    enum: BusinessType,
+    enumName: 'BusinessType',
+    description:
+      'Retail, wholesale or mixed. Sets starting defaults only — every feature is open to every type.',
+  })
+  businessType!: BusinessType;
 
   @ApiProperty({ type: String, nullable: true })
   address!: string | null;

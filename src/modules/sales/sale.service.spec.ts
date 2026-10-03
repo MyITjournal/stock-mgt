@@ -72,8 +72,8 @@ describe('SaleService', () => {
             { tierId: WHOLESALE, unitId: CARTON, price: WHOLESALE_PRICE },
           ],
           units: [
-            { id: PIECE, name: 'piece', factor: 1 },
-            { id: CARTON, name: 'carton', factor: 24 },
+            { id: PIECE, name: 'piece', factor: 1, isSellable: true },
+            { id: CARTON, name: 'carton', factor: 24, isSellable: true },
           ],
         }),
       },
@@ -199,6 +199,76 @@ describe('SaleService', () => {
     });
   });
 
+  describe('units not sold at the till', () => {
+    /** A distributor's Peak: counted in pieces, sold only by the carton. */
+    const countedNotSold = () =>
+      prisma.product.findFirst.mockResolvedValue({
+        id: PRODUCT,
+        name: 'Peak Milk 400g',
+        trackStock: true,
+        taxRateBps: 750,
+        basePrice: 250_000,
+        prices: [{ tierId: RETAIL, unitId: CARTON, price: CARTON_PRICE }],
+        units: [
+          { id: PIECE, name: 'piece', factor: 1, isSellable: false },
+          {
+            id: CARTON,
+            name: 'carton',
+            factor: 24,
+            isSellable: true,
+            isDefaultSelling: true,
+          },
+        ],
+      });
+
+    it('refuses to sell a unit that is only counted in', async () => {
+      countedNotSold();
+      await expect(
+        sell({ lines: [{ productId: PRODUCT, unitId: PIECE, quantity: 2 }] }),
+      ).rejects.toThrow(/not sold by the piece/);
+    });
+
+    it('refuses an unpriced unit on a product with no base price, rather than guess', async () => {
+      countedNotSold();
+      const product = (await prisma.product.findFirst()) as object;
+      prisma.product.findFirst.mockResolvedValue({
+        ...product,
+        basePrice: null,
+        prices: [],
+      });
+      await expect(
+        sell({ lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 1 }] }),
+      ).rejects.toThrow(/no price for the carton/);
+    });
+
+    it('still sells it at a price the seller named', async () => {
+      countedNotSold();
+      const product = (await prisma.product.findFirst()) as object;
+      prisma.product.findFirst.mockResolvedValue({
+        ...product,
+        basePrice: null,
+        prices: [],
+      });
+      await sell({
+        lines: [
+          {
+            productId: PRODUCT,
+            unitId: CARTON,
+            quantity: 1,
+            unitPrice: 5_000_000,
+          },
+        ],
+      });
+      expect(writtenLine()).toMatchObject({ unitPrice: 5_000_000 });
+    });
+
+    it('sells the default selling unit — not the base — when no unit is named', async () => {
+      countedNotSold();
+      await sell({ lines: [{ productId: PRODUCT, quantity: 2 }] });
+      expect(writtenLine()).toMatchObject({ unitFactor: 24, baseQuantity: 48 });
+    });
+  });
+
   it('prices from the tier and freezes the tax it implies', async () => {
     await sell();
 
@@ -273,7 +343,7 @@ describe('SaleService', () => {
       taxRateBps: 750,
       basePrice: 500_000,
       prices: [],
-      units: [{ id: PIECE, name: 'service', factor: 1 }],
+      units: [{ id: PIECE, name: 'service', factor: 1, isSellable: true }],
     });
 
     await sell({ lines: [{ productId: PRODUCT, quantity: 1 }] });

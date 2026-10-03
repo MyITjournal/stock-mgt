@@ -89,7 +89,12 @@ describe('ProductService packaging types', () => {
     priceTier: { findFirst: jest.Mock };
     productPrice: { upsert: jest.Mock };
     productBarcode: { create: jest.Mock };
-    productUnit: { findMany: jest.Mock };
+    productUnit: {
+      findMany: jest.Mock;
+      updateMany: jest.Mock;
+      update: jest.Mock;
+    };
+    organization: { findFirst: jest.Mock };
     $transaction: jest.Mock;
   };
 
@@ -119,9 +124,16 @@ describe('ProductService packaging types', () => {
       productPrice: { upsert: jest.fn().mockResolvedValue({}) },
       productBarcode: { create: jest.fn().mockResolvedValue({}) },
       productUnit: {
+        updateMany: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
         findMany: jest
           .fn()
-          .mockResolvedValue([{ id: 'unit-carton', name: 'carton' }]),
+          .mockResolvedValue([
+            { id: 'unit-carton', name: 'carton', factor: 24, isSellable: true },
+          ]),
+      },
+      organization: {
+        findFirst: jest.fn().mockResolvedValue({ businessType: 'mixed' }),
       },
       $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
     };
@@ -293,13 +305,18 @@ describe('ProductService inline prices and barcodes', () => {
     priceTier: { findFirst: jest.Mock };
     productPrice: { upsert: jest.Mock };
     productBarcode: { create: jest.Mock };
-    productUnit: { findMany: jest.Mock };
+    productUnit: {
+      findMany: jest.Mock;
+      updateMany: jest.Mock;
+      update: jest.Mock;
+    };
+    organization: { findFirst: jest.Mock };
     $transaction: jest.Mock;
   };
 
   const UNITS = [
-    { id: 'unit-piece', name: 'piece' },
-    { id: 'unit-carton', name: 'carton' },
+    { id: 'unit-piece', name: 'piece', factor: 1, isSellable: true },
+    { id: 'unit-carton', name: 'carton', factor: 24, isSellable: true },
   ];
 
   beforeEach(async () => {
@@ -316,7 +333,14 @@ describe('ProductService inline prices and barcodes', () => {
       },
       productPrice: { upsert: jest.fn().mockResolvedValue({}) },
       productBarcode: { create: jest.fn().mockResolvedValue({}) },
-      productUnit: { findMany: jest.fn().mockResolvedValue(UNITS) },
+      productUnit: {
+        findMany: jest.fn().mockResolvedValue(UNITS),
+        updateMany: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      organization: {
+        findFirst: jest.fn().mockResolvedValue({ businessType: 'mixed' }),
+      },
       $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
     };
 
@@ -471,14 +495,32 @@ describe('ProductService editing units', () => {
     priceTier: { findFirst: jest.Mock };
     productPrice: { upsert: jest.Mock };
     productBarcode: { create: jest.Mock };
-    productUnit: { findMany: jest.Mock; upsert: jest.Mock };
+    productUnit: {
+      findMany: jest.Mock;
+      upsert: jest.Mock;
+      updateMany: jest.Mock;
+      update: jest.Mock;
+    };
+    organization: { findFirst: jest.Mock };
     $transaction: jest.Mock;
   };
 
   /** What the product already has: a base piece and a carton of twelve. */
   const EXISTING = [
-    { id: 'unit-piece', name: 'piece', factor: 1, isBase: true },
-    { id: 'unit-carton', name: 'carton', factor: 12, isBase: false },
+    {
+      id: 'unit-piece',
+      name: 'piece',
+      factor: 1,
+      isBase: true,
+      isSellable: true,
+    },
+    {
+      id: 'unit-carton',
+      name: 'carton',
+      factor: 12,
+      isBase: false,
+      isSellable: true,
+    },
   ];
 
   beforeEach(async () => {
@@ -497,6 +539,11 @@ describe('ProductService editing units', () => {
       productUnit: {
         findMany: jest.fn().mockResolvedValue(EXISTING),
         upsert: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      organization: {
+        findFirst: jest.fn().mockResolvedValue({ businessType: 'mixed' }),
       },
       $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
     };
