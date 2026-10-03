@@ -14,6 +14,7 @@ import {
   toSaleLines,
   updateLine,
   type CartLine,
+  type UnitOption,
 } from './cart';
 import { ScanBox } from './ScanBox';
 import { CartLines } from './CartLines';
@@ -113,18 +114,20 @@ export function TillPage() {
    * A scan resolves one unit, which is all the fast path needs — the line is in
    * the cart before this returns. The picker is only useful once the rest of
    * the units are known, so it loads them without holding up the scan.
+   *
+   * Matched by product, not by line key. It used to be handed a key minted
+   * here, but `addToCart` mints its own, so the lookup found nothing and the
+   * picker after a scan never widened past the scanned unit. Every line of
+   * the product gets the same list, which is also true.
    */
-  const loadUnits = useCallback(async (productId: string, key: string) => {
+  const loadUnits = useCallback(async (productId: string) => {
     try {
       const product = await api.get<ProductView>(`/products/${productId}`);
+      const units = sellableUnits(product);
       setLines((current) =>
-        updateLine(current, key, {
-          units: product.units.map((unit) => ({
-            id: unit.id,
-            name: unit.name,
-            factor: unit.factor,
-          })),
-        }),
+        current.map((line) =>
+          line.productId === productId ? { ...line, units } : line,
+        ),
       );
     } catch {
       // The line is already usable in the unit that was scanned. Failing to
@@ -134,7 +137,15 @@ export function TillPage() {
 
   const addScanned = useCallback(
     (scan: ScanResult) => {
-      const key = crypto.randomUUID();
+      // A code on a unit only counted in — the single sachet a distributor
+      // never sells. The server would refuse the sale; saying so now is kinder
+      // than letting it reach the checkout.
+      if (!scan.unit.isSellable) {
+        setError(
+          `${scan.product.name} is not sold by the ${scan.unit.name}. Scan the pack or carton instead, or pick it from the search.`,
+        );
+        return;
+      }
       setLines((current) =>
         addToCart(current, {
           productId: scan.product.id,
@@ -150,7 +161,7 @@ export function TillPage() {
           isTierPrice: scan.isTierPrice,
         }),
       );
-      void loadUnits(scan.product.id, key);
+      void loadUnits(scan.product.id);
     },
     [loadUnits],
   );
@@ -160,12 +171,13 @@ export function TillPage() {
       setBusy(true);
       setError(null);
       try {
+        // Only units sold at the till: counting is not selling, and the base
+        // unit a distributor counts in may be one it never sells.
+        const sellable = product.units.filter((row) => row.isSellable);
         const unit =
-          product.units.find((row) => row.isDefaultSelling) ??
-          product.units.find((row) => row.isBase) ??
-          product.units[0];
+          sellable.find((row) => row.isDefaultSelling) ?? sellable[0];
         if (!unit) {
-          setError(`${product.name} has no sellable unit.`);
+          setError(`${product.name} has no unit that is sold at the till.`);
           return;
         }
 
@@ -182,11 +194,7 @@ export function TillPage() {
             sku: product.sku,
             unitId: unit.id,
             unitName: unit.name,
-            units: product.units.map((row) => ({
-              id: row.id,
-              name: row.name,
-              factor: row.factor,
-            })),
+            units: sellableUnits(product),
             quantity: 1,
             unitPrice: priced.price,
             listPrice: priced.price,
@@ -510,4 +518,12 @@ function kindOfConflict(message: string): OverrideKind {
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   return 'Something went wrong. Try again.';
+}
+
+/** The units the till may offer for a product, smallest first. */
+function sellableUnits(product: ProductView): UnitOption[] {
+  return product.units
+    .filter((unit) => unit.isSellable)
+    .sort((a, b) => a.factor - b.factor)
+    .map((unit) => ({ id: unit.id, name: unit.name, factor: unit.factor }));
 }

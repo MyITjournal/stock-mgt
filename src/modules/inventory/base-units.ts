@@ -26,6 +26,13 @@ export async function resolveProductUnit(
      * the product is read once rather than again inside the pricing service.
      */
     withPrices?: boolean;
+    /**
+     * Resolve for the till: with no unit named, take the default *selling*
+     * unit rather than the base, and refuse a unit that is not sold. Counting
+     * is not selling — a distributor counts in sachets and never sells one —
+     * so only selling asks; deliveries, counts and adjustments use any unit.
+     */
+    forSale?: boolean;
   } = {},
 ) {
   const product = await prisma.product.findFirst({
@@ -42,13 +49,24 @@ export async function resolveProductUnit(
 
   const unit = unitId
     ? product.units.find((candidate) => candidate.id === unitId)
-    : product.units.find((candidate) => candidate.factor === 1);
+    : options.forSale
+      ? (product.units.find((u) => u.isDefaultSelling && u.isSellable) ??
+        product.units.find((u) => u.isSellable))
+      : product.units.find((candidate) => candidate.factor === 1);
 
   if (!unit) {
     throw new NotFoundException(
       unitId
         ? `Unit ${unitId} does not belong to "${product.name}"`
-        : `"${product.name}" has no base unit to count in`,
+        : options.forSale
+          ? `"${product.name}" has no unit that is sold at the till`
+          : `"${product.name}" has no base unit to count in`,
+    );
+  }
+
+  if (options.forSale && !unit.isSellable) {
+    throw new BadRequestException(
+      `"${product.name}" is not sold by the ${unit.name}. Sell it in one of the units ticked "Sold at the till".`,
     );
   }
 

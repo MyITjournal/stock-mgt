@@ -367,6 +367,50 @@ a descriptive label that no report groups by, and worth revisiting if anybody is
 Price tiers still have no delete on screen: removing one changes what the customers on it pay, and
 that is its own decision.
 
+### Counting is not selling: `isSellable` on every unit
+
+Raised 2026-10-03 by a distributor: the product form asked for a price per *piece*, and a
+wholesaler never sells pieces. The cases that shaped it:
+
+| Product | Counted in | Sold at the till |
+|---|---|---|
+| Peak 14g — 10 sachets a roll, 21 rolls a carton | sachet | roll, ⅙, ⅓, ½ carton, carton |
+| Peak 360g — 12 a carton | piece | piece, ¼ carton, ½ carton, carton |
+| 3 Crowns evaporated — 24 a tray | tin | 3s, half dozen, dozen, tray |
+| Roll-on 50ml — 6 a pack, 30 a carton | piece | ½ pack, pack, ½ carton, carton |
+
+**Peak 14g is the one that decides it.** The owner's instinct was that the base is the roll,
+because no sachet — not even half a roll — is ever sold on its own. But half a carton is 10½
+rolls, so selling one leaves half a roll on the shelf, and stock has to be able to say so. Stock
+is counted in sachets; the till simply never offers one. **The base unit is the smallest piece that
+can be left on a shelf, not the smallest thing sold**, and the form now calls it "Counted in"
+because "base" means "what I sell" to a shop owner.
+
+So `ProductUnit.isSellable` (default true), and three rules in `catalog/selling-units.ts`, pure:
+
+- **How a box starts, when nobody ticked it:** a wholesaler's base unit starts unsold, every other
+  unit sold, and a product's *only* unit is always sold — a delivery counted in `trip` has nothing
+  else. The form shows this as a preview and **sends nothing for an untouched box**, so the
+  server's rule is the one stored, not the form's copy of it.
+- **At least one unit must be sold**, or the product cannot be sold at all — a 400.
+- **Exactly one default, and it is sold.** `isDefaultSelling` used to be set per unit with nothing
+  stopping two; it is now settled after every unit write: the unit asked for, else the current
+  default while still sold, else the largest sold unit for a wholesaler and the smallest for
+  anyone else. Asking for an unsold unit as the default is a 400, not a silent override.
+
+**Only selling asks.** `resolveProductUnit(…, { forSale: true })` refuses an unsold unit and, for a
+line with no `unitId`, takes the default selling unit instead of the base — which would otherwise
+have sold a distributor a single sachet. Deliveries, counts, adjustments, transfers and **returns**
+use every unit: a line sold before a unit was unticked can still come back. A barcode on an unsold
+unit **still scans** (a delivery needs it) and carries `isSellable: false`; the till refuses it
+with a message saying to scan the pack or carton.
+
+Existing units were all migrated as sold, so nothing changed for any product already set up.
+
+**A bug found on the way:** after a scan, the till was meant to load the product's other units in
+the background so the cashier could switch from roll to carton. It never did — it looked the line
+up by a key it minted itself, while `addToCart` mints its own. It now matches by product.
+
 ### Size is plain text, and on hand is on the list
 
 Asked 2026-10-02: there was nowhere to say a product is 400g except inside its name. `Product.size`

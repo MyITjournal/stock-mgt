@@ -143,11 +143,16 @@ export function ProductsPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-xs text-slate-600">
+                  {/* A unit only counted in is still listed — it is what On
+                      hand is in — but marked, so nobody wonders why the
+                      till never offers it. */}
                   {product.units
-                    .map((unit) =>
-                      unit.factor === 1
-                        ? unit.name
-                        : `${unit.name} × ${unit.factor}`,
+                    .map(
+                      (unit) =>
+                        (unit.factor === 1
+                          ? unit.name
+                          : `${unit.name} × ${unit.factor}`) +
+                        (unit.isSellable ? '' : ' (not sold)'),
                     )
                     .join(', ')}
                 </td>

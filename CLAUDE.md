@@ -636,6 +636,17 @@ deleted** and **the base unit never moves**, since stock is counted in it. Price
 at all: an unpriced unit falls back to `basePrice × factor`, which is the carton overcharge §4
 exists to prevent. Barcodes *can* be deleted.
 
+**Counting is not selling** (§4, 2026-10-03). The base unit is what stock is **counted in** — the
+smallest piece that can be left on a shelf — and the form calls it that. `ProductUnit.isSellable`
+says whether the till offers a unit: Peak 14g is counted in sachets because half a carton leaves
+half a roll behind, and a distributor never sells a sachet. Rules in `catalog/selling-units.ts`: a
+wholesaler's base starts unsold, a product's only unit is always sold, at least one unit must be
+sold, and **exactly one sold unit is the default**, settled after every unit write. **Only selling
+checks it** (`resolveProductUnit` with `forSale`, which also picks the default selling unit rather
+than the base when no unit is named); deliveries, counts, adjustments and returns use every unit.
+The form sends `isSellable` only for a box somebody touched, so the server's default is the one
+stored.
+
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
 field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank

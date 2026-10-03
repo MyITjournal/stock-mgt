@@ -52,7 +52,12 @@ export class ScanService {
         size: product.size,
         trackStock: product.trackStock,
       },
-      unit: { id: unit.id, name: unit.name, factor: unit.factor },
+      unit: {
+        id: unit.id,
+        name: unit.name,
+        factor: unit.factor,
+        isSellable: unit.isSellable,
+      },
       // Scanning a carton must add 24 pieces to stock, not 1 anonymous item.
       baseQuantity: unit.factor,
       price,

@@ -2287,6 +2287,8 @@ export interface components {
             factor: number;
             /** @description The one unit with `factor = 1`. */
             isBase: boolean;
+            /** @description Offered at the till. The base unit is what stock is counted in, which is not necessarily something the shop sells. */
+            isSellable: boolean;
             /** @description What the till offers first. */
             isDefaultSelling: boolean;
             /** Format: date-time */
@@ -2424,10 +2426,15 @@ export interface components {
              */
             factor: number;
             /**
-             * @description Pre-selected when selling this product.
+             * @description Pre-selected when selling this product. At most one unit should ask; it must be sold at the till. Left out, the current default stands, or one is chosen — the largest sold unit for a wholesaler, the smallest otherwise.
              * @example false
              */
             isDefaultSelling?: boolean;
+            /**
+             * @description Offered at the till. Left out on a new unit, it is sold — except a wholesaler’s base unit, which starts unsold, and a product’s only unit, which is always sold. At least one unit must be sold. Deliveries, counts and adjustments use every unit regardless.
+             * @example true
+             */
+            isSellable?: boolean;
         };
         ProductPriceInput: {
             /**
@@ -2688,6 +2695,8 @@ export interface components {
              * @example 24
              */
             factor: number;
+            /** @description Whether the till may sell this unit. A code on an unsold unit — the single sachet a distributor never sells — still resolves, so a delivery can scan it; the till refuses it. */
+            isSellable: boolean;
         };
         TaxSplit: {
             /** @description What the customer pays. Prices are stored tax-inclusive (§2). */

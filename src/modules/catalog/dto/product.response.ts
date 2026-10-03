@@ -122,6 +122,12 @@ export class ProductUnitView {
   @ApiProperty({ description: 'The one unit with `factor = 1`.' })
   isBase!: boolean;
 
+  @ApiProperty({
+    description:
+      'Offered at the till. The base unit is what stock is counted in, which is not necessarily something the shop sells.',
+  })
+  isSellable!: boolean;
+
   @ApiProperty({ description: 'What the till offers first.' })
   isDefaultSelling!: boolean;
 

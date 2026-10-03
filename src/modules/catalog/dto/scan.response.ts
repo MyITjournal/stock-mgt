@@ -48,6 +48,12 @@ class ScannedUnit {
     description: 'How many base units one of these is. The base unit is 1.',
   })
   factor!: number;
+
+  @ApiProperty({
+    description:
+      'Whether the till may sell this unit. A code on an unsold unit — the single sachet a distributor never sells — still resolves, so a delivery can scan it; the till refuses it.',
+  })
+  isSellable!: boolean;
 }
 
 class TaxSplit {
