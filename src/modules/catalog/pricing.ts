@@ -9,7 +9,8 @@ import { Minor, splitTaxInclusive } from '../../common/money/money';
  * to be told the price of something it is already looking at.
  */
 export interface PricedProduct {
-  basePrice: Minor;
+  /** Null when the product has no fallback price — see resolveUnitPrice. */
+  basePrice: Minor | null;
   taxRateBps: number;
   prices: readonly { tierId: string; unitId: string; price: Minor }[];
 }
@@ -34,7 +35,16 @@ export function resolveUnitPrice(
   // No tier price for this unit falls back to the base price scaled by the
   // factor. That is a *fallback*, not the rule: a carton is normally cheaper
   // per piece, which is why ProductPrice is keyed by unit at all (§4).
-  const price = tiered ? tiered.price : product.basePrice * unit.factor;
+  //
+  // And with no base price there is no fallback at all: the price is null,
+  // and the till refuses to sell the unit until somebody gives it one. Never
+  // a guess — a half carton of Peak guessed from a sachet price came out at
+  // ₦2,100 against a real ₦20,500.
+  const price = tiered
+    ? tiered.price
+    : product.basePrice === null
+      ? null
+      : product.basePrice * unit.factor;
 
   return {
     unitId: unit.id,
@@ -42,6 +52,6 @@ export function resolveUnitPrice(
     baseQuantity: unit.factor,
     price,
     isTierPrice: Boolean(tiered),
-    tax: splitTaxInclusive(price, product.taxRateBps),
+    tax: price === null ? null : splitTaxInclusive(price, product.taxRateBps),
   };
 }

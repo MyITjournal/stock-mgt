@@ -146,6 +146,11 @@ export function TillPage() {
         );
         return;
       }
+      if (scan.price === null) {
+        setError(unpricedMessage(scan.product.name, scan.unit.name));
+        return;
+      }
+      const price = scan.price;
       setLines((current) =>
         addToCart(current, {
           productId: scan.product.id,
@@ -156,8 +161,8 @@ export function TillPage() {
           unitName: scan.unit.name,
           units: [scan.unit],
           quantity: 1,
-          unitPrice: scan.price,
-          listPrice: scan.price,
+          unitPrice: price,
+          listPrice: price,
           isTierPrice: scan.isTierPrice,
         }),
       );
@@ -185,6 +190,11 @@ export function TillPage() {
           `/products/${product.id}/price?unitId=${unit.id}` +
             (tierId ? `&tierId=${tierId}` : ''),
         );
+        const price = priced.price;
+        if (price === null) {
+          setError(unpricedMessage(product.name, unit.name));
+          return;
+        }
 
         setLines((current) =>
           addToCart(current, {
@@ -196,8 +206,8 @@ export function TillPage() {
             unitName: unit.name,
             units: sellableUnits(product),
             quantity: 1,
-            unitPrice: priced.price,
-            listPrice: priced.price,
+            unitPrice: price,
+            listPrice: price,
             isTierPrice: priced.isTierPrice,
           }),
         );
@@ -270,12 +280,19 @@ export function TillPage() {
           `/products/${line.productId}/price?unitId=${unitId}` +
             (tierId ? `&tierId=${tierId}` : ''),
         );
+        const price = priced.price;
+        if (price === null) {
+          // The line stays in the unit it was in, at the price it had —
+          // switching it to a unit with no price would leave nothing to charge.
+          setError(unpricedMessage(line.productName, unit.name));
+          return;
+        }
         setLines((current) =>
           updateLine(current, key, {
             unitId,
             unitName: unit.name,
-            unitPrice: priced.price,
-            listPrice: priced.price,
+            unitPrice: price,
+            listPrice: price,
             isTierPrice: priced.isTierPrice,
           }),
         );
@@ -526,4 +543,14 @@ function sellableUnits(product: ProductView): UnitOption[] {
     .filter((unit) => unit.isSellable)
     .sort((a, b) => a.factor - b.factor)
     .map((unit) => ({ id: unit.id, name: unit.name, factor: unit.factor }));
+}
+
+/**
+ * What the till says about a unit with no price: no tier row, and no base
+ * price to fall back on. The server would refuse the sale anyway; saying so
+ * when the item is added is kinder than at the checkout, and the till never
+ * fills the gap with a guess.
+ */
+function unpricedMessage(productName: string, unitName: string): string {
+  return `${productName} has no price for the ${unitName} yet. Ask a manager to set one on the product.`;
 }

@@ -102,8 +102,12 @@ model Product {
   packagingTypeId String?
 
   /// Tax-inclusive price of ONE base unit, in minor units (kobo). Used when no
-  /// ProductPrice row matches the customer's tier.
-  basePrice  Int
+  /// ProductPrice row matches the customer's tier — as `basePrice × factor`.
+  /// **Null means no fallback**: a unit with no price of its own cannot be
+  /// sold until it is given one. A distributor never sells the counted-in
+  /// unit, so a price for it means nothing, and guessing a half carton as
+  /// 105 × a sachet price is the carton overcharge §4 exists to prevent.
+  basePrice  Int?
   /// Last known purchase cost of one base unit, refreshed by receiving. A
   /// cached rounded snapshot **for display only** — never an input to a
   /// calculation, per DECISIONS.md §2.

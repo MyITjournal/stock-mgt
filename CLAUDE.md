@@ -653,6 +653,13 @@ quantity, so the ledger stays whole. The form refuses one that is not whole (*"�
 10 and 1/2 rolls"*) and names it with a slash, not `½`, because the PDF fonts have no ⅓ or ⅙.
 The arithmetic is in `web/src/lib/portions.ts`.
 
+**No base price means no fallback** (§4, 2026-10-03). `Product.basePrice` is nullable; with none,
+a unit without its own price has `price: null` from `resolveUnitPrice` — the one pricing rule, now
+also used by scans — and the till refuses it rather than guess. A seller-named `unitPrice` is still
+accepted. Zero is a price; null is not. ⚠ **Open gap:** naming a customer does **not** re-price
+lines already in the cart, though the till's docstring says it does — scan first, pick a wholesale
+customer second, and the cart charges retail.
+
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
 field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank
