@@ -506,3 +506,26 @@ sachet — counting is not selling.
 
 **142. In a shop created as Retail, add a product with piece and carton.** [gate] Both boxes start
 ticked, and *Automatic* says *the smallest sold unit*.
+
+---
+
+## S. Adding a portion
+
+**143. Add a product counted in `sachet`, with `roll` (10) and `carton` (210).** [gate] An *Add a
+portion* row appears under the units, offering ½ ⅓ ¼ ⅙ of a roll or a carton — never of the
+sachet.
+
+**144. Pick ½ of a carton and click Add.** [gate] A new row appears named **`1/2 carton`** with
+factor **105**, its Sold box ticked. Do the same for ⅙ — `1/6 carton`, factor 35.
+
+**145. Click Add again for ½ of a carton.** [gate] A red line says the product already has one.
+
+**146. Start another product counted in `roll` with `carton` (21), and ask for ½ of a carton.**
+[gate] It is refused, saying ½ of a carton is **10 and 1/2 rolls**, and suggesting you count in
+something smaller.
+
+**147. Save the first product with a price on `1/2 carton`, then sell one at the till.** [gate]
+The cart shows `1/2 carton` at its own price, and the receipt prints `1/2 carton`.
+
+**148. Print that sale's PDF invoice.** [gate] The unit reads `1/2 carton` — no missing
+character where the fraction is.

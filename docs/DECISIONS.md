@@ -411,6 +411,33 @@ Existing units were all migrated as sold, so nothing changed for any product alr
 the background so the cashier could switch from roll to carton. It never did — it looked the line
 up by a key it minted itself, while `addToCart` mints its own. It now matches by product.
 
+### A portion is a unit, and the form does the arithmetic
+
+Added 2026-10-03. Half a carton, a sixth of a carton, half a pack are **ordinary units with their
+own factor and their own price** — the product form's *Add a portion* row (½, ⅓, ¼, ⅙ of any
+bigger unit) only works out the factor and the name. Nothing on the server knows a unit was made
+that way.
+
+**Not a fractional quantity.** Typing `0.5` against a carton was the other road, and it is worse
+on both counts: in this trade half a carton is rarely exactly half the carton price, so it needs a
+price of its own, and every quantity stays a whole number, which the ledger and smoke's sum-check
+depend on. Peak 14g, verified end to end: one carton in (210 sachets), then ½ carton, ⅙ carton and
+two rolls out, leaves exactly 50.
+
+Three details, all in `web/src/lib/portions.ts`:
+
+- **Refused when it does not come out whole**, and the message says the number: *"½ of a carton
+  is 10 and 1/2 rolls"*. While the product is new the fix is to count in something smaller; once
+  saved the counted-in unit cannot change, so the message says the portion cannot be made.
+- **Named `1/2 carton`, never `½ carton`.** Unit names print on PDF invoices and thermal receipts,
+  and the PDF's built-in fonts have no ⅓ or ⅙ — the same reason money prints as NGN. The picker
+  shows ½; the stored name uses a slash.
+- **Only bigger units are offered** as the whole — half of one sachet is never whole.
+
+Separately, the walkthrough asked for a portion's price **without** a `tierId` and got the
+`basePrice × factor` fallback: ₦2,100 for a half carton that sells for ₦20,500. The till always
+sends the tier, so it never saw this — but it is the case for making the base price optional next.
+
 ### Size is plain text, and on hand is on the list
 
 Asked 2026-10-02: there was nowhere to say a product is 400g except inside its name. `Product.size`

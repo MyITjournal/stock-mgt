@@ -647,6 +647,12 @@ than the base when no unit is named); deliveries, counts, adjustments and return
 The form sends `isSellable` only for a box somebody touched, so the server's default is the one
 stored.
 
+**A portion is a unit** (§4, 2026-10-03). *Add a portion* on the product form makes `1/2 carton`,
+`1/6 carton` and so on as ordinary units with their own factor and price — never a fractional
+quantity, so the ledger stays whole. The form refuses one that is not whole (*"½ of a carton is
+10 and 1/2 rolls"*) and names it with a slash, not `½`, because the PDF fonts have no ⅓ or ⅙.
+The arithmetic is in `web/src/lib/portions.ts`.
+
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
 field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank

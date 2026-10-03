@@ -11,6 +11,7 @@ import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { previewIsSellable } from '../lib/sellingUnits';
+import { FRACTIONS, portionOf } from '../lib/portions';
 
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
@@ -251,6 +252,51 @@ export function ProductForm({
     event.preventDefault();
     setError(null);
     if (name.trim() && units.length > 0) save.mutate();
+  };
+
+  // "Add a portion": which fraction of which unit. The unit is held by row
+  // key, so renaming it after picking it does not lose the choice.
+  const [portionFraction, setPortionFraction] = useState(0);
+  const [portionUnitKey, setPortionUnitKey] = useState('');
+  const [portionError, setPortionError] = useState<string | null>(null);
+  // A portion of the counted-in unit is never whole — half of one sachet —
+  // so only the bigger units are offered.
+  const portionSources = units.filter(
+    (unit) => !unit.isBase && unit.name.trim() && unit.factor > 1,
+  );
+  const portionSource =
+    portionSources.find((unit) => unit.key === portionUnitKey) ??
+    portionSources.at(-1);
+
+  const addPortion = () => {
+    if (!portionSource) return;
+    const result = portionOf(
+      portionSource,
+      FRACTIONS[portionFraction],
+      baseName,
+      {
+        // The counted-in unit can still be renamed while the product is new;
+        // once saved it never changes, and the message has to say which.
+        canChangeCountedIn: !units.some((unit) => unit.isBase && unit.existing),
+        existingNames: units.map((unit) => unit.name),
+      },
+    );
+    if (!result.ok) {
+      setPortionError(result.reason);
+      return;
+    }
+    setPortionError(null);
+    setUnits((current) => [
+      ...current,
+      {
+        key: crypto.randomUUID(),
+        name: result.name,
+        factor: result.factor,
+        existing: false,
+        isBase: false,
+        isSellable: null,
+      },
+    ]);
   };
 
   const addUnit = () =>
@@ -557,6 +603,63 @@ export function ProductForm({
               </div>
             ))}
           </div>
+
+          {/*
+            A portion is an ordinary unit with its own price — half a carton is
+            rarely exactly half the carton price — so all this does is the
+            arithmetic and the name. Nothing on the server knows it was made
+            here.
+          */}
+          {portionSources.length > 0 && (
+            <div className="mt-3 rounded-md border border-dashed border-slate-300 p-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                <span>Add a portion:</span>
+                <Select
+                  aria-label="Portion"
+                  value={String(portionFraction)}
+                  onChange={(event) => {
+                    setPortionFraction(Number(event.target.value));
+                    setPortionError(null);
+                  }}
+                  className="w-20"
+                >
+                  {FRACTIONS.map((fraction, index) => (
+                    <option key={fraction.text} value={index}>
+                      {fraction.label}
+                    </option>
+                  ))}
+                </Select>
+                <span>of a</span>
+                <Select
+                  aria-label="Portion of which unit"
+                  value={portionSource?.key ?? ''}
+                  onChange={(event) => {
+                    setPortionUnitKey(event.target.value);
+                    setPortionError(null);
+                  }}
+                  className="w-36"
+                >
+                  {portionSources.map((unit) => (
+                    <option key={unit.key} value={unit.key}>
+                      {unit.name}
+                    </option>
+                  ))}
+                </Select>
+                <Button type="button" variant="secondary" onClick={addPortion}>
+                  Add
+                </Button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Works out how many {baseName}s it holds and adds it as a unit
+                you can price on its own.
+              </p>
+              {portionError && (
+                <p className="mt-2 text-xs text-red-700" role="alert">
+                  {portionError}
+                </p>
+              )}
+            </div>
+          )}
 
           {soldNames.length === 0 ? (
             <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs text-amber-800">
