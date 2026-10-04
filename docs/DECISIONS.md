@@ -1661,6 +1661,44 @@ accountant. A `sales_rep` carrying buying prices around a market is a commercial
 problem rather than a permissions technicality, and it cannot be undone once it
 has happened. Reps keep the reports that expose no cost: what sold, and to whom.
 
+### Targets are cartons of a category (2026-10-04)
+
+**This reshapes the section below**; where they disagree, this one stands. The owner, running a
+distributorship, put it plainly: *"companies deal only in cartons"*, *"product is not so
+important, category is much more important"* — *"I have to buy 112 cartons of lotion in a month,
+it doesn't matter whether it is Perfect & Radiant or Deep or Soft Cup, as long as it is registered
+as a lotion."* And a money quota is a total across everything a vendor sells, so breaking it down
+per category was the wrong shape entirely.
+
+So **a target is a vendor, a category, a month and a whole number of cartons** (`targetCartons`).
+Gone: `productId`, `targetValue`, `displayUnitId`, `unitFactor`, the one-of CHECK, the product
+unique index, and with them the rollup's category-minus-product subtraction — there is nothing
+left to subtract.
+
+**A carton is each product's biggest unit** — carton, tray, box, whatever it is called — so a
+carton of 12 and a carton of 24 each count as one, which is how the vendor counts. Achieved is
+`Σ quantityPaidFor ÷ that product's carton`, summed exactly and rounded once to one decimal: a
+half-slot reads 9.5. A product whose biggest unit is its base has **no carton**, so its deliveries
+cannot be counted; it is named on the target (`productsWithoutCarton`) rather than counted as
+pieces, which would read as a hundred cartons of sample sachets. Received-not-ordered and
+paid-for-not-free stand as before.
+
+**Why not keep base units, as stock does?** Because a category's products have different cartons;
+there is no single factor to convert a category's pieces with. That is also why the migration
+**cleared every existing target** — at the owner's word, during testing — rather than converting.
+
+**Editable**: the cartons and the note. The vendor, category and month are what the target *is*;
+the update DTO does not carry them, so `forbidNonWhitelisted` refuses them by name.
+
+**On the dashboard**, as `purchasing.targets` — every target this month, not a glance — drawn as
+one **ring meter** each: the filled arc in brand green on a lighter step of the same green, the
+percentage in the middle, *"86.5 of 112 cartons"* beneath and *"Target met"* / *"Over target"* in
+words, so nothing depends on colour. A ring rather than a two-slice pie because it is a single
+ratio against a limit. The section is absent when there are no targets.
+
+**Hidden for retail.** The Targets tab shows for wholesale and mixed shops only — navigation, not
+security; the routes still answer, and turning it on for retail is one line in `ReportsLayout`.
+
 ### Vendor purchase targets: received, paid for, and counted once
 
 Built 2026-09-16, closing most of §15 item 3. A target is the vendor's monthly offtake quota —

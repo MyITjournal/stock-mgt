@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -10,7 +9,12 @@ import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { ReportService } from './report.service';
 import { addMonths, startOfMonth } from './period';
-import { ReceiptLine, TargetRow, rollUpTargets } from './purchase-target';
+import {
+  ReceiptLine,
+  TargetRow,
+  cartonFactor,
+  rollUpTargets,
+} from './purchase-target';
 import {
   CreatePurchaseTargetDto,
   PurchaseTargetQueryDto,
@@ -22,23 +26,17 @@ import {
 } from './dto/purchase-target.response';
 
 /**
- * What a target carries about the things it points at.
- *
- * Narrowed from `true` on each relation to the fields a reader actually needs.
- * `product: true` returned the whole product row, `costPrice` included — no
- * leak, because this controller is owner, manager and accountant only, but §9's
- * rule is **select, never exclude**: an allow-list means the next column added
- * to `Product` is invisible here until somebody puts it in deliberately.
+ * What a target carries about the things it points at — selected, never the
+ * whole row (§9: select, never exclude).
  */
 const TARGET_INCLUDE = {
   supplier: { select: { id: true, name: true } },
   category: { select: { id: true, name: true } },
-  product: { select: { id: true, name: true, sku: true } },
-  displayUnit: { select: { id: true, name: true, factor: true } },
 } as const;
 
 /**
- * The vendor's monthly offtake quota, and how much of it has actually landed.
+ * The vendor's monthly quota for a category, in cartons, and how much of it
+ * has actually landed.
  *
  * The only writes in an otherwise read-only module. They live here rather than
  * in a module of their own because a target is meaningless apart from the
@@ -52,12 +50,9 @@ export class PurchaseTargetService {
   ) {}
 
   async create(input: CreatePurchaseTargetDto): Promise<PurchaseTargetView> {
-    const scope = await this.resolveScope(input);
     const periodStart = await this.monthStart(input.period);
-    const { targetQuantity, displayUnitId, unitFactor } =
-      await this.resolveQuantity(input, scope.productId);
-
     await this.assertSupplierExists(input.supplierId);
+    await this.assertCategoryExists(input.categoryId);
 
     try {
       return await this.prisma.purchaseTarget.create({
@@ -65,14 +60,10 @@ export class PurchaseTargetService {
           ...(input.id && { id: input.id }),
           organizationId: TenantContext.requireOrganizationId(),
           supplierId: input.supplierId,
-          categoryId: scope.categoryId,
-          productId: scope.productId,
+          categoryId: input.categoryId,
           periodStart,
-          targetQuantity,
-          displayUnitId,
-          unitFactor,
-          targetValue: input.targetValue ?? null,
-          note: input.note ?? null,
+          targetCartons: input.targetCartons,
+          note: input.note?.trim() || null,
         },
         include: TARGET_INCLUDE,
       });
@@ -101,59 +92,25 @@ export class PurchaseTargetService {
     return target;
   }
 
+  /**
+   * The number of cartons and the note. The vendor, category and month are
+   * what the target is, and the DTO does not carry them.
+   */
   async update(
     id: string,
     input: UpdatePurchaseTargetDto,
   ): Promise<PurchaseTargetView> {
-    const existing = await this.findOne(id);
-
-    // The scope is what the target *is*; changing a lotions target into a
-    // roll-on one silently rewrites what last month's number meant. Delete it
-    // and set the one that was actually agreed.
-    if (input.categoryId !== undefined || input.productId !== undefined) {
-      throw new BadRequestException(
-        'A target cannot change what it is set against. Delete it and create the one you mean.',
-      );
-    }
-
-    const periodStart = input.period
-      ? await this.monthStart(input.period)
-      : existing.periodStart;
-
-    const quantity =
-      input.targetQuantity !== undefined || input.unitId !== undefined
-        ? await this.resolveQuantity(
-            {
-              targetQuantity: input.targetQuantity ?? existing.targetQuantity,
-              unitId: input.unitId,
-            },
-            existing.productId,
-          )
-        : null;
-
-    try {
-      return await this.prisma.purchaseTarget.update({
-        where: { id },
-        data: {
-          ...(input.supplierId !== undefined && {
-            supplierId: input.supplierId,
-          }),
-          periodStart,
-          ...(quantity && {
-            targetQuantity: quantity.targetQuantity,
-            displayUnitId: quantity.displayUnitId,
-            unitFactor: quantity.unitFactor,
-          }),
-          ...(input.targetValue !== undefined && {
-            targetValue: input.targetValue,
-          }),
-          ...(input.note !== undefined && { note: input.note }),
-        },
-        include: TARGET_INCLUDE,
-      });
-    } catch (error) {
-      throw translateDuplicate(error);
-    }
+    await this.findOne(id);
+    return this.prisma.purchaseTarget.update({
+      where: { id },
+      data: {
+        ...(input.targetCartons !== undefined && {
+          targetCartons: input.targetCartons,
+        }),
+        ...(input.note !== undefined && { note: input.note.trim() || null }),
+      },
+      include: TARGET_INCLUDE,
+    });
   }
 
   /** Soft, so a month already reported on keeps explaining itself. */
@@ -166,7 +123,7 @@ export class PurchaseTargetService {
   }
 
   /**
-   * Target, achieved and remaining for one month.
+   * Target, achieved and remaining for one month, in cartons.
    *
    * Progress is counted from goods **received** rather than orders placed: an
    * order the vendor has not delivered is exactly what still needs chasing, so
@@ -194,22 +151,28 @@ export class PurchaseTargetService {
     }
 
     const suppliers = [...new Set(targets.map((row) => row.supplierId))];
+    const categories = [...new Set(targets.map((row) => row.categoryId))];
 
-    const lines = await this.prisma.goodsReceiptLine.findMany({
-      where: {
-        receipt: {
-          supplierId: { in: suppliers },
-          receivedAt: { gte: periodStart, lt: periodEnd },
+    const [lines, withoutCarton] = await Promise.all([
+      this.prisma.goodsReceiptLine.findMany({
+        where: {
+          receipt: {
+            supplierId: { in: suppliers },
+            receivedAt: { gte: periodStart, lt: periodEnd },
+          },
+          product: { categoryId: { in: categories } },
         },
-      },
-      select: {
-        productId: true,
-        quantityPaidFor: true,
-        totalCost: true,
-        product: { select: { categoryId: true } },
-        receipt: { select: { supplierId: true } },
-      },
-    });
+        select: {
+          productId: true,
+          quantityPaidFor: true,
+          product: {
+            select: { categoryId: true, units: { select: { factor: true } } },
+          },
+          receipt: { select: { supplierId: true } },
+        },
+      }),
+      this.productsWithoutCarton(categories),
+    ]);
 
     // Rolled up per vendor: two vendors quotaing the same category must not
     // see each other's deliveries.
@@ -220,9 +183,7 @@ export class PurchaseTargetService {
         .map((target) => ({
           id: target.id,
           categoryId: target.categoryId,
-          productId: target.productId,
-          targetQuantity: target.targetQuantity,
-          targetValue: target.targetValue,
+          targetCartons: target.targetCartons,
         }));
 
       const received: ReceiptLine[] = lines
@@ -231,7 +192,7 @@ export class PurchaseTargetService {
           productId: line.productId,
           categoryId: line.product.categoryId,
           quantityPaidFor: line.quantityPaidFor,
-          totalCost: line.totalCost,
+          cartonFactor: cartonFactor(line.product.units),
         }));
 
       for (const progress of rollUpTargets(rows, received)) {
@@ -244,75 +205,43 @@ export class PurchaseTargetService {
       periodEnd,
       targets: targets.map((target) => ({
         ...target,
-        progress: progressById.get(target.id)!,
+        progress: {
+          ...progressById.get(target.id)!,
+          productsWithoutCarton: withoutCarton.get(target.categoryId) ?? [],
+        },
       })),
     };
   }
 
-  /** Exactly one of category or product, matching the CHECK on the table. */
-  private async resolveScope(input: CreatePurchaseTargetDto) {
-    const named = [input.categoryId, input.productId].filter(Boolean);
-    if (named.length !== 1) {
-      throw new BadRequestException(
-        'A target is set against exactly one of categoryId or productId.',
-      );
-    }
-
-    if (input.categoryId) {
-      const category = await this.prisma.category.findFirst({
-        where: { id: input.categoryId, deletedAt: null },
-      });
-      if (!category) throw new NotFoundException('Category not found');
-    } else {
-      const product = await this.prisma.product.findFirst({
-        where: { id: input.productId, deletedAt: null },
-      });
-      if (!product) throw new NotFoundException('Product not found');
-    }
-
-    return {
-      categoryId: input.categoryId ?? null,
-      productId: input.productId ?? null,
-    };
-  }
-
   /**
-   * The target in base units, plus what it was quoted in.
-   *
-   * Converting on write is the same rule receiving follows: the factor is
-   * captured now, so redefining a carton next year cannot quietly restate a
-   * quota that was agreed in cartons of twenty-four.
+   * Stocked products in each category with nothing bigger than their base
+   * unit — so no carton to count their deliveries in. Named on the target so a
+   * low number explains itself; the fix is to give the product its carton.
    */
-  private async resolveQuantity(
-    input: { targetQuantity: number; unitId?: string },
-    productId: string | null,
-  ) {
-    if (!input.unitId) {
-      return {
-        targetQuantity: input.targetQuantity,
-        displayUnitId: null,
-        unitFactor: 1,
-      };
-    }
-
-    const unit = await this.prisma.productUnit.findFirst({
-      where: { id: input.unitId },
+  private async productsWithoutCarton(categoryIds: string[]) {
+    const products = await this.prisma.product.findMany({
+      where: {
+        categoryId: { in: categoryIds },
+        deletedAt: null,
+        trackStock: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        categoryId: true,
+        units: { select: { factor: true } },
+      },
+      orderBy: { name: 'asc' },
     });
-    if (!unit) throw new NotFoundException('Product unit not found');
 
-    // A category target quoted in one product's cartons would be measuring
-    // cases of something it does not cover.
-    if (productId && unit.productId !== productId) {
-      throw new BadRequestException(
-        'That unit does not belong to the product this target is set against.',
-      );
+    const byCategory = new Map<string, { id: string; name: string }[]>();
+    for (const product of products) {
+      if (cartonFactor(product.units) !== null || !product.categoryId) continue;
+      const list = byCategory.get(product.categoryId) ?? [];
+      list.push({ id: product.id, name: product.name });
+      byCategory.set(product.categoryId, list);
     }
-
-    return {
-      targetQuantity: input.targetQuantity * unit.factor,
-      displayUnitId: unit.id,
-      unitFactor: unit.factor,
-    };
+    return byCategory;
   }
 
   /** Snaps any instant to the first of its month, in the org's timezone. */
@@ -327,14 +256,21 @@ export class PurchaseTargetService {
     });
     if (!supplier) throw new NotFoundException('Supplier not found');
   }
+
+  private async assertCategoryExists(categoryId: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { id: categoryId, deletedAt: null },
+    });
+    if (!category) throw new NotFoundException('Category not found');
+  }
 }
 
 /**
- * The partial unique indexes in the migration, in words.
+ * The partial unique index in the migration, in words.
  *
- * Two targets for the same vendor, month and thing would each report the full
- * progress, so the vendor's sheet and ours would disagree by exactly a double
- * count — which reads as being comfortably ahead of a quota nobody has met.
+ * Two targets for the same vendor, category and month would each report the
+ * full progress, so the vendor's sheet and ours would disagree by exactly a
+ * double count — which reads as being comfortably ahead of a quota nobody met.
  */
 function translateDuplicate(error: unknown): Error {
   if (
@@ -343,7 +279,7 @@ function translateDuplicate(error: unknown): Error {
     (error as { code?: unknown }).code === 'P2002'
   ) {
     return new ConflictException(
-      'This vendor already has a target for that category or product in this month. Edit it rather than adding a second.',
+      'This vendor already has a target for that category in this month. Edit it rather than adding a second.',
     );
   }
   return error as Error;

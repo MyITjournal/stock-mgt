@@ -1770,7 +1770,7 @@ export interface paths {
         put?: never;
         /**
          * Set a vendor purchase target
-         * @description Against exactly one of a category or a product. `period` is any instant inside the target month and is snapped to the first of it in the organization’s timezone — vendor schemes run on calendar months. Quote the quantity in `unitId` ("110 cartons") and it is converted to base units with the factor as it stands now.
+         * @description A category and a number of cartons — "112 cartons of lotion". Any product filed under the category counts. `period` is any instant inside the target month and is snapped to the first of it in the organization’s timezone — vendor schemes run on calendar months.
          */
         post: operations["PurchaseTargetController_create"];
         delete?: never;
@@ -1788,7 +1788,7 @@ export interface paths {
         };
         /**
          * Target, achieved and remaining for a month
-         * @description Progress counts goods **received**, not orders placed: an order the vendor has not delivered is what still needs chasing, so it stays in "remaining". Quantities come from `quantityPaidFor`, so "buy 19, get 1 free" advances a 110-case target by 19 — the free case is real stock and counts for valuation, just not against the quota. Value comes from the invoice totals. A category target counts only the products in it that carry no target of their own, or the same carton would advance both rows.
+         * @description In cartons, where each product’s carton is its biggest unit — a carton of 12 and a carton of 24 each count as one. Progress counts goods **received**, not orders placed, and only what was **paid for**: "buy 19, get 1 free" advances a target by 19. Products in the category with no carton are listed in `productsWithoutCarton` rather than skipped.
          */
         get: operations["PurchaseTargetController_report"];
         put?: never;
@@ -1819,7 +1819,7 @@ export interface paths {
         head?: never;
         /**
          * Update a purchase target
-         * @description What a target is set against cannot change — rewriting a lotions target into a roll-on one would silently restate what last month meant. Delete it and set the one you mean.
+         * @description Only the number of cartons and the note. The vendor, category and month are what the target is — changing them would silently restate what a past month meant — so they are refused; remove it and set the one you mean.
          */
         patch: operations["PurchaseTargetController_update"];
         trace?: never;
@@ -5060,9 +5060,33 @@ export interface components {
             topVendors: components["schemas"]["PurchaseGroupRow"][];
             topCategories: components["schemas"]["PurchaseGroupRow"][];
         };
+        TargetGlance: {
+            /** Format: uuid */
+            id: string;
+            /** @example Dangote Distribution */
+            supplier: string;
+            /** @example Lotion */
+            category: string;
+            /** @example 112 */
+            targetCartons: number;
+            /**
+             * @description Paid for, to one decimal.
+             * @example 86.5
+             */
+            achievedCartons: number;
+            /** @example 25.5 */
+            remainingCartons: number;
+            /**
+             * @description Basis points of the target; above 10000 is over-performance.
+             * @example 7723
+             */
+            achievedBps: number;
+        };
         PurchasingSummary: {
             payables: components["schemas"]["PayablesSummary"];
             purchases: components["schemas"]["PurchasesSummary"];
+            /** @description Every vendor target for this month, in cartons. Empty when there are none. */
+            targets: components["schemas"]["TargetGlance"][];
         };
         TrendDay: {
             /** @example 2026-09-19 */
@@ -5326,22 +5350,8 @@ export interface components {
         TargetCategoryRef: {
             /** Format: uuid */
             id: string;
-            /** @example Lotions */
+            /** @example Lotion */
             name: string;
-        };
-        TargetProductRef: {
-            /** Format: uuid */
-            id: string;
-            name: string;
-            sku: string;
-        };
-        TargetUnitRef: {
-            /** Format: uuid */
-            id: string;
-            /** @example Carton */
-            name: string;
-            /** @example 24 */
-            factor: number;
         };
         PurchaseTargetView: {
             /** Format: uuid */
@@ -5355,27 +5365,19 @@ export interface components {
             supplierId: string;
             /**
              * Format: uuid
-             * @description Exactly one of this and `productId` is set, enforced by a CHECK. A category target covers the products in it that carry no target of their own — the named category only, never its children.
+             * @description Every product filed under this category counts. The named category only, never its children.
              */
-            categoryId: string | null;
-            /** Format: uuid */
-            productId: string | null;
+            categoryId: string;
             /**
              * Format: date-time
              * @description First instant of the target month, in the organization's timezone. Vendor schemes run on calendar months, not a rolling thirty days.
              */
             periodStart: string;
-            /** @description In **base units**, like everything the ledger counts. */
-            targetQuantity: number;
             /**
-             * Format: uuid
-             * @description What the owner typed it in, so "110 cartons" reads back as cartons.
+             * @description Cartons — each product's biggest unit counts as one.
+             * @example 112
              */
-            displayUnitId: string | null;
-            /** @description The factor at write time. Redefining a carton later cannot silently restate a quota that was already agreed. */
-            unitFactor: number;
-            /** @description Optional value quota in kobo, for schemes written in money rather than cases. */
-            targetValue: number | null;
+            targetCartons: number;
             note: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -5387,26 +5389,30 @@ export interface components {
              */
             deletedAt: string | null;
             supplier: components["schemas"]["TargetSupplierRef"];
-            category: components["schemas"]["TargetCategoryRef"] | null;
-            product: components["schemas"]["TargetProductRef"] | null;
-            displayUnit: components["schemas"]["TargetUnitRef"] | null;
+            category: components["schemas"]["TargetCategoryRef"];
+        };
+        TargetProductRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Lotion sample sachet */
+            name: string;
         };
         TargetProgressView: {
             /** Format: uuid */
             targetId: string;
-            /** @description Base units. */
-            targetQuantity: number;
-            /** @description Base units **paid for** in the month, from deliveries that arrived. Free goods do not advance it. */
-            achievedQuantity: number;
-            /** @description What is still to be bought. Never below zero. */
-            remainingQuantity: number;
-            targetValue: number | null;
-            /** @description Summed from invoice totals, never `costPrice × quantity`. */
-            achievedValue: number;
-            /** @description Null when the scheme is written in cases rather than money. */
-            remainingValue: number | null;
-            /** @description Basis points of the quantity target, so 10000 is exactly met and anything above it is over-performance. */
+            /** @example 112 */
+            targetCartons: number;
+            /**
+             * @description Cartons **paid for** in the month, from deliveries that arrived, to one decimal — a half-slot is 9.5. Free goods do not advance it.
+             * @example 86.5
+             */
+            achievedCartons: number;
+            /** @description Still to buy. Never below zero. */
+            remainingCartons: number;
+            /** @description Basis points of the target, so 10000 is exactly met and anything above it is over-performance. */
             achievedBps: number;
+            /** @description Products in this category with no unit bigger than their base, so no carton to count in. Their deliveries are not counted — named so nobody wonders why the number is low. */
+            productsWithoutCarton: components["schemas"]["TargetProductRef"][];
         };
         PurchaseTargetWithProgress: {
             /** Format: uuid */
@@ -5420,27 +5426,19 @@ export interface components {
             supplierId: string;
             /**
              * Format: uuid
-             * @description Exactly one of this and `productId` is set, enforced by a CHECK. A category target covers the products in it that carry no target of their own — the named category only, never its children.
+             * @description Every product filed under this category counts. The named category only, never its children.
              */
-            categoryId: string | null;
-            /** Format: uuid */
-            productId: string | null;
+            categoryId: string;
             /**
              * Format: date-time
              * @description First instant of the target month, in the organization's timezone. Vendor schemes run on calendar months, not a rolling thirty days.
              */
             periodStart: string;
-            /** @description In **base units**, like everything the ledger counts. */
-            targetQuantity: number;
             /**
-             * Format: uuid
-             * @description What the owner typed it in, so "110 cartons" reads back as cartons.
+             * @description Cartons — each product's biggest unit counts as one.
+             * @example 112
              */
-            displayUnitId: string | null;
-            /** @description The factor at write time. Redefining a carton later cannot silently restate a quota that was already agreed. */
-            unitFactor: number;
-            /** @description Optional value quota in kobo, for schemes written in money rather than cases. */
-            targetValue: number | null;
+            targetCartons: number;
             note: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -5452,9 +5450,7 @@ export interface components {
              */
             deletedAt: string | null;
             supplier: components["schemas"]["TargetSupplierRef"];
-            category: components["schemas"]["TargetCategoryRef"] | null;
-            product: components["schemas"]["TargetProductRef"] | null;
-            displayUnit: components["schemas"]["TargetUnitRef"] | null;
+            category: components["schemas"]["TargetCategoryRef"];
             progress: components["schemas"]["TargetProgressView"];
         };
         PurchaseTargetReportView: {
@@ -5479,84 +5475,34 @@ export interface components {
             id?: string;
             /**
              * Format: uuid
-             * @description Whose scheme this is. A target is always a vendor’s.
+             * @description Whose scheme this is.
              */
             supplierId: string;
             /**
              * Format: uuid
-             * @description Target a whole category — "110 cartons of lotions". Covers the named category only, not its children, and only the products in it that carry no target of their own. Exactly one of categoryId or productId.
+             * @description The category the cartons are counted in. Every product filed under it counts; its children do not.
              */
-            categoryId?: string;
-            /**
-             * Format: uuid
-             * @description Target one SKU, for a vendor who quotas a single product. Exactly one of categoryId or productId.
-             */
-            productId?: string;
+            categoryId: string;
             /**
              * @description Any instant inside the target month. It is snapped to the first of that month in the organization’s timezone, because the vendor’s scheme runs on calendar months rather than a rolling thirty days.
-             * @example 2026-09-01T00:00:00.000Z
+             * @example 2026-10-01T00:00:00.000Z
              */
             period: string;
             /**
-             * @description How much the vendor expects, in `unitId` if one is given, otherwise in base units.
-             * @example 110
+             * @description Cartons. Each product's carton is its biggest unit, so a carton of 12 and a carton of 24 each count as one.
+             * @example 112
              */
-            targetQuantity: number;
-            /**
-             * Format: uuid
-             * @description The unit the target was quoted in — "110 cartons". Converted to base units on write using the factor at that time, so redefining a carton later cannot restate a target that was already agreed.
-             */
-            unitId?: string;
-            /**
-             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
-             * @example 45000000
-             */
-            targetValue?: number;
-            /** @example Q3 scheme, agreed with Chidi. */
+            targetCartons: number;
+            /** @example Promo: one free carton in every twenty */
             note?: string;
         };
         UpdatePurchaseTargetDto: {
             /**
-             * Format: uuid
-             * @description Optional client-supplied id, so an offline device can mint the row identity itself.
+             * @description Cartons.
+             * @example 120
              */
-            id?: string;
-            /**
-             * Format: uuid
-             * @description Whose scheme this is. A target is always a vendor’s.
-             */
-            supplierId?: string;
-            /**
-             * Format: uuid
-             * @description Target a whole category — "110 cartons of lotions". Covers the named category only, not its children, and only the products in it that carry no target of their own. Exactly one of categoryId or productId.
-             */
-            categoryId?: string;
-            /**
-             * Format: uuid
-             * @description Target one SKU, for a vendor who quotas a single product. Exactly one of categoryId or productId.
-             */
-            productId?: string;
-            /**
-             * @description Any instant inside the target month. It is snapped to the first of that month in the organization’s timezone, because the vendor’s scheme runs on calendar months rather than a rolling thirty days.
-             * @example 2026-09-01T00:00:00.000Z
-             */
-            period?: string;
-            /**
-             * @description How much the vendor expects, in `unitId` if one is given, otherwise in base units.
-             * @example 110
-             */
-            targetQuantity?: number;
-            /**
-             * Format: uuid
-             * @description The unit the target was quoted in — "110 cartons". Converted to base units on write using the factor at that time, so redefining a carton later cannot restate a target that was already agreed.
-             */
-            unitId?: string;
-            /**
-             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
-             * @example 45000000
-             */
-            targetValue?: number;
-            /** @example Q3 scheme, agreed with Chidi. */
+            targetCartons?: number;
+            /** @description An empty string clears it; leaving it out leaves it alone. */
             note?: string;
         };
         OrganizationView: {

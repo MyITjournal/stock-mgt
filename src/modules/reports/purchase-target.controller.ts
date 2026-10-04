@@ -34,13 +34,10 @@ import {
 } from './dto/purchase-target.response';
 
 /**
- * A quota the owner negotiated is a management figure, and `targetValue` is a
- * buying price in all but name — so this follows the same rule as profit and
- * valuation in §12: a `sales_rep` does not see it.
- *
- * It is also why targets are not on `GET /reports/dashboard`, which reps do
- * see: one payload cannot have two audiences without stripping fields per role,
- * and a field stripped by mistake leaks buying prices into a market.
+ * A quota the owner negotiated with a vendor is a management figure — what the
+ * shop has committed to buy — so it follows the rule for the buying side in
+ * §12: a `sales_rep` does not see it. The dashboard shows progress against it
+ * too, which is safe because that endpoint has the same roles.
  */
 const SEES_TARGETS = [OrgRole.owner, OrgRole.manager, OrgRole.accountant];
 
@@ -69,7 +66,7 @@ export class PurchaseTargetController {
   @ApiOperation({
     summary: 'Target, achieved and remaining for a month',
     description:
-      'Progress counts goods **received**, not orders placed: an order the vendor has not delivered is what still needs chasing, so it stays in "remaining". Quantities come from `quantityPaidFor`, so "buy 19, get 1 free" advances a 110-case target by 19 — the free case is real stock and counts for valuation, just not against the quota. Value comes from the invoice totals. A category target counts only the products in it that carry no target of their own, or the same carton would advance both rows.',
+      'In cartons, where each product’s carton is its biggest unit — a carton of 12 and a carton of 24 each count as one. Progress counts goods **received**, not orders placed, and only what was **paid for**: "buy 19, get 1 free" advances a target by 19. Products in the category with no carton are listed in `productsWithoutCarton` rather than skipped.',
   })
   @ApiOkResponse({ type: PurchaseTargetReportView })
   report(@Query() query: PurchaseTargetQueryDto) {
@@ -92,7 +89,7 @@ export class PurchaseTargetController {
   @ApiOperation({
     summary: 'Set a vendor purchase target',
     description:
-      'Against exactly one of a category or a product. `period` is any instant inside the target month and is snapped to the first of it in the organization’s timezone — vendor schemes run on calendar months. Quote the quantity in `unitId` ("110 cartons") and it is converted to base units with the factor as it stands now.',
+      'A category and a number of cartons — "112 cartons of lotion". Any product filed under the category counts. `period` is any instant inside the target month and is snapped to the first of it in the organization’s timezone — vendor schemes run on calendar months.',
   })
   @ApiCreatedResponse({ type: PurchaseTargetView })
   create(@Body() dto: CreatePurchaseTargetDto) {
@@ -104,7 +101,7 @@ export class PurchaseTargetController {
   @ApiOperation({
     summary: 'Update a purchase target',
     description:
-      'What a target is set against cannot change — rewriting a lotions target into a roll-on one would silently restate what last month meant. Delete it and set the one you mean.',
+      'Only the number of cartons and the note. The vendor, category and month are what the target is — changing them would silently restate what a past month meant — so they are refused; remove it and set the one you mean.',
   })
   @ApiOkResponse({ type: PurchaseTargetView })
   update(

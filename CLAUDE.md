@@ -117,15 +117,21 @@ margins) are closed to `sales_rep`.
   `estimatedCost`. Costing them at zero silently lost the real cost from every report, forever —
   on a 2–3% margin that is the whole signal.
 
-**Vendor purchase targets are built** (§12): `PurchaseTarget` plus `GET /purchase-targets/report`,
-in `src/modules/reports/` — the only writes in an otherwise read-only module, because a target is
-meaningless apart from the report measuring it. Four rules are load-bearing: progress counts
-goods **received** not ordered; quantity comes from **`quantityPaidFor`**, so free goods do not
-advance a quota; value comes from `GoodsReceiptLine.totalCost`, never `costPrice × quantity`; and
-**a category target counts only the products in it that carry no target of their own**, or one
-carton advances two rows. That subtraction is pure, in `purchase-target.ts`. Targets are
-deliberately **not** on `GET /reports/dashboard`: `targetValue` is a buying price and reps see the
-dashboard.
+**Vendor purchase targets are cartons of a category** (§12, reshaped 2026-10-04): `PurchaseTarget`
+plus `GET /purchase-targets/report`, in `src/modules/reports/` — the only writes in an otherwise
+read-only module. **A target is a vendor, a category, a month and a number of cartons** —
+"112 cartons of lotion" — and any product filed under the category counts. **No product targets,
+no money quotas, no units to pick**: vendors deal only in cartons, and what to buy within a
+category is decided by stock and customers. Four rules are load-bearing: progress counts goods
+**received**, not ordered; only what was **paid for** (`quantityPaidFor`), so free goods do not
+advance it; **each product's carton is its biggest unit**, so a carton of 12 and a carton of 24
+each count as one and a half-slot reads 9.5 (`cartonFactor`, pure, in `purchase-target.ts`); and a
+product with nothing bigger than its base unit **has no carton and is named** in
+`productsWithoutCarton`, never counted as pieces or skipped silently. **Editable** — cartons and
+note only; vendor, category and month are what the target is. On `GET /reports/dashboard` as
+`purchasing.targets`, one ring each on the home screen. The Targets tab is hidden for **retail**
+shops (navigation only). The migration **cleared every existing target** — they were pieces, and
+a category's pieces cannot be turned back into cartons.
 
 **Money owed to vendors is Slice 6.6** (§16), in `src/modules/payables/`. `GET /payables` is the
 mirror of `GET /receivables` — bills with money still on them, longest-owed first, grouped per

@@ -361,12 +361,46 @@ class PurchasesSummary {
   topCategories!: PurchaseGroupRow[];
 }
 
+/** One vendor target's progress this month, for a doughnut. */
+class TargetGlance {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Dangote Distribution' })
+  supplier!: string;
+
+  @ApiProperty({ example: 'Lotion' })
+  category!: string;
+
+  @ApiProperty({ example: 112 })
+  targetCartons!: number;
+
+  @ApiProperty({ example: 86.5, description: 'Paid for, to one decimal.' })
+  achievedCartons!: number;
+
+  @ApiProperty({ example: 25.5 })
+  remainingCartons!: number;
+
+  @ApiProperty({
+    example: 7723,
+    description: 'Basis points of the target; above 10000 is over-performance.',
+  })
+  achievedBps!: number;
+}
+
 class PurchasingSummary {
   @ApiProperty({ type: () => PayablesSummary })
   payables!: PayablesSummary;
 
   @ApiProperty({ type: () => PurchasesSummary })
   purchases!: PurchasesSummary;
+
+  @ApiProperty({
+    type: () => [TargetGlance],
+    description:
+      'Every vendor target for this month, in cartons. Empty when there are none.',
+  })
+  targets!: TargetGlance[];
 }
 
 class TrendDay {

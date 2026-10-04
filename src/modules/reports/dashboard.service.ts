@@ -3,6 +3,7 @@ import { ReceivableService } from '../payments/receivable.service';
 import { PayableService } from '../payables/payable.service';
 import { resolvePeriod } from './period';
 import { ReportService, describe } from './report.service';
+import { PurchaseTargetService } from './purchase-target.service';
 import { DashboardView } from './dto/dashboard.response';
 
 /** How many rows each attention list shows before it stops being a glance. */
@@ -30,6 +31,7 @@ export class DashboardService {
     private readonly reports: ReportService,
     private readonly receivables: ReceivableService,
     private readonly payables: PayableService,
+    private readonly targets: PurchaseTargetService,
   ) {}
 
   async build(): Promise<DashboardView> {
@@ -55,6 +57,7 @@ export class DashboardService {
       audit,
       owedToVendors,
       monthPurchases,
+      monthTargets,
     ] = await Promise.all([
       this.reports.profit(today),
       this.reports.profit(month),
@@ -69,6 +72,9 @@ export class DashboardService {
       this.reports.stockAudit(month),
       this.payables.outstanding(),
       this.reports.purchases(month),
+      // No period: the target report defaults to this month in the shop's
+      // timezone, which is the month every other figure here is.
+      this.targets.report(),
     ]);
 
     return {
@@ -174,6 +180,20 @@ export class DashboardService {
           topVendors: monthPurchases.bySupplier.slice(0, GLANCE),
           topCategories: monthPurchases.byCategory.slice(0, GLANCE),
         },
+        /**
+         * This month's vendor targets, in cartons — every one, not a glance:
+         * a distributor has a handful and watches all of them. Shown as one
+         * doughnut each. Empty for a shop with none, which is most retail.
+         */
+        targets: monthTargets.targets.map((target) => ({
+          id: target.id,
+          supplier: target.supplier.name,
+          category: target.category.name,
+          targetCartons: target.progress.targetCartons,
+          achievedCartons: target.progress.achievedCartons,
+          remainingCartons: target.progress.remainingCartons,
+          achievedBps: target.progress.achievedBps,
+        })),
       },
 
       trend: { days: daily },
