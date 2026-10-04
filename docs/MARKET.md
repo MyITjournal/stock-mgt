@@ -40,28 +40,55 @@ That is this product's market in the same words.
 *built* against what Mayloo *advertises*. Such a page overstates what works and omits what it has
 not thought to mention, so this is a map of positioning, not a feature audit.
 
-**What they claim that we also have**: point of sale taking cash and transfer, barcode scanning,
-expiry tracking, low-stock alerts, multiple unit and pack pricing, suppliers, multi-location,
-expenses, margin and best-seller reporting, invoices to customers. The overlap is close to total.
+#### Feature by feature (refreshed 2026-10-05)
 
-**What they claim that we do not have**: an **Android app**, synced with a web dashboard. That is
-the real gap. A counter in a Nigerian shop is frequently a phone, and this is web only. The API
-was built offline-first for exactly that app — idempotency keys and client-supplied ids, §8 — so
-the foundation is laid and the app is not.
+Their side is re-read from [getmayloo.com](https://getmayloo.com) on 2026-10-05; ours is what is
+built and verified. Their page grew since 2026-10-02 — it now also claims card payments, bulk
+import, branch comparison and WhatsApp/email invoices — and it quotes both a 30-day and a 14-day
+trial, so it is still a moving page.
 
-**What we have that their page never mentions** — and this is the whole of the differentiation:
+| | Mayloo (claims) | Reho (built) |
+|---|---|---|
+| **Where it runs** | Web dashboard + **Android app**, synced | Web, used on a phone or a computer; no installed app |
+| **Scanning** | "Scan barcodes" | USB/Bluetooth scanner **or the phone's own camera**, which stays open for a whole order; barcodes captured while adding a product |
+| **Point of sale** | Cash, transfer, card | Cash, transfer, POS terminal; **suggestions as you type**, priced in one request |
+| **Units & prices** | Multi-unit, retail/wholesale/bulk pricing | Per-unit price lists per customer tier; **portions** (½ carton, ⅙ carton) priced on their own; units **counted in but never sold**; cart **re-prices when a trade customer is named**; never guesses a missing price |
+| **Kind of shop** | — | Asked at sign-up (retail / wholesale / both), sets sensible starting defaults |
+| **Stock** | Stock per unit, low-stock and expiry alerts | Append-only ledger, **batches with expiry picked first-expiry-first**, reorder alerts, adjustments, transfers, counts that one person makes and another posts; on hand said as "14 carton, 2 roll" |
+| **Buying** | — (no supplier features mentioned) | Deliveries with invoice totals, **free goods tracked apart from paid**, supplier bills, **what you owe each vendor**, vendor payments |
+| **Vendor targets** | — | **Monthly carton quotas per category**, counted from deliveries paid for; a ring per target on the dashboard |
+| **Customer credit** | — (never mentioned) | Who owes you oldest-first, payments tied to named invoices, statements, **an unpaid balance holds the next credit sale**, void kept apart from refund |
+| **Money in** | — | Payments named to the **bank account** they landed in, end-of-shift cash-up per location and per account |
+| **Invoices** | Invoices and receipts, **sent by WhatsApp or email** | Receipts and PDF invoices and statements with the letterhead; **sent by hand**, not from the app |
+| **Profit** | Profit worked out, P&L, expenses by category | Profit with **exact cost per sale** (not averages), VAT taken out of tax-inclusive prices, expenses |
+| **Reports** | Best-sellers, daily sales, **branch comparison** (revenue, margin, stock value) | Profit, sales by day/product/category/location/customer, purchases, collections, stock value, expiry, movers, dead stock |
+| **Branches** | Every branch from one account | Locations with their own stock; sales and collections by location |
+| **Staff** | Roles | Roles, **cost hidden from sales reps**, **working hours that gate signing in**, staff with no email |
+| **Getting started** | **Bulk-import products from a spreadsheet**; "set up in under 10 minutes" | Sign up with no email in under a minute; **products added one at a time** |
+| **Price / trial** | Free 30 days, no card (14 days also quoted) | Not yet set (§3) |
 
-- **Customer credit.** Receivables oldest-first, payments allocated to named invoices, void kept
-  distinct from refund, statements, and an unsettled balance gating the next credit sale (§6).
-  Their page does not mention owing at all. In a shop that sells on trust, that is not a feature
-  gap, it is half the business.
-- **Money owed to vendors** — supplier bills, payments, payables (§16).
-- **Cost that is actually correct** (§2) — exact invoice totals rather than rounded averages, cost
-  of goods snapshotted per sale, goods sold before their delivery flagged rather than costed at
-  zero. On a 2–3% margin that difference *is* the signal.
-- **VAT derived from tax-inclusive prices** (§12), so revenue is not overstated by 7.5%.
-- **Operational control** (§9) — roles, cost hidden from reps, working hours gating sign-in,
-  stocktake counted by one person and posted by another.
+**Where they are ahead**, honestly:
+
+1. **An installed Android app.** Reho now does the phone's main jobs from the browser — selling,
+   camera scanning — but an installed app works offline and feels native. The API was built
+   offline-first for exactly that app (§8); the app itself is not built.
+2. **Bulk import from a spreadsheet.** A distributor with 500 products will not type them one by
+   one. This is the cheapest gap to close and the one most likely to lose a trial on day one.
+3. **One-tap send to WhatsApp or email.** Reho makes the PDF; a person forwards it.
+4. **A branch comparison view** side by side. Reho has the figures per location, not the one view.
+
+**Where Reho is ahead** — and this is the whole of the differentiation:
+
+- **Customer credit**, end to end. Their page still does not mention owing at all. In a shop that
+  sells on trust, that is not a feature gap, it is half the business.
+- **The buying side**: supplier bills, what you owe each vendor, free goods kept apart from paid —
+  and **vendor targets in cartons**, which is how a distributor's month is actually judged.
+- **Wholesale done the way the trade does it**: portions, units counted but not sold, per-customer
+  price lists that move the whole cart, and a till that refuses to guess a price.
+- **Cost that is actually correct** (§2) and **VAT** (§12). On a 2–3% margin that difference *is*
+  the signal.
+- **Operational control** (§9): cost hidden from reps, working hours, counts posted by a second
+  person.
 
 ### What that changes
 
@@ -201,7 +228,8 @@ Finish stock-mgt v1 (PDFs, then deploy), then build preorder on this backend, **
 - ~~Whether anybody is selling inventory software to Nigerian shops for a fee~~ — **answered
   2026-10-02: yes.** [Mayloo](https://getmayloo.com) is in beta, same verticals, same core, with an
   Android app we do not have. Written up in §1. **Re-check it periodically rather than once**: it
-  is in beta now, so what it actually does will move.
+  is in beta now, so what it actually does will move. **Re-read 2026-10-05**: it had added card
+  payments, bulk import, branch comparison and WhatsApp/email invoices in three days.
 - Whether OmniOne has moved down-market into what this product does
 - Whether any WhatsApp vendor tool has added preorder allocation (the whole wedge)
 - Current Bumpa pricing and whether anyone has undercut it — **and now Mayloo's**, once it leaves
@@ -234,7 +262,8 @@ Two consequences worth acting on rather than noting:
 - [OmniOne launch](https://techafricanews.com/2026/05/06/omnibiz-africa-launches-omnione-to-digitize-nigerias-fmcg-trade-network/) ·
   [OmniRetail](https://omniretail.africa/)
 - [Bumpa pricing](https://www.getbumpa.com/pricing)
-- [Mayloo](https://getmayloo.com) · [Mayloo beta](https://beta.getmayloo.com/) — read 2026-10-02
+- [Mayloo](https://getmayloo.com) · [Mayloo beta](https://beta.getmayloo.com/) — read 2026-10-02,
+  re-read 2026-10-05 for the feature table in §1
 - [Better Tailor](https://usebettertailor.com) — adjacent, not a competitor: same market and the
   same "stop using notebooks and WhatsApp" framing, aimed at tailors, waitlist only as of
   2026-10-02. Worth watching for how that pitch lands.
