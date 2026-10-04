@@ -460,9 +460,9 @@ the quantity and its base unit; one with none shows a grey 0; a service shows a 
 
 ## Q. What kind of shop
 
-**129. Open sign-up.** [gate] "What kind of shop is it?" offers Retail shop, Wholesale or
-distributor, and Both, each with a line saying what it means. **Nothing is pre-selected**, and
-Create shop stays disabled until one is picked.
+**129. Open sign-up.** [gate] "What kind of shop is it?" is a drop-down reading **Choose one…** —
+**nothing is pre-selected**, and Create shop stays disabled until one is picked. It offers Retail
+shop, Wholesale or distributor, and Both; picking one shows a line under it saying what it means.
 
 **130. Create a Wholesale shop.** [gate] Categories & tiers shows one price list, *Wholesale*,
 marked default.
@@ -474,7 +474,8 @@ chose. Change it and save — it says saved, and the price lists on Categories &
 
 **133. [gate] The same screen as a sales_rep** shows the type as text, with nothing to change.
 
-**134. [gate] On a phone-width window** the three choices on sign-up stack and stay readable.
+**134. [gate] On a phone** the sign-up drop-down opens the phone's own picker and the whole form
+fits without sideways scrolling.
 
 ---
 

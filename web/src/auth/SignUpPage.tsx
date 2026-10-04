@@ -2,10 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import { useAuth, useLandingPath } from './useAuth';
-import { Field, Input } from '../components/Field';
+import { Field, Input, Select } from '../components/Field';
 import { Button } from '../components/Button';
-import { BusinessTypeChoice } from '../components/BusinessTypeChoice';
-import type { BusinessType } from '../lib/businessTypes';
+import { BUSINESS_TYPES, type BusinessType } from '../lib/businessTypes';
 
 /**
  * Creating a shop, with no email and nothing to wait for.
@@ -109,21 +108,37 @@ export function SignUpPage() {
             />
           </Field>
 
-          <fieldset>
-            <legend className="block text-sm font-medium text-slate-700">
-              What kind of shop is it?
-            </legend>
-            <div className="mt-1">
-              <BusinessTypeChoice
-                value={businessType}
-                onChange={setBusinessType}
-              />
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              It sets how your price lists and products start out. Every
-              feature is open either way, and you can change it later.
-            </p>
-          </fieldset>
+          {/*
+            A drop-down rather than three cards: the form is a phone's worth
+            of boxes already. The cards' descriptions are not lost — the one
+            for the type chosen shows underneath, which is when it matters.
+          */}
+          <Field
+            label="What kind of shop is it?"
+            htmlFor="business-type"
+            hint={
+              businessType
+                ? `${BUSINESS_TYPES.find((type) => type.value === businessType)?.description} You can change it later.`
+                : 'It sets how your price lists and products start out. Every feature is open either way.'
+            }
+          >
+            <Select
+              id="business-type"
+              value={businessType ?? ''}
+              onChange={(event) =>
+                setBusinessType((event.target.value || null) as BusinessType | null)
+              }
+            >
+              <option value="" disabled>
+                Choose one…
+              </option>
+              {BUSINESS_TYPES.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
 
           <div className="flex gap-3">
             <Field label="First name" htmlFor="first">
