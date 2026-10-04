@@ -583,3 +583,25 @@ typed price stays; the other lines go back to Retail.
 
 **161. Pick a customer, then quickly pick a different one.** [gate] The cart ends on the second
 customer's prices, never the first's.
+
+---
+
+## W. Suggestions as you type
+
+**162. At the till, type two letters of a product's name and stop.** [gate] Suggestions appear
+within a moment, **without pressing Enter**, each with its price and the unit it is priced per.
+
+**163. Tap a suggestion.** [gate] It goes into the cart **at once** — no "Looking that up…" pause —
+and the box empties.
+
+**164. Type again, use the down arrow to highlight the second suggestion, press Enter.** [gate]
+That one is added, not the first.
+
+**165. Scan a barcode (or type its number fast and press Enter).** [gate] It is added as before —
+the suggestions do not get in the way.
+
+**166. Type something that matches nothing.** [gate] A line says nothing matches yet and to press
+Enter to try it as a barcode. Escape clears the box.
+
+**167. [gate] On the live site, time a pick from typing to the line appearing.** It should be
+about the time of one request, not three.

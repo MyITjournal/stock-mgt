@@ -438,6 +438,38 @@ Separately, the walkthrough asked for a portion's price **without** a `tierId` a
 `basePrice × factor` fallback: ₦2,100 for a half carton that sells for ₦20,500. The till always
 sends the tier, so it never saw this — but it is the case for making the base price optional next.
 
+### The till suggests as you type, in one request
+
+Added 2026-10-04, from real use: picking an item at the till took **about ten seconds** on the
+hosted instance, and nothing appeared until Enter. Measured, not guessed: on Render's free tier
+**every request costs one to two seconds** — the home page alone, with no database at all, took
+1–1.7s — and the till made **three in a row** per pick: the text tried as a barcode, then a product
+search, then a price lookup. The database was never the slow part, so **indexes would not have
+helped**; the number of round trips was.
+
+**`GET /products/till-search?q=&tierId=`** answers with up to ten active products, each with its
+**sellable units already priced on the cart's tier** (`TillSearchResult`). The till asks it **while
+the person types** — after two characters and a 250ms pause — so by the time a suggestion is
+tapped the price is already known and the item goes into the cart with **no request at all**.
+Locally the same pick went from 76ms over three requests to 18ms in one.
+
+Details:
+
+- **Enter still means "barcode first".** A scanner types faster than suggestions arrive and
+  presses Enter, so Enter with nothing highlighted tries the text as a code, then the search —
+  which is usually already cached from the typing. Arrow keys highlight a suggestion; Enter then
+  picks it. Escape clears.
+- **With no `tierId`, the default tier** — never the bare `basePrice × factor` fallback, which is
+  what a price lookup without a tier returns (§4).
+- **Lean on purpose**: no cost, no barcodes, no lots. Only units sold at the till, and a product
+  with none is not suggested. Retired products are not suggested.
+- **Declared before `GET /products/:id`** in the controller: Nest matches routes in order, and
+  `:id` would otherwise take `till-search` and refuse it as a bad UUID.
+
+Still true after this: **Render's free tier costs a second or two per request and sleeps after
+fifteen minutes** (a 74-second first request was measured). The paid Starter plan is the fix for
+that, and it is a cost decision rather than a code one.
+
 ### No base price means no fallback, never a guess
 
 Added 2026-10-03. `Product.basePrice` is **nullable**. With one, a unit that has no price of its
