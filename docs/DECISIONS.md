@@ -3732,7 +3732,9 @@ Four details:
 - **Optional on the wire, required on the screen.** An older client that never asks still signs
   up, as `mixed`; the sign-up form keeps its button disabled until a type is picked, because a
   default nobody chose is a default nobody notices. The emailed `register` path and Google never
-  ask and get `mixed`; the CLI takes `--type`.
+  ask and get `mixed`; the CLI takes `--type`. On sign-up it is a **drop-down** reading *Choose
+  one…* (changed 2026-10-04 at the owner's request — the form is already long on a phone), with
+  the chosen type's description shown underneath; Settings keeps the three described cards.
 - **It is not the subscription plan.** What a shop pays for stays `maxUsers` (§9). Tying
   features to the type would mean a wholesaler on a small plan could not sell cartons.
 
