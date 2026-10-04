@@ -1,15 +1,22 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsInt,
   IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
-import { IsMoney } from '../../../common/money/is-money.validator';
 
+/**
+ * A vendor's quota for one category in one month, in cartons.
+ *
+ * No product, no unit, no money: a target is "112 cartons of lotion", and any
+ * lotion counts (DECISIONS.md §12, 2026-10-04). Each product's carton is its
+ * biggest unit, so there is nothing to choose.
+ */
 export class CreatePurchaseTargetDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -20,33 +27,20 @@ export class CreatePurchaseTargetDto {
   @IsUUID()
   id?: string;
 
-  @ApiProperty({
-    format: 'uuid',
-    description: 'Whose scheme this is. A target is always a vendor’s.',
-  })
+  @ApiProperty({ format: 'uuid', description: 'Whose scheme this is.' })
   @IsUUID()
   supplierId!: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     format: 'uuid',
     description:
-      'Target a whole category — "110 cartons of lotions". Covers the named category only, not its children, and only the products in it that carry no target of their own. Exactly one of categoryId or productId.',
+      'The category the cartons are counted in. Every product filed under it counts; its children do not.',
   })
-  @IsOptional()
   @IsUUID()
-  categoryId?: string;
-
-  @ApiPropertyOptional({
-    format: 'uuid',
-    description:
-      'Target one SKU, for a vendor who quotas a single product. Exactly one of categoryId or productId.',
-  })
-  @IsOptional()
-  @IsUUID()
-  productId?: string;
+  categoryId!: string;
 
   @ApiProperty({
-    example: '2026-09-01T00:00:00.000Z',
+    example: '2026-10-01T00:00:00.000Z',
     description:
       'Any instant inside the target month. It is snapped to the first of that month in the organization’s timezone, because the vendor’s scheme runs on calendar months rather than a rolling thirty days.',
   })
@@ -54,42 +48,45 @@ export class CreatePurchaseTargetDto {
   period!: string;
 
   @ApiProperty({
-    example: 110,
+    example: 112,
     minimum: 1,
     description:
-      'How much the vendor expects, in `unitId` if one is given, otherwise in base units.',
+      "Cartons. Each product's carton is its biggest unit, so a carton of 12 and a carton of 24 each count as one.",
   })
-  @IsInt()
+  @IsInt({ message: 'A target is a whole number of cartons.' })
   @Min(1)
-  targetQuantity!: number;
+  @Max(1_000_000)
+  targetCartons!: number;
 
-  @ApiPropertyOptional({
-    format: 'uuid',
-    description:
-      'The unit the target was quoted in — "110 cartons". Converted to base units on write using the factor at that time, so redefining a carton later cannot restate a target that was already agreed.',
-  })
-  @IsOptional()
-  @IsUUID()
-  unitId?: string;
-
-  @IsOptional()
-  @IsMoney({
-    example: 45000000,
-    optional: true,
-    // Optional because plenty of schemes are written only in cases.
-  })
-  targetValue?: number;
-
-  @ApiPropertyOptional({ example: 'Q3 scheme, agreed with Chidi.' })
+  @ApiPropertyOptional({ example: 'Promo: one free carton in every twenty' })
   @IsOptional()
   @IsString()
   @MaxLength(1000)
   note?: string;
 }
 
-export class UpdatePurchaseTargetDto extends PartialType(
-  CreatePurchaseTargetDto,
-) {}
+/**
+ * Only the number and the note change. The vendor, the category and the month
+ * are what the target *is* — changing them would silently restate what a past
+ * month's figure meant — so they are not here, and the global ValidationPipe
+ * refuses them by name.
+ */
+export class UpdatePurchaseTargetDto {
+  @ApiPropertyOptional({ example: 120, minimum: 1, description: 'Cartons.' })
+  @IsOptional()
+  @IsInt({ message: 'A target is a whole number of cartons.' })
+  @Min(1)
+  @Max(1_000_000)
+  targetCartons?: number;
+
+  @ApiPropertyOptional({
+    description: 'An empty string clears it; leaving it out leaves it alone.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
 
 export class PurchaseTargetQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
@@ -98,7 +95,7 @@ export class PurchaseTargetQueryDto {
   supplierId?: string;
 
   @ApiPropertyOptional({
-    example: '2026-09-01T00:00:00.000Z',
+    example: '2026-10-01T00:00:00.000Z',
     description:
       'Any instant inside the month to report on. Defaults to the current month in the organization’s timezone.',
   })

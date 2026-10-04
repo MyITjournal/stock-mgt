@@ -227,8 +227,9 @@ so that subtraction would be wrong.
 **65. `/reports/sales`, `/reports/purchases`, `/reports/stock`, `/reports/movers`** — each renders,
 and every margin column is a percentage or a dash.
 
-**66. `/reports/targets`** — **[gate] a product with its own target is not also counted under its
-category's target.** One carton advancing two rows is the rollup bug.
+**66. `/reports/targets`** — **[gate] targets are a category and a number of cartons**, with no
+product or money box. (Product targets, and the rollup bug they could cause, were removed on
+2026-10-04 — section Y walks the new shape.)
 
 ---
 
@@ -460,9 +461,9 @@ the quantity and its base unit; one with none shows a grey 0; a service shows a 
 
 ## Q. What kind of shop
 
-**129. Open sign-up.** [gate] "What kind of shop is it?" offers Retail shop, Wholesale or
-distributor, and Both, each with a line saying what it means. **Nothing is pre-selected**, and
-Create shop stays disabled until one is picked.
+**129. Open sign-up.** [gate] "What kind of shop is it?" is a drop-down reading **Choose one…** —
+**nothing is pre-selected**, and Create shop stays disabled until one is picked. It offers Retail
+shop, Wholesale or distributor, and Both; picking one shows a line under it saying what it means.
 
 **130. Create a Wholesale shop.** [gate] Categories & tiers shows one price list, *Wholesale*,
 marked default.
@@ -474,7 +475,8 @@ chose. Change it and save — it says saved, and the price lists on Categories &
 
 **133. [gate] The same screen as a sales_rep** shows the type as text, with nothing to change.
 
-**134. [gate] On a phone-width window** the three choices on sign-up stack and stay readable.
+**134. [gate] On a phone** the sign-up drop-down opens the phone's own picker and the whole form
+fits without sideways scrolling.
 
 ---
 
@@ -637,3 +639,30 @@ on the phone's camera goes off.
 
 **175. Refuse camera permission when asked.** [gate] The till explains how to allow it in the
 browser's settings rather than showing a blank box.
+
+---
+
+## Y. Vendor targets in cartons
+
+Use a shop created as **Wholesale** (or Both), with a *Lotion* category holding a product whose
+carton is 12 and another whose carton is 24.
+
+**176. Reports → Targets → Set a target.** [gate] The form asks only for a vendor, a category, a
+month, a number of **cartons** and a note — no product, no unit, no money.
+
+**177. Set 112 cartons of Lotion for this month, then record deliveries of 10 cartons of the first
+product and 5 of the second.** [gate] The target reads **15 of 112 cartons** — five cartons of 24
+count as five, not ten.
+
+**178. Record a delivery of a lotion that has only one unit (pieces).** [gate] The target does not
+move, and an amber line names that product as having no carton set up.
+
+**179. Tap Edit on the target.** [gate] The vendor, category and month are shown but cannot be
+changed; change the cartons to 100 and save — the target reads **of 100**.
+
+**180. Open the home screen.** [gate] A *Vendor targets this month* section shows a ring for the
+target, its percentage in the middle and *"15 of 100 cartons"* under it. A met target says
+*Target met* in words.
+
+**181. [gate] In a shop created as Retail**, Reports has no Targets tab, and the home screen has
+no targets section.

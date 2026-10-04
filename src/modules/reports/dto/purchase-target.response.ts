@@ -6,24 +6,19 @@ import { ApiProperty } from '@nestjs/swagger';
  * **These are the service's declared return types, not descriptions of them**
  * (DECISIONS.md §17).
  *
- * Four rules from §12 are load-bearing, and each one is a way of counting that
- * a reasonable implementation would get wrong:
+ * A target is a category and a number of cartons (§12, 2026-10-04). Three
+ * counting rules are load-bearing:
  *
  * - **Progress counts goods received, not ordered.** An order the vendor has
  *   not delivered is exactly what still needs chasing, so it stays in
  *   "remaining".
- * - **Quantity comes from `quantityPaidFor`.** "Buy 19, get 1 free" advances a
- *   quota by 19 — the free case is real stock and counts for valuation, just
- *   not against the scheme.
- * - **Value comes from `GoodsReceiptLine.totalCost`**, never
- *   `costPrice × quantity`, which is a rounded average and would drift from the
- *   vendor's own sheet.
- * - **A category target counts only the products in it that carry no target of
- *   their own**, or one carton advances two rows. That subtraction is pure, in
- *   `purchase-target.ts`.
+ * - **Cartons come from `quantityPaidFor`.** "Buy 19, get 1 free" advances a
+ *   quota by 19 — the free carton is real stock, just not against the scheme.
+ * - **A carton is each product's biggest unit.** A carton of 12 and a carton
+ *   of 24 each count as one; a product with nothing bigger than its base unit
+ *   has no carton and is named in `productsWithoutCarton` rather than skipped.
  *
- * All of it is buying-price data: `targetValue` is what the shop pays, so these
- * routes are closed to a `sales_rep` outright rather than redacted.
+ * Buying-side data, so these routes are closed to a `sales_rep`.
  */
 
 class TargetSupplierRef {
@@ -38,7 +33,7 @@ class TargetCategoryRef {
   @ApiProperty({ format: 'uuid' })
   id!: string;
 
-  @ApiProperty({ example: 'Lotions' })
+  @ApiProperty({ example: 'Lotion' })
   name!: string;
 }
 
@@ -46,25 +41,11 @@ class TargetProductRef {
   @ApiProperty({ format: 'uuid' })
   id!: string;
 
-  @ApiProperty()
+  @ApiProperty({ example: 'Lotion sample sachet' })
   name!: string;
-
-  @ApiProperty()
-  sku!: string;
 }
 
-class TargetUnitRef {
-  @ApiProperty({ format: 'uuid' })
-  id!: string;
-
-  @ApiProperty({ example: 'Carton' })
-  name!: string;
-
-  @ApiProperty({ example: 24 })
-  factor!: number;
-}
-
-/** A vendor's monthly offtake quota. */
+/** A vendor's monthly quota for one category, in cartons. */
 export class PurchaseTargetView {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -79,16 +60,11 @@ export class PurchaseTargetView {
   supplierId!: string;
 
   @ApiProperty({
-    type: String,
     format: 'uuid',
-    nullable: true,
     description:
-      'Exactly one of this and `productId` is set, enforced by a CHECK. A category target covers the products in it that carry no target of their own — the named category only, never its children.',
+      'Every product filed under this category counts. The named category only, never its children.',
   })
-  categoryId!: string | null;
-
-  @ApiProperty({ type: String, format: 'uuid', nullable: true })
-  productId!: string | null;
+  categoryId!: string;
 
   @ApiProperty({
     type: String,
@@ -99,32 +75,10 @@ export class PurchaseTargetView {
   periodStart!: Date;
 
   @ApiProperty({
-    description: 'In **base units**, like everything the ledger counts.',
+    example: 112,
+    description: "Cartons — each product's biggest unit counts as one.",
   })
-  targetQuantity!: number;
-
-  @ApiProperty({
-    type: String,
-    format: 'uuid',
-    nullable: true,
-    description:
-      'What the owner typed it in, so "110 cartons" reads back as cartons.',
-  })
-  displayUnitId!: string | null;
-
-  @ApiProperty({
-    description:
-      'The factor at write time. Redefining a carton later cannot silently restate a quota that was already agreed.',
-  })
-  unitFactor!: number;
-
-  @ApiProperty({
-    type: Number,
-    nullable: true,
-    description:
-      'Optional value quota in kobo, for schemes written in money rather than cases.',
-  })
-  targetValue!: number | null;
+  targetCartons!: number;
 
   @ApiProperty({ type: String, nullable: true })
   note!: string | null;
@@ -147,53 +101,40 @@ export class PurchaseTargetView {
   @ApiProperty({ type: () => TargetSupplierRef })
   supplier!: TargetSupplierRef;
 
-  @ApiProperty({ type: () => TargetCategoryRef, nullable: true })
-  category!: TargetCategoryRef | null;
-
-  @ApiProperty({ type: () => TargetProductRef, nullable: true })
-  product!: TargetProductRef | null;
-
-  @ApiProperty({ type: () => TargetUnitRef, nullable: true })
-  displayUnit!: TargetUnitRef | null;
+  @ApiProperty({ type: () => TargetCategoryRef })
+  category!: TargetCategoryRef;
 }
 
-/** How much of one quota has actually landed. */
+/** How many of the quota's cartons have actually landed. */
 export class TargetProgressView {
   @ApiProperty({ format: 'uuid' })
   targetId!: string;
 
-  @ApiProperty({ description: 'Base units.' })
-  targetQuantity!: number;
+  @ApiProperty({ example: 112 })
+  targetCartons!: number;
+
+  @ApiProperty({
+    example: 86.5,
+    description:
+      'Cartons **paid for** in the month, from deliveries that arrived, to one decimal — a half-slot is 9.5. Free goods do not advance it.',
+  })
+  achievedCartons!: number;
+
+  @ApiProperty({ description: 'Still to buy. Never below zero.' })
+  remainingCartons!: number;
 
   @ApiProperty({
     description:
-      'Base units **paid for** in the month, from deliveries that arrived. Free goods do not advance it.',
-  })
-  achievedQuantity!: number;
-
-  @ApiProperty({ description: 'What is still to be bought. Never below zero.' })
-  remainingQuantity!: number;
-
-  @ApiProperty({ type: Number, nullable: true })
-  targetValue!: number | null;
-
-  @ApiProperty({
-    description: 'Summed from invoice totals, never `costPrice × quantity`.',
-  })
-  achievedValue!: number;
-
-  @ApiProperty({
-    type: Number,
-    nullable: true,
-    description: 'Null when the scheme is written in cases rather than money.',
-  })
-  remainingValue!: number | null;
-
-  @ApiProperty({
-    description:
-      'Basis points of the quantity target, so 10000 is exactly met and anything above it is over-performance.',
+      'Basis points of the target, so 10000 is exactly met and anything above it is over-performance.',
   })
   achievedBps!: number;
+
+  @ApiProperty({
+    type: () => [TargetProductRef],
+    description:
+      'Products in this category with no unit bigger than their base, so no carton to count in. Their deliveries are not counted — named so nobody wonders why the number is low.',
+  })
+  productsWithoutCarton!: TargetProductRef[];
 }
 
 /** A target with its progress attached. */

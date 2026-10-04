@@ -3,6 +3,7 @@ import { api, type ApiResponse } from '../api/client';
 import { Money } from '../components/Money';
 import { Page } from '../components/Layout';
 import { DataTable } from '../components/DataTable';
+import { TargetRing } from '../components/TargetRing';
 import { Spinner } from '../auth/RequireAuth';
 
 /**
@@ -218,6 +219,24 @@ export function HomePage() {
           />
         </Panel>
       </div>
+
+      {/*
+        Vendor targets, one ring each. Only when there are any: most months
+        and every retail shop have none, and an empty section saying so is
+        noise on the one screen meant to be read at a glance.
+      */}
+      {purchasing.targets.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-slate-900">
+            Vendor targets this month
+          </h2>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+            {purchasing.targets.map((target) => (
+              <TargetRing key={target.id} {...target} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mt-8">
         <h2 className="mb-3 text-sm font-semibold text-slate-900">

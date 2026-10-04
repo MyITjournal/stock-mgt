@@ -1,21 +1,33 @@
 /**
- * Vendor purchase targets: how much of a monthly quota has actually arrived.
+ * Vendor purchase targets: how many cartons of a category have actually
+ * arrived this month.
  *
  * Pure, like `period.ts` and `profit.ts`, because the one rule here that is
- * easy to get wrong is a subtraction rather than a query, and a subtraction is
- * worth testing without a database in the way.
+ * easy to get wrong — what "a carton" means across products of different
+ * sizes — is arithmetic, and arithmetic is worth testing without a database.
+ *
+ * ## What a target is (2026-10-04)
+ *
+ * A category and a number of cartons: "112 cartons of lotion this month". Any
+ * product filed under the category counts — Perfect & Radiant, Deep, Soft Cup
+ * — because that is how the vendor counts. Product targets and money quotas
+ * were removed: vendors set quotas per category, and what to buy within it is
+ * decided by stock and customers, not by the scheme.
+ *
+ * ## What a carton is
+ *
+ * **Each product's biggest unit.** A carton of 12 and a carton of 24 each
+ * count as one, which is what makes a category of different products countable
+ * in one number at all. A product with no unit bigger than the one it is
+ * counted in has no carton, so it cannot be counted — and is named, never
+ * quietly skipped.
  */
 
 /** A target as stored, reduced to what the arithmetic needs. */
 export interface TargetRow {
   id: string;
-  /** Exactly one of these is set. */
-  categoryId: string | null;
-  productId: string | null;
-  /** In base units. */
-  targetQuantity: number;
-  /** In kobo, or null for a quota written only in cases. */
-  targetValue: number | null;
+  categoryId: string;
+  targetCartons: number;
 }
 
 /** One received line inside the target month, from the right vendor. */
@@ -26,85 +38,68 @@ export interface ReceiptLine {
   /**
    * Base units the vendor was **paid** for. Free goods are real stock and
    * count for valuation, but they do not advance a quota — confirmed with the
-   * owner on 2026-08-29: "buy 19, get 1 free" moves a 110-case target by 19.
+   * owner on 2026-08-29: "buy 19, get 1 free" moves a target by 19.
    */
   quantityPaidFor: number;
-  /** Exact invoice total for the line, in kobo. */
-  totalCost: number;
+  /**
+   * Base units in this product's carton — its biggest unit — or null when it
+   * has no unit bigger than its base, and so no carton to count in.
+   */
+  cartonFactor: number | null;
 }
 
 export interface TargetProgress {
   targetId: string;
-  targetQuantity: number;
-  achievedQuantity: number;
-  remainingQuantity: number;
-  targetValue: number | null;
-  achievedValue: number;
-  remainingValue: number | null;
-  /** Basis points of the quantity target, so 10000 is exactly met. */
+  targetCartons: number;
+  /** Cartons paid for, to one decimal: a half-slot delivery is 9.5. */
+  achievedCartons: number;
+  /** Never below zero. */
+  remainingCartons: number;
+  /** Basis points of the target, so 10000 is exactly met. */
   achievedBps: number;
 }
 
-/**
- * Which lines count toward each target, and how much of each quota is left.
- *
- * **The rule that makes this non-obvious**: a category target covers only the
- * products in that category that do *not* carry a target of their own. A vendor
- * who quotas both "lotions" and one specific lotion SKU would otherwise see
- * that SKU's cartons advance both rows, and the vendor's own sheet would
- * disagree with ours. So the product targets are resolved first and the
- * category target is given what is left over.
- *
- * Children of a category are **not** included: the named category only. The
- * owner's targets are leaf categories ("lotions", "roll-on"), and rolling up a
- * tree would mean excluding a product target from every ancestor above it,
- * which is a second subtraction nobody has asked for yet.
- */
 export function rollUpTargets(
-  targets: TargetRow[],
-  lines: ReceiptLine[],
+  targets: readonly TargetRow[],
+  lines: readonly ReceiptLine[],
 ): TargetProgress[] {
-  const targetedProducts = new Set(
-    targets
-      .map((target) => target.productId)
-      .filter((id): id is string => !!id),
-  );
-
   return targets.map((target) => {
-    const counted = lines.filter((line) =>
-      target.productId
-        ? line.productId === target.productId
-        : line.categoryId === target.categoryId &&
-          // The subtraction: a product with its own target is already counted
-          // there, so it must not also land in its category's total.
-          !targetedProducts.has(line.productId),
-    );
+    // Exact, then rounded once for display — summing rounded figures would
+    // drift on a month of part-cartons.
+    const exact = lines
+      .filter(
+        (line) =>
+          line.categoryId === target.categoryId && line.cartonFactor !== null,
+      )
+      .reduce(
+        (sum, line) =>
+          sum + line.quantityPaidFor / (line.cartonFactor as number),
+        0,
+      );
 
-    const achievedQuantity = counted.reduce(
-      (sum, line) => sum + line.quantityPaidFor,
-      0,
-    );
-    const achievedValue = counted.reduce(
-      (sum, line) => sum + line.totalCost,
-      0,
-    );
-
+    const achievedCartons = oneDecimal(exact);
     return {
       targetId: target.id,
-      targetQuantity: target.targetQuantity,
-      achievedQuantity,
-      // Never negative: over-delivering leaves nothing to chase, and a negative
-      // "remaining" reads as a credit on a screen that is about shortfalls.
-      remainingQuantity: Math.max(0, target.targetQuantity - achievedQuantity),
-      targetValue: target.targetValue,
-      achievedValue,
-      remainingValue:
-        target.targetValue === null
-          ? null
-          : Math.max(0, target.targetValue - achievedValue),
-      achievedBps: achievedShare(achievedQuantity, target.targetQuantity),
+      targetCartons: target.targetCartons,
+      achievedCartons,
+      // Over-delivering leaves nothing to chase; a negative "remaining" would
+      // read as a credit on a screen that is about shortfalls.
+      remainingCartons: Math.max(0, oneDecimal(target.targetCartons - exact)),
+      achievedBps: achievedShare(exact, target.targetCartons),
     };
   });
+}
+
+/** Base units in a product's carton — its biggest unit — or null if none. */
+export function cartonFactor(
+  units: readonly { factor: number }[],
+): number | null {
+  const biggest = Math.max(1, ...units.map((unit) => unit.factor));
+  return biggest > 1 ? biggest : null;
+}
+
+function oneDecimal(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 /**

@@ -1,143 +1,111 @@
-import { ReceiptLine, TargetRow, rollUpTargets } from './purchase-target';
+import {
+  cartonFactor,
+  rollUpTargets,
+  type ReceiptLine,
+} from './purchase-target';
 
-const line = (over: Partial<ReceiptLine> = {}): ReceiptLine => ({
-  productId: 'prod-lotion-a',
+/** "112 cartons of lotion" — any lotion counts. */
+const LOTION = {
+  id: 't-lotion',
   categoryId: 'cat-lotions',
-  quantityPaidFor: 10,
-  totalCost: 1_000_000,
-  ...over,
-});
+  targetCartons: 112,
+};
 
-const target = (over: Partial<TargetRow> = {}): TargetRow => ({
-  id: 'target-1',
+const line = (overrides: Partial<ReceiptLine>): ReceiptLine => ({
+  productId: 'perfect-radiant',
   categoryId: 'cat-lotions',
-  productId: null,
-  targetQuantity: 100,
-  targetValue: null,
-  ...over,
+  quantityPaidFor: 12,
+  cartonFactor: 12,
+  ...overrides,
 });
 
 describe('rollUpTargets', () => {
-  it('counts what arrived against a category target', () => {
+  it('counts every product in the category, each in its own carton', () => {
     const [progress] = rollUpTargets(
-      [target()],
-      [line({ quantityPaidFor: 40 }), line({ quantityPaidFor: 25 })],
-    );
-
-    expect(progress.achievedQuantity).toBe(65);
-    expect(progress.remainingQuantity).toBe(35);
-    expect(progress.achievedBps).toBe(6500);
-  });
-
-  it('counts a product target from that product alone', () => {
-    const [progress] = rollUpTargets(
-      [target({ categoryId: null, productId: 'prod-lotion-a' })],
+      [LOTION],
       [
-        line({ productId: 'prod-lotion-a', quantityPaidFor: 30 }),
-        line({ productId: 'prod-lotion-b', quantityPaidFor: 50 }),
-      ],
-    );
-
-    expect(progress.achievedQuantity).toBe(30);
-  });
-
-  it('does not count a product twice when it has its own target', () => {
-    // The rule the whole module exists for. Without the subtraction, 30 cartons
-    // of lotion A would advance both the SKU target and the lotions target, and
-    // our numbers would disagree with the vendor's own sheet.
-    const [lotions, lotionA] = rollUpTargets(
-      [
-        target({ id: 'lotions' }),
-        target({
-          id: 'lotion-a',
-          categoryId: null,
-          productId: 'prod-lotion-a',
-          targetQuantity: 40,
+        // 10 cartons of 12, and 5 cartons of 24 — fifteen cartons, not 240 pieces.
+        line({
+          productId: 'perfect-radiant',
+          quantityPaidFor: 120,
+          cartonFactor: 12,
         }),
-      ],
-      [
-        line({ productId: 'prod-lotion-a', quantityPaidFor: 30 }),
-        line({ productId: 'prod-lotion-b', quantityPaidFor: 20 }),
+        line({ productId: 'deep', quantityPaidFor: 120, cartonFactor: 24 }),
       ],
     );
-
-    expect(lotionA.achievedQuantity).toBe(30);
-    // Only lotion B, because lotion A is accounted for on its own row.
-    expect(lotions.achievedQuantity).toBe(20);
+    expect(progress.achievedCartons).toBe(15);
+    expect(progress.remainingCartons).toBe(97);
   });
 
-  it('ignores a product in another category', () => {
+  it('counts a part-carton — a half-slot delivery is 9.5', () => {
     const [progress] = rollUpTargets(
-      [target()],
-      [line({ categoryId: 'cat-roll-on', quantityPaidFor: 60 })],
+      [LOTION],
+      [line({ quantityPaidFor: 114, cartonFactor: 12 })],
     );
-
-    expect(progress.achievedQuantity).toBe(0);
+    expect(progress.achievedCartons).toBe(9.5);
   });
 
-  it('does not treat an uncategorised product as a category match', () => {
-    // Both are "no category", which must not read as the same category.
+  it('counts only cartons paid for, not free goods', () => {
+    // 10 arrived, 9 charged: quantityPaidFor is what the line carries.
     const [progress] = rollUpTargets(
-      [target({ categoryId: 'cat-lotions' })],
-      [line({ categoryId: null, quantityPaidFor: 60 })],
+      [LOTION],
+      [line({ quantityPaidFor: 9 * 12 })],
     );
-
-    expect(progress.achievedQuantity).toBe(0);
+    expect(progress.achievedCartons).toBe(9);
   });
 
-  it('counts only what the vendor was paid for', () => {
-    // Free goods are real stock and count for valuation, but "buy 19 get 1
-    // free" advances a case quota by 19.
+  it('ignores other categories', () => {
     const [progress] = rollUpTargets(
-      [target()],
-      [line({ quantityPaidFor: 19, totalCost: 1_900_000 })],
+      [LOTION],
+      [line({ categoryId: 'cat-roll-on' }), line({ categoryId: null })],
     );
-
-    expect(progress.achievedQuantity).toBe(19);
+    expect(progress.achievedCartons).toBe(0);
   });
 
-  it('sums achieved value from the invoice totals', () => {
+  it('cannot count a product with no carton, rather than counting its pieces as cartons', () => {
     const [progress] = rollUpTargets(
-      [target({ targetValue: 5_000_000 })],
-      [line({ totalCost: 1_250_000 }), line({ totalCost: 2_000_000 })],
+      [LOTION],
+      [line({ quantityPaidFor: 30, cartonFactor: null })],
     );
-
-    expect(progress.achievedValue).toBe(3_250_000);
-    expect(progress.remainingValue).toBe(1_750_000);
+    expect(progress.achievedCartons).toBe(0);
   });
 
-  it('leaves remaining value null when the quota is only in cases', () => {
-    const [progress] = rollUpTargets([target()], [line()]);
-
-    expect(progress.targetValue).toBeNull();
-    expect(progress.remainingValue).toBeNull();
-    // Value still accrues, so a client can show it even with no money quota.
-    expect(progress.achievedValue).toBe(1_000_000);
-  });
-
-  it('never reports negative remaining when the target is beaten', () => {
-    const [progress] = rollUpTargets(
-      [target({ targetQuantity: 100, targetValue: 1_000_000 })],
-      [line({ quantityPaidFor: 130, totalCost: 1_400_000 })],
+  it('reports progress in basis points, and never a negative remainder', () => {
+    const [met] = rollUpTargets(
+      [{ ...LOTION, targetCartons: 10 }],
+      [line({ quantityPaidFor: 12 * 12 })],
     );
-
-    expect(progress.remainingQuantity).toBe(0);
-    expect(progress.remainingValue).toBe(0);
-    // Progress past the target is still reported honestly.
-    expect(progress.achievedBps).toBe(13000);
+    expect(met.achievedBps).toBe(12000);
+    expect(met.remainingCartons).toBe(0);
   });
 
-  it('reads a zero target as met rather than dividing by it', () => {
-    const [progress] = rollUpTargets([target({ targetQuantity: 0 })], []);
-
+  it('reads a zero target as met rather than infinite', () => {
+    const [progress] = rollUpTargets([{ ...LOTION, targetCartons: 0 }], []);
     expect(progress.achievedBps).toBe(10000);
   });
+});
 
-  it('reports nothing received as nothing achieved', () => {
-    const [progress] = rollUpTargets([target()], []);
+describe('cartonFactor', () => {
+  it('is the biggest unit, whatever it is called — tray, carton, box', () => {
+    expect(cartonFactor([{ factor: 1 }, { factor: 3 }, { factor: 24 }])).toBe(
+      24,
+    );
+  });
 
-    expect(progress.achievedQuantity).toBe(0);
-    expect(progress.remainingQuantity).toBe(100);
-    expect(progress.achievedBps).toBe(0);
+  it('ignores portions, which are always smaller than the carton', () => {
+    // sachet, roll, 1/6 carton, 1/2 carton, carton
+    expect(
+      cartonFactor([
+        { factor: 1 },
+        { factor: 10 },
+        { factor: 35 },
+        { factor: 105 },
+        { factor: 210 },
+      ]),
+    ).toBe(210);
+  });
+
+  it('is null for a product with nothing bigger than its base unit', () => {
+    expect(cartonFactor([{ factor: 1 }])).toBeNull();
   });
 });
