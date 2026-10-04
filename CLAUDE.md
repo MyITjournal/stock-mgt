@@ -658,6 +658,14 @@ a unit without its own price has `price: null` from `resolveUnitPrice` — the o
 also used by scans — and the till refuses it rather than guess. A seller-named `unitPrice` is still
 accepted. Zero is a price; null is not.
 
+**The till suggests as you type, in one request** (§4, 2026-10-04). Picking an item cost three
+round trips in a row — about ten seconds on Render's free tier, where every request is one to two
+seconds; the database was never the slow part. `GET /products/till-search` returns matching
+products with **sellable units already priced on the cart's tier**, asked after two characters and
+a 250ms pause, so tapping a suggestion adds it with no request. **Enter with nothing highlighted
+still tries a barcode first** (scanners press Enter); arrows highlight, Escape clears. The route is
+declared **before** `products/:id`, or `:id` swallows it.
+
 **Picking a customer on another tier re-prices the whole cart** (§4, fixed 2026-10-04 — the
 docstring promised it from the till's first version while only new lines moved). `applyRepricing` in `till/cart.ts`:
 a typed price stands, a line the new list cannot price keeps its old price **and is named**, a line

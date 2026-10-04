@@ -654,3 +654,123 @@ describe('ProductService editing units', () => {
     ).rejects.toThrow(/no base unit/i);
   });
 });
+
+describe('ProductService tillSearch', () => {
+  let service: ProductService;
+  let prisma: {
+    product: { findMany: jest.Mock };
+    priceTier: { findFirst: jest.Mock };
+  };
+
+  /** Peak 14g at a distributor: sachets counted, never sold. */
+  const PEAK = {
+    id: 'peak',
+    name: 'Peak 14g',
+    size: '14g',
+    sku: 'PEAK-14G',
+    trackStock: true,
+    taxRateBps: 750,
+    basePrice: null,
+    units: [
+      {
+        id: 'u-sachet',
+        name: 'sachet',
+        factor: 1,
+        isSellable: false,
+        isDefaultSelling: false,
+      },
+      {
+        id: 'u-roll',
+        name: 'roll',
+        factor: 10,
+        isSellable: true,
+        isDefaultSelling: false,
+      },
+      {
+        id: 'u-carton',
+        name: 'carton',
+        factor: 210,
+        isSellable: true,
+        isDefaultSelling: true,
+      },
+    ],
+    prices: [
+      { tierId: 'tier-wholesale', unitId: 'u-carton', price: 4_000_000 },
+    ],
+  };
+
+  beforeEach(async () => {
+    prisma = {
+      product: { findMany: jest.fn().mockResolvedValue([PEAK]) },
+      priceTier: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'tier-wholesale' }),
+      },
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductService,
+        { provide: TENANT_PRISMA, useValue: prisma },
+        {
+          provide: CloudinaryService,
+          useValue: { isConfigured: false, assertConfigured: jest.fn() },
+        },
+      ],
+    }).compile();
+    service = module.get(ProductService);
+  });
+
+  it('answers nothing for under two characters, without asking the database', async () => {
+    await expect(service.tillSearch(' p ')).resolves.toEqual([]);
+    expect(prisma.product.findMany).not.toHaveBeenCalled();
+  });
+
+  it('offers only units sold at the till, each already priced', async () => {
+    const [peak] = await service.tillSearch('peak', 'tier-wholesale');
+    expect(peak.units.map((unit) => unit.name)).toEqual(['roll', 'carton']);
+    expect(peak.units.find((unit) => unit.name === 'carton')).toMatchObject({
+      price: 4_000_000,
+      isTierPrice: true,
+    });
+  });
+
+  it('leaves an unpriced unit with no price rather than a guess', async () => {
+    const [peak] = await service.tillSearch('peak', 'tier-wholesale');
+    expect(peak.units.find((unit) => unit.name === 'roll')?.price).toBeNull();
+  });
+
+  it('names the default selling unit', async () => {
+    const [peak] = await service.tillSearch('peak', 'tier-wholesale');
+    expect(peak.defaultUnitId).toBe('u-carton');
+  });
+
+  it('prices on the default tier when none is given — never the bare fallback', async () => {
+    await service.tillSearch('peak');
+    expect(prisma.priceTier.findFirst).toHaveBeenCalled();
+    const [args] = prisma.product.findMany.mock.calls[0] as [
+      { include: { prices: { where: { tierId: string } } } },
+    ];
+    expect(args.include.prices.where.tierId).toBe('tier-wholesale');
+  });
+
+  it('searches active products by name, SKU or size, ten at most', async () => {
+    await service.tillSearch('14g', 'tier-wholesale');
+    const [args] = prisma.product.findMany.mock.calls[0] as [
+      { where: { isActive: boolean; OR: object[] }; take: number },
+    ];
+    expect(args.where.isActive).toBe(true);
+    expect(args.where.OR).toHaveLength(3);
+    expect(args.take).toBe(10);
+  });
+
+  it('drops a product with nothing sold at the till', async () => {
+    prisma.product.findMany.mockResolvedValue([
+      {
+        ...PEAK,
+        units: PEAK.units.map((unit) => ({ ...unit, isSellable: false })),
+      },
+    ]);
+    await expect(service.tillSearch('peak', 'tier-wholesale')).resolves.toEqual(
+      [],
+    );
+  });
+});

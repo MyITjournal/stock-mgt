@@ -513,6 +513,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/products/till-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search for the till, with prices already worked out
+         * @description Up to ten active products with every unit sold at the till priced on the tier — so picking one needs no further request. Built for search-as-you-type.
+         */
+        get: operations["ProductController_tillSearch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/products/{id}": {
         parameters: {
             query?: never;
@@ -2387,6 +2407,42 @@ export interface components {
             units: components["schemas"]["ProductUnitView"][];
             prices: components["schemas"]["ProductPriceView"][];
             barcodes: components["schemas"]["ProductBarcodeView"][];
+        };
+        TillSearchUnit: {
+            /** Format: uuid */
+            id: string;
+            /** @example carton */
+            name: string;
+            /**
+             * @description Base units in one of these.
+             * @example 24
+             */
+            factor: number;
+            /**
+             * @description Tax-inclusive, in kobo, on the tier asked for. Null when the unit has no price and the product no base price — the till refuses it rather than guess (§4).
+             * @example 4000000
+             */
+            price: number | null;
+            /** @description False means the price is the basePrice × factor fallback, which the till flags. */
+            isTierPrice: boolean;
+        };
+        TillSearchResult: {
+            /** Format: uuid */
+            id: string;
+            /** @example Peak 14g */
+            name: string;
+            /** @example 14g */
+            size: string | null;
+            /** @example PEAK-14G */
+            sku: string;
+            trackStock: boolean;
+            /**
+             * Format: uuid
+             * @description The unit the till picks first — always one of `units`.
+             */
+            defaultUnitId: string;
+            /** @description Only units sold at the till, smallest first. */
+            units: components["schemas"]["TillSearchUnit"][];
         };
         UnitTaxSplit: {
             /** @description What the customer pays. */
@@ -6615,6 +6671,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ProductController_tillSearch: {
+        parameters: {
+            query: {
+                /** @description The cart's price list; the default one when omitted */
+                tierId?: string;
+                /** @description At least two characters; matches name, SKU or size */
+                q: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TillSearchResult"][];
+                };
             };
         };
     };
