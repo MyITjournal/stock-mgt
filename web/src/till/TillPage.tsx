@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
@@ -19,6 +19,7 @@ import {
   type Repriced,
 } from './cart';
 import { ScanBox } from './ScanBox';
+import { CameraScanner } from '../components/CameraScanner';
 import { CartLines } from './CartLines';
 import { PaymentPanel } from './PaymentPanel';
 import { EMPTY_PAYMENT, needsBankAccount, type PaymentState } from './payment';
@@ -33,6 +34,10 @@ type SaleReceiptView = components['schemas']['SaleReceiptView'];
 type CustomerView = components['schemas']['CustomerView'];
 type BankAccountView = components['schemas']['BankAccountView'];
 type PriceTierView = components['schemas']['PriceTierView'];
+type TillSearchResult = components['schemas']['TillSearchResult'];
+
+/** How long typing pauses before suggestions are asked for. */
+const SUGGEST_AFTER_MS = 250;
 
 /**
  * The till.
@@ -59,7 +64,18 @@ export function TillPage() {
 
   const [lines, setLines] = useState<CartLine[]>([]);
   const [payment, setPayment] = useState<PaymentState>(EMPTY_PAYMENT);
-  const [searchResults, setSearchResults] = useState<ProductView[] | null>(null);
+  // What is in the search box, and the same text once typing has paused —
+  // suggestions follow the second, so a request is not sent per keystroke.
+  const [term, setTerm] = useState('');
+  const [settledTerm, setSettledTerm] = useState('');
+  // The highlighted suggestion, for the arrow keys. -1 is none, and Enter then
+  // means "this is a barcode" rather than "this one".
+  const [activeIndex, setActiveIndex] = useState(-1);
+  // The phone camera, open for a run of scans until the cashier taps Done,
+  // and the product it read last — its line is shown under the picture so the
+  // unit and quantity can be set without scrolling a fifty-line cart.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [lastScannedId, setLastScannedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,6 +139,24 @@ export function TillPage() {
   const tierId = useMemo(
     () => tierFor(payment.customerId),
     [tierFor, payment.customerId],
+  );
+
+  // Suggestions follow the text once typing pauses.
+  useEffect(() => {
+    const timer = setTimeout(() => setSettledTerm(term.trim()), SUGGEST_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [term]);
+
+  const showSuggestions = term.trim().length >= 2 && settledTerm.length >= 2;
+  const { data: suggestionData, isFetching: searching } = useQuery({
+    queryKey: ['till-search', settledTerm, tierId],
+    queryFn: () => tillSearch(settledTerm, tierId),
+    enabled: settledTerm.length >= 2,
+    staleTime: 30_000,
+  });
+  const suggestions = useMemo(
+    () => (showSuggestions ? (suggestionData ?? []) : []),
+    [showSuggestions, suggestionData],
   );
 
   /**
@@ -229,7 +263,7 @@ export function TillPage() {
   }, []);
 
   const addScanned = useCallback(
-    (scan: ScanResult) => {
+    (scan: ScanResult): boolean => {
       // A code on a unit only counted in — the single sachet a distributor
       // never sells. The server would refuse the sale; saying so now is kinder
       // than letting it reach the checkout.
@@ -237,11 +271,11 @@ export function TillPage() {
         setError(
           `${scan.product.name} is not sold by the ${scan.unit.name}. Scan the pack or carton instead, or pick it from the search.`,
         );
-        return;
+        return false;
       }
       if (scan.price === null) {
         setError(unpricedMessage(scan.product.name, scan.unit.name));
-        return;
+        return false;
       }
       const price = scan.price;
       setLines((current) =>
@@ -260,74 +294,114 @@ export function TillPage() {
         }),
       );
       void loadUnits(scan.product.id);
+      return true;
     },
     [loadUnits],
   );
 
-  const addProduct = useCallback(
-    async (product: ProductView) => {
-      setBusy(true);
+  /**
+   * One code from the camera. Not `lookup`: a camera reads only barcodes, so
+   * there is nothing to fall back to a name search with, and the camera stays
+   * open whatever happens — an unknown code is a message, not a stop.
+   */
+  const scanFromCamera = useCallback(
+    async (code: string) => {
       setError(null);
+      setNotice(null);
       try {
-        // Only units sold at the till: counting is not selling, and the base
-        // unit a distributor counts in may be one it never sells.
-        const sellable = product.units.filter((row) => row.isSellable);
-        const unit =
-          sellable.find((row) => row.isDefaultSelling) ?? sellable[0];
-        if (!unit) {
-          setError(`${product.name} has no unit that is sold at the till.`);
-          return;
-        }
-
-        const priced = await api.get<ResolvedUnitPrice>(
-          `/products/${product.id}/price?unitId=${unit.id}` +
-            (tierId ? `&tierId=${tierId}` : ''),
+        const scan = await api.get<ScanResult>(
+          `/scan/${encodeURIComponent(code)}` +
+            (tierId ? `?tierId=${tierId}` : ''),
         );
-        const price = priced.price;
-        if (price === null) {
-          setError(unpricedMessage(product.name, unit.name));
-          return;
+        if (addScanned(scan)) {
+          setLastScannedId(scan.product.id);
+          setNotice(`Added ${scan.product.name}.`);
         }
-
-        setLines((current) =>
-          addToCart(current, {
-            productId: product.id,
-            productName: product.name,
-            size: product.size,
-            sku: product.sku,
-            unitId: unit.id,
-            unitName: unit.name,
-            units: sellableUnits(product),
-            quantity: 1,
-            unitPrice: price,
-            listPrice: price,
-            isTierPrice: priced.isTierPrice,
-          }),
-        );
-        setSearchResults(null);
       } catch (caught) {
-        setError(messageFor(caught));
-      } finally {
-        setBusy(false);
+        if (caught instanceof ApiError && caught.status === 404) {
+          setNotice(
+            `Code ${code} is not on any product yet. Add it to the product, then scan again.`,
+          );
+        } else {
+          setError(messageFor(caught));
+        }
       }
     },
-    [tierId],
+    [addScanned, tierId],
   );
 
-  /** Scan, then search. The same box, the same Enter key. */
+  /** Empties the search box and puts the suggestions away. */
+  const clearSearch = useCallback(() => {
+    setTerm('');
+    setSettledTerm('');
+    setActiveIndex(-1);
+  }, []);
+
+  /**
+   * Adds a suggestion to the cart — with no request, because the till search
+   * already priced every sellable unit on the cart's tier. That is the point
+   * of it: picking used to wait on a scan attempt, a search and a price lookup
+   * in turn, about ten seconds on the hosted instance.
+   */
+  const addFromSearch = useCallback(
+    (product: TillSearchResult) => {
+      setError(null);
+      setNotice(null);
+      const unit = product.units.find((row) => row.id === product.defaultUnitId);
+      if (!unit) return;
+      if (unit.price === null) {
+        setError(unpricedMessage(product.name, unit.name));
+        return;
+      }
+      const price = unit.price;
+      setLines((current) =>
+        addToCart(current, {
+          productId: product.id,
+          productName: product.name,
+          size: product.size,
+          sku: product.sku,
+          unitId: unit.id,
+          unitName: unit.name,
+          units: product.units.map((row) => ({
+            id: row.id,
+            name: row.name,
+            factor: row.factor,
+          })),
+          quantity: 1,
+          unitPrice: price,
+          listPrice: price,
+          isTierPrice: unit.isTierPrice,
+        }),
+      );
+      clearSearch();
+    },
+    [clearSearch],
+  );
+
+  /**
+   * Enter. A highlighted suggestion is picked; otherwise the text is tried as a
+   * barcode — a scanner types faster than suggestions arrive, and presses
+   * Enter — and only then searched.
+   */
   const lookup = useCallback(
-    async (term: string) => {
+    async (text: string) => {
+      const highlighted = activeIndex >= 0 ? suggestions[activeIndex] : null;
+      if (highlighted) {
+        addFromSearch(highlighted);
+        return;
+      }
+
       setBusy(true);
       setError(null);
       setNotice(null);
-      setSearchResults(null);
 
       try {
         const scan = await api.get<ScanResult>(
-          `/scan/${encodeURIComponent(term)}` +
+          `/scan/${encodeURIComponent(text)}` +
             (tierId ? `?tierId=${tierId}` : ''),
         );
         addScanned(scan);
+        clearSearch();
         return;
       } catch (caught) {
         // Anything other than "no such code" is a real failure and should be
@@ -340,15 +414,19 @@ export function TillPage() {
       }
 
       try {
-        const found = await api.get<ProductView[]>(
-          `/products?search=${encodeURIComponent(term)}`,
-        );
+        // Usually already answered while the text was typed, so this costs
+        // nothing; a pasted or very fast entry asks now.
+        const found = await queryClient.fetchQuery({
+          queryKey: ['till-search', text, tierId],
+          queryFn: () => tillSearch(text, tierId),
+        });
         if (found.length === 0) {
-          setNotice(`Nothing matches "${term}".`);
+          setNotice(`Nothing matches "${text}".`);
         } else if (found.length === 1) {
-          await addProduct(found[0]);
+          addFromSearch(found[0]);
         } else {
-          setSearchResults(found);
+          // Several: leave the text in the box and show them to pick from.
+          setSettledTerm(text);
         }
       } catch (caught) {
         setError(messageFor(caught));
@@ -356,7 +434,31 @@ export function TillPage() {
         setBusy(false);
       }
     },
-    [addProduct, addScanned, tierId],
+    [
+      activeIndex,
+      suggestions,
+      addFromSearch,
+      addScanned,
+      clearSearch,
+      queryClient,
+      tierId,
+    ],
+  );
+
+  const navigate = useCallback(
+    (key: 'ArrowDown' | 'ArrowUp' | 'Escape') => {
+      if (key === 'Escape') {
+        clearSearch();
+        return;
+      }
+      if (suggestions.length === 0) return;
+      setActiveIndex((current) =>
+        key === 'ArrowDown'
+          ? Math.min(current + 1, suggestions.length - 1)
+          : Math.max(current - 1, -1),
+      );
+    },
+    [suggestions.length, clearSearch],
   );
 
   /** Re-prices a line when its unit changes — on the server, never here. */
@@ -466,11 +568,41 @@ export function TillPage() {
     [isManager, lines, payment, total, queryClient],
   );
 
+  // The last line for the product the camera read — after a unit change the
+  // line's key is the same but its unit is not, so it is found by product.
+  const justScanned = lastScannedId
+    ? lines.findLast((line) => line.productId === lastScannedId)
+    : undefined;
+
+  const lineHandlers = {
+    onQuantityChange: (key: string, quantity: number) =>
+      setLines((current) => updateLine(current, key, { quantity })),
+    onUnitChange: (key: string, unitId: string) => void changeUnit(key, unitId),
+    onPriceChange: (key: string, price: number | null) => {
+      if (price !== null) {
+        setLines((current) => updateLine(current, key, { unitPrice: price }));
+      }
+    },
+    onResetPrice: (key: string) =>
+      setLines((current) => {
+        const line = current.find((row) => row.key === key);
+        return line
+          ? updateLine(current, key, { unitPrice: line.listPrice })
+          : current;
+      }),
+    onRemove: (key: string) =>
+      setLines((current) => removeLine(current, key)),
+  };
+
   const startNewSale = useCallback(() => {
     setLines([]);
     setPayment(EMPTY_PAYMENT);
     setCompleted(null);
-    setSearchResults(null);
+    setTerm('');
+    setSettledTerm('');
+    setActiveIndex(-1);
+    setCameraOpen(false);
+    setLastScannedId(null);
     setError(null);
     setNotice(null);
     saleId.current = crypto.randomUUID();
@@ -508,7 +640,56 @@ export function TillPage() {
     >
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-4">
-          <ScanBox onSubmit={lookup} busy={busy} disabled={Boolean(override)} />
+          {cameraOpen ? (
+            // Stays at the top while the cart grows beneath it.
+            <div className="sticky top-0 z-20">
+              <CameraScanner
+                continuous
+                onCode={(code) => void scanFromCamera(code)}
+                onClose={() => {
+                  setCameraOpen(false);
+                  setLastScannedId(null);
+                }}
+              >
+                {justScanned && (
+                  <div className="mt-3">
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Just scanned — set the unit and quantity
+                    </p>
+                    <CartLines lines={[justScanned]} busy={busy} {...lineHandlers} />
+                  </div>
+                )}
+              </CameraScanner>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setError(null);
+                setCameraOpen(true);
+              }}
+              className="w-full sm:w-auto"
+            >
+              Scan with camera
+            </Button>
+          )}
+
+          <ScanBox
+            value={term}
+            onChange={(next) => {
+              setTerm(next);
+              setActiveIndex(-1);
+            }}
+            onSubmit={(text) => void lookup(text)}
+            onNavigate={navigate}
+            busy={busy}
+            disabled={Boolean(override) || cameraOpen}
+            listId={suggestions.length > 0 ? 'till-suggestions' : undefined}
+            activeId={
+              activeIndex >= 0 ? `till-suggestion-${activeIndex}` : undefined
+            }
+          />
 
           {error && (
             <p
@@ -524,64 +705,74 @@ export function TillPage() {
             </p>
           )}
 
-          {searchResults && (
+          {showSuggestions && searching && suggestions.length === 0 && (
+            <p className="text-sm text-slate-500">Searching…</p>
+          )}
+          {showSuggestions &&
+            !searching &&
+            suggestionData?.length === 0 && (
+              <p className="text-sm text-slate-500">
+                Nothing matches "{settledTerm}" yet. Press Enter to try it as a
+                barcode.
+              </p>
+            )}
+
+          {suggestions.length > 0 && (
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs uppercase tracking-wide text-slate-500">
-                {searchResults.length} matches — pick one
-              </div>
-              <ul className="divide-y divide-slate-100">
-                {searchResults.map((product) => (
-                  <li key={product.id}>
-                    <button
-                      type="button"
-                      onClick={() => void addProduct(product)}
-                      disabled={busy}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left text-sm hover:bg-slate-50 disabled:opacity-60"
+              <ul id="till-suggestions" role="listbox" className="divide-y divide-slate-100">
+                {suggestions.map((product, index) => {
+                  const unit = product.units.find(
+                    (row) => row.id === product.defaultUnitId,
+                  );
+                  return (
+                    <li
+                      key={product.id}
+                      id={`till-suggestion-${index}`}
+                      role="option"
+                      aria-selected={index === activeIndex}
                     >
-                      <span>
-                        <span className="font-medium text-slate-900">
-                          {product.name}
-                        </span>
-                        {product.size && (
-                          <span className="ml-2 text-slate-600">
-                            {product.size}
+                      <button
+                        type="button"
+                        onClick={() => addFromSearch(product)}
+                        disabled={busy}
+                        className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm disabled:opacity-60 ${
+                          index === activeIndex ? 'bg-brand-50' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>
+                          <span className="font-medium text-slate-900">
+                            {product.name}
                           </span>
-                        )}
-                        <span className="ml-2 text-xs text-slate-500">
-                          {product.sku}
+                          {product.size && (
+                            <span className="ml-2 text-slate-600">
+                              {product.size}
+                            </span>
+                          )}
+                          <span className="ml-2 text-xs text-slate-500">
+                            {product.sku}
+                          </span>
                         </span>
-                      </span>
-                      <Money value={product.basePrice} />
-                    </button>
-                  </li>
-                ))}
+                        <span className="shrink-0 text-right">
+                          {unit?.price === null || unit?.price === undefined ? (
+                            <span className="text-xs text-amber-700">
+                              No price
+                            </span>
+                          ) : (
+                            <Money value={unit.price} />
+                          )}
+                          <span className="block text-xs text-slate-500">
+                            per {unit?.name}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
 
-          <CartLines
-            lines={lines}
-            busy={busy}
-            onQuantityChange={(key, quantity) =>
-              setLines((current) => updateLine(current, key, { quantity }))
-            }
-            onUnitChange={(key, unitId) => void changeUnit(key, unitId)}
-            onPriceChange={(key, price) =>
-              price !== null &&
-              setLines((current) =>
-                updateLine(current, key, { unitPrice: price }),
-              )
-            }
-            onResetPrice={(key) =>
-              setLines((current) => {
-                const line = current.find((row) => row.key === key);
-                return line
-                  ? updateLine(current, key, { unitPrice: line.listPrice })
-                  : current;
-              })
-            }
-            onRemove={(key) => setLines((current) => removeLine(current, key))}
-          />
+          <CartLines lines={lines} busy={busy} {...lineHandlers} />
         </div>
 
         <PaymentPanel
@@ -650,4 +841,15 @@ function sellableUnits(product: ProductView): UnitOption[] {
  */
 function unpricedMessage(productName: string, unitName: string): string {
   return `${productName} has no price for the ${unitName} yet. Ask a manager to set one on the product.`;
+}
+
+/** The till's own search: active products, sellable units already priced. */
+function tillSearch(
+  text: string,
+  tierId: string | null,
+): Promise<TillSearchResult[]> {
+  return api.get<TillSearchResult[]>(
+    `/products/till-search?q=${encodeURIComponent(text)}` +
+      (tierId ? `&tierId=${tierId}` : ''),
+  );
 }

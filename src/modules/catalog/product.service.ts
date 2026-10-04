@@ -16,6 +16,8 @@ import { chooseDefaultSellingUnit, defaultIsSellable } from './selling-units';
 import { resolveBarcode } from './barcode';
 import { resolveUnitPrice } from './pricing';
 import { ProductView, ResolvedUnitPrice } from './dto/product.response';
+import { TillSearchResult } from './dto/till-search.response';
+import { resolveTierId } from './price-tier.service';
 import {
   CreateProductDto,
   ProductBarcodeInput,
@@ -33,6 +35,9 @@ const PRODUCT_INCLUDE = {
   // see what was minted — an omitted code becomes a generated internal EAN-13.
   barcodes: { include: { unit: true } },
 } as const;
+
+/** Suggestions a till shows at once — enough to pick from, few enough to read. */
+const TILL_SEARCH_LIMIT = 10;
 
 /** What a product costs the business. Owner, manager and accountant only. */
 const PRODUCT_COST_FIELDS = ['costPrice'] as const;
@@ -199,6 +204,71 @@ export class ProductService {
 
   findOne(id: string) {
     return this.findOneOrFail(id);
+  }
+
+  /**
+   * The till's search-as-you-type: products matching what was typed, each with
+   * its sellable units priced on `tierId` — so picking one needs no further
+   * request. See `TillSearchResult` for why this is its own endpoint.
+   *
+   * With no tier given, the default one: a price looked up without a tier is
+   * the `basePrice × factor` fallback for everything, which is the carton
+   * overcharge §4 exists to prevent.
+   */
+  async tillSearch(
+    query: string,
+    tierId?: string,
+  ): Promise<TillSearchResult[]> {
+    const term = query.trim();
+    // One letter matches half the catalog and tells nobody anything.
+    if (term.length < 2) return [];
+
+    const tier = await resolveTierId(this.prisma, tierId);
+
+    const contains = { contains: term, mode: 'insensitive' as const };
+    const products = await this.prisma.product.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        OR: [{ name: contains }, { sku: contains }, { size: contains }],
+      },
+      include: {
+        units: { orderBy: { factor: 'asc' } },
+        prices: tier ? { where: { tierId: tier } } : false,
+      },
+      orderBy: { name: 'asc' },
+      take: TILL_SEARCH_LIMIT,
+    });
+
+    return products.flatMap((product) => {
+      const sellable = product.units.filter((unit) => unit.isSellable);
+      // Nothing the till may sell — not a suggestion worth showing.
+      if (sellable.length === 0) return [];
+      const priced = { ...product, prices: product.prices ?? [] };
+      const units = sellable.map((unit) => {
+        const resolved = resolveUnitPrice(priced, unit, tier);
+        return {
+          id: unit.id,
+          name: unit.name,
+          factor: unit.factor,
+          price: resolved.price,
+          isTierPrice: resolved.isTierPrice,
+        };
+      });
+      return [
+        {
+          id: product.id,
+          name: product.name,
+          size: product.size,
+          sku: product.sku,
+          trackStock: product.trackStock,
+          defaultUnitId: (
+            sellable.find((unit) => unit.isDefaultSelling) ?? sellable[0]
+          ).id,
+          units,
+        },
+      ];
+    });
   }
 
   /**
@@ -583,9 +653,9 @@ export class ProductService {
   }
 
   /**
-   * Price of one `unitId` for `tierId`, falling back to the base price scaled
-   * by the unit factor when no tier row exists — and `null` when there is no
-   * base price either.
+   * Price of one `unitId` for `tierId` — the default tier when none is named
+   * — falling back to the base price scaled by the unit factor when no tier row
+   * exists, and `null` when there is no base price either.
    *
    * The fallback is a convenience, not a rule: a real carton price is normally
    * *below* factor x base, which is exactly why ProductPrice is keyed by unit.
@@ -603,7 +673,14 @@ export class ProductService {
       );
     }
 
-    return { productId, ...resolveUnitPrice(product, unit, tierId) };
+    return {
+      productId,
+      ...resolveUnitPrice(
+        product,
+        unit,
+        await resolveTierId(this.prisma, tierId),
+      ),
+    };
   }
 
   /**

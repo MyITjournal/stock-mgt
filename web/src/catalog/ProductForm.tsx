@@ -6,6 +6,7 @@ import { Money } from '../components/Money';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
 import { Barcodes } from './Barcodes';
+import { NewBarcodes } from './NewBarcodes';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
@@ -167,6 +168,10 @@ export function ProductForm({
   // being sent and refused.
   const effectiveDefault = soldNames.includes(defaultUnit) ? defaultUnit : '';
 
+  // Codes for a product being added, by unit row key — scanned or typed as
+  // part of adding it, and sent with it. An edit uses `Barcodes` instead.
+  const [newCodes, setNewCodes] = useState<Record<string, string>>({});
+
   const [prices, setPrices] = useState<PriceDraft[]>(
     product
       ? product.prices.map((price) => ({
@@ -224,6 +229,14 @@ export function ProductForm({
             effectiveDefault !== initialDefault &&
             unit.name === effectiveDefault && { isDefaultSelling: true }),
         })),
+        ...(!editing && {
+          barcodes: units
+            .filter((unit) => newCodes[unit.key]?.trim() && unit.name.trim())
+            .map((unit) => ({
+              unit: unit.name.trim(),
+              code: newCodes[unit.key].trim(),
+            })),
+        }),
         ...(prices.some((price) => price.price !== null) && {
           prices: prices
             .filter((price) => price.price !== null)
@@ -802,7 +815,17 @@ export function ProductForm({
           </div>
         </section>
 
-        {editing && <Barcodes product={product} units={units} />}
+        {editing ? (
+          <Barcodes product={product} units={units} />
+        ) : (
+          <NewBarcodes
+            units={units}
+            codes={newCodes}
+            onChange={(unitKey, code) =>
+              setNewCodes((current) => ({ ...current, [unitKey]: code }))
+            }
+          />
+        )}
 
         {editing && (
           <p className="mt-4 rounded-md bg-slate-50 p-3 text-xs text-slate-500">

@@ -438,6 +438,80 @@ Separately, the walkthrough asked for a portion's price **without** a `tierId` a
 `basePrice × factor` fallback: ₦2,100 for a half carton that sells for ₦20,500. The till always
 sends the tier, so it never saw this — but it is the case for making the base price optional next.
 
+### The phone is the scanner
+
+Added 2026-10-04. The owner was plain about it: **a member of staff with only a phone must be able
+to sell**, with no computer and no add-on app. A USB or Bluetooth scanner already worked — it is a
+keyboard — but a phone has a camera, not a scanner. Two places use it, through one component,
+`web/src/components/CameraScanner.tsx`:
+
+- **The till, continuously.** *Scan with camera* opens the back camera in a panel pinned to the top
+  and **leaves it open until Done** — a fifty-item order is fifty scans with no reopening. Each read
+  beeps, vibrates and adds the item through the ordinary `GET /scan/:code`; a **Just scanned** strip
+  under the picture shows that line's unit and quantity controls, so *Peak 14g, 1/6 carton* is set
+  without scrolling a long cart. The text box steps aside while the camera is open, because its
+  focus-stealing would pop the phone's keyboard over the picture on every tap. An unknown code is
+  a message, never a stop.
+- **Add product, once per box.** Barcodes are captured **as part of adding the product** — no
+  separate registration step — because the person typing the name is holding the pack. One box per
+  unit, since a carton usually carries its own code (often an ITF-14 on the box) distinct from the
+  item inside. The codes ride in the same `POST /products`; a misread fails the GS1 check digit and
+  the whole product is refused rather than half-saved. A saved product's *Add a code* has the same
+  camera button.
+
+Three choices:
+
+- **ZXing, not the browser's `BarcodeDetector`** — which iPhones do not have, and a shop cannot be
+  told to buy Android. It is ~120 kB compressed and **loaded only when a camera is first opened**,
+  so the till is no slower for anyone who never uses it. Only the shapes printed on goods are tried
+  (EAN-13/8, UPC-A/E, ITF, Code 128): fewer to try is a faster read, and a QR code on a poster is
+  not a product.
+- **The same code is ignored for two seconds.** A camera reads a barcode many times a second;
+  without the pause one carton held up would add five. Scanning it again after the pause adds one
+  more, which is how five identical cartons are rung up.
+- **Cameras need a secure page** — https, or `localhost` in development. Test with the phone on the
+  live site.
+
+**A real gap found on the way: a price read with no tier now uses the default tier.** The
+walkthrough scanned without a `tierId` and a priced carton came back with **no price** — "no
+tier" meant the `basePrice × factor` fallback, which since the base price became optional can be
+nothing. The till always sends a tier once its lists have loaded, but a cashier scanning in the
+first moment would have seen "no price". `resolveTierId` in `price-tier.service.ts` now decides it
+for every price read — the scan, `GET /products/:id/price` and the till search — so they cannot
+disagree. Sales already did this for walk-ins.
+
+### The till suggests as you type, in one request
+
+Added 2026-10-04, from real use: picking an item at the till took **about ten seconds** on the
+hosted instance, and nothing appeared until Enter. Measured, not guessed: on Render's free tier
+**every request costs one to two seconds** — the home page alone, with no database at all, took
+1–1.7s — and the till made **three in a row** per pick: the text tried as a barcode, then a product
+search, then a price lookup. The database was never the slow part, so **indexes would not have
+helped**; the number of round trips was.
+
+**`GET /products/till-search?q=&tierId=`** answers with up to ten active products, each with its
+**sellable units already priced on the cart's tier** (`TillSearchResult`). The till asks it **while
+the person types** — after two characters and a 250ms pause — so by the time a suggestion is
+tapped the price is already known and the item goes into the cart with **no request at all**.
+Locally the same pick went from 76ms over three requests to 18ms in one.
+
+Details:
+
+- **Enter still means "barcode first".** A scanner types faster than suggestions arrive and
+  presses Enter, so Enter with nothing highlighted tries the text as a code, then the search —
+  which is usually already cached from the typing. Arrow keys highlight a suggestion; Enter then
+  picks it. Escape clears.
+- **With no `tierId`, the default tier** — never the bare `basePrice × factor` fallback, which is
+  what a price lookup without a tier returns (§4).
+- **Lean on purpose**: no cost, no barcodes, no lots. Only units sold at the till, and a product
+  with none is not suggested. Retired products are not suggested.
+- **Declared before `GET /products/:id`** in the controller: Nest matches routes in order, and
+  `:id` would otherwise take `till-search` and refuse it as a bad UUID.
+
+Still true after this: **Render's free tier costs a second or two per request and sleeps after
+fifteen minutes** (a 74-second first request was measured). The paid Starter plan is the fix for
+that, and it is a cost decision rather than a code one.
+
 ### No base price means no fallback, never a guess
 
 Added 2026-10-03. `Product.basePrice` is **nullable**. With one, a unit that has no price of its

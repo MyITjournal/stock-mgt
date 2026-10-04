@@ -44,6 +44,7 @@ import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 import { CreateBarcodeDto } from './dto/barcode.dto';
 import { ScanResult } from './dto/scan.response';
+import { TillSearchResult } from './dto/till-search.response';
 import {
   CategoryView,
   PackagingTypeView,
@@ -255,6 +256,32 @@ export class ProductController {
     @Query('search') search?: string,
   ) {
     return this.products.findAll({ categoryId, packagingTypeId, search });
+  }
+
+  // Declared before ':id' on purpose: Nest matches routes in order, and
+  // ':id' would otherwise take "till-search" and refuse it as a bad UUID.
+  @Get('till-search')
+  @ApiQuery({
+    name: 'q',
+    required: true,
+    description: 'At least two characters; matches name, SKU or size',
+  })
+  @ApiQuery({
+    name: 'tierId',
+    required: false,
+    description: 'The cart\x27s price list; the default one when omitted',
+  })
+  @ApiOperation({
+    summary: 'Search for the till, with prices already worked out',
+    description:
+      'Up to ten active products with every unit sold at the till priced on the tier — so picking one needs no further request. Built for search-as-you-type.',
+  })
+  @ApiOkResponse({ type: [TillSearchResult] })
+  tillSearch(
+    @Query('q') q = '',
+    @Query('tierId', new ParseUUIDPipe({ optional: true })) tierId?: string,
+  ) {
+    return this.products.tillSearch(q, tierId);
   }
 
   @Get(':id')

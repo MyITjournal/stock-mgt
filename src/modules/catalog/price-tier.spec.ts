@@ -3,6 +3,7 @@ import {
   DEFAULT_PRICE_TIER,
   WHOLESALE_PRICE_TIER,
   defaultPriceTierRows,
+  resolveTierId,
 } from './price-tier.service';
 
 const ORG = 'org-aaa';
@@ -46,5 +47,27 @@ describe('defaultPriceTierRows', () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe('resolveTierId', () => {
+  const prisma = (found: { id: string } | null) => ({
+    priceTier: { findFirst: jest.fn().mockResolvedValue(found) },
+  });
+
+  it('keeps a tier the caller named, without asking the database', async () => {
+    const db = prisma({ id: 'tier-default' });
+    await expect(resolveTierId(db as never, 'tier-wholesale')).resolves.toBe(
+      'tier-wholesale',
+    );
+    expect(db.priceTier.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('uses the default tier when none was named — never "no tier"', async () => {
+    // "No tier" priced everything at basePrice × factor, or at nothing once
+    // the base price became optional: a carton with a price read as unpriced.
+    await expect(
+      resolveTierId(prisma({ id: 'tier-default' }) as never, undefined),
+    ).resolves.toBe('tier-default');
   });
 });
