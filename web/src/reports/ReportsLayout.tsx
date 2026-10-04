@@ -1,4 +1,9 @@
 import { NavLink, Outlet, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api/client';
+import type { components } from '../api/schema';
+
+type OrganizationView = components['schemas']['OrganizationView'];
 
 const TABS = [
   { to: '/reports', label: 'Profit', end: true },
@@ -25,10 +30,23 @@ export function ReportsLayout() {
   const [params] = useSearchParams();
   const window = params.toString();
 
+  // Vendor targets are a distributor's question: companies set quotas in
+  // cartons, and a retail shop does not have them. Hidden for retail, not
+  // removed — navigation, not security — so a retailer who ever needs one is
+  // a change to this line, and the route still answers.
+  const { data: organization } = useQuery({
+    queryKey: ['organization'],
+    queryFn: () => api.get<OrganizationView>('/organization'),
+  });
+  const tabs = TABS.filter(
+    (tab) =>
+      tab.to !== '/reports/targets' || organization?.businessType !== 'retail',
+  );
+
   return (
     <>
       <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-slate-200">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={window ? `${tab.to}?${window}` : tab.to}

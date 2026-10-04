@@ -62,3 +62,8 @@ export function describeCount(
   // A shortfall is broken down the same way and signed once, in front.
   return quantity < 0 ? `−${text}` : text;
 }
+
+/** Cartons as a person writes them: 9.5 stays 9.5, 112 has no ".0". */
+export function formatCartons(cartons: number): string {
+  return Number.isInteger(cartons) ? String(cartons) : cartons.toFixed(1);
+}

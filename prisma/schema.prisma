@@ -155,7 +155,6 @@ model Product {
   stockBalances     StockBalance[]
   goodsReceiptLines GoodsReceiptLine[]
   stocktakeLines    StocktakeLine[]
-  purchaseTargets   PurchaseTarget[]
 
   @@unique([organizationId, sku])
   @@index([organizationId])
@@ -194,7 +193,6 @@ model ProductUnit {
   product           Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
   prices            ProductPrice[]
   barcodes          ProductBarcode[]
-  purchaseTargets   PurchaseTarget[]
   goodsReceiptLines GoodsReceiptLine[]
   saleLines         SaleLine[]
 
@@ -1344,7 +1342,7 @@ enum StockAdjustmentReason {
   other
 }
 
-/// A monthly offtake quota a vendor sets: "110 cartons of lotions this month".
+/// A monthly offtake quota a vendor sets: "112 cartons of lotion this month".
 ///
 /// The owner carries these in their head or on the vendor's sheet, and wants to
 /// know mid-month how far off the pace they are. Progress is counted from goods
@@ -1358,33 +1356,23 @@ model PurchaseTarget {
   /// Whose scheme this is. Targets are always a vendor's, never the shop's own.
   supplierId     String
 
-  /// Exactly one of these is set, enforced by a CHECK constraint.
-  ///
-  /// A category target covers the products in that category that do **not**
-  /// carry a target of their own — otherwise the same carton advances both, and
-  /// the rollup reads high. Whatever summarises these must subtract, not sum.
-  /// The named category only: children are not included.
-  categoryId String?
-  productId  String?
+  /// The category the cartons are counted in. A target is a category and a
+  /// number of cartons — "112 cartons of lotion" — and any product filed under
+  /// that category counts, whichever lotion it is. The named category only:
+  /// children are not included. Product targets and money quotas were removed
+  /// on 2026-10-04 (DECISIONS.md §12): vendors count cartons in a category.
+  categoryId String
 
   /// First instant of the target month, in the organization's timezone. The
   /// vendor's scheme runs on calendar months, not a rolling thirty days, so
   /// this is resolved through `period.ts` like every other window.
   periodStart DateTime
 
-  /// In **base units**, like everything else the ledger counts.
-  targetQuantity Int
-  /// What the owner typed it in — "110 cartons" reads back as cartons even
-  /// though it is stored as pieces.
-  displayUnitId  String?
-  /// The factor at write time, so redefining a carton later cannot silently
-  /// restate a target that was already agreed. Same rule as GoodsReceiptLine.
-  unitFactor     Int    @default(1)
-
-  /// Optional value quota in kobo, for schemes written in money rather than
-  /// cases. Achieved value sums GoodsReceiptLine.totalCost, never
-  /// costPrice x quantity, which §2 forbids as an input.
-  targetValue Int?
+  /// **Cartons**, where each product's carton is its **biggest unit** — a
+  /// carton of 12 and a carton of 24 each count as one, which is how vendors
+  /// count. Not base units: a category's products have different cartons, so
+  /// there is no one factor to convert with.
+  targetCartons Int
 
   note String?
 
@@ -1394,9 +1382,7 @@ model PurchaseTarget {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  product      Product?     @relation(fields: [productId], references: [id], onDelete: Cascade)
-  displayUnit  ProductUnit? @relation(fields: [displayUnitId], references: [id], onDelete: SetNull)
+  category     Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@index([organizationId, supplierId, periodStart])

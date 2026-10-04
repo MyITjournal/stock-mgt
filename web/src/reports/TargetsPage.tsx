@@ -3,12 +3,13 @@ import { DialogClose } from '../components/DialogClose';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
-import { Money } from '../components/Money';
 import { Button } from '../components/Button';
-import { Field, Input, MoneyInput, Select } from '../components/Field';
+import { Field, Input, Select } from '../components/Field';
+import { QuantityInput } from '../components/QuantityInput';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
+import { formatCartons } from '../lib/quantity';
 import type { components } from '../api/schema';
 
 type PurchaseTargetReportView =
@@ -18,45 +19,35 @@ type PurchaseTargetWithProgress =
 type PurchaseTargetView = components['schemas']['PurchaseTargetView'];
 type SupplierView = components['schemas']['SupplierView'];
 type CategoryView = components['schemas']['CategoryView'];
-type ProductView = components['schemas']['ProductView'];
-
-/** The month picker works in months, because vendor schemes do. */
-function monthValue(iso: string): string {
-  return iso.slice(0, 7);
-}
 
 /**
- * Vendor purchase targets, and how much of each has actually landed.
+ * What each vendor expects bought this month, in cartons of a category.
  *
- * Four ways of counting here are decisions rather than details, and each would
- * be got wrong by a reasonable implementation (DECISIONS.md §12):
+ * **A target is a category and a number of cartons** (DECISIONS.md §12,
+ * 2026-10-04) — "112 cartons of lotion" — and any product filed under the
+ * category counts. That is how the vendors count: they deal in cartons, never
+ * pieces, and what to buy within the category is the shop's decision, made
+ * from stock and customers. So there is no product, no unit and no money here.
  *
- * - **Progress counts goods received, not ordered.** An order the vendor has
- *   not delivered is exactly what still needs chasing, so it stays in
- *   "remaining" — which is also why there are no purchase orders in this
- *   product at all.
- * - **Quantity comes from what was paid for.** "Buy 19, get 1 free" advances a
- *   quota by 19: the free case is real stock and counts for valuation, just not
- *   against the scheme.
- * - **Value is the invoice total**, never a rounded per-unit cost.
- * - **A category target counts only the products in it that carry no target of
- *   their own**, or the same carton advances two rows and the vendor's sheet
- *   disagrees with this one.
+ * **Each product's carton is its biggest unit.** A carton of 12 and a carton of
+ * 24 each count as one. A product with nothing bigger than its base unit has no
+ * carton, and is named on the target so a low number explains itself.
  *
- * `targetValue` is a buying price, which is why these routes are closed to a
- * rep outright rather than redacted — and why targets are not on the home
- * screen.
+ * Editing changes the number and the note only. The vendor, category and month
+ * are what the target *is*; changing them would quietly restate what a past
+ * month meant, so the way to change those is to remove it and set another.
  */
 export function TargetsPage() {
   const [params, setParams] = useSearchParams();
   const isManager = useIsManager();
-  const [adding, setAdding] = useState(false);
+  const [dialog, setDialog] = useState<
+    { mode: 'add' } | { mode: 'edit'; target: PurchaseTargetView } | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  // Deliberately its own month rather than the shared period: a target is a
-  // calendar month by definition, so "last 7 days" is not a question it has an
-  // answer to.
+  // Its own month rather than the shared period: a target is a calendar month
+  // by definition, so "last 7 days" is not a question it has an answer to.
   const month = params.get('month') ?? new Date().toISOString().slice(0, 7);
   const supplierId = params.get('supplierId') ?? '';
 
@@ -100,10 +91,12 @@ export function TargetsPage() {
   return (
     <Page
       title="Purchase targets"
-      description="What each vendor expects you to buy this month, and how far along you are."
+      description="How many cartons of each category your vendors expect this month, and how far along you are."
       actions={
         isManager ? (
-          <Button onClick={() => setAdding(true)}>Set a target</Button>
+          <Button onClick={() => setDialog({ mode: 'add' })}>
+            Set a target
+          </Button>
         ) : undefined
       }
     >
@@ -132,19 +125,13 @@ export function TargetsPage() {
           </Select>
         </Field>
 
-        {data && (
-          <p className="ml-auto text-xs text-slate-500">
-            {monthValue(data.periodStart)} · counted from deliveries that
-            arrived
-          </p>
-        )}
+        <p className="ml-auto text-xs text-slate-500">
+          Counted in cartons from deliveries that arrived and were paid for.
+        </p>
       </div>
 
       {error && (
-        <p
-          className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700"
-          role="alert"
-        >
+        <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700" role="alert">
           {error}
         </p>
       )}
@@ -153,8 +140,8 @@ export function TargetsPage() {
 
       {data && data.targets.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
-          No targets for this month. Most months have none, which is not a
-          problem — set one when a vendor agrees a scheme.
+          No targets for this month. Set one when a vendor agrees a scheme —
+          a category and a number of cartons.
         </div>
       )}
 
@@ -164,13 +151,20 @@ export function TargetsPage() {
             key={target.id}
             target={target}
             canEdit={isManager}
+            onEdit={() => setDialog({ mode: 'edit', target })}
             onRemove={() => remove.mutate(target.id)}
             removing={remove.isPending}
           />
         ))}
       </div>
 
-      {adding && <TargetDialog onClose={() => setAdding(false)} />}
+      {dialog && (
+        <TargetDialog
+          month={month}
+          editing={dialog.mode === 'edit' ? dialog.target : null}
+          onClose={() => setDialog(null)}
+        />
+      )}
     </Page>
   );
 }
@@ -178,11 +172,13 @@ export function TargetsPage() {
 function TargetCard({
   target,
   canEdit,
+  onEdit,
   onRemove,
   removing,
 }: {
   target: PurchaseTargetWithProgress;
   canEdit: boolean;
+  onEdit: () => void;
   onRemove: () => void;
   removing: boolean;
 }) {
@@ -190,77 +186,45 @@ function TargetCard({
   const met = progress.achievedBps >= 10_000;
   const percent = Math.min(progress.achievedBps / 100, 100);
 
-  // Quoted in what the owner typed it in: "110 cartons" reads back as cartons
-  // even though the ledger stores pieces.
-  const unit = target.displayUnit;
-  const inUnit = (base: number) =>
-    unit && target.unitFactor > 1
-      ? `${Math.round((base / target.unitFactor) * 10) / 10} ${unit.name.toLowerCase()}`
-      : `${base}`;
-
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h2 className="font-medium text-slate-900">
-            {target.supplier.name}
-          </h2>
-          <p className="text-xs text-slate-500">
-            {target.product
-              ? `${target.product.name} · ${target.product.sku}`
-              : (target.category?.name ?? 'Everything')}
-            {target.category && ' — only products with no target of their own'}
-          </p>
+          <h2 className="font-medium text-slate-900">{target.category.name}</h2>
+          <p className="text-xs text-slate-500">{target.supplier.name}</p>
         </div>
 
         <div className="text-right">
           <div
-            className={`text-lg font-semibold ${met ? 'text-emerald-700' : 'text-slate-900'}`}
+            className={`text-lg font-semibold ${met ? 'text-brand-700' : 'text-slate-900'}`}
           >
-            {(progress.achievedBps / 100).toFixed(0)}%
+            {Math.round(progress.achievedBps / 100)}%
           </div>
           <div className="text-xs text-slate-500">
-            {inUnit(progress.achievedQuantity)} of{' '}
-            {inUnit(progress.targetQuantity)}
+            {formatCartons(progress.achievedCartons)} of{' '}
+            {formatCartons(progress.targetCartons)} cartons
           </div>
         </div>
       </div>
 
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+      {/* The same ramp as the dashboard ring: a lighter green track, so the
+          bar reads as one scale whether it is nearly empty or full. */}
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-brand-100">
         <div
-          className={`h-full rounded-full ${met ? 'bg-emerald-500' : 'bg-slate-900'}`}
+          className="h-full rounded-full bg-brand-600"
           style={{ width: `${percent}%` }}
         />
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-6 text-sm">
+      <div className="mt-3 flex flex-wrap items-end gap-6 text-sm">
         <div>
           <div className="text-xs uppercase text-slate-500">Still to buy</div>
           <div className="text-slate-900">
-            {inUnit(progress.remainingQuantity)}
+            {met
+              ? 'Target met'
+              : `${formatCartons(progress.remainingCartons)} cartons`}
           </div>
         </div>
-
-        <div>
-          <div className="text-xs uppercase text-slate-500">Spent</div>
-          <div className="text-slate-900">
-            <Money value={progress.achievedValue} />
-          </div>
-        </div>
-
-        {progress.targetValue !== null && (
-          <div>
-            <div className="text-xs uppercase text-slate-500">Value quota</div>
-            <div className="text-slate-900">
-              <Money value={progress.targetValue} />
-              {progress.remainingValue !== null && (
-                <span className="ml-2 text-xs text-slate-500">
-                  <Money value={progress.remainingValue} /> to go
-                </span>
-              )}
-            </div>
-          </div>
-        )}
 
         {target.note && (
           <div className="flex-1">
@@ -270,275 +234,217 @@ function TargetCard({
         )}
 
         {canEdit && (
-          <Button
-            variant="ghost"
-            className="ml-auto"
-            onClick={onRemove}
-            disabled={removing}
-          >
-            Remove
-          </Button>
+          <div className="ml-auto flex gap-2">
+            <Button variant="secondary" onClick={onEdit}>
+              Edit
+            </Button>
+            <Button variant="ghost" onClick={onRemove} disabled={removing}>
+              Remove
+            </Button>
+          </div>
         )}
       </div>
+
+      {progress.productsWithoutCarton.length > 0 && (
+        <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs text-amber-800">
+          Not counted — no carton set up:{' '}
+          {progress.productsWithoutCarton.map((product) => product.name).join(', ')}
+          . Give {progress.productsWithoutCarton.length === 1 ? 'it' : 'them'} a
+          carton unit on the product to count {progress.productsWithoutCarton.length === 1 ? 'its' : 'their'} deliveries.
+        </p>
+      )}
     </article>
   );
 }
 
-function TargetDialog({ onClose }: { onClose: () => void }) {
+/**
+ * Adding a target, or editing one. Editing shows the vendor, category and
+ * month without letting them change, so the person can see what they are
+ * editing without being able to turn it into a different target.
+ */
+function TargetDialog({
+  month,
+  editing,
+  onClose,
+}: {
+  month: string;
+  editing: PurchaseTargetView | null;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
-  const [supplierId, setSupplierId] = useState('');
-  const [scope, setScope] = useState<'category' | 'product'>('category');
-  const [categoryId, setCategoryId] = useState('');
-  const [productId, setProductId] = useState('');
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [quantity, setQuantity] = useState('');
-  const [unitId, setUnitId] = useState('');
-  const [targetValue, setTargetValue] = useState<number | null>(null);
-  const [note, setNote] = useState('');
+  const [supplierId, setSupplierId] = useState(editing?.supplierId ?? '');
+  const [categoryId, setCategoryId] = useState(editing?.categoryId ?? '');
+  const [targetMonth, setTargetMonth] = useState(
+    editing ? editing.periodStart.slice(0, 7) : month,
+  );
+  const [cartons, setCartons] = useState<number>(editing?.targetCartons ?? 0);
+  const [note, setNote] = useState(editing?.note ?? '');
   const [error, setError] = useState<string | null>(null);
 
   const { data: suppliers = [] } = useQuery({
     queryKey: ['suppliers'],
     queryFn: () => api.get<SupplierView[]>('/suppliers'),
+    enabled: !editing,
   });
-
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: () => api.get<CategoryView[]>('/categories'),
+    enabled: !editing,
   });
 
-  const { data: products = [] } = useQuery({
-    queryKey: ['products', ''],
-    queryFn: () => api.get<ProductView[]>('/products'),
-  });
-
-  const chosenProduct = products.find((product) => product.id === productId);
-
-  const create = useMutation({
+  const save = useMutation({
     mutationFn: () =>
-      api.post<PurchaseTargetView>('/purchase-targets', {
-        id: crypto.randomUUID(),
-        supplierId,
-        ...(scope === 'category' ? { categoryId } : { productId }),
-        period: new Date(`${month}-01T00:00:00.000Z`).toISOString(),
-        targetQuantity: Number(quantity),
-        ...(scope === 'product' && unitId ? { unitId } : {}),
-        ...(targetValue !== null ? { targetValue } : {}),
-        ...(note.trim() ? { note: note.trim() } : {}),
-      }),
+      editing
+        ? api.patch<PurchaseTargetView>(`/purchase-targets/${editing.id}`, {
+            targetCartons: cartons,
+            // '' clears a note; the server reads an empty string as "none".
+            note: note.trim(),
+          })
+        : api.post<PurchaseTargetView>('/purchase-targets', {
+            id: crypto.randomUUID(),
+            supplierId,
+            categoryId,
+            period: new Date(`${targetMonth}-01T12:00:00.000Z`).toISOString(),
+            targetCartons: cartons,
+            ...(note.trim() && { note: note.trim() }),
+          }),
     onSuccess: () => {
       afterWrite(queryClient);
       onClose();
     },
     onError: (caught) =>
       setError(
-        caught instanceof ApiError
-          ? caught.message
-          : 'Could not set that target.',
+        caught instanceof ApiError ? caught.message : 'Could not save that target.',
       ),
   });
 
   const ready =
-    Boolean(supplierId) &&
-    Boolean(scope === 'category' ? categoryId : productId) &&
-    Number(quantity) > 0;
+    cartons >= 1 && (editing ? true : Boolean(supplierId && categoryId && targetMonth));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setError(null);
-    if (ready) create.mutate();
+    if (ready) save.mutate();
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="target-title"
     >
       <form
         onSubmit={submit}
-        className="relative max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
+        className="relative my-8 w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
       >
         <DialogClose onClose={onClose} />
-
         <h2 id="target-title" className="text-lg font-semibold text-slate-900">
-          Set a purchase target
+          {editing ? 'Edit target' : 'Set a target'}
         </h2>
-        <p className="mt-1 text-sm text-slate-500">
-          A quota a vendor has agreed with you, for one calendar month.
-        </p>
 
-        <div className="mt-4 space-y-4">
-          <Field label="Vendor" htmlFor="new-target-supplier">
-            <Select
-              id="new-target-supplier"
-              value={supplierId}
-              onChange={(event) => setSupplierId(event.target.value)}
-              required
-            >
-              <option value="">Choose a vendor</option>
-              {suppliers.map((supplier) => (
-                <option key={supplier.id} value={supplier.id}>
-                  {supplier.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-2">
-            {(['category', 'product'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setScope(option)}
-                className={`rounded-md border px-3 py-2 text-sm transition ${
-                  scope === option
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                {option === 'category' ? 'A whole category' : 'One product'}
-              </button>
-            ))}
-          </div>
-
-          {scope === 'category' ? (
-            <Field
-              label="Category"
-              htmlFor="new-target-category"
-              hint="Counts only the products in it that carry no target of their own."
-            >
-              <Select
-                id="new-target-category"
-                value={categoryId}
-                onChange={(event) => setCategoryId(event.target.value)}
-              >
-                <option value="">Choose a category</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+        <div className="mt-5 space-y-4">
+          {editing ? (
+            <dl className="grid grid-cols-3 gap-2 rounded-md bg-slate-50 p-3 text-sm">
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Vendor</dt>
+                <dd className="text-slate-900">{editing.supplier.name}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Category</dt>
+                <dd className="text-slate-900">{editing.category.name}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase text-slate-500">Month</dt>
+                <dd className="text-slate-900">
+                  {editing.periodStart.slice(0, 7)}
+                </dd>
+              </div>
+            </dl>
           ) : (
-            <Field label="Product" htmlFor="new-target-product">
-              <Select
-                id="new-target-product"
-                value={productId}
-                onChange={(event) => {
-                  setProductId(event.target.value);
-                  setUnitId('');
-                }}
-              >
-                <option value="">Choose a product</option>
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          )}
-
-          <Field
-            label="Month"
-            htmlFor="new-target-month"
-            hint="Vendor schemes run on calendar months."
-          >
-            <Input
-              id="new-target-month"
-              type="month"
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
-              required
-            />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Quantity" htmlFor="new-target-quantity">
-              <Input
-                id="new-target-quantity"
-                inputMode="numeric"
-                value={quantity}
-                onChange={(event) =>
-                  setQuantity(event.target.value.replace(/[^\d]/g, ''))
-                }
-                placeholder="110"
-                required
-              />
-            </Field>
-
-            {scope === 'product' && (
-              <Field label="Counted in" htmlFor="new-target-unit">
+            <>
+              <Field label="Vendor" htmlFor="new-target-supplier">
                 <Select
-                  id="new-target-unit"
-                  value={unitId}
-                  onChange={(event) => setUnitId(event.target.value)}
-                  disabled={!chosenProduct}
+                  id="new-target-supplier"
+                  value={supplierId}
+                  onChange={(event) => setSupplierId(event.target.value)}
                 >
-                  <option value="">Base unit</option>
-                  {chosenProduct?.units.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.name}
-                      {unit.factor === 1 ? '' : ` (${unit.factor})`}
+                  <option value="">Choose a vendor</option>
+                  {suppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.name}
                     </option>
                   ))}
                 </Select>
               </Field>
-            )}
-          </div>
+
+              <Field
+                label="Category"
+                htmlFor="new-target-category"
+                hint="Every product filed under it counts."
+              >
+                <Select
+                  id="new-target-category"
+                  value={categoryId}
+                  onChange={(event) => setCategoryId(event.target.value)}
+                >
+                  <option value="">Choose a category</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="Month" htmlFor="new-target-month">
+                <Input
+                  id="new-target-month"
+                  type="month"
+                  value={targetMonth}
+                  onChange={(event) => setTargetMonth(event.target.value)}
+                />
+              </Field>
+            </>
+          )}
 
           <Field
-            label="Value quota"
-            htmlFor="new-target-value"
-            hint="Optional, for schemes written in money rather than cases."
+            label="Cartons"
+            htmlFor="target-cartons"
+            hint="Each product's biggest unit counts as one carton, whatever it holds."
           >
-            <MoneyInput
-              id="new-target-value"
-              value={targetValue}
-              onChange={setTargetValue}
-              placeholder="0.00"
+            <QuantityInput
+              id="target-cartons"
+              label="Cartons"
+              min={1}
+              value={cartons}
+              onChange={setCartons}
+              className="w-40"
             />
           </Field>
 
-          <Field label="Note" htmlFor="new-target-note">
+          <Field label="Note" htmlFor="target-note" hint="Optional — the scheme's terms, a promo.">
             <Input
-              id="new-target-note"
+              id="target-note"
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              placeholder="Q4 scheme, 3% rebate at 110 cartons."
+              placeholder="One free carton in every twenty"
             />
           </Field>
-
-          <p className="rounded-md bg-slate-50 p-3 text-xs text-slate-600">
-            Progress counts goods <strong>received</strong>, not ordered, and
-            quantity comes from what the invoice <strong>charged for</strong> —
-            so "buy 19, get 1 free" advances this by 19.
-          </p>
         </div>
 
         {error && (
-          <p
-            className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700"
-            role="alert"
-          >
+          <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700" role="alert">
             {error}
           </p>
         )}
 
         <div className="mt-6 flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onClose}
-            disabled={create.isPending}
-          >
+          <Button type="button" variant="secondary" onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button type="submit" disabled={create.isPending || !ready}>
-            {create.isPending ? 'Saving…' : 'Set target'}
+          <Button type="submit" disabled={save.isPending || !ready}>
+            {save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Set target'}
           </Button>
         </div>
       </form>

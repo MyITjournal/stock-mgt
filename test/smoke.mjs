@@ -1980,7 +1980,9 @@ async function main() {
   // Put the shop back, so later steps are unaffected.
   await api('PATCH', '/organization', { token: t, body: { opensAt: 0, closesAt: 1440 } });
 
-  step(40, 'Vendor targets: what the scheme asked for against what arrived');
+  step(40, 'Vendor targets: cartons of a category, against what arrived');
+  // A target is a category and a number of cartons (DECISIONS.md §12,
+  // 2026-10-04). Each product's carton is its biggest unit — here, 24 tins.
   const targetMonth = new Date().toISOString();
 
   const catTarget = (
@@ -1991,14 +1993,12 @@ async function main() {
         supplierId: supplier.id,
         categoryId: category.id,
         period: targetMonth,
-        targetQuantity: 100,
-        unitId: carton.id,
-        targetValue: 50_000_000,
+        targetCartons: 100,
       },
     })
   ).data;
-  eq('a target quoted in cartons is stored in base units', catTarget.targetQuantity, 2400);
-  eq('and remembers what it was quoted in', catTarget.displayUnit.id, carton.id);
+  eq('a target is a number of cartons', catTarget.targetCartons, 100);
+  eq('against a category', catTarget.category.id, category.id);
 
   const targetsOf = async (id) => {
     const report = (
@@ -2010,8 +2010,8 @@ async function main() {
   const before = await targetsOf(catTarget.id);
   check(
     'the target already counts what this month has delivered',
-    before.achievedQuantity > 0,
-    `${before.achievedQuantity} base units`,
+    before.achievedCartons > 0,
+    `${before.achievedCartons} cartons`,
   );
 
   // 10 cartons arrive, the invoice charges for 9.
@@ -2038,40 +2038,31 @@ async function main() {
   const after = await targetsOf(catTarget.id);
   eq(
     'free goods do not advance the quota: 9 cartons, not 10',
-    after.achievedQuantity - before.achievedQuantity,
-    216,
-  );
-  eq(
-    'and the value moves by the invoice total',
-    after.achievedValue - before.achievedValue,
-    9_000_000,
+    Math.round((after.achievedCartons - before.achievedCartons) * 10) / 10,
+    9,
   );
   check(
     'progress is reported against the target',
-    after.achievedBps === Math.round((after.achievedQuantity / 2400) * 10000),
-    `${after.achievedBps} bps`,
+    after.achievedBps === Math.round((after.achievedCartons / 100) * 10000) ||
+      Math.abs(after.achievedBps - (after.achievedCartons / 100) * 10000) <= 5,
+    `${after.achievedBps} bps for ${after.achievedCartons} cartons`,
   );
 
-  // The rollup rule: give the same product its own target and the category
-  // must stop counting it, or one carton advances both rows.
-  const skuTarget = (
-    await api('POST', '/purchase-targets', {
+  const edited = (
+    await api('PATCH', `/purchase-targets/${catTarget.id}`, {
       token: t,
-      key: randomUUID(),
-      body: {
-        supplierId: supplier.id,
-        productId: product.id,
-        period: targetMonth,
-        targetQuantity: 50,
-        unitId: carton.id,
-      },
+      body: { targetCartons: 120, note: 'Raised mid-month' },
     })
   ).data;
+  eq('a target can be edited: the number of cartons', edited.targetCartons, 120);
+  eq('and the note', edited.note, 'Raised mid-month');
 
-  const splitSku = await targetsOf(skuTarget.id);
-  const splitCat = await targetsOf(catTarget.id);
-  eq('the SKU target counts that product', splitSku.achievedQuantity, after.achievedQuantity);
-  eq('and the category target no longer counts it too', splitCat.achievedQuantity, 0);
+  await api('PATCH', `/purchase-targets/${catTarget.id}`, {
+    token: t,
+    expect: 400,
+    body: { categoryId: randomUUID() },
+  });
+  check('but not what it is set against', true);
 
   await api('POST', '/purchase-targets', {
     token: t,
@@ -2080,7 +2071,7 @@ async function main() {
       supplierId: supplier.id,
       categoryId: category.id,
       period: targetMonth,
-      targetQuantity: 10,
+      targetCartons: 10,
     },
   });
   check('a second target for the same vendor, category and month is refused', true);
@@ -2091,12 +2082,22 @@ async function main() {
     body: {
       supplierId: supplier.id,
       categoryId: category.id,
-      productId: product.id,
       period: targetMonth,
-      targetQuantity: 10,
+      targetCartons: 10,
+      targetValue: 50_000_000,
     },
   });
-  check('a target against both a category and a product is refused', true);
+  check('a money quota is no longer part of a target', true);
+
+  const dashboardTargets = (await api('GET', '/reports/dashboard', { token: t })).data
+    .purchasing.targets;
+  check(
+    'the dashboard carries the target, in cartons, for its doughnut',
+    dashboardTargets.some(
+      (row) => row.id === catTarget.id && row.targetCartons === 120 && row.category === category.name,
+    ),
+    JSON.stringify(dashboardTargets),
+  );
 
   // -- Payables -------------------------------------------------------------
   // The owner's own worked example, in kobo: ₦199,800 supplied with ₦71,800

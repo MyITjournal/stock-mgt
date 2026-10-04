@@ -227,8 +227,9 @@ so that subtraction would be wrong.
 **65. `/reports/sales`, `/reports/purchases`, `/reports/stock`, `/reports/movers`** — each renders,
 and every margin column is a percentage or a dash.
 
-**66. `/reports/targets`** — **[gate] a product with its own target is not also counted under its
-category's target.** One carton advancing two rows is the rollup bug.
+**66. `/reports/targets`** — **[gate] targets are a category and a number of cartons**, with no
+product or money box. (Product targets, and the rollup bug they could cause, were removed on
+2026-10-04 — section Y walks the new shape.)
 
 ---
 
@@ -638,3 +639,30 @@ on the phone's camera goes off.
 
 **175. Refuse camera permission when asked.** [gate] The till explains how to allow it in the
 browser's settings rather than showing a blank box.
+
+---
+
+## Y. Vendor targets in cartons
+
+Use a shop created as **Wholesale** (or Both), with a *Lotion* category holding a product whose
+carton is 12 and another whose carton is 24.
+
+**176. Reports → Targets → Set a target.** [gate] The form asks only for a vendor, a category, a
+month, a number of **cartons** and a note — no product, no unit, no money.
+
+**177. Set 112 cartons of Lotion for this month, then record deliveries of 10 cartons of the first
+product and 5 of the second.** [gate] The target reads **15 of 112 cartons** — five cartons of 24
+count as five, not ten.
+
+**178. Record a delivery of a lotion that has only one unit (pieces).** [gate] The target does not
+move, and an amber line names that product as having no carton set up.
+
+**179. Tap Edit on the target.** [gate] The vendor, category and month are shown but cannot be
+changed; change the cartons to 100 and save — the target reads **of 100**.
+
+**180. Open the home screen.** [gate] A *Vendor targets this month* section shows a ring for the
+target, its percentage in the middle and *"15 of 100 cartons"* under it. A met target says
+*Target met* in words.
+
+**181. [gate] In a shop created as Retail**, Reports has no Targets tab, and the home screen has
+no targets section.
