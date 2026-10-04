@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { resolveUnitPrice } from './pricing';
+import { resolveTierId } from './price-tier.service';
 import { detectSymbology, normaliseCode } from './barcode';
 import { ScanResult } from './dto/scan.response';
 
@@ -39,7 +40,11 @@ export class ScanService {
     // The same rule as GET /products/:id/price and the sale path, not a copy
     // of it: this used to repeat the arithmetic inline, which is exactly how a
     // change to the rule reaches two callers and misses the third.
-    const priced = resolveUnitPrice(product, unit, tierId);
+    const priced = resolveUnitPrice(
+      product,
+      unit,
+      await resolveTierId(this.prisma, tierId),
+    );
 
     return {
       code,

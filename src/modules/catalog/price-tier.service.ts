@@ -17,6 +17,28 @@ export const DEFAULT_PRICE_TIER = 'Retail';
 export const WHOLESALE_PRICE_TIER = 'Wholesale';
 
 /**
+ * The tier a price is read on when the caller named none: the default one.
+ *
+ * Asking without a tier used to mean "no tier", which priced every unit at the
+ * `basePrice × factor` fallback — and, since a base price became optional, at
+ * no price at all. A cashier who scanned in the moment before the till had
+ * loaded its price lists saw "no price" on a carton that had one. Every read
+ * of a price — a scan, a price lookup, the till's search — resolves through
+ * this, so they cannot disagree about what "no tier" means.
+ */
+export async function resolveTierId(
+  prisma: Pick<TenantPrisma, 'priceTier'>,
+  tierId: string | undefined,
+): Promise<string | undefined> {
+  if (tierId) return tierId;
+  const tier = await prisma.priceTier.findFirst({
+    where: { isDefault: true, deletedAt: null },
+    select: { id: true },
+  });
+  return tier?.id;
+}
+
+/**
  * The price lists a new shop starts with, by the kind of trading it does.
  *
  * Exactly one is the default — walk-ins and anyone with no tier are priced on

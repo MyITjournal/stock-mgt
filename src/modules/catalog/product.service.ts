@@ -17,6 +17,7 @@ import { resolveBarcode } from './barcode';
 import { resolveUnitPrice } from './pricing';
 import { ProductView, ResolvedUnitPrice } from './dto/product.response';
 import { TillSearchResult } from './dto/till-search.response';
+import { resolveTierId } from './price-tier.service';
 import {
   CreateProductDto,
   ProductBarcodeInput,
@@ -222,14 +223,7 @@ export class ProductService {
     // One letter matches half the catalog and tells nobody anything.
     if (term.length < 2) return [];
 
-    const tier =
-      tierId ??
-      (
-        await this.prisma.priceTier.findFirst({
-          where: { isDefault: true, deletedAt: null },
-          select: { id: true },
-        })
-      )?.id;
+    const tier = await resolveTierId(this.prisma, tierId);
 
     const contains = { contains: term, mode: 'insensitive' as const };
     const products = await this.prisma.product.findMany({
@@ -659,9 +653,9 @@ export class ProductService {
   }
 
   /**
-   * Price of one `unitId` for `tierId`, falling back to the base price scaled
-   * by the unit factor when no tier row exists — and `null` when there is no
-   * base price either.
+   * Price of one `unitId` for `tierId` — the default tier when none is named
+   * — falling back to the base price scaled by the unit factor when no tier row
+   * exists, and `null` when there is no base price either.
    *
    * The fallback is a convenience, not a rule: a real carton price is normally
    * *below* factor x base, which is exactly why ProductPrice is keyed by unit.
@@ -679,7 +673,14 @@ export class ProductService {
       );
     }
 
-    return { productId, ...resolveUnitPrice(product, unit, tierId) };
+    return {
+      productId,
+      ...resolveUnitPrice(
+        product,
+        unit,
+        await resolveTierId(this.prisma, tierId),
+      ),
+    };
   }
 
   /**

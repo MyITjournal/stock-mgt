@@ -19,6 +19,7 @@ import {
   type Repriced,
 } from './cart';
 import { ScanBox } from './ScanBox';
+import { CameraScanner } from '../components/CameraScanner';
 import { CartLines } from './CartLines';
 import { PaymentPanel } from './PaymentPanel';
 import { EMPTY_PAYMENT, needsBankAccount, type PaymentState } from './payment';
@@ -70,6 +71,11 @@ export function TillPage() {
   // The highlighted suggestion, for the arrow keys. -1 is none, and Enter then
   // means "this is a barcode" rather than "this one".
   const [activeIndex, setActiveIndex] = useState(-1);
+  // The phone camera, open for a run of scans until the cashier taps Done,
+  // and the product it read last — its line is shown under the picture so the
+  // unit and quantity can be set without scrolling a fifty-line cart.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [lastScannedId, setLastScannedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -257,7 +263,7 @@ export function TillPage() {
   }, []);
 
   const addScanned = useCallback(
-    (scan: ScanResult) => {
+    (scan: ScanResult): boolean => {
       // A code on a unit only counted in — the single sachet a distributor
       // never sells. The server would refuse the sale; saying so now is kinder
       // than letting it reach the checkout.
@@ -265,11 +271,11 @@ export function TillPage() {
         setError(
           `${scan.product.name} is not sold by the ${scan.unit.name}. Scan the pack or carton instead, or pick it from the search.`,
         );
-        return;
+        return false;
       }
       if (scan.price === null) {
         setError(unpricedMessage(scan.product.name, scan.unit.name));
-        return;
+        return false;
       }
       const price = scan.price;
       setLines((current) =>
@@ -288,8 +294,40 @@ export function TillPage() {
         }),
       );
       void loadUnits(scan.product.id);
+      return true;
     },
     [loadUnits],
+  );
+
+  /**
+   * One code from the camera. Not `lookup`: a camera reads only barcodes, so
+   * there is nothing to fall back to a name search with, and the camera stays
+   * open whatever happens — an unknown code is a message, not a stop.
+   */
+  const scanFromCamera = useCallback(
+    async (code: string) => {
+      setError(null);
+      setNotice(null);
+      try {
+        const scan = await api.get<ScanResult>(
+          `/scan/${encodeURIComponent(code)}` +
+            (tierId ? `?tierId=${tierId}` : ''),
+        );
+        if (addScanned(scan)) {
+          setLastScannedId(scan.product.id);
+          setNotice(`Added ${scan.product.name}.`);
+        }
+      } catch (caught) {
+        if (caught instanceof ApiError && caught.status === 404) {
+          setNotice(
+            `Code ${code} is not on any product yet. Add it to the product, then scan again.`,
+          );
+        } else {
+          setError(messageFor(caught));
+        }
+      }
+    },
+    [addScanned, tierId],
   );
 
   /** Empties the search box and puts the suggestions away. */
@@ -530,6 +568,32 @@ export function TillPage() {
     [isManager, lines, payment, total, queryClient],
   );
 
+  // The last line for the product the camera read — after a unit change the
+  // line's key is the same but its unit is not, so it is found by product.
+  const justScanned = lastScannedId
+    ? lines.findLast((line) => line.productId === lastScannedId)
+    : undefined;
+
+  const lineHandlers = {
+    onQuantityChange: (key: string, quantity: number) =>
+      setLines((current) => updateLine(current, key, { quantity })),
+    onUnitChange: (key: string, unitId: string) => void changeUnit(key, unitId),
+    onPriceChange: (key: string, price: number | null) => {
+      if (price !== null) {
+        setLines((current) => updateLine(current, key, { unitPrice: price }));
+      }
+    },
+    onResetPrice: (key: string) =>
+      setLines((current) => {
+        const line = current.find((row) => row.key === key);
+        return line
+          ? updateLine(current, key, { unitPrice: line.listPrice })
+          : current;
+      }),
+    onRemove: (key: string) =>
+      setLines((current) => removeLine(current, key)),
+  };
+
   const startNewSale = useCallback(() => {
     setLines([]);
     setPayment(EMPTY_PAYMENT);
@@ -537,6 +601,8 @@ export function TillPage() {
     setTerm('');
     setSettledTerm('');
     setActiveIndex(-1);
+    setCameraOpen(false);
+    setLastScannedId(null);
     setError(null);
     setNotice(null);
     saleId.current = crypto.randomUUID();
@@ -574,6 +640,41 @@ export function TillPage() {
     >
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-4">
+          {cameraOpen ? (
+            // Stays at the top while the cart grows beneath it.
+            <div className="sticky top-0 z-20">
+              <CameraScanner
+                continuous
+                onCode={(code) => void scanFromCamera(code)}
+                onClose={() => {
+                  setCameraOpen(false);
+                  setLastScannedId(null);
+                }}
+              >
+                {justScanned && (
+                  <div className="mt-3">
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Just scanned — set the unit and quantity
+                    </p>
+                    <CartLines lines={[justScanned]} busy={busy} {...lineHandlers} />
+                  </div>
+                )}
+              </CameraScanner>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setError(null);
+                setCameraOpen(true);
+              }}
+              className="w-full sm:w-auto"
+            >
+              Scan with camera
+            </Button>
+          )}
+
           <ScanBox
             value={term}
             onChange={(next) => {
@@ -583,7 +684,7 @@ export function TillPage() {
             onSubmit={(text) => void lookup(text)}
             onNavigate={navigate}
             busy={busy}
-            disabled={Boolean(override)}
+            disabled={Boolean(override) || cameraOpen}
             listId={suggestions.length > 0 ? 'till-suggestions' : undefined}
             activeId={
               activeIndex >= 0 ? `till-suggestion-${activeIndex}` : undefined
@@ -671,29 +772,7 @@ export function TillPage() {
             </div>
           )}
 
-          <CartLines
-            lines={lines}
-            busy={busy}
-            onQuantityChange={(key, quantity) =>
-              setLines((current) => updateLine(current, key, { quantity }))
-            }
-            onUnitChange={(key, unitId) => void changeUnit(key, unitId)}
-            onPriceChange={(key, price) =>
-              price !== null &&
-              setLines((current) =>
-                updateLine(current, key, { unitPrice: price }),
-              )
-            }
-            onResetPrice={(key) =>
-              setLines((current) => {
-                const line = current.find((row) => row.key === key);
-                return line
-                  ? updateLine(current, key, { unitPrice: line.listPrice })
-                  : current;
-              })
-            }
-            onRemove={(key) => setLines((current) => removeLine(current, key))}
-          />
+          <CartLines lines={lines} busy={busy} {...lineHandlers} />
         </div>
 
         <PaymentPanel
