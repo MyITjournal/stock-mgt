@@ -438,6 +438,48 @@ Separately, the walkthrough asked for a portion's price **without** a `tierId` a
 `basePrice × factor` fallback: ₦2,100 for a half carton that sells for ₦20,500. The till always
 sends the tier, so it never saw this — but it is the case for making the base price optional next.
 
+### The phone is the scanner
+
+Added 2026-10-04. The owner was plain about it: **a member of staff with only a phone must be able
+to sell**, with no computer and no add-on app. A USB or Bluetooth scanner already worked — it is a
+keyboard — but a phone has a camera, not a scanner. Two places use it, through one component,
+`web/src/components/CameraScanner.tsx`:
+
+- **The till, continuously.** *Scan with camera* opens the back camera in a panel pinned to the top
+  and **leaves it open until Done** — a fifty-item order is fifty scans with no reopening. Each read
+  beeps, vibrates and adds the item through the ordinary `GET /scan/:code`; a **Just scanned** strip
+  under the picture shows that line's unit and quantity controls, so *Peak 14g, 1/6 carton* is set
+  without scrolling a long cart. The text box steps aside while the camera is open, because its
+  focus-stealing would pop the phone's keyboard over the picture on every tap. An unknown code is
+  a message, never a stop.
+- **Add product, once per box.** Barcodes are captured **as part of adding the product** — no
+  separate registration step — because the person typing the name is holding the pack. One box per
+  unit, since a carton usually carries its own code (often an ITF-14 on the box) distinct from the
+  item inside. The codes ride in the same `POST /products`; a misread fails the GS1 check digit and
+  the whole product is refused rather than half-saved. A saved product's *Add a code* has the same
+  camera button.
+
+Three choices:
+
+- **ZXing, not the browser's `BarcodeDetector`** — which iPhones do not have, and a shop cannot be
+  told to buy Android. It is ~120 kB compressed and **loaded only when a camera is first opened**,
+  so the till is no slower for anyone who never uses it. Only the shapes printed on goods are tried
+  (EAN-13/8, UPC-A/E, ITF, Code 128): fewer to try is a faster read, and a QR code on a poster is
+  not a product.
+- **The same code is ignored for two seconds.** A camera reads a barcode many times a second;
+  without the pause one carton held up would add five. Scanning it again after the pause adds one
+  more, which is how five identical cartons are rung up.
+- **Cameras need a secure page** — https, or `localhost` in development. Test with the phone on the
+  live site.
+
+**A real gap found on the way: a price read with no tier now uses the default tier.** The
+walkthrough scanned without a `tierId` and a priced carton came back with **no price** — "no
+tier" meant the `basePrice × factor` fallback, which since the base price became optional can be
+nothing. The till always sends a tier once its lists have loaded, but a cashier scanning in the
+first moment would have seen "no price". `resolveTierId` in `price-tier.service.ts` now decides it
+for every price read — the scan, `GET /products/:id/price` and the till search — so they cannot
+disagree. Sales already did this for walk-ins.
+
 ### The till suggests as you type, in one request
 
 Added 2026-10-04, from real use: picking an item at the till took **about ten seconds** on the

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Input, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
+import { CameraScanner } from '../components/CameraScanner';
 import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
 
@@ -43,6 +44,7 @@ export function Barcodes({
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   // Read rather than taken from the `product` prop: this list changes while
   // the dialog is open, and the prop is a snapshot of the row behind it.
@@ -160,16 +162,37 @@ export function Barcodes({
               <span className="block text-xs font-medium text-slate-700">
                 Code
               </span>
-              <Input
-                aria-label="Barcode"
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-                placeholder="Scan it, or leave blank to generate one"
-                className="mt-1"
-                autoFocus
-              />
+              <div className="mt-1 flex gap-2">
+                <Input
+                  aria-label="Barcode"
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                  placeholder="Scan it, or leave blank to generate one"
+                  inputMode="numeric"
+                  className="flex-1"
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setScanning(true)}
+                  disabled={scanning}
+                >
+                  Camera
+                </Button>
+              </div>
             </label>
           </div>
+
+          {scanning && (
+            <div className="mt-3">
+              <CameraScanner
+                continuous={false}
+                onCode={setCode}
+                onClose={() => setScanning(false)}
+              />
+            </div>
+          )}
 
           <p className="mt-2 text-xs text-slate-500">
             Leave it blank and an internal EAN-13 is generated, for goods that
@@ -183,6 +206,7 @@ export function Barcodes({
               variant="secondary"
               onClick={() => {
                 setAdding(false);
+                setScanning(false);
                 setCode('');
                 setError(null);
               }}

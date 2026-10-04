@@ -605,3 +605,35 @@ Enter to try it as a barcode. Escape clears the box.
 
 **167. [gate] On the live site, time a pick from typing to the line appearing.** It should be
 about the time of one request, not three.
+
+---
+
+## X. The phone camera
+
+Run these **on a phone, on the live site** — cameras only open on a secure (https) address.
+
+**168. Add a product. In the Barcodes section, tap Camera beside the carton and point it at a
+carton's barcode.** [gate] The phone beeps, the number fills the box, and the camera closes. Do
+the same for the roll. Save — reopening the product lists both codes.
+
+**169. Point the camera at a wrong or damaged code, or type one digit wrong.** [gate] Saving says
+the check digit does not match, and nothing is saved.
+
+**170. At the till, tap Scan with camera.** [gate] The camera opens at the top of the screen and
+the phone's keyboard does **not** pop up.
+
+**171. Scan four different products in a row.** [gate] Each beeps and is added. After each, the
+**Just scanned** strip shows that item with its unit and quantity — change Peak to *1/6 carton*
+there. The camera never closes in between.
+
+**172. Hold one carton in front of the camera for several seconds.** [gate] It is added **once**.
+Move it away and back after a couple of seconds — it is added again (quantity 2).
+
+**173. Scan a code that is on no product.** [gate] A note says it is not on any product yet; the
+camera stays open.
+
+**174. Tap Done.** [gate] The camera closes, the full cart and payment are there, and the light
+on the phone's camera goes off.
+
+**175. Refuse camera permission when asked.** [gate] The till explains how to allow it in the
+browser's settings rather than showing a blank box.

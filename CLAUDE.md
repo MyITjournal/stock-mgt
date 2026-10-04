@@ -658,6 +658,15 @@ a unit without its own price has `price: null` from `resolveUnitPrice` — the o
 also used by scans — and the till refuses it rather than guess. A seller-named `unitPrice` is still
 accepted. Zero is a price; null is not.
 
+**The phone is the scanner** (§4, 2026-10-04) — staff may have only a phone. `CameraScanner`
+(`web/src/components/`) uses **ZXing, lazy-loaded** (iPhones have no `BarcodeDetector`). At the
+till it stays **open until Done**, beeps per read, ignores the same code for 2s, and shows the
+line just scanned for unit and quantity; the text box is disabled meanwhile so the phone keyboard
+stays down. In **Add product** each unit has a barcode box with a camera button and the codes ride
+in the same `POST /products` — no separate registration. Cameras need https (or localhost).
+**A price read with no tier uses the default tier** (`resolveTierId`) — scan, price lookup and till
+search alike; "no tier" used to mean the fallback, which can now be no price at all.
+
 **The till suggests as you type, in one request** (§4, 2026-10-04). Picking an item cost three
 round trips in a row — about ten seconds on Render's free tier, where every request is one to two
 seconds; the database was never the slow part. `GET /products/till-search` returns matching
