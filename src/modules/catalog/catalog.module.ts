@@ -11,6 +11,7 @@ import { CategoryService } from './category.service';
 import { PackagingTypeService } from './packaging-type.service';
 import { PriceTierService } from './price-tier.service';
 import { ProductService } from './product.service';
+import { ProductImportService } from './product-import.service';
 import { BarcodeService } from './barcode.service';
 import { ScanService } from './scan.service';
 
@@ -28,6 +29,7 @@ import { ScanService } from './scan.service';
     PackagingTypeService,
     PriceTierService,
     ProductService,
+    ProductImportService,
     BarcodeService,
     ScanService,
   ],

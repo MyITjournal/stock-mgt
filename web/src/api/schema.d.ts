@@ -533,6 +533,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/products/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import products from spreadsheet rows
+         * @description One row per product, every cell as text. With dryRun, checks every row and saves nothing — the preview. Without it, saves every row marked add in one transaction, and refuses to save anything while any row has a problem. A product whose name is already in the catalog is skipped, never changed.
+         */
+        post: operations["ProductController_importProducts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/products/{id}": {
         parameters: {
             query?: never;
@@ -2443,6 +2463,109 @@ export interface components {
             defaultUnitId: string;
             /** @description Only units sold at the till, smallest first. */
             units: components["schemas"]["TillSearchUnit"][];
+        };
+        ImportRowDto: {
+            /**
+             * @description The row number in the spreadsheet, echoed back in messages.
+             * @example 2
+             */
+            line?: number;
+            /** @example Peak 14g */
+            name?: string;
+            /** @example 14g */
+            size?: string;
+            /**
+             * @description By name. One that does not exist yet is created.
+             * @example Milk
+             */
+            category?: string;
+            /**
+             * @description What stock is counted in — the base unit. Blank means "piece".
+             * @example sachet
+             */
+            countedIn?: string;
+            /**
+             * @description Price of one counted-in unit, in naira, VAT included.
+             * @example 100
+             */
+            price?: string;
+            /** @example roll */
+            unit2?: string;
+            /**
+             * @description How many counted-in units one of unit 2 holds.
+             * @example 10
+             */
+            unit2Count?: string;
+            /** @example 950 */
+            unit2Price?: string;
+            /** @example carton */
+            unit3?: string;
+            /** @example 160 */
+            unit3Count?: string;
+            /** @example 14,500 */
+            unit3Price?: string;
+            /**
+             * @description For the counted-in unit.
+             * @example 6154000000005
+             */
+            barcode?: string;
+        };
+        ImportProductsDto: {
+            rows: components["schemas"]["ImportRowDto"][];
+            /** @description Check every row and say what would happen, saving nothing. The preview. */
+            dryRun?: boolean;
+        };
+        ImportCategoryView: {
+            name: string;
+            /** @description Created (or brought back) by this import. */
+            isNew: boolean;
+        };
+        ImportUnitView: {
+            name: string;
+            /** @description How many counted-in units it holds. */
+            factor: number;
+            /** @description Its price in kobo, VAT included. For the counted-in unit this is the base price. */
+            price: number | null;
+            isBase: boolean;
+            /** @description Whether the till will offer it. */
+            isSellable: boolean;
+            /** @description Whether the till picks it first. */
+            isDefaultSelling: boolean;
+        };
+        ImportBarcodeView: {
+            code: string;
+            symbology: components["schemas"]["BarcodeSymbology"];
+        };
+        ImportProductView: {
+            name: string;
+            sku: string;
+            size: string | null;
+            category: components["schemas"]["ImportCategoryView"] | null;
+            units: components["schemas"]["ImportUnitView"][];
+            barcode: components["schemas"]["ImportBarcodeView"] | null;
+        };
+        ImportRowView: {
+            /** @description The row number in the spreadsheet. */
+            line: number;
+            name: string;
+            /**
+             * @description `add` will be (or was) created, `skip` is already in the catalog, `error` needs fixing in the file.
+             * @enum {string}
+             */
+            status: "add" | "skip" | "error";
+            /** @description What is wrong for `error`, why for `skip`, and warnings worth reading for `add`. */
+            messages: string[];
+            product: components["schemas"]["ImportProductView"] | null;
+        };
+        ImportReportView: {
+            /** @description False for a preview; true once saved. */
+            saved: boolean;
+            adding: number;
+            skipped: number;
+            errors: number;
+            /** @description Categories the import creates or brings back. */
+            newCategories: string[];
+            rows: components["schemas"]["ImportRowView"][];
         };
         UnitTaxSplit: {
             /** @description What the customer pays. */
@@ -6644,6 +6767,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TillSearchResult"][];
+                };
+            };
+        };
+    };
+    ProductController_importProducts: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original report instead of importing twice. A fresh key is harmless too: every product it added already exists, so every row comes back skipped. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportProductsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportReportView"];
                 };
             };
         };

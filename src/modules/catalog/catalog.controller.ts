@@ -35,6 +35,9 @@ import { ProductService } from './product.service';
 import type { UploadedImage } from './product.service';
 import { BarcodeService } from './barcode.service';
 import { ScanService } from './scan.service';
+import { ProductImportService } from './product-import.service';
+import { ImportProductsDto } from './dto/product-import.dto';
+import { ImportReportView } from './dto/product-import.response';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import {
   CreatePackagingTypeDto,
@@ -234,6 +237,7 @@ export class ProductController {
   constructor(
     private readonly products: ProductService,
     private readonly barcodes: BarcodeService,
+    private readonly imports: ProductImportService,
   ) {}
 
   @Get()
@@ -282,6 +286,22 @@ export class ProductController {
     @Query('tierId', new ParseUUIDPipe({ optional: true })) tierId?: string,
   ) {
     return this.products.tillSearch(q, tierId);
+  }
+
+  // Declared before the ':id' routes, like till-search.
+  @Post('import')
+  @Roles(...CATALOG_EDITORS)
+  @Idempotent(
+    'A retry with the same key returns the original report instead of importing twice. A fresh key is harmless too: every product it added already exists, so every row comes back skipped.',
+  )
+  @ApiOperation({
+    summary: 'Import products from spreadsheet rows',
+    description:
+      'One row per product, every cell as text. With dryRun, checks every row and saves nothing — the preview. Without it, saves every row marked add in one transaction, and refuses to save anything while any row has a problem. A product whose name is already in the catalog is skipped, never changed.',
+  })
+  @ApiOkResponse({ type: ImportReportView })
+  importProducts(@Body() dto: ImportProductsDto): Promise<ImportReportView> {
+    return this.imports.run(dto);
   }
 
   @Get(':id')

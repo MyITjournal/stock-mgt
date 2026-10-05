@@ -621,6 +621,49 @@ the parts add back to the count exactly. Verified live: after a half carton is s
 A delivery the shop **charges the customer for** stays what §4 below says: a product with
 `trackStock` off. A delivery the shop **pays for** is an expense and never a product.
 
+### A catalog comes in from a spreadsheet, previewed and saved whole (2026-10-05)
+
+`POST /products/import` (owner/manager) and *Products → Import from spreadsheet*. Typing three
+hundred products into the form is the biggest setup cost a new shop has, and the main gap the
+market comparison found. The rules are pure, in `catalog/product-import.ts`.
+
+- **One row per product**: name, size, category, what it is *counted in* (blank means piece) with
+  its price, then up to two bigger units with **how many counted-in units each holds** and their
+  prices, and one barcode for the counted-in unit. A portion is just a unit — `1/5 carton`, 32.
+  The counted-in price is the base price, as on the form; bigger units' prices go on the
+  **default** price list. No price-list column: shops here price the item, not the buyer.
+- **Every cell travels as text** and the server reads it. `parseNaira` takes `14,500`, `N14,500`,
+  `₦14,500` and the exponent form a spreadsheet stores, as a decimal string — never through a
+  float. More than two decimals rounds half-up to the kobo, because that is what the cell showed.
+  For `.xlsx` the dashboard passes `parseNumber: raw => raw`, so it gets the stored text too.
+- **Preview and save are one function.** `dryRun` returns every row as `add`, `skip` or `error`
+  with reasons in words; the save re-plans against the catalog as it is then and writes only if
+  **no** row is in error. All or nothing, in one transaction.
+- **A name already in the catalog is skipped, never changed.** Bulk price changes belong with
+  export (download, edit, upload back), not here. A side effect worth having: a retry after a save
+  that landed, even with a fresh key, finds every name taken and skips every row.
+- **Units sell exactly as the form decides** — `defaultIsSellable` and `chooseDefaultSellingUnit`
+  are called on the planned units, so a wholesaler's sachet is counted and not sold. And it
+  **warns, without refusing**, about a sold unit with no price (the till will refuse it) or a
+  carton with no price of its own (it will be charged `factor × the piece price` — the §4
+  overcharge, said before it happens).
+- **Categories by name, case aside**; a new one is created once however many rows name it, and a
+  deleted one is revived, as the category screen does. SKUs are generated and suffixed `-2`, `-3`
+  against the shop *and* the file. Barcodes are validated like any other, and one that reads
+  `6.154E+12` is named for what it is — the spreadsheet rounded it and the digits are gone.
+- **Written in a handful of statements.** Ids are minted in the plan, so each table is one
+  `createMany`: 2,000 products import in about five seconds locally. One by one through
+  `ProductService.create` would be minutes on the free tier, inside a transaction.
+- **Not in it, deliberately: cost and opening stock.** Cost comes from deliveries (§2). Opening
+  stock needs what was paid, so it is its own step, next.
+
+⚠ **The trap hit building it.** The route needs a bigger JSON body than the 100kb default, so a
+path-scoped `json({ limit: '3mb' })` is registered in `main.ts` before Nest's parser. Registered
+bare, **every other request in the API arrived with an empty body**: Nest decides whether to add
+its own JSON parser by looking for any middleware *named* `jsonParser`, path or no path, finds
+this one and skips the global one. Smoke caught it at the first register. The parser is wrapped in
+a function with another name, and the comment says why.
+
 ### A service is a product with the stock flag off, not a category
 
 Asked on 2026-09-27: a delivery to Ikeja is charged for and appears on an invoice, but it is not

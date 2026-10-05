@@ -2401,6 +2401,95 @@ async function main() {
   // looks like a sign-up bug and is not one. The username login path is
   // covered there, by the cashiers who have no email either.
 
+  step(44, 'Import: a catalog from a spreadsheet, previewed and then saved whole');
+
+  // The fresh shop from step 43, so its catalog starts empty. Every cell is
+  // text, exactly as the spreadsheet stored it.
+  const peakRow = {
+    line: 2, name: 'Peak 14g', size: '14g', category: 'Milk',
+    countedIn: 'sachet', price: '100',
+    unit2: 'roll', unit2Count: '10', unit2Price: '950',
+    unit3: 'carton', unit3Count: '160', unit3Price: '14,500',
+    barcode: '4006381333931',
+  };
+  const goodRows = [peakRow, { line: 3, name: 'Indomie 70g', category: 'milk', price: 'N250' }];
+  const badRow = { line: 4, name: 'Milo 500g', unit2: 'carton', unit2Count: '0.5' };
+
+  const preview = (
+    await api('POST', '/products/import', {
+      token: selfToken,
+      key: randomUUID(),
+      body: { rows: [...goodRows, badRow], dryRun: true },
+    })
+  ).data;
+  eq('the preview adds the two good rows', preview.adding, 2);
+  eq('and names the one with a problem', preview.rows[2].status, 'error');
+  eq('one category, matched case aside', preview.newCategories.join(), 'Milk');
+  eq('and saves nothing', (await api('GET', '/products', { token: selfToken })).data.length, 0);
+
+  await api('POST', '/products/import', {
+    token: selfToken,
+    key: randomUUID(),
+    body: { rows: [...goodRows, badRow] },
+    expect: 400,
+  });
+  check('a save with a row still in error is refused', true);
+  eq('and writes nothing at all', (await api('GET', '/products', { token: selfToken })).data.length, 0);
+
+  const imported = (
+    await api('POST', '/products/import', {
+      token: selfToken,
+      key: randomUUID(),
+      body: { rows: goodRows },
+    })
+  ).data;
+  eq('the good rows save', `${imported.saved} ${imported.adding}`, 'true 2');
+
+  const selfProducts = (await api('GET', '/products', { token: selfToken })).data;
+  const peakImported = selfProducts.find((p) => p.name === 'Peak 14g');
+  eq('both are in the catalog', selfProducts.length, 2);
+  eq(
+    'with every unit and how many sachets it holds',
+    peakImported.units.map((u) => `${u.name}:${u.factor}`).join(' '),
+    'sachet:1 roll:10 carton:160',
+  );
+  eq('filed under the new category', peakImported.category?.name, 'Milk');
+  const cartonPrice = (
+    await api(
+      'GET',
+      `/products/${peakImported.id}/price?unitId=${peakImported.units.find((u) => u.name === 'carton').id}`,
+      { token: selfToken },
+    )
+  ).data;
+  eq('the carton has its own price on the default list', cartonPrice.price, 1_450_000);
+  eq(
+    'and the barcode scans to the sachet',
+    (await api('GET', '/scan/4006381333931', { token: selfToken })).data.unit.name,
+    'sachet',
+  );
+
+  const again = (
+    await api('POST', '/products/import', {
+      token: selfToken,
+      key: randomUUID(),
+      body: { rows: goodRows },
+    })
+  ).data;
+  eq('importing the same file again skips every row', `${again.adding} ${again.skipped}`, '0 2');
+
+  // A whole catalog in one request: past the default 100kb body, and saved in
+  // a handful of statements rather than one round trip per product.
+  const bigRows = Array.from({ length: 2000 }, (_, i) => ({
+    line: i + 2, name: `Bulk item ${i}`, countedIn: 'piece', price: '100',
+    unit2: 'carton', unit2Count: '24', unit2Price: '2,300',
+  }));
+  const started = Date.now();
+  const bulk = (
+    await api('POST', '/products/import', { token: selfToken, key: randomUUID(), body: { rows: bigRows } })
+  ).data;
+  eq('two thousand rows import in one request', bulk.adding, 2000);
+  console.log(`      2,000 products in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',
