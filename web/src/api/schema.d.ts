@@ -533,6 +533,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/products/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import products from spreadsheet rows
+         * @description One row per product, every cell as text. With dryRun, checks every row and saves nothing — the preview. Without it, saves every row marked add in one transaction, and refuses to save anything while any row has a problem. A product whose name is already in the catalog is skipped, never changed.
+         */
+        post: operations["ProductController_importProducts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/products/{id}": {
         parameters: {
             query?: never;
@@ -798,6 +818,30 @@ export interface paths {
         get: operations["GoodsReceiptController_findOne"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/opening": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Products that need opening stock
+         * @description Every product that keeps stock and has never had stock come in at this location — the sheet an owner fills in on day one. A product sold before it was counted still appears; one that has had a delivery, a transfer in or a count surplus does not.
+         */
+        get: operations["StockController_openingSheet"];
+        put?: never;
+        /**
+         * Record opening stock
+         * @description What is on the shelves on day one and what it cost, as opening-balance adjustments: a lot each, valued at cost × quantity, with no bill raised and nothing counted toward vendor targets or the purchases report. All or nothing; a 409 if any product has had stock come in here since the sheet was opened.
+         */
+        post: operations["StockController_recordOpening"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2444,6 +2488,109 @@ export interface components {
             /** @description Only units sold at the till, smallest first. */
             units: components["schemas"]["TillSearchUnit"][];
         };
+        ImportRowDto: {
+            /**
+             * @description The row number in the spreadsheet, echoed back in messages.
+             * @example 2
+             */
+            line?: number;
+            /** @example Peak 14g */
+            name?: string;
+            /** @example 14g */
+            size?: string;
+            /**
+             * @description By name. One that does not exist yet is created.
+             * @example Milk
+             */
+            category?: string;
+            /**
+             * @description What stock is counted in — the base unit. Blank means "piece".
+             * @example sachet
+             */
+            countedIn?: string;
+            /**
+             * @description Price of one counted-in unit, in naira, VAT included.
+             * @example 100
+             */
+            price?: string;
+            /** @example roll */
+            unit2?: string;
+            /**
+             * @description How many counted-in units one of unit 2 holds.
+             * @example 10
+             */
+            unit2Count?: string;
+            /** @example 950 */
+            unit2Price?: string;
+            /** @example carton */
+            unit3?: string;
+            /** @example 160 */
+            unit3Count?: string;
+            /** @example 14,500 */
+            unit3Price?: string;
+            /**
+             * @description For the counted-in unit.
+             * @example 6154000000005
+             */
+            barcode?: string;
+        };
+        ImportProductsDto: {
+            rows: components["schemas"]["ImportRowDto"][];
+            /** @description Check every row and say what would happen, saving nothing. The preview. */
+            dryRun?: boolean;
+        };
+        ImportCategoryView: {
+            name: string;
+            /** @description Created (or brought back) by this import. */
+            isNew: boolean;
+        };
+        ImportUnitView: {
+            name: string;
+            /** @description How many counted-in units it holds. */
+            factor: number;
+            /** @description Its price in kobo, VAT included. For the counted-in unit this is the base price. */
+            price: number | null;
+            isBase: boolean;
+            /** @description Whether the till will offer it. */
+            isSellable: boolean;
+            /** @description Whether the till picks it first. */
+            isDefaultSelling: boolean;
+        };
+        ImportBarcodeView: {
+            code: string;
+            symbology: components["schemas"]["BarcodeSymbology"];
+        };
+        ImportProductView: {
+            name: string;
+            sku: string;
+            size: string | null;
+            category: components["schemas"]["ImportCategoryView"] | null;
+            units: components["schemas"]["ImportUnitView"][];
+            barcode: components["schemas"]["ImportBarcodeView"] | null;
+        };
+        ImportRowView: {
+            /** @description The row number in the spreadsheet. */
+            line: number;
+            name: string;
+            /**
+             * @description `add` will be (or was) created, `skip` is already in the catalog, `error` needs fixing in the file.
+             * @enum {string}
+             */
+            status: "add" | "skip" | "error";
+            /** @description What is wrong for `error`, why for `skip`, and warnings worth reading for `add`. */
+            messages: string[];
+            product: components["schemas"]["ImportProductView"] | null;
+        };
+        ImportReportView: {
+            /** @description False for a preview; true once saved. */
+            saved: boolean;
+            adding: number;
+            skipped: number;
+            errors: number;
+            /** @description Categories the import creates or brings back. */
+            newCategories: string[];
+            rows: components["schemas"]["ImportRowView"][];
+        };
         UnitTaxSplit: {
             /** @description What the customer pays. */
             gross: number;
@@ -3164,6 +3311,65 @@ export interface components {
             payment?: components["schemas"]["DeliveryPaymentDto"];
             lines: components["schemas"]["GoodsReceiptLineDto"][];
         };
+        OpeningStockUnitView: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description How many base units it holds. */
+            factor: number;
+        };
+        OpeningStockProductView: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            size: string | null;
+            sku: string;
+            category: string | null;
+            /** @description Smallest first. */
+            units: components["schemas"]["OpeningStockUnitView"][];
+            /**
+             * Format: uuid
+             * @description The unit the sheet starts on: the biggest, because shelves are counted in cartons.
+             */
+            defaultUnitId: string;
+        };
+        OpeningStockLineDto: {
+            /** Format: uuid */
+            productId: string;
+            /**
+             * Format: uuid
+             * @description Which of the product’s units the quantity is counted in.
+             */
+            unitId: string;
+            /** @example 14 */
+            quantity: number;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 1400000
+             */
+            unitCost: number;
+            /**
+             * Format: date
+             * @example 2027-03-31
+             */
+            expiryDate?: string;
+        };
+        OpeningStockDto: {
+            /**
+             * Format: uuid
+             * @description Where the stock is. The default location when omitted.
+             */
+            locationId?: string;
+            lines: components["schemas"]["OpeningStockLineDto"][];
+        };
+        OpeningStockResultView: {
+            /** @description How many products now have opening stock. */
+            products: number;
+            /** @description How many lines were recorded. */
+            lines: number;
+            /** @description What it is all worth, in kobo — the sum of every line’s total. */
+            totalValue: number;
+        };
         StockProductRef: {
             /** Format: uuid */
             id: string;
@@ -3781,6 +3987,12 @@ export interface components {
             /** Format: date-time */
             receivedAt: string;
         };
+        PaidFromAccount: {
+            /** Format: uuid */
+            id: string;
+            bankName: string;
+            accountName: string;
+        };
         BillPaymentRef: {
             /** Format: uuid */
             id: string;
@@ -3789,6 +4001,7 @@ export interface components {
             reference: string | null;
             /** Format: date-time */
             occurredAt: string;
+            bankAccount: components["schemas"]["PaidFromAccount"] | null;
         };
         SupplierBillView: {
             /** Format: uuid */
@@ -3893,12 +4106,6 @@ export interface components {
             amountDue: number;
             /** Format: date-time */
             issuedAt: string;
-        };
-        PaidFromAccount: {
-            /** Format: uuid */
-            id: string;
-            bankName: string;
-            accountName: string;
         };
         RecorderRef: {
             /** Format: uuid */
@@ -5532,6 +5739,8 @@ export interface components {
             maxUsers: number;
             /** @description Retail, wholesale or mixed. Sets starting defaults only — every feature is open to every type. */
             businessType: components["schemas"]["BusinessType"];
+            /** @description Whether new sales record VAT. Off, they record none, whatever rate the products carry. */
+            chargesVat: boolean;
             address: string | null;
             phone: string | null;
             email: string | null;
@@ -5615,6 +5824,8 @@ export interface components {
             workingDays?: string[];
             /** @description Changes the defaults for products created from now on. Existing products and price lists are left exactly as they are. */
             businessType?: components["schemas"]["BusinessType"];
+            /** @description Whether this shop charges VAT. Off, every sale from now on records no VAT and the invoice prints no VAT line; sales already made keep the VAT they were recorded with. */
+            chargesVat?: boolean;
         };
         /** @enum {string} */
         OrgRole: "owner" | "manager" | "sales_rep" | "storekeeper" | "accountant";
@@ -6644,6 +6855,32 @@ export interface operations {
             };
         };
     };
+    ProductController_importProducts: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original report instead of importing twice. A fresh key is harmless too: every product it added already exists, so every row comes back skipped. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportProductsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportReportView"];
+                };
+            };
+        };
+    };
     ProductController_findOne: {
         parameters: {
             query?: never;
@@ -7172,6 +7409,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoodsReceiptView"];
+                };
+            };
+        };
+    };
+    StockController_openingSheet: {
+        parameters: {
+            query?: {
+                locationId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningStockProductView"][];
+                };
+            };
+        };
+    };
+    StockController_recordOpening: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original result. A fresh key is refused with a 409, because every product on it now has stock. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningStockDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningStockResultView"];
                 };
             };
         };

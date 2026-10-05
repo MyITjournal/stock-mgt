@@ -86,7 +86,12 @@ Slice 6 added **reports**, in `src/modules/reports/` — a read-only module with
 `period.ts`, `profit.ts`, `valuation.ts`. Four rules from it are load-bearing:
 
 - **Revenue is tax-exclusive.** Prices are VAT-inclusive, so counting the gross overstates every
-  margin by 7.5%. The dashboard reads lower than expected; that is it working.
+  margin by 7.5%. The dashboard reads lower than expected; that is it working. **Unless the shop
+  does not charge VAT** (`Organization.chargesVat`, §2, 2026-10-05): off, every new sale records
+  0% on its lines whatever the product's rate, so revenue is the whole price. It is frozen onto
+  the sale like every money figure, so reports needed no change and switching rewrites nothing
+  already sold. Existing shops start **on**, new shops **off**; a sale with no VAT prints no VAT
+  line. One switch on purpose — not a tax setup.
 - **Periods resolve in `Organization.timezone`**, never UTC — otherwise "today" rolls over at 1am
   Lagos time. All of it lives in `period.ts`; nothing else does date arithmetic.
 - **A return counts in the period it happened**, not the month of the sale it reverses.
@@ -531,7 +536,10 @@ And three from 7.3:
   reports use `occurredAt` and answer a different question.
 - **PDFs go through `api.document`, never a plain link.** A raw navigation cannot run the refresh,
   so a link shows a JSON 401 instead of an invoice once the 15-minute token expires. Revoke the
-  object URL on a timer, not immediately — immediately races the new tab.
+  object URL on a timer, not immediately — immediately races the new tab. **`PrintButton`**
+  (2026-10-05, on a sale and on the till's "Sale recorded") prints the same PDF from a hidden
+  frame on a computer; **on a touch screen it opens the PDF instead**, because phone browsers do
+  not reliably print a frame and the phone's own viewer has Print and Share.
 - **A damaged return refunds money and writes no stock movement.** `restocked: false` means crushed
   goods never become sellable again, so the till must ask rather than default it.
 
@@ -548,6 +556,22 @@ Four from 7.4:
 - **The vendor side is not the customer side mirrored.** One supplier payment settles **exactly one
   bill** (no allocation table), there are **no negative payments** (void is the only correction),
   and overpaying is a **409** rather than credit. Those absences are decisions, not gaps.
+  **"Paid on"** (2026-10-05, `PaidOnField` + `lib/paidOn.ts`, on both payment forms) lets a
+  payment carry the day the money moved — for a bill paid long before it was entered. Today sends
+  nothing; a past day is sent as **noon UTC on that day**, the same calendar day in every zone
+  from UTC−11 to UTC+11, so the browser picks a day and never a period. The server already
+  bounded it to a year back.
+- **Invoices and Bills** (2026-10-05). The Money tabs are pairs: **Invoices** / **Money in** for
+  customers, **Bills** / **Money out** for vendors, then Expenses and **Bank accounts** — they were
+  *Owed to us / Payments / We owe / Paid out / Accounts*, and older notes here still use those
+  names. Addresses did not change. Each side has **Unpaid** (the grouped, longest-owed view) and
+  **All** (paid ones included), and every row carries **Unpaid / Part-paid / Paid** from
+  `payState(balance, paid)` — named from the server's figures, never computed. **Mark as paid** is
+  the ordinary payment form with the amount set to the whole balance (and, for an invoice, the
+  allocation pinned to it); method and account are still asked. A bill opened (`BillDialog`)
+  lists only the payments that count, so they add up to its `paid`; Money out and Money in link
+  each payment to the bill or invoices it settled. `usePaySupplier` and `useRecordPayment` are
+  the one write each side has.
 - **A supplier payment is never an `Expense`.** Stock already reaches profit through cost of goods
   sold, so recording it twice understates every margin. The expense form says so on screen.
 
@@ -687,6 +711,12 @@ a typed price stands, a line the new list cannot price keeps its old price **and
 that changed unit mid-flight is left alone. Payment is disabled while prices move, and a run
 counter lets only the latest customer choice land.
 
+**A customer can be added from the till** (2026-10-05): **+ New** beside Customer opens the same
+`CustomerDialog` as the Customers screen, cut down to **name and phone only**, and the new
+customer is chosen for the sale at once. **No price list at the counter, on purpose**: shops here
+price the item, not the buyer — the wholesale price is the carton's or the 1/5 carton's own price —
+so asking what kind of customer somebody is has no place in a queue. The cart keeps its prices.
+
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
 field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank
@@ -701,6 +731,31 @@ products pointing at a hidden row makes three screens disagree, and clearing `ca
 past reports. Re-adding a deleted name **revives** the row, as packaging types already did, since
 the soft delete keeps the name under the unique constraint. Packaging types stay deletable while in
 use, on purpose. Both now have a Remove button on *Categories & tiers*; price tiers do not.
+
+**A category can be added from the product form** (2026-10-05): **+ New** beside Category
+(`catalog/CategoryPicker.tsx`) adds it and picks it without closing the form. It sits *inside* the
+product form, so **Enter is caught on the box** — otherwise it saves the product with the category
+still missing. A name already on the list is picked rather than sent, and **the id the server
+returns is the one used**, because re-adding a deleted name revives the old row with its own id.
+
+**Opening stock is an opening balance, never a delivery** (§5, 2026-10-05): *Stock on hand →
+Opening stock*, `GET`/`POST /stock/opening`. A delivery raises a bill and counts toward vendor
+targets, so day-one stock entered that way put a debt settled in June onto *We owe*. Each line is
+an `opening_balance` lot valued at **cost per unit × quantity (cost required)** with
+`quantityPaidFor: 0`, so no bill, target or purchases report sees it. **Only products that have
+never had stock come in at that location are offered**, and the save re-checks in its
+transaction, so it cannot be entered twice; a product sold before it was counted still appears.
+Bulk-written by `StockService.recordNewLots`, which keeps every ledger write in one service.
+
+**A catalog can be imported from a spreadsheet** (§4, 2026-10-05): `POST /products/import` and
+*Products → Import from spreadsheet* — template, upload `.xlsx` or `.csv`, preview every row, then
+save all or nothing. One row per product: counted-in unit and price, up to two bigger units with
+how many they hold, category by name, one barcode. **Every cell travels as text and the server
+reads it** (`parseNaira`, exact), and **the preview and the save are the same `planImport`**, so
+they cannot disagree. A name already there is **skipped, never changed**; no cost, no opening
+stock, no price-list column. ⚠ **A path-scoped body parser must not be named `jsonParser`**:
+Nest skips its own global JSON parser if it finds one by that name anywhere, and every other
+request arrives empty — see the wrapper in `main.ts`.
 
 **A service is a product with `trackStock` off, never a category** (§4). A delivery charge is
 priced, taxed and invoiced like anything else; the sale path returns the line without calling

@@ -67,6 +67,10 @@ export class OrganizationService {
         ...(input.businessType !== undefined && {
           businessType: input.businessType,
         }),
+        // From the next sale on. Sales already made keep their own VAT.
+        ...(input.chargesVat !== undefined && {
+          chargesVat: input.chargesVat,
+        }),
       },
       select: ORGANIZATION_FIELDS,
     });
@@ -85,6 +89,7 @@ const ORGANIZATION_FIELDS = {
   timezone: true,
   maxUsers: true,
   businessType: true,
+  chargesVat: true,
   address: true,
   phone: true,
   email: true,

@@ -22,6 +22,8 @@ import { SupplierPaymentsPage } from './money/SupplierPaymentsPage';
 import { ExpensesPage } from './money/ExpensesPage';
 import { StockLayout } from './catalog/StockLayout';
 import { ProductsPage } from './catalog/ProductsPage';
+import { ImportProductsPage } from './catalog/ImportProductsPage';
+import { OpeningStockPage } from './stock/OpeningStockPage';
 import { ProductDetailPage } from './catalog/ProductDetailPage';
 import { CatalogSetupPage } from './catalog/CatalogSetupPage';
 import { LevelsPage } from './stock/LevelsPage';
@@ -117,6 +119,8 @@ export default function App() {
                   path="stock/products/:id"
                   element={<ProductDetailPage />}
                 />
+                <Route path="stock/import" element={<ImportProductsPage />} />
+                <Route path="stock/opening" element={<OpeningStockPage />} />
                 <Route path="stock/receive" element={<ReceiveDeliveryPage />} />
                 <Route
                   path="stock/receipts/:id"

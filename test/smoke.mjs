@@ -243,6 +243,22 @@ async function main() {
   const trade = (await api('POST', '/price-tiers', { token: t, body: { name: 'Trade' } })).data;
   check('a category and a third tier created', !!category.id && !!trade.id);
 
+  // A new shop starts without VAT — most small shops are under the turnover
+  // threshold. This one charges it, as every shop did before the switch
+  // existed, so the VAT checks below have something to check. The other shop
+  // in step 42 keeps the default and proves the off side.
+  eq(
+    'a new shop starts without VAT',
+    (await api('GET', '/organization', { token: t })).data.chargesVat,
+    false,
+  );
+  eq(
+    'and can switch it on',
+    (await api('PATCH', '/organization', { token: t, body: { chargesVat: true } })).data
+      .chargesVat,
+    true,
+  );
+
   const product = (
     await api('POST', '/products', {
       token: t,
@@ -2205,6 +2221,28 @@ async function main() {
   const reopened = await billOf(partPaid.id);
   eq('voiding a payment puts the bill back to owing', reopened.balance, 12_800_000);
 
+  // A bill paid long before it was entered: the payment carries the day the
+  // money left, as the "Paid on" box sends it — noon UTC on the day picked.
+  const paidDay = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const backdated = (
+    await api('POST', '/supplier-payments', {
+      token: t,
+      key: randomUUID(),
+      body: { billId: older.id, amount: 3_200_000, method: 'cash', occurredAt: `${paidDay}T12:00:00.000Z` },
+    })
+  ).data;
+  eq('a payment made earlier keeps the day it was made', backdated.occurredAt.slice(0, 10), paidDay);
+  const settledBill = (await api('GET', `/supplier-bills/${older.id}`, { token: t })).data;
+  eq('and settles the bill all the same', settledBill.balance, 0);
+  // What the Bills screen shows when a bill is opened: its payments, which
+  // add up to what it says was paid.
+  eq(
+    'the bill lists the payments that add up to what was paid',
+    settledBill.payments.reduce((sum, row) => sum + row.amount, 0),
+    settledBill.paid,
+  );
+  check('and each says which account it left, or none for cash', settledBill.payments.every((row) => 'bankAccount' in row));
+
   // What was bought this month, from the same receipts.
   const purchases = (await api('GET', '/reports/purchases?period=month', { token: t })).data;
   check('the purchases summary knows the month cost something', purchases.total > 0);
@@ -2311,16 +2349,18 @@ async function main() {
       },
     })
   ).data;
-  eq(
-    'and its invoice numbering starts fresh at one',
-    (
-      await api('POST', '/sales', {
-        token: other.token,
-        body: { lines: [{ productId: theirProduct.id, quantity: 1 }] },
-      })
-    ).data.number,
-    'INV-0001',
-  );
+  const theirSale = (
+    await api('POST', '/sales', {
+      token: other.token,
+      body: { lines: [{ productId: theirProduct.id, quantity: 1 }] },
+    })
+  ).data;
+  eq('and its invoice numbering starts fresh at one', theirSale.number, 'INV-0001');
+  // It never switched VAT on, so the product's 7.5% is not charged: the whole
+  // price is the shop's, and the invoice will print no VAT line.
+  eq('a shop that does not charge VAT records none', theirSale.taxTotal, 0);
+  eq('and the price is unchanged', theirSale.total, 100_000);
+  eq('down to the line', theirSale.lines[0].taxRateBps, 0);
   await api('GET', `/products/${product.id}`, { token: other.token, expect: 404 });
   check("fetching the other org's product by id is 404", true);
   await api('GET', `/sales/${credit.id}`, { token: other.token, expect: 404 });
@@ -2382,6 +2422,146 @@ async function main() {
   // already spends them; a sixth at the end of the run fails with a 429 that
   // looks like a sign-up bug and is not one. The username login path is
   // covered there, by the cashiers who have no email either.
+
+  step(44, 'Import: a catalog from a spreadsheet, previewed and then saved whole');
+
+  // The fresh shop from step 43, so its catalog starts empty. Every cell is
+  // text, exactly as the spreadsheet stored it.
+  const peakRow = {
+    line: 2, name: 'Peak 14g', size: '14g', category: 'Milk',
+    countedIn: 'sachet', price: '100',
+    unit2: 'roll', unit2Count: '10', unit2Price: '950',
+    unit3: 'carton', unit3Count: '160', unit3Price: '14,500',
+    barcode: '4006381333931',
+  };
+  const goodRows = [peakRow, { line: 3, name: 'Indomie 70g', category: 'milk', price: 'N250' }];
+  const badRow = { line: 4, name: 'Milo 500g', unit2: 'carton', unit2Count: '0.5' };
+
+  const preview = (
+    await api('POST', '/products/import', {
+      token: selfToken,
+      key: randomUUID(),
+      body: { rows: [...goodRows, badRow], dryRun: true },
+    })
+  ).data;
+  eq('the preview adds the two good rows', preview.adding, 2);
+  eq('and names the one with a problem', preview.rows[2].status, 'error');
+  eq('one category, matched case aside', preview.newCategories.join(), 'Milk');
+  eq('and saves nothing', (await api('GET', '/products', { token: selfToken })).data.length, 0);
+
+  await api('POST', '/products/import', {
+    token: selfToken,
+    key: randomUUID(),
+    body: { rows: [...goodRows, badRow] },
+    expect: 400,
+  });
+  check('a save with a row still in error is refused', true);
+  eq('and writes nothing at all', (await api('GET', '/products', { token: selfToken })).data.length, 0);
+
+  const imported = (
+    await api('POST', '/products/import', {
+      token: selfToken,
+      key: randomUUID(),
+      body: { rows: goodRows },
+    })
+  ).data;
+  eq('the good rows save', `${imported.saved} ${imported.adding}`, 'true 2');
+
+  const selfProducts = (await api('GET', '/products', { token: selfToken })).data;
+  const peakImported = selfProducts.find((p) => p.name === 'Peak 14g');
+  eq('both are in the catalog', selfProducts.length, 2);
+  eq(
+    'with every unit and how many sachets it holds',
+    peakImported.units.map((u) => `${u.name}:${u.factor}`).join(' '),
+    'sachet:1 roll:10 carton:160',
+  );
+  eq('filed under the new category', peakImported.category?.name, 'Milk');
+  const cartonPrice = (
+    await api(
+      'GET',
+      `/products/${peakImported.id}/price?unitId=${peakImported.units.find((u) => u.name === 'carton').id}`,
+      { token: selfToken },
+    )
+  ).data;
+  eq('the carton has its own price on the default list', cartonPrice.price, 1_450_000);
+  eq(
+    'and the barcode scans to the sachet',
+    (await api('GET', '/scan/4006381333931', { token: selfToken })).data.unit.name,
+    'sachet',
+  );
+
+  const again = (
+    await api('POST', '/products/import', {
+      token: selfToken,
+      key: randomUUID(),
+      body: { rows: goodRows },
+    })
+  ).data;
+  eq('importing the same file again skips every row', `${again.adding} ${again.skipped}`, '0 2');
+
+  // A whole catalog in one request: past the default 100kb body, and saved in
+  // a handful of statements rather than one round trip per product.
+  const bigRows = Array.from({ length: 2000 }, (_, i) => ({
+    line: i + 2, name: `Bulk item ${i}`, countedIn: 'piece', price: '100',
+    unit2: 'carton', unit2Count: '24', unit2Price: '2,300',
+  }));
+  const started = Date.now();
+  const bulk = (
+    await api('POST', '/products/import', { token: selfToken, key: randomUUID(), body: { rows: bigRows } })
+  ).data;
+  eq('two thousand rows import in one request', bulk.adding, 2000);
+  console.log(`      2,000 products in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+
+  step(45, 'Opening stock: what was on the shelf on day one, and what it cost');
+
+  // The products just imported have never had stock come in, so the sheet
+  // offers them — starting on the biggest unit, because shelves are counted
+  // in cartons.
+  const openingSheet = (await api('GET', '/stock/opening', { token: selfToken })).data;
+  const peakLine = openingSheet.find((row) => row.id === peakImported.id);
+  check('a product with no stock yet is on the opening sheet', !!peakLine);
+  eq(
+    'starting on its biggest unit',
+    peakLine.units.find((u) => u.id === peakLine.defaultUnitId).name,
+    'carton',
+  );
+  const unitIdOf = (name) => peakLine.units.find((u) => u.name === name).id;
+
+  const openingBody = {
+    lines: [
+      // 14 cartons at ₦14,000 and 3 loose rolls at ₦900: two lots.
+      { productId: peakImported.id, unitId: unitIdOf('carton'), quantity: 14, unitCost: 1_400_000, expiryDate: '2027-03-31' },
+      { productId: peakImported.id, unitId: unitIdOf('roll'), quantity: 3, unitCost: 90_000 },
+    ],
+  };
+  const opened = (
+    await api('POST', '/stock/opening', { token: selfToken, key: randomUUID(), body: openingBody })
+  ).data;
+  eq('both lines are recorded for one product', `${opened.products} ${opened.lines}`, '1 2');
+  eq('valued at cost × quantity, exactly', opened.totalValue, 14 * 1_400_000 + 3 * 90_000);
+
+  eq(
+    'stock is on the shelf, in sachets',
+    (await onHand(selfToken, peakImported.id, selfLocations[0].id)).quantity,
+    14 * 160 + 3 * 10,
+  );
+  eq(
+    'and no bill was raised for goods paid for long ago',
+    (await api('GET', '/payables', { token: selfToken })).data.total,
+    0,
+  );
+  eq(
+    'stock valuation reads the cost given',
+    (await api('GET', '/reports/stock-valuation', { token: selfToken })).data.total,
+    14 * 1_400_000 + 3 * 90_000,
+  );
+  check(
+    'and the product leaves the opening sheet',
+    !(await api('GET', '/stock/opening', { token: selfToken })).data.some((row) => row.id === peakImported.id),
+  );
+
+  await api('POST', '/stock/opening', { token: selfToken, key: randomUUID(), body: openingBody, expect: 409 });
+  check('entering the same opening stock twice is refused, not doubled', true);
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

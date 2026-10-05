@@ -3,6 +3,8 @@ import { DialogClose } from '../components/DialogClose';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
+import { PaidOnField } from '../components/PaidOnField';
+import { occurredAtFor, today } from '../lib/paidOn';
 import { Money } from '../components/Money';
 import { api } from '../api/client';
 import { needsBankAccount, type PaymentMethod } from '../till/payment';
@@ -18,6 +20,11 @@ export interface SupplierPaymentDraft {
   bankAccountId: string | null;
   reference: string;
   note: string;
+  /**
+   * When the money actually left, for a payment recorded after the fact —
+   * a bill paid in June but only entered now. Absent means now.
+   */
+  occurredAt?: string;
 }
 
 /**
@@ -36,15 +43,28 @@ export interface SupplierPaymentDraft {
  *
  * Paying more than is outstanding is a 409 rather than a credit: the fix is to
  * correct the bill's `amountDue` if the invoice was higher than entered.
+ *
+ * **"Paid on" defaults to today and can go back a year** (the server's bound).
+ * It exists for the bill that was paid long before it was entered — opening
+ * stock once recorded as a delivery left a bill paid in June showing as owed,
+ * and a payment dated today would have put June's money in this month.
+ *
+ * **`payInFull` is "Mark as paid"**: the amount starts at the whole balance,
+ * read from the bill the server returns. Everything else is still asked —
+ * the method and the account are never guessed (§11), and the day may be
+ * months ago.
  */
 export function PaySupplierDialog({
   billId,
+  payInFull = false,
   onConfirm,
   onCancel,
   busy,
   error,
 }: {
   billId: string;
+  /** Start the amount at the whole balance — "Mark as paid". */
+  payInFull?: boolean;
   onConfirm: (draft: SupplierPaymentDraft) => void;
   onCancel: () => void;
   busy: boolean;
@@ -55,6 +75,7 @@ export function PaySupplierDialog({
   const [bankAccountId, setBankAccountId] = useState('');
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
+  const [paidOn, setPaidOn] = useState(today);
 
   const { data: bill } = useQuery({
     queryKey: ['supplier-bill', billId],
@@ -67,7 +88,9 @@ export function PaySupplierDialog({
   });
 
   const outstanding = bill?.balance ?? 0;
-  const paying = amount ?? 0;
+  // Until somebody types, "Mark as paid" means the whole balance.
+  const shownAmount = amount ?? (payInFull && bill ? bill.balance : null);
+  const paying = shownAmount ?? 0;
   const requiresAccount = needsBankAccount(method);
   const tooMuch = paying > outstanding;
   const canSubmit =
@@ -83,6 +106,7 @@ export function PaySupplierDialog({
       bankAccountId: requiresAccount ? bankAccountId || null : null,
       reference: reference.trim(),
       note: note.trim(),
+      ...occurredAtFor(paidOn),
     });
   };
 
@@ -103,7 +127,8 @@ export function PaySupplierDialog({
           id="pay-supplier-title"
           className="text-lg font-semibold text-slate-900"
         >
-          Pay {bill?.supplier.name ?? 'vendor'}
+          {payInFull ? 'Mark as paid' : 'Pay'} ·{' '}
+          {bill?.supplier.name ?? 'vendor'}
         </h2>
 
         {bill && (
@@ -132,11 +157,18 @@ export function PaySupplierDialog({
           >
             <MoneyInput
               id="pay-amount"
-              value={amount}
+              value={shownAmount}
               disabled={busy}
               onChange={setAmount}
             />
           </Field>
+
+          <PaidOnField
+            id="pay-date"
+            value={paidOn}
+            onChange={setPaidOn}
+            disabled={busy}
+          />
 
           <Field label="Method" htmlFor="pay-method">
             <Select

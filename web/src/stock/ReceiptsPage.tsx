@@ -23,7 +23,7 @@ type LocationView = components['schemas']['LocationView'];
  * delivery" as something missing.
  *
  * **Receipt is goods, bill is money.** Every delivery also raises a
- * `SupplierBill`, which is what shows on Money → We owe. This screen is what
+ * `SupplierBill`, which is what shows on Money → Bills. This screen is what
  * physically arrived; what is owed for it lives over there (§16).
  */
 export function ReceiptsPage() {

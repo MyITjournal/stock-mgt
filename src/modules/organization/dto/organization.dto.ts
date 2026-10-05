@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -140,4 +141,12 @@ export class UpdateOrganizationDto {
   @IsOptional()
   @IsEnum(BusinessType, { message: 'Choose retail, wholesale or both.' })
   businessType?: BusinessType;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether this shop charges VAT. Off, every sale from now on records no VAT and the invoice prints no VAT line; sales already made keep the VAT they were recorded with.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  chargesVat?: boolean;
 }

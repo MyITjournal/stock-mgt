@@ -1,13 +1,20 @@
 import { NavLink, Outlet } from 'react-router-dom';
 
 const TABS = [
-  { to: '/money', label: 'Owed to us', end: true },
-  { to: '/money/payments', label: 'Payments' },
-  { to: '/money/payables', label: 'We owe' },
-  { to: '/money/paid', label: 'Paid out' },
+  { to: '/money', label: 'Invoices', end: true },
+  { to: '/money/payments', label: 'Money in' },
+  { to: '/money/payables', label: 'Bills' },
+  { to: '/money/paid', label: 'Money out' },
   { to: '/money/expenses', label: 'Expenses' },
-  { to: '/money/accounts', label: 'Accounts' },
+  { to: '/money/accounts', label: 'Bank accounts' },
 ];
+
+/*
+ * The names are pairs, on purpose: what customers owe is Invoices and what the
+ * shop owes vendors is Bills; money comes in against an invoice and goes out
+ * against a bill. They were "Owed to us / Payments / We owe / Paid out" until
+ * 2026-10-05. The addresses did not change, so saved links still work.
+ */
 
 /**
  * The money section.

@@ -2,16 +2,13 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
-import { Field, Input } from '../components/Field';
+import { Field, Input, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { BusinessTypeChoice } from '../components/BusinessTypeChoice';
-import {
-  businessTypeLabel,
-  type BusinessType,
-} from '../lib/businessTypes';
+import { businessTypeLabel, type BusinessType } from '../lib/businessTypes';
 
 type OrganizationView = components['schemas']['OrganizationView'];
 
@@ -34,6 +31,12 @@ type OrganizationView = components['schemas']['OrganizationView'];
  * *new* product's units start out; nothing already set up moves, and no price
  * list is added or removed. The screen says so, because "I changed it and my
  * products did not change" is otherwise the first support question.
+ *
+ * **VAT is one switch.** Off, every sale from then on records no VAT, the
+ * invoice prints no VAT line and reports count the whole price as the shop's.
+ * Sales already made keep the VAT they were recorded with — the screen says
+ * so, because switching it is meant to be safe to try while the owner checks
+ * with an accountant.
  */
 export function BusinessPage() {
   const { data, isPending } = useQuery({
@@ -72,6 +75,7 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
   const [businessType, setBusinessType] = useState<BusinessType>(
     data.businessType,
   );
+  const [chargesVat, setChargesVat] = useState(data.chargesVat);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -88,6 +92,7 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
         rcNumber: form.rcNumber.trim(),
         logoUrl: form.logoUrl.trim(),
         businessType,
+        chargesVat,
       }),
     onSuccess: () => {
       afterWrite(queryClient);
@@ -224,9 +229,33 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
             </p>
           )}
           <p className="mt-2 text-xs text-slate-500">
-            This sets how new products start out. Products you have already
-            set up, and your price lists, stay exactly as they are. Every
-            feature is open whichever you choose.
+            This sets how new products start out. Products you have already set
+            up, and your price lists, stay exactly as they are. Every feature is
+            open whichever you choose.
+          </p>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <Field label="Do you charge VAT?" htmlFor="org-vat">
+            <Select
+              id="org-vat"
+              value={chargesVat ? 'yes' : 'no'}
+              onChange={(event) => {
+                setChargesVat(event.target.value === 'yes');
+                setSaved(false);
+              }}
+              disabled={!canEdit}
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes — my prices include 7.5% VAT</option>
+            </Select>
+          </Field>
+          <p className="mt-2 text-xs text-slate-500">
+            {chargesVat
+              ? 'Each sale records the VAT inside its price, and the invoice shows it as “of which VAT”. A product marked Exempt carries none.'
+              : 'Sales record no VAT, the invoice shows no VAT line, and reports count the whole price as yours.'}{' '}
+            Changing this affects sales from now on — sales already made keep
+            what they recorded.
           </p>
         </section>
 
@@ -250,9 +279,9 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
           </div>
           <p className="mt-3 text-xs text-slate-500">
             These cannot be changed. Every report period resolves in the
-            timezone, so moving it would restate months that are already
-            closed, and invoice numbering cannot be rewound without producing
-            two invoices with the same number. The shop code qualifies staff
+            timezone, so moving it would restate months that are already closed,
+            and invoice numbering cannot be rewound without producing two
+            invoices with the same number. The shop code qualifies staff
             usernames.
           </p>
         </section>

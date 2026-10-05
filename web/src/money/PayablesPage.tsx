@@ -1,64 +1,119 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
 import { Button } from '../components/Button';
-import { api, ApiError } from '../api/client';
-import { afterWrite } from '../api/cache';
+import { Field, Select } from '../components/Field';
+import { PaidStatus } from '../components/PaidStatus';
+import { api } from '../api/client';
 import type { components } from '../api/schema';
-import { PaySupplierDialog, type SupplierPaymentDraft } from './PaySupplierDialog';
+import { PaySupplierDialog } from './PaySupplierDialog';
+import { usePaySupplier } from './usePaySupplier';
+import { BillDialog } from './BillDialog';
 
 type PayablesView = components['schemas']['PayablesView'];
-type SupplierPaymentView = components['schemas']['SupplierPaymentView'];
+type SupplierBillView = components['schemas']['SupplierBillView'];
+type SupplierView = components['schemas']['SupplierView'];
 
 /**
- * What the business owes its vendors — the mirror of "owed to us".
+ * Bills: what the business owes its vendors, and what it has paid them.
  *
- * The two sides look symmetrical and are not, which is the thing to keep hold
- * of here (DECISIONS.md §16). A customer payment spreads across invoices; a
- * vendor payment settles **exactly one bill**, because vendors are paid on
- * delivery or against one specific supply. So there is no allocation control on
- * this screen, and paying a vendor starts from a bill rather than from a
- * vendor.
+ * Called *We owe* until 2026-10-05. Two views of the same bills:
+ *
+ * - **Unpaid** — `GET /payables`, grouped per vendor, longest owed first.
+ *   The phone call to make.
+ * - **All bills** — `GET /supplier-bills`, paid ones included, each marked
+ *   Unpaid, Part-paid or Paid. Before this a fully paid bill vanished, and
+ *   there was nowhere to check that what went out matched what was billed.
+ *
+ * The two sides look symmetrical and are not (DECISIONS.md §16). A customer
+ * payment spreads across invoices; a vendor payment settles **exactly one
+ * bill**, because vendors are paid on delivery or against one specific
+ * supply. So paying starts from a bill, never from a vendor, and "Mark as
+ * paid" is simply a payment for the whole balance of that bill.
  */
 export function PayablesPage() {
-  const queryClient = useQueryClient();
-  const [paying, setPaying] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'unpaid' | 'all'>('unpaid');
+  const [opened, setOpened] = useState<string | null>(null);
+  const [paying, setPaying] = useState<{
+    billId: string;
+    full: boolean;
+  } | null>(null);
+  const { pay, error, clearError } = usePaySupplier(() => setPaying(null));
 
+  return (
+    <Page
+      title="Bills"
+      description="What you owe your vendors, and what you have paid them."
+    >
+      <div className="mb-6 inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
+        {(
+          [
+            ['unpaid', 'Unpaid'],
+            ['all', 'All bills'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setView(key)}
+            className={`rounded-md px-3 py-1.5 ${
+              view === key
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'unpaid' ? (
+        <UnpaidBills
+          onOpen={setOpened}
+          onPay={(billId, full) => setPaying({ billId, full })}
+        />
+      ) : (
+        <AllBills onOpen={setOpened} />
+      )}
+
+      {opened && <BillDialog billId={opened} onClose={() => setOpened(null)} />}
+
+      {paying && (
+        <PaySupplierDialog
+          billId={paying.billId}
+          payInFull={paying.full}
+          busy={pay.isPending}
+          error={error}
+          onCancel={() => {
+            setPaying(null);
+            clearError();
+          }}
+          onConfirm={(draft) => pay.mutate(draft)}
+        />
+      )}
+    </Page>
+  );
+}
+
+function UnpaidBills({
+  onOpen,
+  onPay,
+}: {
+  onOpen: (billId: string) => void;
+  onPay: (billId: string, full: boolean) => void;
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null);
   const { data, isPending } = useQuery({
     queryKey: ['payables'],
     queryFn: () => api.get<PayablesView>('/payables'),
   });
 
-  const pay = useMutation({
-    mutationFn: (draft: SupplierPaymentDraft) =>
-      api.post<SupplierPaymentView>('/supplier-payments', {
-        id: crypto.randomUUID(),
-        billId: draft.billId,
-        amount: draft.amount,
-        method: draft.method,
-        ...(draft.bankAccountId && { bankAccountId: draft.bankAccountId }),
-        ...(draft.reference && { reference: draft.reference }),
-        ...(draft.note && { note: draft.note }),
-      }),
-    onSuccess: () => {
-      afterWrite(queryClient);
-      setPaying(null);
-      setError(null);
-    },
-    onError: (caught) =>
-      setError(
-        caught instanceof ApiError ? caught.message : 'Could not record that.',
-      ),
-  });
-
   return (
-    <Page title="We owe" description="Longest owed first.">
+    <>
       {data && (
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
-          <Tile label="Owed to vendors" value={<Money value={data.total} />} big />
+          <Tile label="Unpaid bills" value={<Money value={data.total} />} big />
           <Tile
             label="Vendors owed"
             value={String(data.suppliers)}
@@ -81,7 +136,7 @@ export function PayablesPage() {
 
       {data?.bySupplier.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
-          Nothing owed to anybody.
+          No unpaid bills.
         </div>
       )}
 
@@ -99,9 +154,7 @@ export function PayablesPage() {
             >
               <button
                 type="button"
-                onClick={() =>
-                  setExpanded(open ? null : group.supplier.id)
-                }
+                onClick={() => setExpanded(open ? null : group.supplier.id)}
                 className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
               >
                 <span>
@@ -129,11 +182,17 @@ export function PayablesPage() {
                     {bills.map((bill) => (
                       <tr key={bill.id}>
                         <td className="px-4 py-2">
-                          <span className="text-slate-900">
+                          <button
+                            type="button"
+                            onClick={() => onOpen(bill.id)}
+                            className="text-slate-900 underline-offset-2 hover:underline"
+                          >
                             {bill.invoiceNumber ?? 'No invoice number'}
-                          </span>
+                          </button>
                           <span className="ml-2 text-xs text-slate-500">
-                            {new Date(bill.issuedAt).toLocaleDateString('en-NG')}{' '}
+                            {new Date(bill.issuedAt).toLocaleDateString(
+                              'en-NG',
+                            )}{' '}
                             · {bill.daysOutstanding}d
                           </span>
                           {bill.daysUntilDue !== null &&
@@ -149,12 +208,18 @@ export function PayablesPage() {
                         <td className="px-4 py-2 text-right font-medium">
                           <Money value={bill.balance} />
                         </td>
-                        <td className="px-4 py-2 text-right">
+                        <td className="whitespace-nowrap px-4 py-2 text-right">
+                          <Button
+                            variant="ghost"
+                            onClick={() => onPay(bill.id, false)}
+                          >
+                            Pay part
+                          </Button>
                           <Button
                             variant="secondary"
-                            onClick={() => setPaying(bill.id)}
+                            onClick={() => onPay(bill.id, true)}
                           >
-                            Pay
+                            Mark as paid
                           </Button>
                         </td>
                       </tr>
@@ -166,20 +231,114 @@ export function PayablesPage() {
           );
         })}
       </div>
+    </>
+  );
+}
 
-      {paying && (
-        <PaySupplierDialog
-          billId={paying}
-          busy={pay.isPending}
-          error={error}
-          onCancel={() => {
-            setPaying(null);
-            setError(null);
-          }}
-          onConfirm={(draft) => pay.mutate(draft)}
-        />
+/**
+ * Every bill, paid ones included, newest first.
+ *
+ * Billed, paid and owing are the server's figures for each bill — `paid` is
+ * the sum of the payments that count against it — so a row and the bill it
+ * opens always agree.
+ */
+function AllBills({ onOpen }: { onOpen: (billId: string) => void }) {
+  const [supplierId, setSupplierId] = useState('');
+
+  const { data: bills = [], isPending } = useQuery({
+    queryKey: ['supplier-bills', supplierId],
+    queryFn: () =>
+      api.get<SupplierBillView[]>(
+        `/supplier-bills${supplierId ? `?supplierId=${supplierId}` : ''}`,
+      ),
+  });
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: () => api.get<SupplierView[]>('/suppliers'),
+  });
+
+  // The server lists oldest first, for the debt-chasing view; a record of
+  // what was billed reads newest first. Ordering only — nothing is summed.
+  const rows = [...bills].reverse();
+
+  return (
+    <>
+      <div className="mb-4 max-w-xs">
+        <Field label="Vendor" htmlFor="bills-supplier">
+          <Select
+            id="bills-supplier"
+            value={supplierId}
+            onChange={(event) => setSupplierId(event.target.value)}
+          >
+            <option value="">Everyone</option>
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+
+      {isPending && <p className="text-sm text-slate-500">Loading…</p>}
+
+      {!isPending && rows.length === 0 && (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
+          No bills yet. Recording a delivery raises one.
+        </div>
       )}
-    </Page>
+
+      {rows.length > 0 && (
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-2 font-medium">Billed on</th>
+                <th className="px-4 py-2 font-medium">Vendor</th>
+                <th className="px-4 py-2 font-medium">Invoice</th>
+                <th className="px-4 py-2 text-right font-medium">Billed</th>
+                <th className="px-4 py-2 text-right font-medium">Paid</th>
+                <th className="px-4 py-2 text-right font-medium">Owing</th>
+                <th className="px-4 py-2 font-medium" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((bill) => (
+                <tr
+                  key={bill.id}
+                  onClick={() => onOpen(bill.id)}
+                  className="cursor-pointer hover:bg-slate-50"
+                >
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">
+                    {new Date(bill.issuedAt).toLocaleDateString('en-NG')}
+                  </td>
+                  <td className="px-4 py-2 font-medium text-slate-900">
+                    {bill.supplier.name}
+                  </td>
+                  <td className="px-4 py-2">
+                    {bill.invoiceNumber ?? (
+                      <span className="text-slate-400">no number</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <Money value={bill.amountDue} />
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <Money value={bill.paid} />
+                  </td>
+                  <td className="px-4 py-2 text-right font-medium">
+                    <Money value={bill.balance} />
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <PaidStatus balance={bill.balance} paid={bill.paid} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 

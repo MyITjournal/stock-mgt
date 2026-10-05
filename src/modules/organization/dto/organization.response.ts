@@ -62,6 +62,12 @@ export class OrganizationView {
   })
   businessType!: BusinessType;
 
+  @ApiProperty({
+    description:
+      'Whether new sales record VAT. Off, they record none, whatever rate the products carry.',
+  })
+  chargesVat!: boolean;
+
   @ApiProperty({ type: String, nullable: true })
   address!: string | null;
 

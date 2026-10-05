@@ -7,6 +7,7 @@ import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
 import { Barcodes } from './Barcodes';
 import { NewBarcodes } from './NewBarcodes';
+import { CategoryPicker } from './CategoryPicker';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
@@ -415,18 +416,11 @@ export function ProductForm({
           </Field>
 
           <Field label="Category" htmlFor="p-category">
-            <Select
-              id="p-category"
+            <CategoryPicker
               value={categoryId}
-              onChange={(event) => setCategoryId(event.target.value)}
-            >
-              <option value="">None</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </Select>
+              onChange={setCategoryId}
+              categories={categories}
+            />
           </Field>
 
           <Field label="Packaging" htmlFor="p-packaging">
@@ -494,16 +488,23 @@ export function ProductForm({
             </div>
           )}
 
-          <Field label="VAT rate" htmlFor="p-tax">
-            <Select
-              id="p-tax"
-              value={String(taxRateBps)}
-              onChange={(event) => setTaxRateBps(Number(event.target.value))}
-            >
-              <option value="750">7.5%</option>
-              <option value="0">Exempt</option>
-            </Select>
-          </Field>
+          {/*
+            Only while the shop charges VAT. Off, every sale records none
+            whatever is chosen here, so the box would be a question with no
+            effect. The product keeps its rate for the day VAT is switched on.
+          */}
+          {organization?.chargesVat && (
+            <Field label="VAT rate" htmlFor="p-tax">
+              <Select
+                id="p-tax"
+                value={String(taxRateBps)}
+                onChange={(event) => setTaxRateBps(Number(event.target.value))}
+              >
+                <option value="750">7.5%</option>
+                <option value="0">Exempt</option>
+              </Select>
+            </Field>
+          )}
 
           <Field
             label="Reorder point"
@@ -571,7 +572,9 @@ export function ProductForm({
                   onChange={(event) =>
                     setUnits((current) =>
                       current.map((row, i) =>
-                        i === index ? { ...row, name: event.target.value } : row,
+                        i === index
+                          ? { ...row, name: event.target.value }
+                          : row,
                       ),
                     )
                   }
@@ -593,9 +596,7 @@ export function ProductForm({
                   className="w-28"
                 />
                 <span className="w-24 text-xs text-slate-500">
-                  {unit.isBase
-                    ? 'counted in'
-                    : `= ${unit.factor} ${baseName}`}
+                  {unit.isBase ? 'counted in' : `= ${unit.factor} ${baseName}`}
                 </span>
                 <label
                   className="flex w-16 shrink-0 items-center gap-1.5 text-xs text-slate-600"
@@ -736,10 +737,9 @@ export function ProductForm({
             {basePrice === null
               ? 'A unit with no price here cannot be sold until it has one — the till will not guess.'
               : `A unit with no price here is charged the price per ${baseName} × its size, which is right for a sachet and usually wrong for a carton.`}{' '}
-            A price added
-            by mistake can be taken off with × until you save; after that it can
-            be changed but <strong>not removed</strong> — set the right number
-            instead of clearing it.
+            A price added by mistake can be taken off with × until you save;
+            after that it can be changed but <strong>not removed</strong> — set
+            the right number instead of clearing it.
           </p>
 
           <div className="mt-3 space-y-2">
@@ -759,7 +759,9 @@ export function ProductForm({
                   onChange={(event) =>
                     setPrices((current) =>
                       current.map((row, i) =>
-                        i === index ? { ...row, unit: event.target.value } : row,
+                        i === index
+                          ? { ...row, unit: event.target.value }
+                          : row,
                       ),
                     )
                   }

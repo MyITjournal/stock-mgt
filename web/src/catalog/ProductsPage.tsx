@@ -7,7 +7,7 @@ import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
-import { useSeesCost } from '../auth/useAuth';
+import { useIsManager, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ProductForm } from './ProductForm';
 import { describeCount } from '../lib/quantity';
@@ -29,6 +29,8 @@ type StockLevelRow = components['schemas']['StockLevelRow'];
 export function ProductsPage() {
   const navigate = useNavigate();
   const seesCost = useSeesCost();
+  // Importing is a catalog write, owner and manager only, like the server.
+  const canImport = useIsManager();
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [editing, setEditing] = useState<ProductView | null>(null);
@@ -58,7 +60,10 @@ export function ProductsPage() {
   });
   const onHand = new Map<string, number>();
   for (const row of levels) {
-    onHand.set(row.product.id, (onHand.get(row.product.id) ?? 0) + row.quantity);
+    onHand.set(
+      row.product.id,
+      (onHand.get(row.product.id) ?? 0) + row.quantity,
+    );
   }
   const columns = seesCost ? 6 : 5;
 
@@ -66,7 +71,19 @@ export function ProductsPage() {
     <Page
       title="Products"
       description="What the shop sells, how it is packaged, and what it costs."
-      actions={<Button onClick={() => setCreating(true)}>Add product</Button>}
+      actions={
+        <>
+          {canImport && (
+            <Button
+              variant="secondary"
+              onClick={() => navigate('/stock/import')}
+            >
+              Import from spreadsheet
+            </Button>
+          )}
+          <Button onClick={() => setCreating(true)}>Add product</Button>
+        </>
+      }
     >
       <div className="mb-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-3">
         <Field label="Search" htmlFor="product-search">
@@ -110,14 +127,20 @@ export function ProductsPage() {
           <tbody className="divide-y divide-slate-100">
             {isPending && (
               <tr>
-                <td colSpan={columns} className="px-4 py-8 text-center text-slate-500">
+                <td
+                  colSpan={columns}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   Loading…
                 </td>
               </tr>
             )}
             {!isPending && products.length === 0 && (
               <tr>
-                <td colSpan={columns} className="px-4 py-8 text-center text-slate-500">
+                <td
+                  colSpan={columns}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   Nothing matches that.
                 </td>
               </tr>
@@ -220,10 +243,7 @@ export function ProductsPage() {
       )}
 
       {retiring && (
-        <RetireDialog
-          product={retiring}
-          onClose={() => setRetiring(null)}
-        />
+        <RetireDialog product={retiring} onClose={() => setRetiring(null)} />
       )}
     </Page>
   );
@@ -318,8 +338,8 @@ function RetireDialog({
           Nothing is erased: past sales, deliveries and stock movements still
           name it, so last month&rsquo;s figures stay whatever they were. Any
           stock still on the shelf stays on the shelf and keeps its value —
-          retire it once it has sold through, or write it off with an
-          adjustment first.
+          retire it once it has sold through, or write it off with an adjustment
+          first.
         </p>
 
         {error && (

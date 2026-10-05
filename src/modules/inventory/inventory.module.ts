@@ -13,6 +13,7 @@ import { StockLevelService } from './stock-level.service';
 import { ReceivingService } from './receiving.service';
 import { SyncService } from './sync.service';
 import { StocktakeService } from './stocktake.service';
+import { OpeningStockService } from './opening-stock.service';
 import { StocktakeController } from './stocktake.controller';
 import { PayablesModule } from '../payables/payables.module';
 import { PaymentsModule } from '../payments/payments.module';
@@ -29,6 +30,7 @@ import { PaymentsModule } from '../payments/payments.module';
     StocktakeController,
   ],
   providers: [
+    OpeningStockService,
     LocationService,
     SupplierService,
     StockService,

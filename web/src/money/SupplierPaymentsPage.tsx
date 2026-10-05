@@ -9,9 +9,9 @@ import { DataTable, type Column } from '../components/DataTable';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
+import { BillDialog } from './BillDialog';
 
-type SupplierPaymentListView =
-  components['schemas']['SupplierPaymentListView'];
+type SupplierPaymentListView = components['schemas']['SupplierPaymentListView'];
 type SupplierPaymentView = components['schemas']['SupplierPaymentView'];
 type SupplierView = components['schemas']['SupplierView'];
 
@@ -43,6 +43,7 @@ export function SupplierPaymentsPage() {
   const queryClient = useQueryClient();
   const [supplierId, setSupplierId] = useState('');
   const [voiding, setVoiding] = useState<SupplierPaymentView | null>(null);
+  const [openBill, setOpenBill] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const query = new URLSearchParams({ order: 'desc', limit: '100' });
@@ -61,10 +62,9 @@ export function SupplierPaymentsPage() {
 
   const voidPayment = useMutation({
     mutationFn: (input: { id: string; reason: string }) =>
-      api.post<SupplierPaymentView>(
-        `/supplier-payments/${input.id}/void`,
-        { reason: input.reason },
-      ),
+      api.post<SupplierPaymentView>(`/supplier-payments/${input.id}/void`, {
+        reason: input.reason,
+      }),
     onSuccess: () => {
       afterWrite(queryClient);
       setVoiding(null);
@@ -94,16 +94,22 @@ export function SupplierPaymentsPage() {
       ),
     },
     {
-      header: 'Against',
+      // Every payment points at the bill it paid, and opens it: what was
+      // billed, every payment that counts against it, and what is left.
+      header: 'Against bill',
       cell: (row) => (
-        <span>
+        <button
+          type="button"
+          onClick={() => setOpenBill(row.bill.id)}
+          className="text-left underline-offset-2 hover:underline"
+        >
           {row.bill.invoiceNumber ?? (
             <span className="text-slate-400">no invoice number</span>
           )}
           <span className="block text-xs text-slate-500">
-            {new Date(row.bill.issuedAt).toLocaleDateString()}
+            billed {new Date(row.bill.issuedAt).toLocaleDateString()}
           </span>
-        </span>
+        </button>
       ),
     },
     {
@@ -155,8 +161,8 @@ export function SupplierPaymentsPage() {
 
   return (
     <Page
-      title="Paid out"
-      description="Money that has gone to vendors, newest first."
+      title="Money out"
+      description="Payments to vendors, newest first. Each one paid a bill — open it to see the bill."
     >
       <div className="mb-4 max-w-xs">
         <Field label="Vendor" htmlFor="paid-supplier">
@@ -195,7 +201,7 @@ export function SupplierPaymentsPage() {
       <p className="mt-4 text-xs text-slate-500">
         Voided payments stay on this list — it is the record of what was
         recorded, mistakes included. They stop counting against the bill, which
-        goes back to owing on <strong>We owe</strong>.
+        goes back to owing on <strong>Bills</strong>.
       </p>
 
       {voiding && (
@@ -207,10 +213,11 @@ export function SupplierPaymentsPage() {
             setVoiding(null);
             setError(null);
           }}
-          onConfirm={(reason) =>
-            voidPayment.mutate({ id: voiding.id, reason })
-          }
+          onConfirm={(reason) => voidPayment.mutate({ id: voiding.id, reason })}
         />
+      )}
+      {openBill && (
+        <BillDialog billId={openBill} onClose={() => setOpenBill(null)} />
       )}
     </Page>
   );
@@ -280,13 +287,13 @@ function VoidSupplierPaymentDialog({
 
         <p className="mt-3 text-sm text-slate-500">
           A void says <strong>the money never moved</strong> — it was keyed by
-          mistake, or against the wrong vendor. The payment stays on the list
-          as a record, stops counting, and the bill goes back to owing.
+          mistake, or against the wrong vendor. The payment stays on the list as
+          a record, stops counting, and the bill goes back to owing.
         </p>
 
         <p className="mt-2 text-sm text-slate-500">
-          If the money did move and the vendor owes you some of it back, this
-          is the wrong tool: there is no negative payment on this side. Correct
+          If the money did move and the vendor owes you some of it back, this is
+          the wrong tool: there is no negative payment on this side. Correct
           what the bill says is due instead.
         </p>
 

@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
+import { json } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { env } from './config/env';
@@ -49,6 +50,28 @@ async function bootstrap() {
       contentSecurityPolicy: false,
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
+  );
+
+  // A spreadsheet of a whole catalog is bigger than the 100kb JSON body every
+  // other route is held to — 2,000 rows of twelve cells is about a megabyte.
+  // Raised for that one route only, and registered before Nest's own parser,
+  // which then finds the body already read and leaves it alone.
+  //
+  // ⚠ The wrapper's *name* is load-bearing. Nest decides whether to add its
+  // own JSON parser by looking for a middleware called `jsonParser` — the name
+  // body-parser gives its function — anywhere in the stack, path or no path.
+  // Registered bare, this one route's parser made Nest skip the global one,
+  // and every other request in the API arrived with an empty body.
+  const catalogImportParser = json({ limit: '3mb' });
+  app.use(
+    `/${env.API_PREFIX.replace(/^\/+/, '')}/products/import`,
+    function catalogImportBody(
+      req: Request,
+      res: Response,
+      next: NextFunction,
+    ) {
+      catalogImportParser(req, res, next);
+    },
   );
 
   // Auth tokens are also delivered as httpOnly cookies for the web dashboard.

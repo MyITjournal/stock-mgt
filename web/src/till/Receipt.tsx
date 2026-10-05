@@ -1,5 +1,6 @@
 import { Money } from '../components/Money';
 import { Button } from '../components/Button';
+import { PrintButton } from '../components/PrintButton';
 import type { components } from '../api/schema';
 
 type Receipt = components['schemas']['SaleReceiptView'];
@@ -18,9 +19,12 @@ type Receipt = components['schemas']['SaleReceiptView'];
  */
 export function Receipt({
   receipt,
+  saleId,
   onNewSale,
 }: {
   receipt: Receipt;
+  /** The sale just recorded, so its invoice can be printed from here. */
+  saleId: string;
   onNewSale: () => void;
 }) {
   return (
@@ -82,10 +86,13 @@ export function Receipt({
             <span>Total</span>
             <Money value={receipt.total} />
           </div>
-          <div className="flex justify-between text-xs text-slate-500">
-            <span>of which VAT</span>
-            <Money value={receipt.tax} />
-          </div>
+          {/* None recorded — a shop that does not charge VAT — means no line. */}
+          {receipt.tax !== 0 && (
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>of which VAT</span>
+              <Money value={receipt.tax} />
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-slate-500">Paid</span>
             <Money value={receipt.paid} />
@@ -103,7 +110,21 @@ export function Receipt({
         )}
       </div>
 
-      <Button onClick={onNewSale} className="mt-4 h-12 w-full text-base" autoFocus>
+      {/* Printed here because this is the moment it is wanted — the customer
+          is still at the counter. */}
+      <div className="mt-4">
+        <PrintButton
+          path={`/sales/${saleId}/invoice.pdf`}
+          label="Print invoice"
+          fullWidth
+        />
+      </div>
+
+      <Button
+        onClick={onNewSale}
+        className="mt-3 h-12 w-full text-base"
+        autoFocus
+      >
         New sale
       </Button>
     </div>

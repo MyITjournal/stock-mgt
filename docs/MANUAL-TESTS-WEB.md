@@ -194,7 +194,7 @@ A JSON error page instead means the download bypassed the refresh — a raw link
 **54. Bring stock on as a surplus.** **[gate] It asks for a lot code, an expiry and what it is worth.** An unvalued surplus reads as free goods to everything that sums it.
 
 **55. `/stock/receive`** — record a delivery: invoice total, quantity received, quantity paid for.
-**[gate] The screen says out loud that this raises a bill on *We owe*.** The goods value on a receipt is not what is owed.
+**[gate] The screen says out loud that this raises a bill on *Bills*.** The goods value on a receipt is not what is owed.
 
 **56. [gate] Enter a delivery where `quantityPaidFor` is less than `quantityReceived`** — buy 19,
 get 1 free. Both numbers are kept, and the gap is free goods.
@@ -666,3 +666,177 @@ target, its percentage in the middle and *"15 of 100 cartons"* under it. A met t
 
 **181. [gate] In a shop created as Retail**, Reports has no Targets tab, and the home screen has
 no targets section.
+
+---
+
+## Z. The Reho wordmark
+
+**182. [gate] Signed in as the owner, open any screen and click Reho at the top left.** You land on
+the dashboard home.
+
+**183. [gate] Signed in as a cashier (sales_rep), click Reho.** You land on the till — never on the
+dashboard, which a cashier cannot see.
+
+---
+
+## AA. Printing an invoice
+
+**184. On a computer, ring up a sale at the till.** [gate] "Sale recorded" shows a **Print
+invoice** button above New sale. Clicking it opens the computer's print dialog with the invoice
+in it — no new tab.
+
+**185. Open that sale from Sales.** [gate] **Print invoice** sits beside Invoice PDF and does the
+same.
+
+**186. [gate] On a phone, tap Print invoice.** The invoice opens in the phone's viewer, where its
+Print or Share button sends it to a printer or WhatsApp.
+
+**187. [gate] Leave the till open past fifteen minutes, then print.** It still prints the invoice,
+not a sign-in error.
+
+---
+
+## AB. Adding a customer at the till
+
+**188. [gate] Put something in the cart, then press + New beside Customer.** A small form asks
+for a name and a phone number — nothing else, no price list. Fill in a name and press **Add and
+use for this sale**. The form closes, the new customer is already chosen for the sale, and the
+prices in the cart do not move.
+
+**189. Take payment on credit.** The sale goes through in the new customer's name; open
+Customers and they are there, owing the balance.
+
+**190. Signed in as a cashier, do 188 again.** It works the same — adding a customer is not
+limited to a manager.
+
+---
+
+## AC. A new category from Add product
+
+**191. [gate] Open Add product, type a name and a price, then press + New beside Category.** A box
+replaces the drop-down. Type `Seasoning` and press **Enter**. The product is **not** saved yet; the
+drop-down comes back with **Seasoning** chosen, and everything typed above it is still there.
+
+**192. Save the product.** It is filed under Seasoning, and Seasoning appears on *Categories &
+tiers*.
+
+**193. Press + New again and type `seasoning` (lower case).** Nothing new is created — the
+existing Seasoning is picked.
+
+**194. Remove a category on *Categories & tiers* that has no products, then add it again from the
+product form.** It comes back and is picked, with no error.
+
+---
+
+## AD. The VAT switch
+
+**195. [gate] As the owner of a shop that existed before this change, open Settings → Business.**
+*Do you charge VAT?* reads **Yes**, because that is how the shop has behaved until now.
+
+**196. [gate] Switch it to No and save, then ring up a sale at the till.** "Sale recorded" shows the
+total with **no "of which VAT" line**. Open the sale from Sales: no VAT line there either, and
+**Print invoice** prints none.
+
+**197. Open a sale made before the switch.** It still shows its VAT — switching does not rewrite
+what was already sold.
+
+**198. Open Add product.** There is no VAT rate box while VAT is off.
+
+**199. Reports → Profit for today, with only no-VAT sales in it.** The first line reads **Sold**
+(not "Sold, including VAT") and there is no "Less VAT" line.
+
+**200. Switch VAT back to Yes and sell again.** The new sale shows "of which VAT" and the product
+form has its VAT box back, still on the rate each product had.
+
+**201. Create a new shop from the sign-up screen.** Its Settings → Business reads **No**.
+
+---
+
+## AE. Importing products from a spreadsheet
+
+**202. [gate] As an owner, open Stock → Products.** There is an **Import from spreadsheet** button
+beside Add product. Signed in as a cashier, it is not there.
+
+**203. Press it, then Download the template.** A `reho-products-template.csv` downloads. It opens
+in Excel or Google Sheets with the column names and two example rows (Peak 14g, Indomie 70g).
+
+**204. [gate] Upload the template untouched.** The preview says **2 to add** and the new
+categories Milk and Noodles. Peak 14g lists sachet ₦100.00, roll of 10 ₦950.00, carton of 160
+₦14,500.00. **Nothing is in Products yet.**
+
+**205. In Excel, add a row with Unit 2 "carton" and Unit 2 how many `0.5`, and one whose price is
+`two hundred`; save as .xlsx and upload.** Those rows are red with the reason in words, and
+**Add products** is disabled with "Fix the rows marked in red".
+
+**206. [gate] Fix them, upload again, press Add.** "N products added". Open Products: they are
+there, under their categories, and a carton at the till rings up at its own price.
+
+**207. Upload the same file again.** Every row reads **Skipped — already in your products**, and
+nothing changes.
+
+**208. Type a 13-digit barcode into a General-formatted cell in Excel and save as .csv.** The row
+says the spreadsheet rounded the barcode and to format the column as Text. Doing that and saving as
+.xlsx imports it, and scanning it at the till finds the product.
+
+**209. In a wholesale shop, import Peak 14g.** The sachet shows "counted, not sold" and the carton
+"first at the till".
+
+---
+
+## AF. Opening stock
+
+**210. [gate] As an owner, open Stock → On hand.** There is an **Opening stock** button. Signed in
+as a cashier, it is not there.
+
+**211. Press it.** Every product with no stock yet is listed, each starting on its biggest unit
+(carton). A product that already has stock is not on the list.
+
+**212. [gate] Type 14 against Peak 14g's carton but leave the cost empty.** The line says "What did
+one carton cost?" and Save is disabled with "1 line needs a cost".
+
+**213. Type ₦14,000, press + loose, and enter 3 rolls at ₦900. Save.** "Opening stock saved for 1
+product, worth ₦198,700.00." Peak 14g leaves the list.
+
+**214. [gate] Open Money → Bills.** Nothing new is owed — no bill was raised. Reports → Purchases
+and the vendor targets do not move either.
+
+**215. Open Stock → On hand and Peak 14g's lots.** 2,270 sachets in two lots coded **Opening**,
+the carton lot with its expiry. Reports → Stock shows them at ₦198,700.00.
+
+**216. Sell a carton at the till, then open Reports → Profit.** The cost of that carton is
+₦14,000.00, not an estimate and not zero.
+
+**217. In a shop with two locations,** the sheet asks **Which location**, and a product stocked
+at one is still offered at the other.
+
+---
+
+## AG. Invoices, Bills, and what each payment paid
+
+The Money tabs were renamed on 2026-10-05: Owed to us → **Invoices**, Payments → **Money in**,
+We owe → **Bills**, Paid out → **Money out**, Accounts → **Bank accounts**. The addresses did not
+change.
+
+**218. [gate] Open Money.** The tabs read Invoices, Money in, Bills, Money out, Expenses, Bank
+accounts. Home shows **Unpaid invoices** and **Unpaid bills**.
+
+**219. [gate] Bills → Unpaid, open a vendor, press Mark as paid on a bill.** The form is titled
+**Mark as paid**, the amount is the whole balance, and **Paid on** is today and cannot be set to a
+later day. Set Paid on to a day in June and record it. The bill leaves Unpaid.
+
+**220. [gate] Bills → All bills.** That bill is there marked **Paid**, with Billed, Paid and Owing.
+Click it: the payment is listed with its June date and method, and the payments add up to Paid.
+
+**221. Pay part of another bill with Pay part.** In All bills it reads **Part-paid**.
+
+**222. [gate] Money out.** Each payment's **Against bill** opens the bill it paid. A voided
+payment is struck through here and is **not** listed on its bill.
+
+**223. [gate] Invoices → All invoices.** Every invoice is listed newest first with Unpaid,
+Part-paid or Paid. Press **Mark as paid** on an unpaid credit invoice: the form names that invoice,
+the amount is what it owes, and recording it turns the row **Paid**.
+
+**224. Money in.** The payment just recorded lists the invoice it settled as a link, with the amount
+that went to it, and the link opens the invoice.
+
+**225. Record a customer payment with Paid on set to last Friday.** Money in shows it dated Friday.

@@ -83,6 +83,34 @@ The stored number is what the customer pays. VAT is **derived** by subtraction
 `net + tax === gross` at every rounding boundary — there is a test asserting this across 2,000
 consecutive amounts.
 
+### VAT is one switch on the shop (2026-10-05)
+
+`Organization.chargesVat` answers *does this shop charge VAT at all*. Most small shops here are
+under the turnover threshold and charge none, and until this existed every sale quietly took 7.5%
+out of its price as VAT — so a non-VAT shop's revenue, and every margin on top of it, read 7.5%
+lower than the truth.
+
+**Off, every new sale records 0% VAT on every line**, whatever rate its product carries. That is
+the whole change: the rate was already frozen onto each `SaleLine` at the moment of sale (§6), and
+everything downstream — profit, the sales report, returns, the dashboard, the invoice — already
+works from those frozen figures. So reports needed no change, and **switching never rewrites a
+sale already made**: an old VAT invoice reprinted after switching off still shows its VAT.
+
+Four details:
+
+- **Existing shops start on, new shops start off.** Existing shops had been recording VAT on
+  every sale, so nothing moves for them until the owner flips it; the migration adds the column
+  as `DEFAULT true` and then drops the default to `false`.
+- **The product keeps its rate** (7.5% or Exempt) for the day VAT is switched on, so an exempt
+  item stays exempt. The product form hides the box while VAT is off, because a question with no
+  effect is noise.
+- **A sale with no VAT prints no VAT line** — invoice PDF, till receipt, sale screen — rather than
+  "of which VAT NGN 0.00", which reads as if there ought to be some. That follows the *sale*, not
+  the switch today. The profit screen drops "Less VAT" the same way when the period has none.
+- **Deliberately one switch, not a tax setup.** No registration dates, no rate tables, no
+  per-customer exemptions. The owner asked for it so VAT could be turned off while they confirm
+  their position with an accountant; anything more is a step toward accounting software (§1).
+
 ### Cost: store exact totals, derive averages
 
 **The rule:** money someone actually paid is stored exactly as an integer. A per-unit average is
@@ -593,6 +621,49 @@ the parts add back to the count exactly. Verified live: after a half carton is s
 A delivery the shop **charges the customer for** stays what §4 below says: a product with
 `trackStock` off. A delivery the shop **pays for** is an expense and never a product.
 
+### A catalog comes in from a spreadsheet, previewed and saved whole (2026-10-05)
+
+`POST /products/import` (owner/manager) and *Products → Import from spreadsheet*. Typing three
+hundred products into the form is the biggest setup cost a new shop has, and the main gap the
+market comparison found. The rules are pure, in `catalog/product-import.ts`.
+
+- **One row per product**: name, size, category, what it is *counted in* (blank means piece) with
+  its price, then up to two bigger units with **how many counted-in units each holds** and their
+  prices, and one barcode for the counted-in unit. A portion is just a unit — `1/5 carton`, 32.
+  The counted-in price is the base price, as on the form; bigger units' prices go on the
+  **default** price list. No price-list column: shops here price the item, not the buyer.
+- **Every cell travels as text** and the server reads it. `parseNaira` takes `14,500`, `N14,500`,
+  `₦14,500` and the exponent form a spreadsheet stores, as a decimal string — never through a
+  float. More than two decimals rounds half-up to the kobo, because that is what the cell showed.
+  For `.xlsx` the dashboard passes `parseNumber: raw => raw`, so it gets the stored text too.
+- **Preview and save are one function.** `dryRun` returns every row as `add`, `skip` or `error`
+  with reasons in words; the save re-plans against the catalog as it is then and writes only if
+  **no** row is in error. All or nothing, in one transaction.
+- **A name already in the catalog is skipped, never changed.** Bulk price changes belong with
+  export (download, edit, upload back), not here. A side effect worth having: a retry after a save
+  that landed, even with a fresh key, finds every name taken and skips every row.
+- **Units sell exactly as the form decides** — `defaultIsSellable` and `chooseDefaultSellingUnit`
+  are called on the planned units, so a wholesaler's sachet is counted and not sold. And it
+  **warns, without refusing**, about a sold unit with no price (the till will refuse it) or a
+  carton with no price of its own (it will be charged `factor × the piece price` — the §4
+  overcharge, said before it happens).
+- **Categories by name, case aside**; a new one is created once however many rows name it, and a
+  deleted one is revived, as the category screen does. SKUs are generated and suffixed `-2`, `-3`
+  against the shop *and* the file. Barcodes are validated like any other, and one that reads
+  `6.154E+12` is named for what it is — the spreadsheet rounded it and the digits are gone.
+- **Written in a handful of statements.** Ids are minted in the plan, so each table is one
+  `createMany`: 2,000 products import in about five seconds locally. One by one through
+  `ProductService.create` would be minutes on the free tier, inside a transaction.
+- **Not in it, deliberately: cost and opening stock.** Cost comes from deliveries (§2). Opening
+  stock needs what was paid, so it is its own step, next.
+
+⚠ **The trap hit building it.** The route needs a bigger JSON body than the 100kb default, so a
+path-scoped `json({ limit: '3mb' })` is registered in `main.ts` before Nest's parser. Registered
+bare, **every other request in the API arrived with an empty body**: Nest decides whether to add
+its own JSON parser by looking for any middleware *named* `jsonParser`, path or no path, finds
+this one and skips the global one. Smoke caught it at the first register. The parser is wrapped in
+a function with another name, and the comment says why.
+
 ### A service is a product with the stock flag off, not a category
 
 Asked on 2026-09-27: a delivery to Ikeja is charged for and appears on an invoice, but it is not
@@ -711,6 +782,39 @@ Where the shortfall lands: on the batch FEFO would have picked, driving it negat
 goods almost certainly came from that lot. When the product has never been received at that
 location, there is no lot to blame, so a batch with `quantityReceived = 0` and no cost is opened
 to hang it on — which is also how those placeholder batches are recognised.
+
+### Opening stock is an opening balance, never a delivery (2026-10-05)
+
+`GET`/`POST /stock/opening` (owner/manager) and *Stock on hand → Opening stock*. The gap it
+closes was found in real use: a product with no stock had **no row on Stock on hand**, so the
+adjust dialog that can already record an opening balance could not be reached, and the only way
+to get day-one stock in was *Receive delivery*. That raised a bill — an owner saw an invoice
+settled in June sitting on *We owe* — and counted the goods toward this month's vendor targets
+and purchases report.
+
+- **It writes opening-balance adjustments.** One lot per line (`lotCode: 'Opening'`), valued at
+  **cost per unit × quantity**, exact, with `quantityPaidFor: 0`. Valuation and cost of goods
+  sold read it like any other lot; no bill, vendor target or purchases report sees it, because
+  all three read receipts or paid-for quantities. It also gives a product its first real rate for
+  `lastKnownRates`, so goods sold ahead of their paperwork stop being estimated from nothing.
+- **The cost is required.** Per unit on screen, because that is what an owner knows ("a carton
+  was ₦14,000"); multiplied into a total before storing, so §2 still holds. Zero is accepted when
+  typed — genuinely free goods — but a blank is refused, because a ₦0 lot shows a 100% margin on
+  everything sold from it.
+- **Offered only where stock has never come in at that location.** "Ever had a positive
+  movement here" is the test. That makes entering it twice impossible rather than unlikely — the
+  save re-checks inside its transaction and answers 409 — and still offers a product that was
+  sold before it was counted, since that one has only outbound movements. A product that already
+  has stock is corrected with a count. Per location, so a second branch sets up its own shelves.
+- **Mixed units are separate lines**: 14 cartons and 3 loose rolls are two lots, each at its own
+  cost. The sheet starts each product on its biggest unit.
+- **Written in three statements.** `StockService.recordNewLots` creates lots, movements and
+  balances with one `createMany` each — possible because every lot is new, so no balance row can
+  exist yet. It lives in `StockService` so every ledger write still goes through one place, and
+  the rows are what `recordInbound` would have written. `Product.costPrice` is set as a delivery
+  sets it, as a display convenience only.
+- **On screen, not a spreadsheet**, by the owner's choice: it works on a phone, and tabbing down a
+  list is about as quick as Excel. A spreadsheet version would reuse the import pattern.
 
 ### Stocktake: counting is not adjusting
 
@@ -2711,6 +2815,35 @@ stale one costs more than no comment, because it argues against a change that is
 - **No rep-facing home screen.** Raised while scoping this — staff cannot reach the dashboard at
   all — but it is a screen that does not exist rather than one that needs trimming, and it belongs
   with the mobile slice.
+
+### Invoices and Bills, and every payment pointing at what it paid (2026-10-05)
+
+Found in real use: a bill paid in full **vanished** from *We owe*, so there was no list of bills,
+no "paid" on any of them, and no way to check that what went out matched what was billed. The
+customer side had the same shape. The owner also asked for plainer, paired names.
+
+- **The tabs are pairs.** Invoices / Money in for customers, Bills / Money out for vendors, then
+  Expenses and Bank accounts (were *Owed to us / Payments / We owe / Paid out / Accounts*).
+  Screen labels only: routes, endpoints, models and DTOs keep `receivables`, `payables`,
+  `supplier-payments`, so saved links and the API are unchanged. Notes written before this date
+  use the old names.
+- **Unpaid and All, on both sides.** Unpaid is the grouped, longest-owed view it always was. All
+  is `GET /supplier-bills` (which already kept settled bills) and `GET /sales?order=desc`. Each
+  row shows Unpaid / Part-paid / Paid from `payState(balance, paid)` — **named from the server's
+  `balance` and `paid`/`allocated`, never computed**, so the label cannot disagree with the
+  figures beside it.
+- **Mark as paid is not a new kind of write.** It is the ordinary payment form with the amount set
+  to the whole balance; on an invoice the allocation is pinned to that invoice and capped at what
+  it owes, so anything above becomes credit as everywhere else. Method and account are still
+  asked — §11 forbids guessing them — and so is the day.
+- **A bill lists the payments that add up to it.** `BillDialog` reads `GET /supplier-bills/:id`,
+  whose payments are already only the live ones and whose `paid` is their sum; the only server
+  change was adding each payment's bank account. A voided payment stays on Money out struck
+  through and is absent from the bill. Money out links each payment to its bill; Money in links
+  each allocation to its invoice, with the amount that went to it.
+- **"Paid on" on both payment forms**, sent as noon UTC on the picked day (today sends nothing),
+  so a bill paid in June but entered in October lands in June. The server already bounded
+  `occurredAt` to a year back.
 
 ---
 
