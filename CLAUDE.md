@@ -760,8 +760,13 @@ Bulk-written by `StockService.recordNewLots`, which keeps every ledger write in 
 
 **A catalog can be imported from a spreadsheet** (§4, 2026-10-05): `POST /products/import` and
 *Products → Import from spreadsheet* — template, upload `.xlsx` or `.csv`, preview every row, then
-save all or nothing. One row per product: counted-in unit and price, up to two bigger units with
-how many they hold, category by name, one barcode. **Every cell travels as text and the server
+save all or nothing. One row per product: counted-in unit and price, **as many bigger units as
+the row has** (Unit 2, 3, 4 … — the export writes that many, so it must read them back), category
+by name, one barcode. **A unit named "1/2 carton" is a portion** whose "how many" may be left empty
+— worked out from the carton in the same row, refused when not whole — and **a unit with a price is
+sold at the till while one without is counted only** (fixed 2026-10-05 after a real sheet: a lotion
+carton of 12 sold only as 1/2 and 1/4 had nowhere to say so, and every row failed on two units both
+called "carton"). No prices at all falls back to the form's defaults. **Every cell travels as text and the server
 reads it** (`parseNaira`, exact), and **the preview and the save are the same `planImport`**, so
 they cannot disagree. A name already there is **skipped, never changed**; no cost, no opening
 stock, no price-list column. ⚠ **A path-scoped body parser must not be named `jsonParser`**:

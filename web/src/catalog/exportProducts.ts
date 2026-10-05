@@ -1,7 +1,7 @@
 import { api } from '../api/client';
 import type { components } from '../api/schema';
 import { downloadSheet, stamp, type SheetColumn } from '../lib/exportSheet';
-import { COLUMNS } from '../lib/spreadsheet';
+import { headerOf, unitHeaders } from '../lib/spreadsheet';
 
 type ProductView = components['schemas']['ProductView'];
 
@@ -22,8 +22,6 @@ type ProductView = components['schemas']['ProductView'];
  */
 export async function exportProducts(seesCost: boolean): Promise<void> {
   const products = await api.get<ProductView[]>('/products');
-  const header = (field: string) =>
-    COLUMNS.find((column) => column.field === field)!.header;
 
   const bigger = (product: ProductView) =>
     [...product.units]
@@ -36,16 +34,16 @@ export async function exportProducts(seesCost: boolean): Promise<void> {
       ?.price ?? (isBase ? product.basePrice : null);
 
   const columns: SheetColumn<ProductView>[] = [
-    { header: header('name'), value: (p) => p.name, width: 32 },
-    { header: header('size'), value: (p) => p.size, width: 10 },
-    { header: header('category'), value: (p) => p.category?.name, width: 18 },
+    { header: headerOf('name'), value: (p) => p.name, width: 32 },
+    { header: headerOf('size'), value: (p) => p.size, width: 10 },
+    { header: headerOf('category'), value: (p) => p.category?.name, width: 18 },
     {
-      header: header('countedIn'),
+      header: headerOf('countedIn'),
       value: (p) => p.units.find((u) => u.isBase)?.name,
       width: 12,
     },
     {
-      header: header('price'),
+      header: headerOf('price'),
       kind: 'money',
       value: (p) => {
         const base = p.units.find((u) => u.isBase);
@@ -55,17 +53,17 @@ export async function exportProducts(seesCost: boolean): Promise<void> {
   ];
 
   for (let slot = 0; slot < Math.max(2, extraSlots); slot++) {
-    const n = slot + 2;
+    const headers = unitHeaders(slot + 2);
     const unitAt = (p: ProductView) => bigger(p)[slot];
     columns.push(
-      { header: `Unit ${n}`, value: (p) => unitAt(p)?.name, width: 12 },
+      { header: headers.name, value: (p) => unitAt(p)?.name, width: 12 },
       {
-        header: `Unit ${n} how many`,
+        header: headers.count,
         kind: 'number',
         value: (p) => unitAt(p)?.factor,
       },
       {
-        header: `Unit ${n} price`,
+        header: headers.price,
         kind: 'money',
         value: (p) => {
           const unit = unitAt(p);
@@ -77,7 +75,7 @@ export async function exportProducts(seesCost: boolean): Promise<void> {
 
   columns.push(
     {
-      header: header('barcode'),
+      header: headerOf('barcode'),
       value: (p) => {
         const base = p.units.find((u) => u.isBase);
         return p.barcodes.find((b) => b.unitId === base?.id)?.code;

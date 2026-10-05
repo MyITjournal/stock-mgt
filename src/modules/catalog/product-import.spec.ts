@@ -26,12 +26,10 @@ const peak: ImportRowInput = {
   category: 'Milk',
   countedIn: 'sachet',
   price: '100',
-  unit2: 'roll',
-  unit2Count: '10',
-  unit2Price: '950',
-  unit3: 'carton',
-  unit3Count: '160',
-  unit3Price: '14,500',
+  units: [
+    { name: 'roll', count: '10', price: '950' },
+    { name: 'carton', count: '160', price: '14,500' },
+  ],
 };
 
 describe('parseNaira', () => {
@@ -83,17 +81,131 @@ describe('planImport', () => {
     expect(plan.adding).toBe(1);
   });
 
-  it('sells the units exactly as the product form would', () => {
-    // A wholesaler counts in sachets and never sells one, and picks the
-    // carton first.
+  it('sells a unit that has a price, and only counts one that has none', () => {
+    // A wholesaler leaves the sachet unpriced: counted in, never sold, and
+    // the till starts on the carton.
     const plan = planImport(
-      [peak],
+      [{ ...peak, price: '' }],
       context({ businessType: BusinessType.wholesale }),
     );
     const units = plan.rows[0].product!.units;
 
     expect(units.find((u) => u.isBase)!.isSellable).toBe(false);
+    expect(units.filter((u) => u.isSellable).map((u) => u.name)).toEqual([
+      'roll',
+      'carton',
+    ]);
     expect(units.find((u) => u.isDefaultSelling)!.name).toBe('carton');
+  });
+
+  it('works out a portion from the unit it is part of — the lotion carton of 12', () => {
+    // Sold only as 1/2 and 1/4 of a carton: the carton has no price, so it is
+    // counted but not offered.
+    const plan = planImport(
+      [
+        {
+          name: 'Even Glow 400ml',
+          countedIn: 'piece',
+          units: [
+            { name: 'carton', count: '12' },
+            { name: '1/2 carton', price: '29,900' },
+            { name: '1/4 carton', price: '14,950' },
+          ],
+        },
+      ],
+      context(),
+    );
+    const units = plan.rows[0].product!.units;
+
+    expect(plan.rows[0].status).toBe('add');
+    expect(units.map((u) => [u.name, u.factor, u.isSellable])).toEqual([
+      ['piece', 1, false],
+      ['carton', 12, false],
+      ['1/2 carton', 6, true],
+      ['1/4 carton', 3, true],
+    ]);
+  });
+
+  it('takes a portion written before the unit it is part of — the roll-on', () => {
+    const plan = planImport(
+      [
+        {
+          name: 'Dry impact 50ml',
+          units: [
+            { name: '1/2 pack', price: '4,850' },
+            { name: 'pack', count: '6', price: '9,700' },
+            { name: '1/2 carton', price: '24,250' },
+            { name: 'carton', count: '30', price: '48,500' },
+          ],
+        },
+      ],
+      context(),
+    );
+    expect(plan.rows[0].product!.units.map((u) => [u.name, u.factor])).toEqual([
+      ['piece', 1],
+      ['pack', 6],
+      ['carton', 30],
+      ['1/2 pack', 3],
+      ['1/2 carton', 15],
+    ]);
+  });
+
+  it('refuses a portion that is not whole, saying why', () => {
+    const plan = planImport(
+      [
+        {
+          name: 'Roll-on',
+          units: [
+            { name: 'carton', count: '15' },
+            { name: '1/2 carton', price: '24,250' },
+          ],
+        },
+      ],
+      context(),
+    );
+    expect(plan.rows[0].status).toBe('error');
+    expect(plan.rows[0].messages[0]).toContain('7.5');
+  });
+
+  it('refuses a portion of a unit the row does not have', () => {
+    const plan = planImport(
+      [{ name: 'Roll-on', units: [{ name: '1/2 carton', price: '100' }] }],
+      context(),
+    );
+    expect(plan.rows[0].messages[0]).toContain('no carton in this row');
+  });
+
+  it('refuses a portion whose count disagrees with the unit it is part of', () => {
+    const plan = planImport(
+      [
+        {
+          name: 'Lotion',
+          units: [
+            { name: 'carton', count: '12' },
+            { name: '1/2 carton', count: '5', price: '100' },
+          ],
+        },
+      ],
+      context(),
+    );
+    expect(plan.rows[0].messages[0]).toContain('is 6 piece, not 5');
+  });
+
+  it('reads as many units as the row has', () => {
+    const plan = planImport(
+      [
+        {
+          name: 'Big family',
+          units: [2, 4, 8, 16, 32].map((count) => ({
+            name: `box of ${count}`,
+            count: String(count),
+            price: String(count * 100),
+          })),
+        },
+      ],
+      context(),
+    );
+    expect(plan.rows[0].product!.units).toHaveLength(6);
   });
 
   it('counts in pieces when "Counted in" is left blank', () => {
@@ -129,9 +241,7 @@ describe('planImport', () => {
           line: 3,
           name: 'Milo 500g',
           price: 'two hundred',
-          unit2: 'carton',
-          unit2Count: '0.5',
-          unit3Count: '12',
+          units: [{ name: 'carton', count: '0.5' }, { count: '12' }],
         },
       ],
       context(),
@@ -149,7 +259,7 @@ describe('planImport', () => {
 
   it('refuses a unit that holds one — that would be a second base unit', () => {
     const plan = planImport(
-      [{ name: 'Soap', unit2: 'bar', unit2Count: '1' }],
+      [{ name: 'Soap', units: [{ name: 'bar', count: '1' }] }],
       context(),
     );
     expect(plan.rows[0].status).toBe('error');
@@ -157,7 +267,13 @@ describe('planImport', () => {
 
   it('refuses two units with the same name', () => {
     const plan = planImport(
-      [{ name: 'Soap', countedIn: 'bar', unit2: 'Bar', unit2Count: '6' }],
+      [
+        {
+          name: 'Soap',
+          countedIn: 'bar',
+          units: [{ name: 'Bar', count: '6' }],
+        },
+      ],
       context(),
     );
     expect(plan.rows[0].messages).toContain(
@@ -165,7 +281,7 @@ describe('planImport', () => {
     );
   });
 
-  it('warns, without refusing, about a unit the till cannot price', () => {
+  it('warns, without refusing, about a row with no prices at all', () => {
     const plan = planImport(
       [{ name: 'Rice 50kg', countedIn: 'bag' }],
       context(),
@@ -174,13 +290,21 @@ describe('planImport', () => {
     expect(plan.rows[0].messages[0]).toContain('will not sell it');
   });
 
-  it('warns that a carton with no price of its own is charged by the piece', () => {
-    // The carton overcharge §4 exists to prevent, said before it happens.
+  it('never sells a carton by the piece price — an unpriced carton is not sold', () => {
+    // The carton overcharge §4 exists to prevent: with the price rule, a
+    // carton the row gives no price is counted, not sold at 12 × the piece.
     const plan = planImport(
-      [{ name: 'Coke 50cl', price: '300', unit2: 'crate', unit2Count: '12' }],
+      [
+        {
+          name: 'Coke 50cl',
+          price: '300',
+          units: [{ name: 'crate', count: '12' }],
+        },
+      ],
       context(),
     );
-    expect(plan.rows[0].messages[0]).toContain('12 × the piece price');
+    const crate = plan.rows[0].product!.units.find((u) => u.name === 'crate')!;
+    expect(crate.isSellable).toBe(false);
   });
 
   it('uses a category already there, case aside, and brings a deleted one back', () => {

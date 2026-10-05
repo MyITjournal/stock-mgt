@@ -8,7 +8,7 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
 import {
-  COLUMNS,
+  COLUMN_HELP,
   downloadTemplate,
   readSpreadsheet,
   type ImportRow,
@@ -127,8 +127,8 @@ export function ImportProductsPage() {
           </Button>
 
           <dl className="mt-4 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
-            {COLUMNS.filter((column) => column.hint).map((column) => (
-              <div key={column.field} className="flex gap-2">
+            {COLUMN_HELP.map((column) => (
+              <div key={column.header} className="flex gap-2">
                 <dt className="w-32 shrink-0 font-medium text-slate-700">
                   {column.header}
                 </dt>
@@ -137,11 +137,16 @@ export function ImportProductsPage() {
             ))}
           </dl>
           <p className="mt-3 text-xs text-slate-500">
-            "How many" is how many of the counted-in unit a bigger unit holds:
-            10 sachets in a roll, 160 in a carton. A portion is a unit too — a
-            "1/5 carton" holding 32. Prices go on your normal price list. What
-            you paid and how many you have are not part of this: record a
-            delivery for those.
+            A carton of 12 sold only in halves and quarters is three units: a
+            "carton" holding 12 with no price, then "1/2 carton" and "1/4
+            carton" with their prices and "how many" left empty — the import
+            works out 6 and 3.{' '}
+            <strong>
+              A unit with a price is sold at the till; one without is counted
+              but not sold.
+            </strong>{' '}
+            Prices go on your normal price list. What you paid and how many you
+            have are not part of this: use Opening stock for those.
           </p>
         </section>
 
