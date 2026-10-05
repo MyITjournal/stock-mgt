@@ -12,7 +12,35 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { MAX_IMPORT_ROWS } from '../product-import';
+import { MAX_IMPORT_ROWS, MAX_IMPORT_UNITS } from '../product-import';
+
+/** One of a row's bigger units, every cell as text. */
+export class ImportUnitDto {
+  @ApiPropertyOptional({
+    example: '1/2 carton',
+    description:
+      'A name like "1/2 carton" is a portion of another unit in the row, and its count may be left empty.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  name?: string;
+
+  @ApiPropertyOptional({
+    example: '6',
+    description: 'How many counted-in units it holds.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  count?: string;
+
+  @ApiPropertyOptional({ example: '29,900' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  price?: string;
+}
 
 /**
  * One spreadsheet row, every cell as text.
@@ -73,44 +101,19 @@ export class ImportRowDto {
   @MaxLength(500)
   price?: string;
 
-  @ApiPropertyOptional({ example: 'roll' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  unit2?: string;
-
   @ApiPropertyOptional({
-    example: '10',
-    description: 'How many counted-in units one of unit 2 holds.',
+    type: () => [ImportUnitDto],
+    description:
+      'Unit 2, Unit 3, … in column order. A unit with a price is sold at the till; one without is counted only.',
   })
   @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  unit2Count?: string;
-
-  @ApiPropertyOptional({ example: '950' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  unit2Price?: string;
-
-  @ApiPropertyOptional({ example: 'carton' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  unit3?: string;
-
-  @ApiPropertyOptional({ example: '160' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  unit3Count?: string;
-
-  @ApiPropertyOptional({ example: '14,500' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  unit3Price?: string;
+  @IsArray()
+  @ArrayMaxSize(MAX_IMPORT_UNITS, {
+    message: `A product can have up to ${MAX_IMPORT_UNITS + 1} units in one row.`,
+  })
+  @ValidateNested({ each: true })
+  @Type(() => ImportUnitDto)
+  units?: ImportUnitDto[];
 
   @ApiPropertyOptional({
     example: '6154000000005',

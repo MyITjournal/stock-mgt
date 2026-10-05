@@ -628,8 +628,19 @@ hundred products into the form is the biggest setup cost a new shop has, and the
 market comparison found. The rules are pure, in `catalog/product-import.ts`.
 
 - **One row per product**: name, size, category, what it is *counted in* (blank means piece) with
-  its price, then up to two bigger units with **how many counted-in units each holds** and their
-  prices, and one barcode for the counted-in unit. A portion is just a unit — `1/5 carton`, 32.
+  its price, then **as many bigger units as the row has** — Unit 2, Unit 3, Unit 4 … each with
+  **how many counted-in units it holds** and its price — and one barcode for the counted-in unit.
+- **Portions and selling, fixed against a real sheet the same day.** The first version took two
+  bigger units and decided selling by the form's defaults, and the owner's first file failed on
+  every row: a lotion carton of 12 sold only as 3s and 6s was written as two units both called
+  "carton", and the roll-ons' carton sat in Unit 4, which was not read at all. Now: a unit named
+  **`1/2 carton`** (slash, as the form names portions) is a portion of the row's carton, its
+  "how many" may be empty and is worked out — refused, with the arithmetic, when not whole (½ of
+  15 is 7½), when there is no carton in the row, or when a typed count disagrees; and **a priced
+  unit is sold at the till, an unpriced one counted only** — the spreadsheet's way of ticking
+  *Sold at the till* without a column for it. That also retires the old warning about a carton
+  charged at `factor × piece price`: an unpriced carton is simply not sold. A row with no prices
+  falls back to the form's defaults, with a warning.
   The counted-in price is the base price, as on the form; bigger units' prices go on the
   **default** price list. No price-list column: shops here price the item, not the buyer.
 - **Every cell travels as text** and the server reads it. `parseNaira` takes `14,500`, `N14,500`,

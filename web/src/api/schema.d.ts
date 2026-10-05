@@ -2488,6 +2488,20 @@ export interface components {
             /** @description Only units sold at the till, smallest first. */
             units: components["schemas"]["TillSearchUnit"][];
         };
+        ImportUnitDto: {
+            /**
+             * @description A name like "1/2 carton" is a portion of another unit in the row, and its count may be left empty.
+             * @example 1/2 carton
+             */
+            name?: string;
+            /**
+             * @description How many counted-in units it holds.
+             * @example 6
+             */
+            count?: string;
+            /** @example 29,900 */
+            price?: string;
+        };
         ImportRowDto: {
             /**
              * @description The row number in the spreadsheet, echoed back in messages.
@@ -2513,21 +2527,8 @@ export interface components {
              * @example 100
              */
             price?: string;
-            /** @example roll */
-            unit2?: string;
-            /**
-             * @description How many counted-in units one of unit 2 holds.
-             * @example 10
-             */
-            unit2Count?: string;
-            /** @example 950 */
-            unit2Price?: string;
-            /** @example carton */
-            unit3?: string;
-            /** @example 160 */
-            unit3Count?: string;
-            /** @example 14,500 */
-            unit3Price?: string;
+            /** @description Unit 2, Unit 3, … in column order. A unit with a price is sold at the till; one without is counted only. */
+            units?: components["schemas"]["ImportUnitDto"][];
             /**
              * @description For the counted-in unit.
              * @example 6154000000005
