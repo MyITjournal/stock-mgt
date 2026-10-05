@@ -1,18 +1,15 @@
-import { useState, type FormEvent } from 'react';
-import { DialogClose } from '../components/DialogClose';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
-import { Field, Input, Select } from '../components/Field';
 import { Money } from '../components/Money';
-import { api, ApiError } from '../api/client';
-import { afterWrite } from '../api/cache';
+import { api } from '../api/client';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
+import { CustomerDialog } from './CustomerDialog';
 
 type CustomerView = components['schemas']['CustomerView'];
-type PriceTierView = components['schemas']['PriceTierView'];
 type ReceivablesView = components['schemas']['ReceivablesView'];
 
 /**
@@ -68,7 +65,10 @@ export function CustomersPage() {
           <tbody className="divide-y divide-slate-100">
             {isPending && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                <td
+                  colSpan={4}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   Loading…
                 </td>
               </tr>
@@ -76,7 +76,10 @@ export function CustomersPage() {
 
             {!isPending && customers.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                <td
+                  colSpan={4}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   No customers yet. Walk-in sales do not need one.
                 </td>
               </tr>
@@ -120,170 +123,5 @@ export function CustomersPage() {
 
       {adding && <CustomerDialog onClose={() => setAdding(false)} />}
     </Page>
-  );
-}
-
-/**
- * Adding a customer, mid-transaction, with a queue waiting.
- *
- * Only `firstName` is required, and that is the market rather than laziness: a
- * customer here is often a shop known by one name and a phone number. Demanding
- * a surname or an address means the row never gets created and the debt is
- * never tracked.
- */
-function CustomerDialog({ onClose }: { onClose: () => void }) {
-  const queryClient = useQueryClient();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [priceTierId, setPriceTierId] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const { data: tiers = [] } = useQuery({
-    queryKey: ['price-tiers'],
-    queryFn: () => api.get<PriceTierView[]>('/price-tiers'),
-  });
-
-  const create = useMutation({
-    mutationFn: () =>
-      api.post<CustomerView>('/customers', {
-        id: crypto.randomUUID(),
-        firstName: firstName.trim(),
-        ...(lastName.trim() && { lastName: lastName.trim() }),
-        ...(phone.trim() && { phone: phone.trim() }),
-        ...(email.trim() && { email: email.trim() }),
-        ...(priceTierId && { priceTierId }),
-      }),
-    onSuccess: () => {
-      afterWrite(queryClient);
-      onClose();
-    },
-    onError: (caught) =>
-      setError(
-        caught instanceof ApiError
-          ? caught.message
-          : 'Could not save that customer.',
-      ),
-  });
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    if (firstName.trim()) create.mutate();
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="customer-title"
-    >
-      <form
-        onSubmit={submit}
-        className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-lg"
-      >
-        <DialogClose onClose={onClose} />
-
-        <h2
-          id="customer-title"
-          className="text-lg font-semibold text-slate-900"
-        >
-          Add a customer
-        </h2>
-
-        <div className="mt-4 space-y-4">
-          <Field label="Name" htmlFor="first-name">
-            <Input
-              id="first-name"
-              value={firstName}
-              onChange={(event) => setFirstName(event.target.value)}
-              autoFocus
-              required
-            />
-          </Field>
-
-          <Field
-            label="Surname"
-            htmlFor="last-name"
-            hint="Optional — plenty of customers are known by one name."
-          >
-            <Input
-              id="last-name"
-              value={lastName}
-              onChange={(event) => setLastName(event.target.value)}
-            />
-          </Field>
-
-          <Field
-            label="Phone"
-            htmlFor="phone"
-            hint="Worth having: chasing a debt is a phone call."
-          >
-            <Input
-              id="phone"
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              placeholder="+234…"
-            />
-          </Field>
-
-          <Field label="Email" htmlFor="email">
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </Field>
-
-          <Field
-            label="Price list"
-            htmlFor="tier"
-            hint="What they are charged. Blank uses the default."
-          >
-            <Select
-              id="tier"
-              value={priceTierId}
-              onChange={(event) => setPriceTierId(event.target.value)}
-            >
-              <option value="">Default</option>
-              {tiers.map((tier) => (
-                <option key={tier.id} value={tier.id}>
-                  {tier.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-
-        {error && (
-          <p
-            className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700"
-            role="alert"
-          >
-            {error}
-          </p>
-        )}
-
-        <div className="mt-6 flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onClose}
-            disabled={create.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            disabled={create.isPending || !firstName.trim()}
-          >
-            {create.isPending ? 'Saving…' : 'Add customer'}
-          </Button>
-        </div>
-      </form>
-    </div>
   );
 }

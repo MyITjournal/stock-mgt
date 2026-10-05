@@ -690,6 +690,12 @@ a typed price stands, a line the new list cannot price keeps its old price **and
 that changed unit mid-flight is left alone. Payment is disabled while prices move, and a run
 counter lets only the latest customer choice land.
 
+**A customer can be added from the till** (2026-10-05): **+ New** beside Customer opens the same
+`CustomerDialog` as the Customers screen, cut down to **name and phone only**, and the new
+customer is chosen for the sale at once. **No price list at the counter, on purpose**: shops here
+price the item, not the buyer — the wholesale price is the carton's or the 1/5 carton's own price —
+so asking what kind of customer somebody is has no place in a queue. The cart keeps its prices.
+
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
 field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank

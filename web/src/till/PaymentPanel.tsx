@@ -26,6 +26,10 @@ type Customer = components['schemas']['CustomerView'];
  * - **Paying less than the total is credit**, which the server will refuse
  *   outright for a customer who already owes — and refuse for *anybody*
  *   without a customer, since there would be nobody to collect from.
+ *
+ * A customer who is not on the list yet is added from here (`onNewCustomer`),
+ * rather than by leaving the till for the Customers screen with the queue
+ * waiting and the cart at risk.
  */
 export function PaymentPanel({
   state,
@@ -33,6 +37,7 @@ export function PaymentPanel({
   total,
   customers,
   accounts,
+  onNewCustomer,
   onSubmit,
   busy,
   canSubmit,
@@ -42,6 +47,7 @@ export function PaymentPanel({
   total: Minor;
   customers: Customer[];
   accounts: BankAccount[];
+  onNewCustomer: () => void;
   onSubmit: () => void;
   busy: boolean;
   canSubmit: boolean;
@@ -70,27 +76,40 @@ export function PaymentPanel({
           htmlFor="customer"
           hint="Leave blank for a walk-in paying cash."
         >
-          <Select
-            id="customer"
-            value={state.customerId ?? ''}
-            disabled={busy}
-            onChange={(event) =>
-              onChange({
-                ...state,
-                customerId: event.target.value || null,
-              })
-            }
-          >
-            <option value="">Walk-in</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {[customer.firstName, customer.lastName]
-                  .filter(Boolean)
-                  .join(' ')}
-                {customer.phone ? ` · ${customer.phone}` : ''}
-              </option>
-            ))}
-          </Select>
+          <div className="flex gap-2">
+            <div className="min-w-0 flex-1">
+              <Select
+                id="customer"
+                value={state.customerId ?? ''}
+                disabled={busy}
+                onChange={(event) =>
+                  onChange({
+                    ...state,
+                    customerId: event.target.value || null,
+                  })
+                }
+              >
+                <option value="">Walk-in</option>
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {[customer.firstName, customer.lastName]
+                      .filter(Boolean)
+                      .join(' ')}
+                    {customer.phone ? ` · ${customer.phone}` : ''}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onNewCustomer}
+              disabled={busy}
+              className="shrink-0"
+            >
+              + New
+            </Button>
+          </div>
         </Field>
 
         <Field label="Method" htmlFor="method">
