@@ -693,3 +693,18 @@ Print or Share button sends it to a printer or WhatsApp.
 
 **187. [gate] Leave the till open past fifteen minutes, then print.** It still prints the invoice,
 not a sign-in error.
+
+---
+
+## AB. Adding a customer at the till
+
+**188. [gate] Put something in the cart, then press + New beside Customer.** A small form asks
+for a name and a phone number — nothing else, no price list. Fill in a name and press **Add and
+use for this sale**. The form closes, the new customer is already chosen for the sale, and the
+prices in the cart do not move.
+
+**189. Take payment on credit.** The sale goes through in the new customer's name; open
+Customers and they are there, owing the balance.
+
+**190. Signed in as a cashier, do 188 again.** It works the same — adding a customer is not
+limited to a manager.

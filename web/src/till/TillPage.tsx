@@ -25,6 +25,7 @@ import { PaymentPanel } from './PaymentPanel';
 import { EMPTY_PAYMENT, needsBankAccount, type PaymentState } from './payment';
 import { OverrideDialog, type OverrideKind } from './OverrideDialog';
 import { Receipt } from './Receipt';
+import { CustomerDialog } from '../customers/CustomerDialog';
 
 type ScanResult = components['schemas']['ScanResult'];
 type ProductView = components['schemas']['ProductView'];
@@ -104,6 +105,7 @@ export function TillPage() {
    * same line ids (§8); a fresh key rides along with each attempt.
    */
   const saleId = useRef<string>(crypto.randomUUID());
+  const [addingCustomer, setAddingCustomer] = useState(false);
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
@@ -146,7 +148,10 @@ export function TillPage() {
 
   // Suggestions follow the text once typing pauses.
   useEffect(() => {
-    const timer = setTimeout(() => setSettledTerm(term.trim()), SUGGEST_AFTER_MS);
+    const timer = setTimeout(
+      () => setSettledTerm(term.trim()),
+      SUGGEST_AFTER_MS,
+    );
     return () => clearTimeout(timer);
   }, [term]);
 
@@ -234,6 +239,27 @@ export function TillPage() {
       if (nextTierId !== tierId) void repriceCart(nextTierId, lines);
     },
     [payment.customerId, tierFor, tierId, repriceCart, lines],
+  );
+
+  /**
+   * A customer just added from the till becomes this sale's customer.
+   *
+   * Added here, they are a name and a phone number with no price list of
+   * their own — pricing lives on the unit (a carton, a 1/5 carton), not on
+   * who is buying — so the cart stays on the prices it already has. The row
+   * goes into the cached list at once, so the picker shows their name rather
+   * than "Walk-in" while the list refetches.
+   */
+  const takeNewCustomer = useCallback(
+    (created: CustomerView) => {
+      queryClient.setQueryData<CustomerView[]>(['customers'], (current = []) =>
+        current.some((row) => row.id === created.id)
+          ? current
+          : [...current, created],
+      );
+      changePayment({ ...payment, customerId: created.id });
+    },
+    [queryClient, changePayment, payment],
   );
 
   const total = cartTotal(lines);
@@ -350,7 +376,9 @@ export function TillPage() {
     (product: TillSearchResult) => {
       setError(null);
       setNotice(null);
-      const unit = product.units.find((row) => row.id === product.defaultUnitId);
+      const unit = product.units.find(
+        (row) => row.id === product.defaultUnitId,
+      );
       if (!unit) return;
       if (unit.price === null) {
         setError(unpricedMessage(product.name, unit.name));
@@ -504,7 +532,10 @@ export function TillPage() {
   );
 
   const submit = useCallback(
-    async (reasons?: { forcedReason?: string; creditOverrideReason?: string }) => {
+    async (reasons?: {
+      forcedReason?: string;
+      creditOverrideReason?: string;
+    }) => {
       setBusy(true);
       setError(null);
 
@@ -593,8 +624,7 @@ export function TillPage() {
           ? updateLine(current, key, { unitPrice: line.listPrice })
           : current;
       }),
-    onRemove: (key: string) =>
-      setLines((current) => removeLine(current, key)),
+    onRemove: (key: string) => setLines((current) => removeLine(current, key)),
   };
 
   const startNewSale = useCallback(() => {
@@ -663,7 +693,11 @@ export function TillPage() {
                     <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                       Just scanned — set the unit and quantity
                     </p>
-                    <CartLines lines={[justScanned]} busy={busy} {...lineHandlers} />
+                    <CartLines
+                      lines={[justScanned]}
+                      busy={busy}
+                      {...lineHandlers}
+                    />
                   </div>
                 )}
               </CameraScanner>
@@ -715,18 +749,20 @@ export function TillPage() {
           {showSuggestions && searching && suggestions.length === 0 && (
             <p className="text-sm text-slate-500">Searching…</p>
           )}
-          {showSuggestions &&
-            !searching &&
-            suggestionData?.length === 0 && (
-              <p className="text-sm text-slate-500">
-                Nothing matches "{settledTerm}" yet. Press Enter to try it as a
-                barcode.
-              </p>
-            )}
+          {showSuggestions && !searching && suggestionData?.length === 0 && (
+            <p className="text-sm text-slate-500">
+              Nothing matches "{settledTerm}" yet. Press Enter to try it as a
+              barcode.
+            </p>
+          )}
 
           {suggestions.length > 0 && (
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-              <ul id="till-suggestions" role="listbox" className="divide-y divide-slate-100">
+              <ul
+                id="till-suggestions"
+                role="listbox"
+                className="divide-y divide-slate-100"
+              >
                 {suggestions.map((product, index) => {
                   const unit = product.units.find(
                     (row) => row.id === product.defaultUnitId,
@@ -743,7 +779,9 @@ export function TillPage() {
                         onClick={() => addFromSearch(product)}
                         disabled={busy}
                         className={`flex w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm disabled:opacity-60 ${
-                          index === activeIndex ? 'bg-brand-50' : 'hover:bg-slate-50'
+                          index === activeIndex
+                            ? 'bg-brand-50'
+                            : 'hover:bg-slate-50'
                         }`}
                       >
                         <span>
@@ -788,11 +826,20 @@ export function TillPage() {
           total={total}
           customers={customers}
           accounts={accounts}
+          onNewCustomer={() => setAddingCustomer(true)}
           busy={busy || repricing}
           canSubmit={canSubmit}
           onSubmit={() => void submit()}
         />
       </div>
+
+      {addingCustomer && (
+        <CustomerDialog
+          brief
+          onClose={() => setAddingCustomer(false)}
+          onCreated={takeNewCustomer}
+        />
+      )}
 
       {override && (
         <OverrideDialog
