@@ -738,6 +738,17 @@ product form, so **Enter is caught on the box** — otherwise it saves the produ
 still missing. A name already on the list is picked rather than sent, and **the id the server
 returns is the one used**, because re-adding a deleted name revives the old row with its own id.
 
+**Screens download as Excel** (§17, 2026-10-05): products (in the import template's columns, so
+the file *is* the template filled in), stock on hand, every report (a tab per table), and the four
+money lists — all invoices, all bills, money in, money out — for an accountant. `lib/exportSheet.ts`
++ `DownloadButton`. **Light on purpose**: `write-excel-file` is imported on the first download,
+never with the page (~15 KB gzipped, its own chunk), and a download reads only what the screen
+already reads — the money lists walk the same endpoint at its largest page. **Nothing is
+computed**: money is the server's kobo shown in naira as `<Money>` does, margins are basis points
+shown as a percentage, a field `redactCost` removed is an **empty cell, never 0**, and barcodes and
+SKUs are **text** so Excel cannot round them. Stock on hand carries counts, not value — value is
+the Stock report's download, where the server values lots from their totals.
+
 **Opening stock is an opening balance, never a delivery** (§5, 2026-10-05): *Stock on hand →
 Opening stock*, `GET`/`POST /stock/opening`. A delivery raises a bill and counts toward vendor
 targets, so day-one stock entered that way put a debt settled in June onto *We owe*. Each line is

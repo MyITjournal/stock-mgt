@@ -5,6 +5,8 @@ import { api } from '../api/client';
 import type { components } from '../api/schema';
 import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportProfit } from './exportReports';
 
 type ProfitReportView = components['schemas']['ProfitReportView'];
 
@@ -36,6 +38,12 @@ export function ProfitPage() {
     <Page
       title="Profit"
       description="What came in, what the goods cost, and what is left."
+      actions={
+        <DownloadButton
+          disabled={!data}
+          onDownload={() => exportProfit(data!)}
+        />
+      }
     >
       <PeriodPicker resolved={data?.period} />
 

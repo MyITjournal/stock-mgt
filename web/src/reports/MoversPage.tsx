@@ -7,6 +7,8 @@ import { api } from '../api/client';
 import type { components } from '../api/schema';
 import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportMovers } from './exportReports';
 
 type ProductReportView = components['schemas']['ProductReportView'];
 type CustomerReportView = components['schemas']['CustomerReportView'];
@@ -112,6 +114,12 @@ export function MoversPage() {
     <Page
       title="Movers"
       description="What sells, what sits, and who is buying."
+      actions={
+        <DownloadButton
+          disabled={!products}
+          onDownload={() => exportMovers(products!, customers)}
+        />
+      }
     >
       <PeriodPicker resolved={products?.period} />
 
@@ -162,7 +170,11 @@ export function MoversPage() {
                 cell: (row) =>
                   row.product.sku ?? <span className="text-slate-300">—</span>,
               },
-              { header: 'Units held', numeric: true, cell: (row) => row.quantity },
+              {
+                header: 'Units held',
+                numeric: true,
+                cell: (row) => row.quantity,
+              },
             ]}
             rowKey={(row) => row.product.id}
             empty="Everything held has sold recently."
@@ -171,9 +183,7 @@ export function MoversPage() {
       </div>
 
       <section className="mt-8">
-        <h2 className="mb-2 text-sm font-semibold text-slate-900">
-          Who buys
-        </h2>
+        <h2 className="mb-2 text-sm font-semibold text-slate-900">Who buys</h2>
         <DataTable
           rows={customers?.customers ?? []}
           columns={customerColumns}

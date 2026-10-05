@@ -783,6 +783,35 @@ goods almost certainly came from that lot. When the product has never been recei
 location, there is no lot to blame, so a batch with `quantityReceived = 0` and no cost is opened
 to hang it on — which is also how those placeholder batches are recognised.
 
+### Every screen worth keeping downloads as Excel (2026-10-05)
+
+A Download button on Products, Stock on hand, each report and the four money lists (Invoices →
+All, Bills → All, Money in, Money out). The owner's one condition was that it must not slow
+anything down.
+
+- **Nothing loads until it is pressed.** `write-excel-file` (one dependency, `fflate`, already
+  present for the import's reader) is a dynamic import in `lib/exportSheet.ts`; it builds into its
+  own ~15 KB gzipped chunk and the main bundle is unchanged. A report's download uses the response
+  the screen already holds; the money lists walk their endpoint at its largest page (500, or 200
+  for supplier payments), so a year of payments is a handful of requests, made only on the click.
+- **The same figures as the screen.** Money is the server's kobo divided by 100 for display —
+  the conversion `<Money>` does — written as a number with a `#,##0.00` format so Excel can sum
+  it. A margin is basis points shown as a percentage. Statuses come from `payState`. Nothing is
+  added up in the browser, so a file and a screen cannot disagree.
+- **Absent is empty.** A cost `redactCost` removed is an empty cell, never `0`, for the same reason
+  the screens never zero it: a zero reads as free goods to whoever sums the column.
+- **Text where Excel would mangle.** Barcodes and SKUs are written as strings, so `6154000000005`
+  is not shown as `6.154E+12` and a UPC keeps its leading zero — verified by writing and reading a
+  workbook back.
+- **Products use the import template's columns**, with extra *Unit 4…* columns when a product has
+  more units, plus *Other barcodes*, *SKU* and (for those who see cost) the last delivery's cost.
+  Prices are the default list's, the base price for the counted-in unit, and blank where a unit
+  has none of its own. This is what makes "download, change prices, upload back" possible later —
+  the import still skips names it knows, so that needs its own preview of what would change.
+- **Stock on hand downloads counts, not value.** Its rows carry a per-unit cost, and multiplying it
+  out would be a second, rounder valuation; the Stock report's download is the server's, from lot
+  totals rounded once (§2).
+
 ### Opening stock is an opening balance, never a delivery (2026-10-05)
 
 `GET`/`POST /stock/opening` (owner/manager) and *Stock on hand → Opening stock*. The gap it

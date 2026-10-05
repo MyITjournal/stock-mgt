@@ -7,6 +7,8 @@ import { api } from '../api/client';
 import type { components } from '../api/schema';
 import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportStockValue } from './exportReports';
 
 type StockValuationView = components['schemas']['StockValuationView'];
 type StockAlertsView = components['schemas']['StockAlertsView'];
@@ -109,6 +111,12 @@ export function StockReportPage() {
     <Page
       title="Stock"
       description="What it is worth, what is running out, and what had to be decided."
+      actions={
+        <DownloadButton
+          disabled={!valuation}
+          onDownload={() => exportStockValue(valuation!)}
+        />
+      }
     >
       <PeriodPicker resolved={audit?.period} />
 
@@ -181,7 +189,9 @@ export function StockReportPage() {
             />
           </Panel>
 
-          <Panel title={`Below reorder point (${alerts?.lowStock.length ?? 0})`}>
+          <Panel
+            title={`Below reorder point (${alerts?.lowStock.length ?? 0})`}
+          >
             <DataTable
               rows={alerts?.lowStock ?? []}
               columns={alertColumns}

@@ -10,6 +10,8 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
 import { BillDialog } from './BillDialog';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportMoneyOut } from './exportMoney';
 
 type SupplierPaymentListView = components['schemas']['SupplierPaymentListView'];
 type SupplierPaymentView = components['schemas']['SupplierPaymentView'];
@@ -163,6 +165,7 @@ export function SupplierPaymentsPage() {
     <Page
       title="Money out"
       description="Payments to vendors, newest first. Each one paid a bill — open it to see the bill."
+      actions={<DownloadButton onDownload={() => exportMoneyOut(supplierId)} />}
     >
       <div className="mb-4 max-w-xs">
         <Field label="Vendor" htmlFor="paid-supplier">

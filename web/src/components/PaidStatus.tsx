@@ -1,4 +1,4 @@
-import { payState, type PayState } from '../lib/payState';
+import { PAY_STATE_LABEL, payState, type PayState } from '../lib/payState';
 
 /**
  * Unpaid, part-paid or paid — for a customer invoice or a vendor bill.
@@ -10,10 +10,10 @@ import { payState, type PayState } from '../lib/payState';
  * those two numbers are already in, so the label and the amounts beside it
  * cannot disagree.
  */
-const LOOK: Record<PayState, { label: string; className: string }> = {
-  unpaid: { label: 'Unpaid', className: 'bg-amber-100 text-amber-900' },
-  part: { label: 'Part-paid', className: 'bg-sky-100 text-sky-900' },
-  paid: { label: 'Paid', className: 'bg-emerald-100 text-emerald-900' },
+const TONE: Record<PayState, string> = {
+  unpaid: 'bg-amber-100 text-amber-900',
+  part: 'bg-sky-100 text-sky-900',
+  paid: 'bg-emerald-100 text-emerald-900',
 };
 
 export function PaidStatus({
@@ -23,12 +23,12 @@ export function PaidStatus({
   balance: number;
   paid: number;
 }) {
-  const look = LOOK[payState(balance, paid)];
+  const state = payState(balance, paid);
   return (
     <span
-      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${look.className}`}
+      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${TONE[state]}`}
     >
-      {look.label}
+      {PAY_STATE_LABEL[state]}
     </span>
   );
 }

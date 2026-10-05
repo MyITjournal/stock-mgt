@@ -10,6 +10,8 @@ import { afterWrite } from '../api/cache';
 import { useIsManager, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ProductForm } from './ProductForm';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportProducts } from './exportProducts';
 import { describeCount } from '../lib/quantity';
 
 type ProductView = components['schemas']['ProductView'];
@@ -73,6 +75,7 @@ export function ProductsPage() {
       description="What the shop sells, how it is packaged, and what it costs."
       actions={
         <>
+          <DownloadButton onDownload={() => exportProducts(seesCost)} />
           {canImport && (
             <Button
               variant="secondary"
