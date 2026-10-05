@@ -4,6 +4,7 @@ import { PayablesController } from './payables.controller';
 import { PayableService } from './payable.service';
 import { SupplierBillService } from './supplier-bill.service';
 import { SupplierPaymentService } from './supplier-payment.service';
+import { VendorRebateService } from './vendor-rebate.service';
 
 /**
  * Money owed to vendors, and money paid to them.
@@ -21,7 +22,12 @@ import { SupplierPaymentService } from './supplier-payment.service';
 @Module({
   imports: [PaymentsModule],
   controllers: [PayablesController],
-  providers: [PayableService, SupplierBillService, SupplierPaymentService],
+  providers: [
+    PayableService,
+    SupplierBillService,
+    SupplierPaymentService,
+    VendorRebateService,
+  ],
   exports: [PayableService, SupplierBillService, SupplierPaymentService],
 })
 export class PayablesModule {}

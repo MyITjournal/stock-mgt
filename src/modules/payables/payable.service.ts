@@ -2,7 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { Minor } from '../../common/money/money';
-import { LIVE_SUPPLIER_PAYMENTS, billBalance } from './balance';
+import {
+  CREDITED_REBATES,
+  LIVE_SUPPLIER_PAYMENTS,
+  billBalance,
+} from './balance';
 import { PayablesView, SupplierStatementView } from './dto/payables.response';
 
 const MS_PER_DAY = 86_400_000;
@@ -15,6 +19,7 @@ export interface OutstandingBill {
   supplier: { id: string; name: string; phone: string | null };
   amountDue: Minor;
   paid: Minor;
+  rebated: Minor;
   balance: Minor;
   daysOutstanding: number;
   /** Negative once the intended date has passed. Null when none was set. */
@@ -53,6 +58,7 @@ export class PayableService {
         amountDue: true,
         supplier: { select: { id: true, name: true, phone: true } },
         payments: LIVE_SUPPLIER_PAYMENTS,
+        rebates: CREDITED_REBATES,
       },
     });
 
@@ -112,7 +118,7 @@ export class PayableService {
    * vendor rings to chase.
    */
   async statement(supplierId: string): Promise<SupplierStatementView> {
-    const [owing, payments] = await Promise.all([
+    const [owing, payments, rebates] = await Promise.all([
       this.outstanding({ supplierId }),
       this.prisma.supplierPayment.findMany({
         where: { supplierId, voidedAt: null },
@@ -126,6 +132,17 @@ export class PayableService {
           bill: { select: { id: true, invoiceNumber: true } },
         },
       }),
+      this.prisma.vendorRebate.findMany({
+        where: { supplierId, creditedAt: { not: null } },
+        orderBy: [{ creditedAt: 'asc' }],
+        select: {
+          id: true,
+          periodStart: true,
+          creditedAmount: true,
+          creditedAt: true,
+          billId: true,
+        },
+      }),
     ]);
 
     return {
@@ -134,6 +151,11 @@ export class PayableService {
       payments,
       totalOwed: owing.total,
       totalPaid: payments.reduce((sum, row) => sum + row.amount, 0),
+      rebates,
+      totalRebated: rebates.reduce(
+        (sum, row) => sum + (row.creditedAmount ?? 0),
+        0,
+      ),
     };
   }
 }

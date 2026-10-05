@@ -175,6 +175,21 @@ All of it is buying-price data and closed to `sales_rep`. Both halves reach
 always been `@Roles(...SEES_COST)`** — the older note saying targets were kept off it because
 "reps see the dashboard" described a risk the route had already closed.
 
+**Vendor rebates are a credit off a later bill** (§16, 2026-10-05): `VendorRebate` and
+`/vendor-rebates`, in `src/modules/payables/`. A vendor pays a rebate **only as credit off a later
+bill**, so it is **neither a payment** (no money moved — Money out never shows it) **nor an
+expense**. Two steps: **expected** — vendor, month, a *tentative* amount, recorded on Reports →
+Targets when the owner judges the month earned it (targets are shown beside it, never checked) —
+then **credited** on a bill with the real figure (Bills → open the bill → Apply rebate), which
+sets `billId`, `creditedAmount` and `creditedAt` together (a CHECK enforces it). Load-bearing:
+**`billBalance` grew a term — `amountDue − paid − rebated`** — and `rebates: CREDITED_REBATES` is
+**required** in `BillBalanceInput`, so any new query feeding a balance that forgets it will not
+compile. A credit **bigger than what the bill owes is refused** (no allocation table on the vendor
+side), and **must be that vendor's bill**. **Profit counts it in the month of the bill it landed
+on** (`creditedAt` = the bill's `issuedAt`), as `vendorRebates` between gross profit and
+expenses — not revenue, and not off cost of goods, so margins are untouched. One per vendor per
+month; *Remove credit* puts the bill back to owing.
+
 **Payments name the account they landed in** (§11). `BankAccount` is the set of accounts the
 business is paid into — several is normal, five is not unusual — and `Payment.bankAccountId` says
 which took each payment, so a statement reconciles by joining rather than by eye. **`transfer` and
@@ -768,7 +783,8 @@ sold at the till while one without is counted only** (fixed 2026-10-05 after a r
 carton of 12 sold only as 1/2 and 1/4 had nowhere to say so, and every row failed on two units both
 called "carton"). No prices at all falls back to the form's defaults. **Every cell travels as text and the server
 reads it** (`parseNaira`, exact), and **the preview and the save are the same `planImport`**, so
-they cannot disagree. A name already there is **skipped, never changed**; no cost, no opening
+they cannot disagree. A product is **its name and size together** (`productKey`) — *Dry Impact* 50ml
+and 200ml are two — and one already there is **skipped, never changed**; no cost, no opening
 stock, no price-list column. ⚠ **A path-scoped body parser must not be named `jsonParser`**:
 Nest skips its own global JSON parser if it finds one by that name anywhere, and every other
 request arrives empty — see the wrapper in `main.ts`.

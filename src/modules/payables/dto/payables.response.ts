@@ -73,7 +73,10 @@ export class OutstandingBillView {
   @ApiProperty({ description: 'Settled so far, excluding voided payments.' })
   paid!: number;
 
-  @ApiProperty({ description: '`amountDue − paid`.' })
+  @ApiProperty({ description: 'Credited off this bill by vendor rebates.' })
+  rebated!: number;
+
+  @ApiProperty({ description: '`amountDue − paid − rebated`.' })
   balance!: number;
 
   @ApiProperty({ description: 'Whole days since the bill was issued.' })
@@ -188,6 +191,32 @@ export class SupplierStatementView {
 
   @ApiProperty()
   totalPaid!: number;
+
+  @ApiProperty({
+    type: () => [StatementRebateRef],
+    description: 'Rebates credited off this vendor’s bills.',
+  })
+  rebates!: StatementRebateRef[];
+
+  @ApiProperty({ description: 'The sum of those credits.' })
+  totalRebated!: number;
+}
+
+class StatementRebateRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  periodStart!: Date;
+
+  @ApiProperty({ type: Number, nullable: true })
+  creditedAmount!: number | null;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  creditedAt!: Date | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  billId!: string | null;
 }
 
 class BillPaymentRef {
@@ -290,11 +319,38 @@ export class SupplierBillView {
   })
   payments!: BillPaymentRef[];
 
+  @ApiProperty({
+    type: () => [BillRebateRef],
+    description: 'Vendor rebates credited on this bill.',
+  })
+  rebates!: BillRebateRef[];
+
   @ApiProperty({ description: 'Settled so far.' })
   paid!: number;
 
-  @ApiProperty({ description: '`amountDue − paid`.' })
+  @ApiProperty({ description: 'Credited off this bill by vendor rebates.' })
+  rebated!: number;
+
+  @ApiProperty({ description: '`amountDue − paid − rebated`.' })
   balance!: number;
+}
+
+/** A rebate credited on a bill: which month earned it and what came off. */
+class BillRebateRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  periodStart!: Date;
+
+  @ApiProperty()
+  expectedAmount!: number;
+
+  @ApiProperty({ type: Number, nullable: true })
+  creditedAmount!: number | null;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  creditedAt!: Date | null;
 }
 
 class PaidSupplierRef {

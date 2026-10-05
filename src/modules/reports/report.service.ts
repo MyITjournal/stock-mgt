@@ -147,7 +147,7 @@ export class ReportService {
   async profit(period: Period): Promise<PeriodProfit> {
     const window = { gte: period.from, lt: period.to };
 
-    const [sales, returns, expenses] = await Promise.all([
+    const [sales, returns, expenses, rebates] = await Promise.all([
       this.prisma.sale.findMany({
         where: { occurredAt: window },
         select: { total: true, taxTotal: true, costTotal: true },
@@ -164,6 +164,11 @@ export class ReportService {
         where: { deletedAt: null, occurredAt: window },
         select: { amount: true },
       }),
+      // Credited in the window — the month the credit landed on a bill.
+      this.prisma.vendorRebate.findMany({
+        where: { creditedAt: window },
+        select: { creditedAmount: true },
+      }),
     ]);
 
     const profit = computeProfit({
@@ -174,6 +179,7 @@ export class ReportService {
         taxRateBps: row.saleLine.taxRateBps,
       })),
       expenses,
+      rebates,
     });
 
     return { ...profit, ...(await this.estimatedCost(period)) };

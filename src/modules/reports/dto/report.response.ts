@@ -93,10 +93,16 @@ export class ProfitReportView {
   @ApiProperty({ description: '`revenue − cogs`.' })
   grossProfit!: number;
 
+  @ApiProperty({
+    description:
+      'Vendor rebates credited on bills dated in the window — credit a vendor took off a bill because a month’s buying earned it. Its own line: not revenue, and not taken off cost of goods.',
+  })
+  vendorRebates!: number;
+
   @ApiProperty({ description: 'Expenses recorded in the window.' })
   expenses!: number;
 
-  @ApiProperty({ description: '`grossProfit − expenses`.' })
+  @ApiProperty({ description: '`grossProfit + vendorRebates − expenses`.' })
   operatingProfit!: number;
 
   @ApiProperty({

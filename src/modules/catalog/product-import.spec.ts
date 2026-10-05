@@ -2,6 +2,7 @@ import { BusinessType } from '@prisma/client';
 import {
   parseNaira,
   planImport,
+  productKey,
   type ImportContext,
   type ImportRowInput,
 } from './product-import';
@@ -9,7 +10,7 @@ import {
 const TIER = 'tier-retail';
 
 const context = (overrides: Partial<ImportContext> = {}): ImportContext => ({
-  existingNames: new Set(),
+  existingProducts: new Set(),
   existingSkus: new Set(),
   existingBarcodes: new Set(),
   categories: [],
@@ -218,11 +219,47 @@ describe('planImport', () => {
   it('skips a product already in the catalog, case aside, and changes nothing', () => {
     const plan = planImport(
       [peak],
-      context({ existingNames: new Set(['peak 14g']) }),
+      context({ existingProducts: new Set([productKey('Peak 14g', '14g')]) }),
     );
     expect(plan.rows[0]).toMatchObject({ status: 'skip', product: null });
     expect(plan.skipped).toBe(1);
     expect(plan.newCategories).toEqual([]);
+  });
+
+  it('tells products apart by name and size — the roll-on and the spray', () => {
+    const plan = planImport(
+      [
+        {
+          line: 2,
+          name: 'Dry Impact',
+          size: '50ml',
+          category: 'Roll on',
+          price: '1,600',
+        },
+        {
+          line: 3,
+          name: 'Dry Impact',
+          size: '200ml',
+          category: 'Spray',
+          price: '4,250',
+        },
+      ],
+      context(),
+    );
+    expect(plan.rows.map((row) => row.status)).toEqual(['add', 'add']);
+  });
+
+  it('skips only the size already in the catalog', () => {
+    const plan = planImport(
+      [
+        { name: 'Dry Impact', size: '50ML', price: '1,600' },
+        { name: 'Dry Impact', size: '200ml', price: '4,250' },
+      ],
+      context({
+        existingProducts: new Set([productKey('dry impact', '50ml')]),
+      }),
+    );
+    expect(plan.rows.map((row) => row.status)).toEqual(['skip', 'add']);
   });
 
   it('refuses the same name twice in one file, naming the first row', () => {
