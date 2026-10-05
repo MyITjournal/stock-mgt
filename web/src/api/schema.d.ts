@@ -5532,6 +5532,8 @@ export interface components {
             maxUsers: number;
             /** @description Retail, wholesale or mixed. Sets starting defaults only — every feature is open to every type. */
             businessType: components["schemas"]["BusinessType"];
+            /** @description Whether new sales record VAT. Off, they record none, whatever rate the products carry. */
+            chargesVat: boolean;
             address: string | null;
             phone: string | null;
             email: string | null;
@@ -5615,6 +5617,8 @@ export interface components {
             workingDays?: string[];
             /** @description Changes the defaults for products created from now on. Existing products and price lists are left exactly as they are. */
             businessType?: components["schemas"]["BusinessType"];
+            /** @description Whether this shop charges VAT. Off, every sale from now on records no VAT and the invoice prints no VAT line; sales already made keep the VAT they were recorded with. */
+            chargesVat?: boolean;
         };
         /** @enum {string} */
         OrgRole: "owner" | "manager" | "sales_rep" | "storekeeper" | "accountant";

@@ -41,6 +41,7 @@ describe('SaleService', () => {
     customer: { findFirst: jest.Mock };
     priceTier: { findFirst: jest.Mock };
     sale: { findFirst: jest.Mock };
+    organization: { findUniqueOrThrow: jest.Mock };
     $transaction: jest.Mock;
   };
 
@@ -92,6 +93,10 @@ describe('SaleService', () => {
           allocations: [],
           returns: [],
         }),
+      },
+      // A shop that charges VAT, as every shop did before the switch existed.
+      organization: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ chargesVat: true }),
       },
       $transaction: jest
         .fn()
@@ -279,6 +284,22 @@ describe('SaleService', () => {
     });
     const line = writtenLine();
     expect(line.lineTotal - line.taxAmount + line.taxAmount).toBe(10_800_000);
+  });
+
+  it('records no VAT at all for a shop that does not charge it', async () => {
+    // The product still carries 7.5%; the shop's switch wins, and the 0% is
+    // what is frozen onto the line, so reports and the invoice follow from it.
+    prisma.organization.findUniqueOrThrow.mockResolvedValue({
+      chargesVat: false,
+    });
+    await sell();
+
+    expect(writtenLine()).toMatchObject({
+      lineTotal: 10_800_000,
+      taxRateBps: 0,
+      taxAmount: 0,
+    });
+    expect(writtenSale()).toMatchObject({ total: 10_800_000, taxTotal: 0 });
   });
 
   it('lets the seller name the price agreed, overriding the tier', async () => {

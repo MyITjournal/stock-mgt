@@ -725,3 +725,27 @@ existing Seasoning is picked.
 
 **194. Remove a category on *Categories & tiers* that has no products, then add it again from the
 product form.** It comes back and is picked, with no error.
+
+---
+
+## AD. The VAT switch
+
+**195. [gate] As the owner of a shop that existed before this change, open Settings → Business.**
+*Do you charge VAT?* reads **Yes**, because that is how the shop has behaved until now.
+
+**196. [gate] Switch it to No and save, then ring up a sale at the till.** "Sale recorded" shows the
+total with **no "of which VAT" line**. Open the sale from Sales: no VAT line there either, and
+**Print invoice** prints none.
+
+**197. Open a sale made before the switch.** It still shows its VAT — switching does not rewrite
+what was already sold.
+
+**198. Open Add product.** There is no VAT rate box while VAT is off.
+
+**199. Reports → Profit for today, with only no-VAT sales in it.** The first line reads **Sold**
+(not "Sold, including VAT") and there is no "Less VAT" line.
+
+**200. Switch VAT back to Yes and sell again.** The new sale shows "of which VAT" and the product
+form has its VAT box back, still on the rate each product had.
+
+**201. Create a new shop from the sign-up screen.** Its Settings → Business reads **No**.

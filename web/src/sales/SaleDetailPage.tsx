@@ -90,8 +90,14 @@ export function SaleDetailPage() {
       description={`${new Date(sale.occurredAt).toLocaleString('en-NG')} · ${customerName}`}
       actions={
         <>
-          <PrintButton path={`/sales/${sale.id}/invoice.pdf`} label="Print invoice" />
-          <PdfButton path={`/sales/${sale.id}/invoice.pdf`} label="Invoice PDF" />
+          <PrintButton
+            path={`/sales/${sale.id}/invoice.pdf`}
+            label="Print invoice"
+          />
+          <PdfButton
+            path={`/sales/${sale.id}/invoice.pdf`}
+            label="Invoice PDF"
+          />
           <Button onClick={() => setReturning(true)}>Take goods back</Button>
         </>
       }
@@ -220,11 +226,13 @@ export function SaleDetailPage() {
           <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
             <dl className="space-y-2">
               <Row label="Total" value={<Money value={sale.total} />} strong />
-              <Row
-                label="of which VAT"
-                value={<Money value={sale.taxTotal} />}
-                muted
-              />
+              {sale.taxTotal !== 0 && (
+                <Row
+                  label="of which VAT"
+                  value={<Money value={sale.taxTotal} />}
+                  muted
+                />
+              )}
               {seesCost && (
                 <Row label="Cost" value={<Money value={sale.costTotal} />} />
               )}

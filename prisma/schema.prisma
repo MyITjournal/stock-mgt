@@ -729,6 +729,18 @@ model Organization {
   /// `mixed`, which is exactly how the app behaved until then.
   businessType BusinessType @default(mixed)
 
+  /// Whether this shop charges VAT at all. **Off, every new sale records 0%
+  /// VAT** whatever rate its products carry, so revenue counts in full and the
+  /// invoice prints no VAT line. It is read once per sale and frozen onto the
+  /// lines like every other money figure, so switching it never rewrites a
+  /// sale already made. The products keep their own rates for the day it is
+  /// switched back on, and an item that is VAT-free stays at 0% then.
+  ///
+  /// New shops start **off** — most small shops are under the turnover
+  /// threshold. Shops that existed before it start **on**, because that is how
+  /// they behaved until then (the migration sets it).
+  chargesVat Boolean @default(false)
+
   /// When staff may sign in, as **minutes past midnight** in this business's
   /// timezone: 480 is 08:00, 1140 is 19:00.
   ///

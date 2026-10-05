@@ -133,7 +133,14 @@ export function invoiceDefinition(args: {
               // Prices are stored tax-inclusive and VAT is derived by
               // subtraction (§2), so this is shown as "of which", never added
               // on top. Printing it as an addition would overstate the bill.
-              totalRow('of which VAT', money(invoice.tax)),
+              // A sale that carried no VAT — a shop that does not charge it —
+              // prints no VAT line at all: "of which VAT NGN 0.00" on a
+              // non-VAT shop's invoice reads as if it ought to have some. This
+              // follows the sale, not the shop's switch today, so an old VAT
+              // invoice reprinted after switching off still shows its VAT.
+              ...(invoice.tax > 0
+                ? [totalRow('of which VAT', money(invoice.tax))]
+                : []),
               totalRow('Paid', money(invoice.paid)),
               totalRow('Balance due', money(invoice.balance), true),
             ],

@@ -243,6 +243,22 @@ async function main() {
   const trade = (await api('POST', '/price-tiers', { token: t, body: { name: 'Trade' } })).data;
   check('a category and a third tier created', !!category.id && !!trade.id);
 
+  // A new shop starts without VAT — most small shops are under the turnover
+  // threshold. This one charges it, as every shop did before the switch
+  // existed, so the VAT checks below have something to check. The other shop
+  // in step 42 keeps the default and proves the off side.
+  eq(
+    'a new shop starts without VAT',
+    (await api('GET', '/organization', { token: t })).data.chargesVat,
+    false,
+  );
+  eq(
+    'and can switch it on',
+    (await api('PATCH', '/organization', { token: t, body: { chargesVat: true } })).data
+      .chargesVat,
+    true,
+  );
+
   const product = (
     await api('POST', '/products', {
       token: t,
@@ -2311,16 +2327,18 @@ async function main() {
       },
     })
   ).data;
-  eq(
-    'and its invoice numbering starts fresh at one',
-    (
-      await api('POST', '/sales', {
-        token: other.token,
-        body: { lines: [{ productId: theirProduct.id, quantity: 1 }] },
-      })
-    ).data.number,
-    'INV-0001',
-  );
+  const theirSale = (
+    await api('POST', '/sales', {
+      token: other.token,
+      body: { lines: [{ productId: theirProduct.id, quantity: 1 }] },
+    })
+  ).data;
+  eq('and its invoice numbering starts fresh at one', theirSale.number, 'INV-0001');
+  // It never switched VAT on, so the product's 7.5% is not charged: the whole
+  // price is the shop's, and the invoice will print no VAT line.
+  eq('a shop that does not charge VAT records none', theirSale.taxTotal, 0);
+  eq('and the price is unchanged', theirSale.total, 100_000);
+  eq('down to the line', theirSale.lines[0].taxRateBps, 0);
   await api('GET', `/products/${product.id}`, { token: other.token, expect: 404 });
   check("fetching the other org's product by id is 404", true);
   await api('GET', `/sales/${credit.id}`, { token: other.token, expect: 404 });
