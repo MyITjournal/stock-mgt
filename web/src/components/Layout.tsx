@@ -1,5 +1,11 @@
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth, useSeesCost } from '../auth/useAuth';
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
+import { useAuth, useLandingPath, useSeesCost } from '../auth/useAuth';
 import { Button } from './Button';
 
 interface NavItem {
@@ -31,6 +37,7 @@ const NAV: readonly NavItem[] = [
 export function Layout() {
   const { user, signOut } = useAuth();
   const seesCost = useSeesCost();
+  const landing = useLandingPath();
 
   const items = NAV.filter((item) => !item.costOnly || seesCost);
 
@@ -38,7 +45,19 @@ export function Layout() {
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
-          <span className="text-sm font-semibold tracking-tight text-brand-700">Reho</span>
+          {/*
+            The wordmark goes to the person's own start screen — the dashboard
+            for an owner, the till for a cashier — never to a fixed route. It
+            asks `landingPath`, the one place that decides where somebody
+            lands (§19): a hard-coded "/home" would send a cashier to a screen
+            they are not allowed to see.
+          */}
+          <Link
+            to={landing}
+            className="text-sm font-semibold tracking-tight text-brand-700 hover:text-brand-800"
+          >
+            Reho
+          </Link>
 
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto">
             {items.map((item) => (
