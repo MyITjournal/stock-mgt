@@ -205,6 +205,11 @@ class BillPaymentRef {
 
   @ApiProperty({ type: String, format: 'date-time' })
   occurredAt!: Date;
+
+  // Lazy: `PaidFromAccount` is declared further down this file, and a class
+  // is not hoisted, so naming it directly here would read it before it exists.
+  @ApiProperty({ type: () => PaidFromAccount, nullable: true })
+  bankAccount!: PaidFromAccount | null;
 }
 
 class ReceiptRef {

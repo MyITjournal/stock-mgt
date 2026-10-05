@@ -5,12 +5,23 @@ import { Button } from '../components/Button';
 import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { Money } from '../components/Money';
 import { api } from '../api/client';
+import { PaidOnField } from '../components/PaidOnField';
+import { occurredAtFor, today } from '../lib/paidOn';
 import { needsBankAccount, type PaymentMethod } from '../till/payment';
 import type { components } from '../api/schema';
 
 type CustomerView = components['schemas']['CustomerView'];
 type BankAccountView = components['schemas']['BankAccountView'];
 type ReceivablesView = components['schemas']['ReceivablesView'];
+
+/** The one invoice a "Mark as paid" is for. */
+export interface InvoiceToSettle {
+  saleId: string;
+  number: string;
+  customerId: string;
+  /** What the server says it still owes. */
+  balance: number;
+}
 
 export interface PaymentDraft {
   customerId: string | null;
@@ -21,6 +32,8 @@ export interface PaymentDraft {
   note: string;
   /** Empty means "let the server settle the oldest first". */
   allocations: { saleId: string; amount: number }[];
+  /** When the money moved, for a payment recorded after the day. */
+  occurredAt?: string;
 }
 
 /**
@@ -37,21 +50,32 @@ export interface PaymentDraft {
  * and the person cannot tell what it decided. Over-allocating a single invoice
  * comes back as a 409; money left over deliberately stays as credit on the
  * customer rather than being pushed somewhere it was not meant to go.
+ *
+ * **`invoice` is "Mark as paid"**: the payment is for that invoice and no
+ * other, the amount starts at what it still owes, and the allocation is
+ * exactly that invoice — paying more leaves the rest as credit, the same as
+ * anywhere else. Method and account are still asked, never guessed (§11).
  */
 export function RecordPaymentDialog({
   customerId: fixedCustomerId,
+  invoice,
   onConfirm,
   onCancel,
   busy,
   error,
 }: {
   customerId?: string;
+  /** Settle this one invoice — "Mark as paid". */
+  invoice?: InvoiceToSettle;
   onConfirm: (draft: PaymentDraft) => void;
   onCancel: () => void;
   busy: boolean;
   error: string | null;
 }) {
-  const [customerId, setCustomerId] = useState(fixedCustomerId ?? '');
+  const [customerId, setCustomerId] = useState(
+    invoice?.customerId ?? fixedCustomerId ?? '',
+  );
+  const [paidOn, setPaidOn] = useState(today);
   const [amount, setAmount] = useState<number | null>(null);
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [bankAccountId, setBankAccountId] = useState('');
@@ -91,14 +115,18 @@ export function RecordPaymentDialog({
     (total, value) => total + (value ?? 0),
     0,
   );
-  const paying = amount ?? 0;
+  // Until somebody types, "Mark as paid" means everything the invoice owes.
+  const shownAmount = amount ?? invoice?.balance ?? null;
+  const paying = shownAmount ?? 0;
 
   const requiresAccount = needsBankAccount(method);
   const canSubmit =
     paying !== 0 &&
     Boolean(customerId) &&
     (!requiresAccount || Boolean(bankAccountId)) &&
-    (!manual || allocated <= paying);
+    (!manual || allocated <= paying) &&
+    // Marking an invoice paid is money in; handing money back is not that.
+    (!invoice || paying > 0);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -110,11 +138,20 @@ export function RecordPaymentDialog({
       bankAccountId: requiresAccount ? bankAccountId || null : null,
       reference: reference.trim(),
       note: note.trim(),
-      allocations: manual
-        ? Object.entries(split)
-            .filter(([, value]) => value && value > 0)
-            .map(([saleId, value]) => ({ saleId, amount: value as number }))
-        : [],
+      allocations: invoice
+        ? // Exactly this invoice, never more than it owes; the rest is credit.
+          [
+            {
+              saleId: invoice.saleId,
+              amount: Math.min(paying, invoice.balance),
+            },
+          ]
+        : manual
+          ? Object.entries(split)
+              .filter(([, value]) => value && value > 0)
+              .map(([saleId, value]) => ({ saleId, amount: value as number }))
+          : [],
+      ...occurredAtFor(paidOn),
     });
   };
 
@@ -132,7 +169,7 @@ export function RecordPaymentDialog({
         <DialogClose onClose={onCancel} />
 
         <h2 id="payment-title" className="text-lg font-semibold text-slate-900">
-          Record a payment
+          {invoice ? `Mark ${invoice.number} as paid` : 'Record a payment'}
         </h2>
         <p className="mt-1 text-sm text-slate-500">
           One row per thing that happened, so it still matches the bank
@@ -144,7 +181,7 @@ export function RecordPaymentDialog({
             <Select
               id="payer"
               value={customerId}
-              disabled={busy || Boolean(fixedCustomerId)}
+              disabled={busy || Boolean(fixedCustomerId) || Boolean(invoice)}
               onChange={(event) => {
                 setCustomerId(event.target.value);
                 setSplit({});
@@ -169,11 +206,18 @@ export function RecordPaymentDialog({
           >
             <MoneyInput
               id="amount"
-              value={amount}
+              value={shownAmount}
               disabled={busy}
               onChange={setAmount}
             />
           </Field>
+
+          <PaidOnField
+            id="payment-date"
+            value={paidOn}
+            onChange={setPaidOn}
+            disabled={busy}
+          />
 
           <Field label="Method" htmlFor="method">
             <Select
@@ -229,7 +273,15 @@ export function RecordPaymentDialog({
             </Field>
           )}
 
-          {customerId && invoices.length > 0 && (
+          {invoice && (
+            <p className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+              Pays <strong>{invoice.number}</strong>, which owes{' '}
+              <Money value={invoice.balance} />. Anything above that stays as
+              credit on the customer.
+            </p>
+          )}
+
+          {!invoice && customerId && invoices.length > 0 && (
             <div className="rounded-lg border border-slate-200 p-3">
               <label className="flex items-center gap-2 text-sm">
                 <input

@@ -43,8 +43,15 @@ export function HomePage() {
     );
   }
 
-  const { sales, collections, receivables, profit, attention, movers, purchasing } =
-    data;
+  const {
+    sales,
+    collections,
+    receivables,
+    profit,
+    attention,
+    movers,
+    purchasing,
+  } = data;
 
   return (
     <Page
@@ -84,14 +91,14 @@ export function HomePage() {
 
       <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label="Owed to me"
+          label="Unpaid invoices"
           value={<Money value={receivables.total} />}
           note={`${receivables.invoices} invoice${
             receivables.invoices === 1 ? '' : 's'
           }, oldest ${receivables.oldestDays}d`}
         />
         <Stat
-          label="I owe vendors"
+          label="Unpaid bills"
           value={<Money value={purchasing.payables.total} />}
           note={`${purchasing.payables.bills} bill${
             purchasing.payables.bills === 1 ? '' : 's'
@@ -138,8 +145,16 @@ export function HomePage() {
                     ? `${row.customer.firstName} ${row.customer.lastName ?? ''}`.trim()
                     : 'Walk-in',
               },
-              { header: 'Invoices', cell: (row) => row.invoices, numeric: true },
-              { header: 'Oldest', cell: (row) => `${row.oldestDays}d`, numeric: true },
+              {
+                header: 'Invoices',
+                cell: (row) => row.invoices,
+                numeric: true,
+              },
+              {
+                header: 'Oldest',
+                cell: (row) => `${row.oldestDays}d`,
+                numeric: true,
+              },
               {
                 header: 'Balance',
                 cell: (row) => <Money value={row.balance} />,
@@ -157,7 +172,11 @@ export function HomePage() {
             columns={[
               { header: 'Vendor', cell: (row) => row.supplier.name },
               { header: 'Bills', cell: (row) => row.bills, numeric: true },
-              { header: 'Oldest', cell: (row) => `${row.oldestDays}d`, numeric: true },
+              {
+                header: 'Oldest',
+                cell: (row) => `${row.oldestDays}d`,
+                numeric: true,
+              },
               {
                 header: 'Balance',
                 cell: (row) => <Money value={row.balance} />,

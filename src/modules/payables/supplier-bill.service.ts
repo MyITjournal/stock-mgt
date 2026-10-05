@@ -33,6 +33,8 @@ const BILL_INCLUDE = {
       method: true,
       reference: true,
       occurredAt: true,
+      // Which account it left, so a bill can be checked against a statement.
+      bankAccount: { select: { id: true, bankName: true, accountName: true } },
     },
   },
 } as const;

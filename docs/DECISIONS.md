@@ -2816,6 +2816,35 @@ stale one costs more than no comment, because it argues against a change that is
   all — but it is a screen that does not exist rather than one that needs trimming, and it belongs
   with the mobile slice.
 
+### Invoices and Bills, and every payment pointing at what it paid (2026-10-05)
+
+Found in real use: a bill paid in full **vanished** from *We owe*, so there was no list of bills,
+no "paid" on any of them, and no way to check that what went out matched what was billed. The
+customer side had the same shape. The owner also asked for plainer, paired names.
+
+- **The tabs are pairs.** Invoices / Money in for customers, Bills / Money out for vendors, then
+  Expenses and Bank accounts (were *Owed to us / Payments / We owe / Paid out / Accounts*).
+  Screen labels only: routes, endpoints, models and DTOs keep `receivables`, `payables`,
+  `supplier-payments`, so saved links and the API are unchanged. Notes written before this date
+  use the old names.
+- **Unpaid and All, on both sides.** Unpaid is the grouped, longest-owed view it always was. All
+  is `GET /supplier-bills` (which already kept settled bills) and `GET /sales?order=desc`. Each
+  row shows Unpaid / Part-paid / Paid from `payState(balance, paid)` — **named from the server's
+  `balance` and `paid`/`allocated`, never computed**, so the label cannot disagree with the
+  figures beside it.
+- **Mark as paid is not a new kind of write.** It is the ordinary payment form with the amount set
+  to the whole balance; on an invoice the allocation is pinned to that invoice and capped at what
+  it owes, so anything above becomes credit as everywhere else. Method and account are still
+  asked — §11 forbids guessing them — and so is the day.
+- **A bill lists the payments that add up to it.** `BillDialog` reads `GET /supplier-bills/:id`,
+  whose payments are already only the live ones and whose `paid` is their sum; the only server
+  change was adding each payment's bank account. A voided payment stays on Money out struck
+  through and is absent from the bill. Money out links each payment to its bill; Money in links
+  each allocation to its invoice, with the amount that went to it.
+- **"Paid on" on both payment forms**, sent as noon UTC on the picked day (today sends nothing),
+  so a bill paid in June but entered in October lands in June. The server already bounded
+  `occurredAt` to a year back.
+
 ---
 
 ## 17. The web dashboard

@@ -194,7 +194,7 @@ A JSON error page instead means the download bypassed the refresh — a raw link
 **54. Bring stock on as a surplus.** **[gate] It asks for a lot code, an expiry and what it is worth.** An unvalued surplus reads as free goods to everything that sums it.
 
 **55. `/stock/receive`** — record a delivery: invoice total, quantity received, quantity paid for.
-**[gate] The screen says out loud that this raises a bill on *We owe*.** The goods value on a receipt is not what is owed.
+**[gate] The screen says out loud that this raises a bill on *Bills*.** The goods value on a receipt is not what is owed.
 
 **56. [gate] Enter a delivery where `quantityPaidFor` is less than `quantityReceived`** — buy 19,
 get 1 free. Both numbers are kept, and the gap is free goods.
@@ -797,7 +797,7 @@ one carton cost?" and Save is disabled with "1 line needs a cost".
 **213. Type ₦14,000, press + loose, and enter 3 rolls at ₦900. Save.** "Opening stock saved for 1
 product, worth ₦198,700.00." Peak 14g leaves the list.
 
-**214. [gate] Open Money → We owe.** Nothing new is owed — no bill was raised. Reports → Purchases
+**214. [gate] Open Money → Bills.** Nothing new is owed — no bill was raised. Reports → Purchases
 and the vendor targets do not move either.
 
 **215. Open Stock → On hand and Peak 14g's lots.** 2,270 sachets in two lots coded **Opening**,
@@ -808,3 +808,35 @@ the carton lot with its expiry. Reports → Stock shows them at ₦198,700.00.
 
 **217. In a shop with two locations,** the sheet asks **Which location**, and a product stocked
 at one is still offered at the other.
+
+---
+
+## AG. Invoices, Bills, and what each payment paid
+
+The Money tabs were renamed on 2026-10-05: Owed to us → **Invoices**, Payments → **Money in**,
+We owe → **Bills**, Paid out → **Money out**, Accounts → **Bank accounts**. The addresses did not
+change.
+
+**218. [gate] Open Money.** The tabs read Invoices, Money in, Bills, Money out, Expenses, Bank
+accounts. Home shows **Unpaid invoices** and **Unpaid bills**.
+
+**219. [gate] Bills → Unpaid, open a vendor, press Mark as paid on a bill.** The form is titled
+**Mark as paid**, the amount is the whole balance, and **Paid on** is today and cannot be set to a
+later day. Set Paid on to a day in June and record it. The bill leaves Unpaid.
+
+**220. [gate] Bills → All bills.** That bill is there marked **Paid**, with Billed, Paid and Owing.
+Click it: the payment is listed with its June date and method, and the payments add up to Paid.
+
+**221. Pay part of another bill with Pay part.** In All bills it reads **Part-paid**.
+
+**222. [gate] Money out.** Each payment's **Against bill** opens the bill it paid. A voided
+payment is struck through here and is **not** listed on its bill.
+
+**223. [gate] Invoices → All invoices.** Every invoice is listed newest first with Unpaid,
+Part-paid or Paid. Press **Mark as paid** on an unpaid credit invoice: the form names that invoice,
+the amount is what it owes, and recording it turns the row **Paid**.
+
+**224. Money in.** The payment just recorded lists the invoice it settled as a link, with the amount
+that went to it, and the link opens the invoice.
+
+**225. Record a customer payment with Paid on set to last Friday.** Money in shows it dated Friday.

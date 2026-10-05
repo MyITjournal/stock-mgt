@@ -48,7 +48,8 @@ export function PaymentsPage() {
   // The end of the chosen day, not its midnight: somebody picking 1-7
   // September means the whole of the seventh.
   if (since) query.set('since', new Date(since).toISOString());
-  if (until) query.set('until', new Date(`${until}T23:59:59.999`).toISOString());
+  if (until)
+    query.set('until', new Date(`${until}T23:59:59.999`).toISOString());
   if (method) query.set('method', method);
   if (!showVoided) query.set('includeVoided', 'false');
 
@@ -97,6 +98,7 @@ export function PaymentsPage() {
         ...(draft.reference && { reference: draft.reference }),
         ...(draft.note && { note: draft.note }),
         ...(draft.allocations.length > 0 && { allocations: draft.allocations }),
+        ...(draft.occurredAt && { occurredAt: draft.occurredAt }),
       }),
     onSuccess: () => {
       invalidate();
@@ -105,9 +107,7 @@ export function PaymentsPage() {
     },
     onError: (caught) =>
       setError(
-        caught instanceof ApiError
-          ? caught.message
-          : 'Could not record that.',
+        caught instanceof ApiError ? caught.message : 'Could not record that.',
       ),
   });
 
@@ -121,7 +121,10 @@ export function PaymentsPage() {
   );
 
   return (
-    <Page title="Payments" description="Money in, and money handed back.">
+    <Page
+      title="Money in"
+      description="Payments from customers, and money handed back."
+    >
       <div className="mb-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
         <Field label="Customer" htmlFor="payment-customer">
           <Select
@@ -212,7 +215,10 @@ export function PaymentsPage() {
           <tbody className="divide-y divide-slate-100">
             {!isPending && payments.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                <td
+                  colSpan={6}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   No payments recorded yet.
                 </td>
               </tr>
@@ -234,10 +240,7 @@ export function PaymentsPage() {
                         to={`/customers/${payment.customer.id}`}
                         className="underline-offset-2 hover:underline"
                       >
-                        {[
-                          payment.customer.firstName,
-                          payment.customer.lastName,
-                        ]
+                        {[payment.customer.firstName, payment.customer.lastName]
                           .filter(Boolean)
                           .join(' ')}
                       </Link>
@@ -257,14 +260,29 @@ export function PaymentsPage() {
                     {payment.allocations.length === 0 ? (
                       <span className="text-slate-400">credit</span>
                     ) : (
-                      payment.allocations
-                        .map((allocation) => allocation.sale.number)
-                        .join(', ')
+                      // Each invoice it paid, and how much went to it — a
+                      // link, so a payment always leads to what it settled.
+                      payment.allocations.map((allocation, index) => (
+                        <span key={allocation.id}>
+                          {index > 0 && ', '}
+                          <Link
+                            to={`/sales/${allocation.saleId}`}
+                            className="underline-offset-2 hover:underline"
+                            title={`${allocation.sale.number}`}
+                          >
+                            {allocation.sale.number}
+                          </Link>{' '}
+                          <span className="text-slate-400">
+                            <Money value={allocation.amount} />
+                          </span>
+                        </span>
+                      ))
                     )}
                     {payment.unallocated !== 0 &&
                       payment.allocations.length > 0 && (
                         <span className="ml-1 text-slate-400">
-                          (+<Money value={payment.unallocated} /> credit)
+                          (+
+                          <Money value={payment.unallocated} /> credit)
                         </span>
                       )}
                   </td>
@@ -314,9 +332,7 @@ export function PaymentsPage() {
             setVoiding(null);
             setError(null);
           }}
-          onConfirm={(reason) =>
-            voidPayment.mutate({ id: voiding.id, reason })
-          }
+          onConfirm={(reason) => voidPayment.mutate({ id: voiding.id, reason })}
         />
       )}
 

@@ -472,7 +472,7 @@ export function ReceiveDeliveryPage() {
             </h2>
 
             <p className="text-xs text-slate-500">
-              This delivery raises a bill on <strong>Money → We owe</strong>{' '}
+              This delivery raises a bill on <strong>Money → Bills</strong>{' '}
               whether or not anything was paid. It defaults to the goods total;
               override it when the invoice carries a delivery charge or a
               settlement discount that no stock line can hold — that does not
