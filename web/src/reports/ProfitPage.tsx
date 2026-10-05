@@ -101,6 +101,18 @@ export function ProfitPage() {
                 <Line label="Revenue" value={data.revenue} strong />
                 <Line label="Less cost of goods" value={-data.cogs} />
                 <Line label="Gross profit" value={data.grossProfit} strong />
+                {/*
+                  Credit vendors took off bills dated in this period. Its own
+                  line, after gross profit: not revenue, and not taken off cost
+                  of goods, so the margin on what was sold is unchanged.
+                */}
+                {data.vendorRebates !== 0 && (
+                  <Line
+                    label="Plus vendor rebates"
+                    value={data.vendorRebates}
+                    hint="Credited off vendor bills in this period"
+                  />
+                )}
                 <Line label="Less expenses" value={-data.expenses} />
                 <Line
                   label="Operating profit"

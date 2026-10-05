@@ -650,7 +650,11 @@ market comparison found. The rules are pure, in `catalog/product-import.ts`.
 - **Preview and save are one function.** `dryRun` returns every row as `add`, `skip` or `error`
   with reasons in words; the save re-plans against the catalog as it is then and writes only if
   **no** row is in error. All or nothing, in one transaction.
-- **A name already in the catalog is skipped, never changed.** Bulk price changes belong with
+- **A product is its name and size together**, case and spaces aside (`productKey`), as the till and
+  the receipt show it. The first version used the name alone, and an owner's file failed on *Dry
+  Impact* the 50ml roll-on and *Dry Impact* the 200ml spray. Same name and size twice in one file
+  is refused, naming the first row.
+- **A product already in the catalog is skipped, never changed.** Bulk price changes belong with
   export (download, edit, upload back), not here. A side effect worth having: a retry after a save
   that landed, even with a fresh key, finds every name taken and skips every row.
 - **Units sell exactly as the form decides** — `defaultIsSellable` and `chooseDefaultSellingUnit`
@@ -2855,6 +2859,36 @@ stale one costs more than no comment, because it argues against a change that is
 - **No rep-facing home screen.** Raised while scoping this — staff cannot reach the dashboard at
   all — but it is a screen that does not exist rather than one that needs trimming, and it belongs
   with the mobile slice.
+
+### Vendor rebates: expected for a month, credited off a later bill (2026-10-05)
+
+A vendor scheme pays a rebate when a month's buying meets its target, and pays it **only as credit
+off a later bill** — never cash. Agreed with the owner before building: show "rebate expected"
+with a tentative amount they enter (the vendor calculates the real one later), turn it "credited ✓"
+when it lands on a bill, and count it in profit in the month it arrives, on its own line.
+
+- **Not a payment, not an expense.** No money moves, so Money out never shows it and no bank
+  account is involved; and booking it as negative expense or as revenue would bury what rebates are
+  worth. It is a reduction in what one bill owes, which is exactly what `billBalance` already
+  anticipated growing: `balance = amountDue − paid − rebated`. `CREDITED_REBATES` is the query
+  half, and `rebates` is **required** in `BillBalanceInput` so that a balance query which forgets it
+  fails to compile — the customer side once lost a void filter in a fourth `include` (§11).
+- **Two steps, because the owner knows two things at two times.** `expectedAmount` when the month
+  is earned; `creditedAmount` (the real figure, often different), `billId` and `creditedAt` set
+  together when it lands — a CHECK constraint refuses half a credit. *Remove credit* clears all
+  three: the bill owes again and the rebate is expected again.
+- **No target gate.** Whether a scheme was met is the owner's judgement; schemes differ by vendor
+  and encoding them is accounting software. The Targets page shows "2 of 3 targets met" beside the
+  rebate as context only.
+- **A credit never overpays a bill, and must be that vendor's.** The same rule as a payment, for the
+  same reason: no allocation table on the vendor side (§16). A bigger credit goes on a bigger bill.
+- **Profit counts it in the month of the bill it landed on** (`creditedAt` is the bill's
+  `issuedAt`, so there is no date to type), as `vendorRebates` after gross profit:
+  `operatingProfit = grossProfit + vendorRebates − expenses`. Gross profit and margin are untouched
+  — the goods keep their invoice cost — so what the rebate is worth stays visible on its own line,
+  on the dashboard too, since both read `ReportService.profit`.
+- **One per vendor per month** (unique), editable while expected, removable while expected.
+  Owner, manager and accountant, like everything else on the vendor side.
 
 ### Invoices and Bills, and every payment pointing at what it paid (2026-10-05)
 

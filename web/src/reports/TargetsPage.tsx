@@ -10,6 +10,7 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import { formatCartons } from '../lib/quantity';
+import { RebatesPanel } from './RebatesPanel';
 import type { components } from '../api/schema';
 
 type PurchaseTargetReportView =
@@ -157,6 +158,13 @@ export function TargetsPage() {
           />
         ))}
       </div>
+
+      <RebatesPanel
+        month={month}
+        supplierId={supplierId}
+        targets={data?.targets ?? []}
+        canEdit={isManager}
+      />
 
       {dialog && (
         <TargetDialog

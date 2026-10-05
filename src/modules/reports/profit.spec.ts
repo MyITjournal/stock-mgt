@@ -8,7 +8,7 @@ const sale = {
   costTotal: 8_000_000,
 };
 
-const nothing = { sales: [], returns: [], expenses: [] };
+const nothing = { sales: [], returns: [], expenses: [], rebates: [] };
 
 describe('computeProfit', () => {
   it('reports zeros for a period with nothing in it', () => {
@@ -68,6 +68,25 @@ describe('computeProfit', () => {
 
     expect(result.expenses).toBe(2_300_000);
     expect(result.operatingProfit).toBe(result.grossProfit - 2_300_000);
+  });
+
+  it('adds vendor rebates credited in the period, on their own line', () => {
+    // Not revenue — nothing was sold — and not off cost of goods, so the
+    // margin on what was sold is unchanged; the rebate shows on its own.
+    const without = computeProfit({ ...nothing, sales: [sale] });
+    const result = computeProfit({
+      ...nothing,
+      sales: [sale],
+      expenses: [{ amount: 1_000_000 }],
+      rebates: [{ creditedAmount: 2_500_000 }],
+    });
+
+    expect(result.vendorRebates).toBe(2_500_000);
+    expect(result.grossProfit).toBe(without.grossProfit);
+    expect(result.marginBps).toBe(without.marginBps);
+    expect(result.operatingProfit).toBe(
+      result.grossProfit + 2_500_000 - 1_000_000,
+    );
   });
 
   describe('returns', () => {
