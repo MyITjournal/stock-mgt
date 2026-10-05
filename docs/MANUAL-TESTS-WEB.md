@@ -708,3 +708,20 @@ Customers and they are there, owing the balance.
 
 **190. Signed in as a cashier, do 188 again.** It works the same — adding a customer is not
 limited to a manager.
+
+---
+
+## AC. A new category from Add product
+
+**191. [gate] Open Add product, type a name and a price, then press + New beside Category.** A box
+replaces the drop-down. Type `Seasoning` and press **Enter**. The product is **not** saved yet; the
+drop-down comes back with **Seasoning** chosen, and everything typed above it is still there.
+
+**192. Save the product.** It is filed under Seasoning, and Seasoning appears on *Categories &
+tiers*.
+
+**193. Press + New again and type `seasoning` (lower case).** Nothing new is created — the
+existing Seasoning is picked.
+
+**194. Remove a category on *Categories & tiers* that has no products, then add it again from the
+product form.** It comes back and is picked, with no error.

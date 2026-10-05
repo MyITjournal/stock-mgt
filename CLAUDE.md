@@ -711,6 +711,12 @@ past reports. Re-adding a deleted name **revives** the row, as packaging types a
 the soft delete keeps the name under the unique constraint. Packaging types stay deletable while in
 use, on purpose. Both now have a Remove button on *Categories & tiers*; price tiers do not.
 
+**A category can be added from the product form** (2026-10-05): **+ New** beside Category
+(`catalog/CategoryPicker.tsx`) adds it and picks it without closing the form. It sits *inside* the
+product form, so **Enter is caught on the box** — otherwise it saves the product with the category
+still missing. A name already on the list is picked rather than sent, and **the id the server
+returns is the one used**, because re-adding a deleted name revives the old row with its own id.
+
 **A service is a product with `trackStock` off, never a category** (§4). A delivery charge is
 priced, taxed and invoiced like anything else; the sale path returns the line without calling
 `recordOutbound` and records `costOfGoodsSold: 0`, and reorder alerts, stocktakes and stock
