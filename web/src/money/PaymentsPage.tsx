@@ -10,6 +10,8 @@ import { useAuth } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { RecordPaymentDialog, type PaymentDraft } from './RecordPaymentDialog';
 import { VoidPaymentDialog } from './VoidPaymentDialog';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportMoneyIn } from './exportMoney';
 
 type PaymentListView = components['schemas']['PaymentListView'];
 type PaymentView = components['schemas']['PaymentView'];
@@ -124,6 +126,7 @@ export function PaymentsPage() {
     <Page
       title="Money in"
       description="Payments from customers, and money handed back."
+      actions={<DownloadButton onDownload={() => exportMoneyIn(query)} />}
     >
       <div className="mb-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
         <Field label="Customer" htmlFor="payment-customer">

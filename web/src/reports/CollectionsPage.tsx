@@ -5,6 +5,8 @@ import { api } from '../api/client';
 import type { components } from '../api/schema';
 import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportCollections } from './exportReports';
 
 type CollectionsView = components['schemas']['CollectionsView'];
 type ProfitReportView = components['schemas']['ProfitReportView'];
@@ -49,6 +51,12 @@ export function CollectionsPage() {
     <Page
       title="Money in"
       description="What was actually received, per till and per account."
+      actions={
+        <DownloadButton
+          disabled={!(data && profit)}
+          onDownload={() => exportCollections(data!, profit!.period)}
+        />
+      }
     >
       <PeriodPicker resolved={profit?.period} />
 

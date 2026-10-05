@@ -11,6 +11,41 @@ import type { components } from '../api/schema';
 import { AdjustDialog } from './AdjustDialog';
 import { TransferDialog } from './TransferDialog';
 import { ExpiryPanel } from './ExpiryPanel';
+import { DownloadButton } from '../components/DownloadButton';
+import { downloadSheet, stamp, type SheetColumn } from '../lib/exportSheet';
+
+/**
+ * On hand as a spreadsheet: the rows on screen, searched and filtered as they
+ * are. Counts and expiry only — value is the Stock value report's download,
+ * where the server values each lot from its total, rounded once (§2). A
+ * per-unit cost multiplied out here would be a second, rounder answer.
+ */
+const LEVEL_COLUMNS: readonly SheetColumn<StockLevelRow>[] = [
+  { header: 'Product', value: (row) => row.product.name, width: 32 },
+  { header: 'SKU', value: (row) => row.product.sku, width: 18 },
+  { header: 'Location', value: (row) => row.location.name, width: 16 },
+  {
+    header: 'On hand (counted-in units)',
+    kind: 'number',
+    value: (row) => row.quantity,
+    width: 16,
+  },
+  {
+    header: 'Lots',
+    kind: 'number',
+    value: (row) => row.batches?.length ?? 0,
+    width: 8,
+  },
+  {
+    header: 'Soonest expiry',
+    kind: 'date',
+    value: (row) =>
+      (row.batches ?? [])
+        .filter((batch) => batch.quantity > 0 && batch.expiryDate)
+        .map((batch) => batch.expiryDate as string)
+        .sort()[0],
+  },
+];
 
 type StockLevelRow = components['schemas']['StockLevelRow'];
 type LocationView = components['schemas']['LocationView'];
@@ -77,15 +112,25 @@ export function LevelsPage() {
       title="Stock on hand"
       description="Counted in base units, straight from the ledger."
       actions={
-        // Owner and manager, like the server: the sheet records costs.
-        canEnterOpening && (
-          <Button
-            variant="secondary"
-            onClick={() => navigate('/stock/opening')}
-          >
-            Opening stock
-          </Button>
-        )
+        <>
+          <DownloadButton
+            onDownload={() =>
+              downloadSheet(stamp('stock-on-hand'), LEVEL_COLUMNS, rows)
+            }
+            disabled={rows.length === 0}
+          />
+          {
+            // Owner and manager, like the server: the sheet records costs.
+            canEnterOpening && (
+              <Button
+                variant="secondary"
+                onClick={() => navigate('/stock/opening')}
+              >
+                Opening stock
+              </Button>
+            )
+          }
+        </>
       }
     >
       <ExpiryPanel locationId={locationId} />

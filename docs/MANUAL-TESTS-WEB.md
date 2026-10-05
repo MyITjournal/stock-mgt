@@ -840,3 +840,31 @@ the amount is what it owes, and recording it turns the row **Paid**.
 that went to it, and the link opens the invoice.
 
 **225. Record a customer payment with Paid on set to last Friday.** Money in shows it dated Friday.
+
+---
+
+## AH. Downloading to Excel
+
+**226. [gate] Open any screen with a Download button, then reload with the browser's network
+panel open.** Nothing named `browser-…js` (the Excel writer) loads until **Download** is pressed.
+
+**227. [gate] Stock → Products → Download.** An `.xlsx` opens in Excel with the import template's
+columns, filled in. A 13-digit barcode reads in full — not `6.154E+12` — and prices are numbers
+Excel can add up.
+
+**228. Upload that same file through Import from spreadsheet.** Every row reads **Skipped —
+already in your products**. (Changing prices by re-uploading is a later step.)
+
+**229. Stock → On hand → Download.** One row per product and location, with on hand and the
+soonest expiry. There is no value column; Reports → Stock → Download has value.
+
+**230. [gate] Reports → Profit, Sales, Purchases, Money in, Movers and Stock → Download each.**
+Each file has the tables the screen shows, a tab each, and a **Period** tab saying which period.
+The totals match the screen.
+
+**231. [gate] Signed in as a cashier, download Sales by product.** The cost, gross profit and
+margin columns are **empty**, not zero.
+
+**232. Money → Invoices → All invoices → Download, and the same on Bills → All bills, Money in and
+Money out.** Each file holds the whole list, not only the page on screen, with Unpaid / Part-paid /
+Paid and, on the payment lists, which were voided.

@@ -8,6 +8,8 @@ import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportSales } from './exportReports';
 
 type SalesReportView = components['schemas']['SalesReportView'];
 type SalesGroupRow = components['schemas']['SalesGroupRow'];
@@ -101,7 +103,16 @@ export function SalesReportPage() {
   ];
 
   return (
-    <Page title="Sales" description="What sold, and to whom.">
+    <Page
+      title="Sales"
+      description="What sold, and to whom."
+      actions={
+        <DownloadButton
+          disabled={!data}
+          onDownload={() => exportSales(data!, label(groupBy))}
+        />
+      }
+    >
       <PeriodPicker resolved={data?.period} />
 
       <div className="mb-4 flex flex-wrap gap-1">

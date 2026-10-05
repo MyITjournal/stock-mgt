@@ -10,6 +10,8 @@ import type { components } from '../api/schema';
 import { PaySupplierDialog } from './PaySupplierDialog';
 import { usePaySupplier } from './usePaySupplier';
 import { BillDialog } from './BillDialog';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportBills } from './exportMoney';
 
 type PayablesView = components['schemas']['PayablesView'];
 type SupplierBillView = components['schemas']['SupplierBillView'];
@@ -263,21 +265,27 @@ function AllBills({ onOpen }: { onOpen: (billId: string) => void }) {
 
   return (
     <>
-      <div className="mb-4 max-w-xs">
-        <Field label="Vendor" htmlFor="bills-supplier">
-          <Select
-            id="bills-supplier"
-            value={supplierId}
-            onChange={(event) => setSupplierId(event.target.value)}
-          >
-            <option value="">Everyone</option>
-            {suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
-                {supplier.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div className="w-full max-w-xs">
+          <Field label="Vendor" htmlFor="bills-supplier">
+            <Select
+              id="bills-supplier"
+              value={supplierId}
+              onChange={(event) => setSupplierId(event.target.value)}
+            >
+              <option value="">Everyone</option>
+              {suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <DownloadButton
+          disabled={rows.length === 0}
+          onDownload={() => exportBills(rows)}
+        />
       </div>
 
       {isPending && <p className="text-sm text-slate-500">Loading…</p>}
