@@ -722,6 +722,16 @@ product form, so **Enter is caught on the box** — otherwise it saves the produ
 still missing. A name already on the list is picked rather than sent, and **the id the server
 returns is the one used**, because re-adding a deleted name revives the old row with its own id.
 
+**A catalog can be imported from a spreadsheet** (§4, 2026-10-05): `POST /products/import` and
+*Products → Import from spreadsheet* — template, upload `.xlsx` or `.csv`, preview every row, then
+save all or nothing. One row per product: counted-in unit and price, up to two bigger units with
+how many they hold, category by name, one barcode. **Every cell travels as text and the server
+reads it** (`parseNaira`, exact), and **the preview and the save are the same `planImport`**, so
+they cannot disagree. A name already there is **skipped, never changed**; no cost, no opening
+stock, no price-list column. ⚠ **A path-scoped body parser must not be named `jsonParser`**:
+Nest skips its own global JSON parser if it finds one by that name anywhere, and every other
+request arrives empty — see the wrapper in `main.ts`.
+
 **A service is a product with `trackStock` off, never a category** (§4). A delivery charge is
 priced, taxed and invoiced like anything else; the sale path returns the line without calling
 `recordOutbound` and records `costOfGoodsSold: 0`, and reorder alerts, stocktakes and stock

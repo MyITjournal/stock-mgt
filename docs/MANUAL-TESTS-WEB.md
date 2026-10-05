@@ -749,3 +749,34 @@ what was already sold.
 form has its VAT box back, still on the rate each product had.
 
 **201. Create a new shop from the sign-up screen.** Its Settings → Business reads **No**.
+
+---
+
+## AE. Importing products from a spreadsheet
+
+**202. [gate] As an owner, open Stock → Products.** There is an **Import from spreadsheet** button
+beside Add product. Signed in as a cashier, it is not there.
+
+**203. Press it, then Download the template.** A `reho-products-template.csv` downloads. It opens
+in Excel or Google Sheets with the column names and two example rows (Peak 14g, Indomie 70g).
+
+**204. [gate] Upload the template untouched.** The preview says **2 to add** and the new
+categories Milk and Noodles. Peak 14g lists sachet ₦100.00, roll of 10 ₦950.00, carton of 160
+₦14,500.00. **Nothing is in Products yet.**
+
+**205. In Excel, add a row with Unit 2 "carton" and Unit 2 how many `0.5`, and one whose price is
+`two hundred`; save as .xlsx and upload.** Those rows are red with the reason in words, and
+**Add products** is disabled with "Fix the rows marked in red".
+
+**206. [gate] Fix them, upload again, press Add.** "N products added". Open Products: they are
+there, under their categories, and a carton at the till rings up at its own price.
+
+**207. Upload the same file again.** Every row reads **Skipped — already in your products**, and
+nothing changes.
+
+**208. Type a 13-digit barcode into a General-formatted cell in Excel and save as .csv.** The row
+says the spreadsheet rounded the barcode and to format the column as Text. Doing that and saving as
+.xlsx imports it, and scanning it at the till finds the product.
+
+**209. In a wholesale shop, import Peak 14g.** The sachet shows "counted, not sold" and the carton
+"first at the till".
