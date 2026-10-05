@@ -53,6 +53,12 @@ import {
   StockMovementView,
   TransferResultView,
 } from './dto/stock.response';
+import { OpeningStockService } from './opening-stock.service';
+import { OpeningStockDto } from './dto/opening-stock.dto';
+import {
+  OpeningStockProductView,
+  OpeningStockResultView,
+} from './dto/opening-stock.response';
 
 /** Setting up where stock lives and who it comes from is a management job. */
 const INVENTORY_EDITORS = [OrgRole.owner, OrgRole.manager];
@@ -262,7 +268,39 @@ export class StockController {
     private readonly operations: StockOperationsService,
     private readonly levels: StockLevelService,
     private readonly sync: SyncService,
+    private readonly opening: OpeningStockService,
   ) {}
+
+  @Get('opening')
+  @Roles(...INVENTORY_EDITORS)
+  @ApiQuery({ name: 'locationId', required: false })
+  @ApiOperation({
+    summary: 'Products that need opening stock',
+    description:
+      'Every product that keeps stock and has never had stock come in at this location — the sheet an owner fills in on day one. A product sold before it was counted still appears; one that has had a delivery, a transfer in or a count surplus does not.',
+  })
+  @ApiOkResponse({ type: [OpeningStockProductView] })
+  openingSheet(
+    @Query('locationId', new ParseUUIDPipe({ optional: true }))
+    locationId?: string,
+  ): Promise<OpeningStockProductView[]> {
+    return this.opening.list(locationId);
+  }
+
+  @Post('opening')
+  @Roles(...INVENTORY_EDITORS)
+  @Idempotent(
+    'A retry with the same key returns the original result. A fresh key is refused with a 409, because every product on it now has stock.',
+  )
+  @ApiOperation({
+    summary: 'Record opening stock',
+    description:
+      'What is on the shelves on day one and what it cost, as opening-balance adjustments: a lot each, valued at cost × quantity, with no bill raised and nothing counted toward vendor targets or the purchases report. All or nothing; a 409 if any product has had stock come in here since the sheet was opened.',
+  })
+  @ApiCreatedResponse({ type: OpeningStockResultView })
+  recordOpening(@Body() dto: OpeningStockDto): Promise<OpeningStockResultView> {
+    return this.opening.record(dto);
+  }
 
   @Get('levels')
   @ApiQuery({ name: 'productId', required: false })

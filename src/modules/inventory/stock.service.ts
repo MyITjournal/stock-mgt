@@ -13,6 +13,7 @@ import {
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { randomUUID } from 'node:crypto';
 import { allocateFefo, sortFefo } from './fefo';
 
 /**
@@ -61,6 +62,24 @@ export interface PickCost {
   cost: number;
   /** The part of `cost` that came from an estimated rate. */
   estimated: number;
+}
+
+/** One line for `recordNewLots`: a quantity, and the lot it opens. */
+export interface NewLotLine {
+  productId: string;
+  locationId: string;
+  /** In base units. */
+  quantity: number;
+  type: StockMovementType;
+  reason?: StockAdjustmentReason;
+  note?: string;
+  occurredAt: Date;
+  lotCode?: string;
+  expiryDate?: Date;
+  /** Exact total, in kobo. */
+  totalCost: number;
+  /** Zero when nothing was bought — an opening balance, stock found. */
+  quantityPaidFor: number;
 }
 
 export interface OutboundInput extends MovementInput {
@@ -125,6 +144,65 @@ export class StockService {
 
     await this.applyToBalance(db, input, input.batchId, input.quantity);
     return movement;
+  }
+
+  /**
+   * Stock in, many lines at once, each into a lot of its own made here.
+   *
+   * What opening stock is: hundreds of products arriving in the ledger on day
+   * one. One by one through `recordInbound` that is several round trips each,
+   * inside a single transaction — minutes on the free tier. Because every lot
+   * is new, no balance row can already exist for it, so lots, movements and
+   * balances are each one statement. The rows are exactly what
+   * `recordInbound` would write, so the ledger cannot tell them apart.
+   */
+  async recordNewLots(
+    lines: readonly NewLotLine[],
+    db: StockWriter = this.prisma,
+  ): Promise<void> {
+    if (lines.length === 0) return;
+    for (const line of lines) assertPositive(line.quantity);
+
+    const organizationId = TenantContext.requireOrganizationId();
+    const recordedByUserId = TenantContext.get()?.userId ?? null;
+    const rows = lines.map((line) => ({ ...line, batchId: randomUUID() }));
+
+    await db.stockBatch.createMany({
+      data: rows.map((row) => ({
+        id: row.batchId,
+        organizationId,
+        productId: row.productId,
+        lotCode: row.lotCode ?? null,
+        expiryDate: row.expiryDate ?? null,
+        receivedAt: row.occurredAt,
+        quantityReceived: row.quantity,
+        quantityPaidFor: row.quantityPaidFor,
+        totalCost: row.totalCost,
+      })),
+    });
+    await db.stockMovement.createMany({
+      data: rows.map((row) => ({
+        organizationId,
+        productId: row.productId,
+        locationId: row.locationId,
+        batchId: row.batchId,
+        type: row.type,
+        quantity: row.quantity,
+        reason: row.reason ?? null,
+        note: row.note ?? null,
+        occurredAt: row.occurredAt,
+        recordedByUserId,
+      })),
+    });
+    await db.stockBalance.createMany({
+      data: rows.map((row) => ({
+        organizationId,
+        productId: row.productId,
+        locationId: row.locationId,
+        batchId: row.batchId,
+        quantity: row.quantity,
+      })),
+    });
   }
 
   /**

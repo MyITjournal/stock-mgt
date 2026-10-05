@@ -1,11 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api } from '../api/client';
-import { useRecordsStock, useSeesCost } from '../auth/useAuth';
+import { useIsManager, useRecordsStock, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { AdjustDialog } from './AdjustDialog';
 import { TransferDialog } from './TransferDialog';
@@ -68,11 +69,24 @@ export function LevelsPage() {
     : levels;
 
   const negatives = rows.filter((row) => row.quantity < 0).length;
+  const navigate = useNavigate();
+  const canEnterOpening = useIsManager();
 
   return (
     <Page
       title="Stock on hand"
       description="Counted in base units, straight from the ledger."
+      actions={
+        // Owner and manager, like the server: the sheet records costs.
+        canEnterOpening && (
+          <Button
+            variant="secondary"
+            onClick={() => navigate('/stock/opening')}
+          >
+            Opening stock
+          </Button>
+        )
+      }
     >
       <ExpiryPanel locationId={locationId} />
 

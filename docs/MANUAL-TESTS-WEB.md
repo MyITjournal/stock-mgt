@@ -780,3 +780,31 @@ says the spreadsheet rounded the barcode and to format the column as Text. Doing
 
 **209. In a wholesale shop, import Peak 14g.** The sachet shows "counted, not sold" and the carton
 "first at the till".
+
+---
+
+## AF. Opening stock
+
+**210. [gate] As an owner, open Stock → On hand.** There is an **Opening stock** button. Signed in
+as a cashier, it is not there.
+
+**211. Press it.** Every product with no stock yet is listed, each starting on its biggest unit
+(carton). A product that already has stock is not on the list.
+
+**212. [gate] Type 14 against Peak 14g's carton but leave the cost empty.** The line says "What did
+one carton cost?" and Save is disabled with "1 line needs a cost".
+
+**213. Type ₦14,000, press + loose, and enter 3 rolls at ₦900. Save.** "Opening stock saved for 1
+product, worth ₦198,700.00." Peak 14g leaves the list.
+
+**214. [gate] Open Money → We owe.** Nothing new is owed — no bill was raised. Reports → Purchases
+and the vendor targets do not move either.
+
+**215. Open Stock → On hand and Peak 14g's lots.** 2,270 sachets in two lots coded **Opening**,
+the carton lot with its expiry. Reports → Stock shows them at ₦198,700.00.
+
+**216. Sell a carton at the till, then open Reports → Profit.** The cost of that carton is
+₦14,000.00, not an estimate and not zero.
+
+**217. In a shop with two locations,** the sheet asks **Which location**, and a product stocked
+at one is still offered at the other.
