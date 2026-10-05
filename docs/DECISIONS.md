@@ -83,6 +83,34 @@ The stored number is what the customer pays. VAT is **derived** by subtraction
 `net + tax === gross` at every rounding boundary — there is a test asserting this across 2,000
 consecutive amounts.
 
+### VAT is one switch on the shop (2026-10-05)
+
+`Organization.chargesVat` answers *does this shop charge VAT at all*. Most small shops here are
+under the turnover threshold and charge none, and until this existed every sale quietly took 7.5%
+out of its price as VAT — so a non-VAT shop's revenue, and every margin on top of it, read 7.5%
+lower than the truth.
+
+**Off, every new sale records 0% VAT on every line**, whatever rate its product carries. That is
+the whole change: the rate was already frozen onto each `SaleLine` at the moment of sale (§6), and
+everything downstream — profit, the sales report, returns, the dashboard, the invoice — already
+works from those frozen figures. So reports needed no change, and **switching never rewrites a
+sale already made**: an old VAT invoice reprinted after switching off still shows its VAT.
+
+Four details:
+
+- **Existing shops start on, new shops start off.** Existing shops had been recording VAT on
+  every sale, so nothing moves for them until the owner flips it; the migration adds the column
+  as `DEFAULT true` and then drops the default to `false`.
+- **The product keeps its rate** (7.5% or Exempt) for the day VAT is switched on, so an exempt
+  item stays exempt. The product form hides the box while VAT is off, because a question with no
+  effect is noise.
+- **A sale with no VAT prints no VAT line** — invoice PDF, till receipt, sale screen — rather than
+  "of which VAT NGN 0.00", which reads as if there ought to be some. That follows the *sale*, not
+  the switch today. The profit screen drops "Less VAT" the same way when the period has none.
+- **Deliberately one switch, not a tax setup.** No registration dates, no rate tables, no
+  per-customer exemptions. The owner asked for it so VAT could be turned off while they confirm
+  their position with an accountant; anything more is a step toward accounting software (§1).
+
 ### Cost: store exact totals, derive averages
 
 **The rule:** money someone actually paid is stored exactly as an integer. A per-unit average is

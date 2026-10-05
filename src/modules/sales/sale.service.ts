@@ -144,6 +144,17 @@ export class SaleService {
       input.payment?.bankAccountId,
     );
 
+    // Whether this shop charges VAT, read once for the whole sale. Off, every
+    // line records 0% whatever its product's rate, and that 0% is frozen onto
+    // the line like every other money figure — so reports, returns and the
+    // invoice all follow from the sale itself, and switching VAT back on later
+    // rewrites nothing already sold. Organization is not tenant-scoped (it *is*
+    // the tenant), so the id is named.
+    const { chargesVat } = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: organizationId },
+      select: { chargesVat: true },
+    });
+
     await this.prisma.$transaction(async (tx) => {
       const writer = tx as unknown as StockWriter;
       const lines: LineToWrite[] = [];
@@ -155,6 +166,7 @@ export class SaleService {
             saleId,
             locationId,
             tierId,
+            chargesVat,
             occurredAt,
             force: input.force,
             forcedReason: input.forcedReason,
@@ -274,7 +286,11 @@ export class SaleService {
       );
     }
 
-    const priced = priceLine(unitPrice, line.quantity, product.taxRateBps);
+    const priced = priceLine(
+      unitPrice,
+      line.quantity,
+      ctx.chargesVat ? product.taxRateBps : 0,
+    );
     const baseQuantity = line.quantity * unit.factor;
 
     // A service or any other non-stocked item is sold, priced and taxed like
@@ -545,6 +561,8 @@ interface LineContext {
   saleId: string;
   locationId: string;
   tierId: string | null;
+  /** Off, every line records 0% VAT — see `create`. */
+  chargesVat: boolean;
   occurredAt: Date;
   force?: boolean;
   forcedReason?: string;

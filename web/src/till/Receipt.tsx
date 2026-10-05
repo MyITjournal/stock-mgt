@@ -86,10 +86,13 @@ export function Receipt({
             <span>Total</span>
             <Money value={receipt.total} />
           </div>
-          <div className="flex justify-between text-xs text-slate-500">
-            <span>of which VAT</span>
-            <Money value={receipt.tax} />
-          </div>
+          {/* None recorded — a shop that does not charge VAT — means no line. */}
+          {receipt.tax !== 0 && (
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>of which VAT</span>
+              <Money value={receipt.tax} />
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-slate-500">Paid</span>
             <Money value={receipt.paid} />
@@ -117,7 +120,11 @@ export function Receipt({
         />
       </div>
 
-      <Button onClick={onNewSale} className="mt-3 h-12 w-full text-base" autoFocus>
+      <Button
+        onClick={onNewSale}
+        className="mt-3 h-12 w-full text-base"
+        autoFocus
+      >
         New sale
       </Button>
     </div>

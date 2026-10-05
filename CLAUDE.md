@@ -86,7 +86,12 @@ Slice 6 added **reports**, in `src/modules/reports/` — a read-only module with
 `period.ts`, `profit.ts`, `valuation.ts`. Four rules from it are load-bearing:
 
 - **Revenue is tax-exclusive.** Prices are VAT-inclusive, so counting the gross overstates every
-  margin by 7.5%. The dashboard reads lower than expected; that is it working.
+  margin by 7.5%. The dashboard reads lower than expected; that is it working. **Unless the shop
+  does not charge VAT** (`Organization.chargesVat`, §2, 2026-10-05): off, every new sale records
+  0% on its lines whatever the product's rate, so revenue is the whole price. It is frozen onto
+  the sale like every money figure, so reports needed no change and switching rewrites nothing
+  already sold. Existing shops start **on**, new shops **off**; a sale with no VAT prints no VAT
+  line. One switch on purpose — not a tax setup.
 - **Periods resolve in `Organization.timezone`**, never UTC — otherwise "today" rolls over at 1am
   Lagos time. All of it lives in `period.ts`; nothing else does date arithmetic.
 - **A return counts in the period it happened**, not the month of the sale it reverses.

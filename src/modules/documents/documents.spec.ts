@@ -142,6 +142,21 @@ describe('invoiceDefinition', () => {
     expect(doc).toContain('Balance due');
   });
 
+  it('prints no VAT line for a sale that carried none', () => {
+    // A shop that does not charge VAT records 0% on every sale, and an
+    // invoice saying "of which VAT NGN 0.00" reads as if it ought to.
+    const doc = JSON.stringify(
+      invoiceDefinition({
+        organization: ORG,
+        accounts: [],
+        invoice: { ...invoice, tax: 0 },
+      }),
+    );
+
+    expect(doc).not.toContain('VAT');
+    expect(doc).toContain('Balance due');
+  });
+
   it('renders for a business that has filled nothing in', () => {
     // The letterhead fields are all nullable on purpose: a business that never
     // visited the profile screen still has to be able to invoice today.

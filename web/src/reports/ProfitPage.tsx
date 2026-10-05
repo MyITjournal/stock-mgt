@@ -47,7 +47,9 @@ export function ProfitPage() {
             <Headline
               label="Revenue"
               value={data.revenue}
-              note="Excludes VAT and returns"
+              note={
+                data.tax !== 0 ? 'Excludes VAT and returns' : 'After returns'
+              }
               emphasis
             />
             <Headline label="Cost of goods" value={data.cogs} />
@@ -66,16 +68,23 @@ export function ProfitPage() {
           <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <tbody className="divide-y divide-slate-100">
+                {/*
+                  No VAT recorded in the period — a shop that does not charge
+                  it — and there is nothing to take off, so the line goes
+                  rather than reading "Less VAT ₦0.00".
+                */}
                 <Line
-                  label="Sold, including VAT"
+                  label={data.tax !== 0 ? 'Sold, including VAT' : 'Sold'}
                   value={data.grossSales}
                   hint="What actually went through the till"
                 />
-                <Line
-                  label="Less VAT"
-                  value={-data.tax}
-                  hint="Never the business’s money"
-                />
+                {data.tax !== 0 && (
+                  <Line
+                    label="Less VAT"
+                    value={-data.tax}
+                    hint="Never the business’s money"
+                  />
+                )}
                 <Line
                   label="Less returns"
                   value={-data.returned}
@@ -171,14 +180,14 @@ function Line({
   return (
     <tr className={strong ? 'bg-slate-50' : undefined}>
       <td className="px-4 py-2.5">
-        <span className={strong ? 'font-medium text-slate-900' : 'text-slate-700'}>
+        <span
+          className={strong ? 'font-medium text-slate-900' : 'text-slate-700'}
+        >
           {label}
         </span>
         {hint && <span className="block text-xs text-slate-400">{hint}</span>}
       </td>
-      <td
-        className={`px-4 py-2.5 text-right ${strong ? 'font-medium' : ''}`}
-      >
+      <td className={`px-4 py-2.5 text-right ${strong ? 'font-medium' : ''}`}>
         <Money value={value} signed />
       </td>
     </tr>

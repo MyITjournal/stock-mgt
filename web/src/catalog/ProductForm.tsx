@@ -488,16 +488,23 @@ export function ProductForm({
             </div>
           )}
 
-          <Field label="VAT rate" htmlFor="p-tax">
-            <Select
-              id="p-tax"
-              value={String(taxRateBps)}
-              onChange={(event) => setTaxRateBps(Number(event.target.value))}
-            >
-              <option value="750">7.5%</option>
-              <option value="0">Exempt</option>
-            </Select>
-          </Field>
+          {/*
+            Only while the shop charges VAT. Off, every sale records none
+            whatever is chosen here, so the box would be a question with no
+            effect. The product keeps its rate for the day VAT is switched on.
+          */}
+          {organization?.chargesVat && (
+            <Field label="VAT rate" htmlFor="p-tax">
+              <Select
+                id="p-tax"
+                value={String(taxRateBps)}
+                onChange={(event) => setTaxRateBps(Number(event.target.value))}
+              >
+                <option value="750">7.5%</option>
+                <option value="0">Exempt</option>
+              </Select>
+            </Field>
+          )}
 
           <Field
             label="Reorder point"
