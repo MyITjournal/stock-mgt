@@ -85,7 +85,10 @@ export function TillPage() {
   // Which re-pricing is current. A customer changed twice in quick succession
   // starts two; only the answer for the latest choice may land.
   const repriceRun = useRef(0);
-  const [completed, setCompleted] = useState<SaleReceiptView | null>(null);
+  const [completed, setCompleted] = useState<{
+    receipt: SaleReceiptView;
+    saleId: string;
+  } | null>(null);
   const [override, setOverride] = useState<{
     kind: OverrideKind;
     message: string;
@@ -543,7 +546,7 @@ export function TillPage() {
         const receipt = await api.get<SaleReceiptView>(
           `/sales/${sale.id}/receipt`,
         );
-        setCompleted(receipt);
+        setCompleted({ receipt, saleId: sale.id });
         setOverride(null);
 
         // A counter sale is the widest write in the application: it moves
@@ -615,7 +618,11 @@ export function TillPage() {
   if (completed) {
     return (
       <Page title="Sale recorded">
-        <Receipt receipt={completed} onNewSale={startNewSale} />
+        <Receipt
+          receipt={completed.receipt}
+          saleId={completed.saleId}
+          onNewSale={startNewSale}
+        />
       </Page>
     );
   }

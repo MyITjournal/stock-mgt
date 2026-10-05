@@ -676,3 +676,20 @@ the dashboard home.
 
 **183. [gate] Signed in as a cashier (sales_rep), click Reho.** You land on the till — never on the
 dashboard, which a cashier cannot see.
+
+---
+
+## AA. Printing an invoice
+
+**184. On a computer, ring up a sale at the till.** [gate] "Sale recorded" shows a **Print
+invoice** button above New sale. Clicking it opens the computer's print dialog with the invoice
+in it — no new tab.
+
+**185. Open that sale from Sales.** [gate] **Print invoice** sits beside Invoice PDF and does the
+same.
+
+**186. [gate] On a phone, tap Print invoice.** The invoice opens in the phone's viewer, where its
+Print or Share button sends it to a printer or WhatsApp.
+
+**187. [gate] Leave the till open past fifteen minutes, then print.** It still prints the invoice,
+not a sign-in error.
