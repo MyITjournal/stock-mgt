@@ -824,6 +824,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stock/opening": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Products that need opening stock
+         * @description Every product that keeps stock and has never had stock come in at this location — the sheet an owner fills in on day one. A product sold before it was counted still appears; one that has had a delivery, a transfer in or a count surplus does not.
+         */
+        get: operations["StockController_openingSheet"];
+        put?: never;
+        /**
+         * Record opening stock
+         * @description What is on the shelves on day one and what it cost, as opening-balance adjustments: a lot each, valued at cost × quantity, with no bill raised and nothing counted toward vendor targets or the purchases report. All or nothing; a 409 if any product has had stock come in here since the sheet was opened.
+         */
+        post: operations["StockController_recordOpening"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stock/levels": {
         parameters: {
             query?: never;
@@ -3286,6 +3310,65 @@ export interface components {
             /** @description What you paid at the delivery, if anything. Cannot exceed what the delivery is worth. */
             payment?: components["schemas"]["DeliveryPaymentDto"];
             lines: components["schemas"]["GoodsReceiptLineDto"][];
+        };
+        OpeningStockUnitView: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description How many base units it holds. */
+            factor: number;
+        };
+        OpeningStockProductView: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            size: string | null;
+            sku: string;
+            category: string | null;
+            /** @description Smallest first. */
+            units: components["schemas"]["OpeningStockUnitView"][];
+            /**
+             * Format: uuid
+             * @description The unit the sheet starts on: the biggest, because shelves are counted in cartons.
+             */
+            defaultUnitId: string;
+        };
+        OpeningStockLineDto: {
+            /** Format: uuid */
+            productId: string;
+            /**
+             * Format: uuid
+             * @description Which of the product’s units the quantity is counted in.
+             */
+            unitId: string;
+            /** @example 14 */
+            quantity: number;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 1400000
+             */
+            unitCost: number;
+            /**
+             * Format: date
+             * @example 2027-03-31
+             */
+            expiryDate?: string;
+        };
+        OpeningStockDto: {
+            /**
+             * Format: uuid
+             * @description Where the stock is. The default location when omitted.
+             */
+            locationId?: string;
+            lines: components["schemas"]["OpeningStockLineDto"][];
+        };
+        OpeningStockResultView: {
+            /** @description How many products now have opening stock. */
+            products: number;
+            /** @description How many lines were recorded. */
+            lines: number;
+            /** @description What it is all worth, in kobo — the sum of every line’s total. */
+            totalValue: number;
         };
         StockProductRef: {
             /** Format: uuid */
@@ -7325,6 +7408,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoodsReceiptView"];
+                };
+            };
+        };
+    };
+    StockController_openingSheet: {
+        parameters: {
+            query?: {
+                locationId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningStockProductView"][];
+                };
+            };
+        };
+    };
+    StockController_recordOpening: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original result. A fresh key is refused with a 409, because every product on it now has stock. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningStockDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningStockResultView"];
                 };
             };
         };

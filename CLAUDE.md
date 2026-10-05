@@ -722,6 +722,15 @@ product form, so **Enter is caught on the box** — otherwise it saves the produ
 still missing. A name already on the list is picked rather than sent, and **the id the server
 returns is the one used**, because re-adding a deleted name revives the old row with its own id.
 
+**Opening stock is an opening balance, never a delivery** (§5, 2026-10-05): *Stock on hand →
+Opening stock*, `GET`/`POST /stock/opening`. A delivery raises a bill and counts toward vendor
+targets, so day-one stock entered that way put a debt settled in June onto *We owe*. Each line is
+an `opening_balance` lot valued at **cost per unit × quantity (cost required)** with
+`quantityPaidFor: 0`, so no bill, target or purchases report sees it. **Only products that have
+never had stock come in at that location are offered**, and the save re-checks in its
+transaction, so it cannot be entered twice; a product sold before it was counted still appears.
+Bulk-written by `StockService.recordNewLots`, which keeps every ledger write in one service.
+
 **A catalog can be imported from a spreadsheet** (§4, 2026-10-05): `POST /products/import` and
 *Products → Import from spreadsheet* — template, upload `.xlsx` or `.csv`, preview every row, then
 save all or nothing. One row per product: counted-in unit and price, up to two bigger units with

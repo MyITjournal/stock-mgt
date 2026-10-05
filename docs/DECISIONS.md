@@ -783,6 +783,39 @@ goods almost certainly came from that lot. When the product has never been recei
 location, there is no lot to blame, so a batch with `quantityReceived = 0` and no cost is opened
 to hang it on — which is also how those placeholder batches are recognised.
 
+### Opening stock is an opening balance, never a delivery (2026-10-05)
+
+`GET`/`POST /stock/opening` (owner/manager) and *Stock on hand → Opening stock*. The gap it
+closes was found in real use: a product with no stock had **no row on Stock on hand**, so the
+adjust dialog that can already record an opening balance could not be reached, and the only way
+to get day-one stock in was *Receive delivery*. That raised a bill — an owner saw an invoice
+settled in June sitting on *We owe* — and counted the goods toward this month's vendor targets
+and purchases report.
+
+- **It writes opening-balance adjustments.** One lot per line (`lotCode: 'Opening'`), valued at
+  **cost per unit × quantity**, exact, with `quantityPaidFor: 0`. Valuation and cost of goods
+  sold read it like any other lot; no bill, vendor target or purchases report sees it, because
+  all three read receipts or paid-for quantities. It also gives a product its first real rate for
+  `lastKnownRates`, so goods sold ahead of their paperwork stop being estimated from nothing.
+- **The cost is required.** Per unit on screen, because that is what an owner knows ("a carton
+  was ₦14,000"); multiplied into a total before storing, so §2 still holds. Zero is accepted when
+  typed — genuinely free goods — but a blank is refused, because a ₦0 lot shows a 100% margin on
+  everything sold from it.
+- **Offered only where stock has never come in at that location.** "Ever had a positive
+  movement here" is the test. That makes entering it twice impossible rather than unlikely — the
+  save re-checks inside its transaction and answers 409 — and still offers a product that was
+  sold before it was counted, since that one has only outbound movements. A product that already
+  has stock is corrected with a count. Per location, so a second branch sets up its own shelves.
+- **Mixed units are separate lines**: 14 cartons and 3 loose rolls are two lots, each at its own
+  cost. The sheet starts each product on its biggest unit.
+- **Written in three statements.** `StockService.recordNewLots` creates lots, movements and
+  balances with one `createMany` each — possible because every lot is new, so no balance row can
+  exist yet. It lives in `StockService` so every ledger write still goes through one place, and
+  the rows are what `recordInbound` would have written. `Product.costPrice` is set as a delivery
+  sets it, as a display convenience only.
+- **On screen, not a spreadsheet**, by the owner's choice: it works on a phone, and tabbing down a
+  list is about as quick as Excel. A spreadsheet version would reuse the import pattern.
+
 ### Stocktake: counting is not adjusting
 
 A physical count is recorded first and **posted** second, and the two are

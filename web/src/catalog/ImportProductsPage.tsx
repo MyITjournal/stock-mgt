@@ -194,6 +194,10 @@ export function ImportProductsPage() {
                     Go to products
                   </Link>{' '}
                   ·{' '}
+                  <Link to="/stock/opening" className="underline">
+                    Next: enter their opening stock
+                  </Link>{' '}
+                  ·{' '}
                   <button
                     type="button"
                     className="underline"

@@ -2490,6 +2490,57 @@ async function main() {
   eq('two thousand rows import in one request', bulk.adding, 2000);
   console.log(`      2,000 products in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
+  step(45, 'Opening stock: what was on the shelf on day one, and what it cost');
+
+  // The products just imported have never had stock come in, so the sheet
+  // offers them — starting on the biggest unit, because shelves are counted
+  // in cartons.
+  const openingSheet = (await api('GET', '/stock/opening', { token: selfToken })).data;
+  const peakLine = openingSheet.find((row) => row.id === peakImported.id);
+  check('a product with no stock yet is on the opening sheet', !!peakLine);
+  eq(
+    'starting on its biggest unit',
+    peakLine.units.find((u) => u.id === peakLine.defaultUnitId).name,
+    'carton',
+  );
+  const unitIdOf = (name) => peakLine.units.find((u) => u.name === name).id;
+
+  const openingBody = {
+    lines: [
+      // 14 cartons at ₦14,000 and 3 loose rolls at ₦900: two lots.
+      { productId: peakImported.id, unitId: unitIdOf('carton'), quantity: 14, unitCost: 1_400_000, expiryDate: '2027-03-31' },
+      { productId: peakImported.id, unitId: unitIdOf('roll'), quantity: 3, unitCost: 90_000 },
+    ],
+  };
+  const opened = (
+    await api('POST', '/stock/opening', { token: selfToken, key: randomUUID(), body: openingBody })
+  ).data;
+  eq('both lines are recorded for one product', `${opened.products} ${opened.lines}`, '1 2');
+  eq('valued at cost × quantity, exactly', opened.totalValue, 14 * 1_400_000 + 3 * 90_000);
+
+  eq(
+    'stock is on the shelf, in sachets',
+    (await onHand(selfToken, peakImported.id, selfLocations[0].id)).quantity,
+    14 * 160 + 3 * 10,
+  );
+  eq(
+    'and no bill was raised for goods paid for long ago',
+    (await api('GET', '/payables', { token: selfToken })).data.total,
+    0,
+  );
+  eq(
+    'stock valuation reads the cost given',
+    (await api('GET', '/reports/stock-valuation', { token: selfToken })).data.total,
+    14 * 1_400_000 + 3 * 90_000,
+  );
+  check(
+    'and the product leaves the opening sheet',
+    !(await api('GET', '/stock/opening', { token: selfToken })).data.some((row) => row.id === peakImported.id),
+  );
+
+  await api('POST', '/stock/opening', { token: selfToken, key: randomUUID(), body: openingBody, expect: 409 });
+  check('entering the same opening stock twice is refused, not doubled', true);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',
