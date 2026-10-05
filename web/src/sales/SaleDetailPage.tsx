@@ -5,6 +5,7 @@ import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { PdfButton } from '../components/PdfButton';
+import { PrintButton } from '../components/PrintButton';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
@@ -89,6 +90,7 @@ export function SaleDetailPage() {
       description={`${new Date(sale.occurredAt).toLocaleString('en-NG')} · ${customerName}`}
       actions={
         <>
+          <PrintButton path={`/sales/${sale.id}/invoice.pdf`} label="Print invoice" />
           <PdfButton path={`/sales/${sale.id}/invoice.pdf`} label="Invoice PDF" />
           <Button onClick={() => setReturning(true)}>Take goods back</Button>
         </>

@@ -531,7 +531,10 @@ And three from 7.3:
   reports use `occurredAt` and answer a different question.
 - **PDFs go through `api.document`, never a plain link.** A raw navigation cannot run the refresh,
   so a link shows a JSON 401 instead of an invoice once the 15-minute token expires. Revoke the
-  object URL on a timer, not immediately — immediately races the new tab.
+  object URL on a timer, not immediately — immediately races the new tab. **`PrintButton`**
+  (2026-10-05, on a sale and on the till's "Sale recorded") prints the same PDF from a hidden
+  frame on a computer; **on a touch screen it opens the PDF instead**, because phone browsers do
+  not reliably print a frame and the phone's own viewer has Print and Share.
 - **A damaged return refunds money and writes no stock movement.** `restocked: false` means crushed
   goods never become sellable again, so the till must ask rather than default it.
 
