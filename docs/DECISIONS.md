@@ -628,8 +628,19 @@ hundred products into the form is the biggest setup cost a new shop has, and the
 market comparison found. The rules are pure, in `catalog/product-import.ts`.
 
 - **One row per product**: name, size, category, what it is *counted in* (blank means piece) with
-  its price, then up to two bigger units with **how many counted-in units each holds** and their
-  prices, and one barcode for the counted-in unit. A portion is just a unit — `1/5 carton`, 32.
+  its price, then **as many bigger units as the row has** — Unit 2, Unit 3, Unit 4 … each with
+  **how many counted-in units it holds** and its price — and one barcode for the counted-in unit.
+- **Portions and selling, fixed against a real sheet the same day.** The first version took two
+  bigger units and decided selling by the form's defaults, and the owner's first file failed on
+  every row: a lotion carton of 12 sold only as 3s and 6s was written as two units both called
+  "carton", and the roll-ons' carton sat in Unit 4, which was not read at all. Now: a unit named
+  **`1/2 carton`** (slash, as the form names portions) is a portion of the row's carton, its
+  "how many" may be empty and is worked out — refused, with the arithmetic, when not whole (½ of
+  15 is 7½), when there is no carton in the row, or when a typed count disagrees; and **a priced
+  unit is sold at the till, an unpriced one counted only** — the spreadsheet's way of ticking
+  *Sold at the till* without a column for it. That also retires the old warning about a carton
+  charged at `factor × piece price`: an unpriced carton is simply not sold. A row with no prices
+  falls back to the form's defaults, with a warning.
   The counted-in price is the base price, as on the form; bigger units' prices go on the
   **default** price list. No price-list column: shops here price the item, not the buyer.
 - **Every cell travels as text** and the server reads it. `parseNaira` takes `14,500`, `N14,500`,
@@ -782,6 +793,35 @@ Where the shortfall lands: on the batch FEFO would have picked, driving it negat
 goods almost certainly came from that lot. When the product has never been received at that
 location, there is no lot to blame, so a batch with `quantityReceived = 0` and no cost is opened
 to hang it on — which is also how those placeholder batches are recognised.
+
+### Every screen worth keeping downloads as Excel (2026-10-05)
+
+A Download button on Products, Stock on hand, each report and the four money lists (Invoices →
+All, Bills → All, Money in, Money out). The owner's one condition was that it must not slow
+anything down.
+
+- **Nothing loads until it is pressed.** `write-excel-file` (one dependency, `fflate`, already
+  present for the import's reader) is a dynamic import in `lib/exportSheet.ts`; it builds into its
+  own ~15 KB gzipped chunk and the main bundle is unchanged. A report's download uses the response
+  the screen already holds; the money lists walk their endpoint at its largest page (500, or 200
+  for supplier payments), so a year of payments is a handful of requests, made only on the click.
+- **The same figures as the screen.** Money is the server's kobo divided by 100 for display —
+  the conversion `<Money>` does — written as a number with a `#,##0.00` format so Excel can sum
+  it. A margin is basis points shown as a percentage. Statuses come from `payState`. Nothing is
+  added up in the browser, so a file and a screen cannot disagree.
+- **Absent is empty.** A cost `redactCost` removed is an empty cell, never `0`, for the same reason
+  the screens never zero it: a zero reads as free goods to whoever sums the column.
+- **Text where Excel would mangle.** Barcodes and SKUs are written as strings, so `6154000000005`
+  is not shown as `6.154E+12` and a UPC keeps its leading zero — verified by writing and reading a
+  workbook back.
+- **Products use the import template's columns**, with extra *Unit 4…* columns when a product has
+  more units, plus *Other barcodes*, *SKU* and (for those who see cost) the last delivery's cost.
+  Prices are the default list's, the base price for the counted-in unit, and blank where a unit
+  has none of its own. This is what makes "download, change prices, upload back" possible later —
+  the import still skips names it knows, so that needs its own preview of what would change.
+- **Stock on hand downloads counts, not value.** Its rows carry a per-unit cost, and multiplying it
+  out would be a second, rounder valuation; the Stock report's download is the server's, from lot
+  totals rounded once (§2).
 
 ### Opening stock is an opening balance, never a delivery (2026-10-05)
 

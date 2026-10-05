@@ -16,10 +16,24 @@ import { chooseDefaultSellingUnit, defaultIsSellable } from './selling-units';
  *
  * ## The row
  *
- * One product per row: what it is counted in, and up to two bigger units with
- * how many of the counted-in unit each holds — a roll of 10 sachets, a carton
- * of 160. Every cell arrives as **text**, exactly as the spreadsheet stored
- * it, and is read here, so a browser never decides what a price means.
+ * One product per row: what it is counted in, then as many bigger units as
+ * the row has (Unit 2, Unit 3, …) with how many of the counted-in unit each
+ * holds — a pack of 6 pieces, a carton of 30. Every cell arrives as **text**,
+ * exactly as the spreadsheet stored it, and is read here, so a browser never
+ * decides what a price means.
+ *
+ * ## Portions, and what the till sells
+ *
+ * A unit named like **"1/2 carton"** is a portion of another unit in the same
+ * row, and its "how many" may be left empty: it is worked out from the carton,
+ * exactly as *Add a portion* does on the product form, and refused when it is
+ * not whole (½ of a carton of 15 is 7½ pieces).
+ *
+ * **A unit with a price is sold at the till; one without is counted but not
+ * sold.** That is the spreadsheet's way of saying what the form's "Sold at the
+ * till" box says, so there is no column for it — a lotion carton of 12 sold
+ * only as 1/2 and 1/4 is a carton with no price beside two portions with
+ * prices. A row with no prices at all falls back to the form's defaults.
  *
  * ## What it deliberately does not do
  *
@@ -41,14 +55,20 @@ export interface ImportRowInput {
   category?: string;
   countedIn?: string;
   price?: string;
-  unit2?: string;
-  unit2Count?: string;
-  unit2Price?: string;
-  unit3?: string;
-  unit3Count?: string;
-  unit3Price?: string;
+  /** Unit 2, Unit 3, … in the order the columns came. */
+  units?: ImportUnitInput[];
   barcode?: string;
 }
+
+export interface ImportUnitInput {
+  name?: string;
+  /** How many of the counted-in unit it holds. May be empty for a portion. */
+  count?: string;
+  price?: string;
+}
+
+/** The most units one row may carry beyond the counted-in one. */
+export const MAX_IMPORT_UNITS = 12;
 
 /** What the catalog already holds, read once before planning. */
 export interface ImportContext {
@@ -188,32 +208,80 @@ export function planImport(
     const drafts: { name: string; factor: number; price: number | null }[] = [
       { name: baseName, factor: 1, price: null },
     ];
+    // Portions whose size comes from another unit in the row, settled once
+    // every named unit is known — "1/2 carton" may come before the carton.
+    const portions: {
+      name: string;
+      price: number | null;
+      count: number | null;
+      of: Portion;
+    }[] = [];
 
-    for (const slot of [
-      {
-        name: cells.unit2,
-        count: cells.unit2Count,
-        price: cells.unit2Price,
-        label: 'Unit 2',
-      },
-      {
-        name: cells.unit3,
-        count: cells.unit3Count,
-        price: cells.unit3Price,
-        label: 'Unit 3',
-      },
-    ]) {
+    cells.units.forEach((slot, index) => {
+      const label = `Unit ${index + 2}`;
       if (!slot.name) {
         if (slot.count || slot.price) {
           errors.push(
-            `${slot.label} has a number but no name. Say what it is — roll, carton, 1/2 carton.`,
+            `${label} has a number but no name. Say what it is — pack, carton, 1/2 carton.`,
+          );
+        }
+        return;
+      }
+      const price = readPrice(slot.price, slot.name, errors);
+      const of = readPortion(slot.name);
+      if (of) {
+        const count = slot.count
+          ? readCount(slot.count, slot.name, baseName, errors)
+          : null;
+        if (!slot.count || count !== null) {
+          portions.push({ name: slot.name, price, count, of });
+        }
+        return;
+      }
+      const factor = readCount(slot.count, slot.name, baseName, errors);
+      if (factor !== null) drafts.push({ name: slot.name, factor, price });
+    });
+
+    for (const portion of portions) {
+      const whole = drafts.find(
+        (unit) => unit.name.toLowerCase() === portion.of.unit.toLowerCase(),
+      );
+      if (!whole) {
+        if (portion.count !== null) {
+          // Sized by hand, so it stands without the unit it is part of.
+          drafts.push({
+            name: portion.name,
+            factor: portion.count,
+            price: portion.price,
+          });
+        } else {
+          errors.push(
+            `"${portion.name}" is part of a ${portion.of.unit}, but there is no ${portion.of.unit} in this row. Add the ${portion.of.unit} as a unit with how many ${baseName} it holds.`,
           );
         }
         continue;
       }
-      const factor = readCount(slot.count, slot.name, baseName, errors);
-      const price = readPrice(slot.price, slot.name, errors);
-      if (factor !== null) drafts.push({ name: slot.name, factor, price });
+      const exact =
+        (whole.factor * portion.of.numerator) / portion.of.denominator;
+      if (!Number.isInteger(exact)) {
+        errors.push(
+          `"${portion.name}" is not a whole number of ${baseName}: a ${whole.name} holds ${whole.factor}, and ${portion.of.numerator}/${portion.of.denominator} of that is ${exact.toFixed(2).replace(/\.?0+$/, '')}.`,
+        );
+        continue;
+      }
+      if (exact < 2) {
+        errors.push(
+          `"${portion.name}" is a single ${baseName}. Sell the ${baseName} itself rather than a portion.`,
+        );
+        continue;
+      }
+      if (portion.count !== null && portion.count !== exact) {
+        errors.push(
+          `"${portion.name}" is ${exact} ${baseName}, not ${portion.count}. Leave its "how many" empty and it is worked out.`,
+        );
+        continue;
+      }
+      drafts.push({ name: portion.name, factor: exact, price: portion.price });
     }
 
     const unitNames = drafts.map((unit) => unit.name.toLowerCase());
@@ -289,14 +357,22 @@ export function planImport(
       return;
     }
 
-    // ── Selling, exactly as the product form decides it ──────────────────────
+    // ── Selling ──────────────────────────────────────────────────────────────
+    // A priced unit is sold and an unpriced one is counted only. With no price
+    // anywhere in the row there is nothing to go on, so the form's defaults
+    // decide — the same answer a product typed in would get.
+    const priceOf = (unit: { factor: number; price: number | null }) =>
+      unit.factor === 1 ? basePrice : unit.price;
+    const anyPriced = drafts.some((unit) => priceOf(unit) !== null);
     const units: PlannedUnit[] = drafts.map((unit) => ({
       id: randomUUID(),
       name: unit.name,
       factor: unit.factor,
       price: unit.price,
       isBase: unit.factor === 1,
-      isSellable: defaultIsSellable(unit, drafts.length, context.businessType),
+      isSellable: anyPriced
+        ? priceOf(unit) !== null
+        : defaultIsSellable(unit, drafts.length, context.businessType),
       isDefaultSelling: false,
     }));
     const defaultId = chooseDefaultSellingUnit(
@@ -306,20 +382,11 @@ export function planImport(
     );
     for (const unit of units) unit.isDefaultSelling = unit.id === defaultId;
 
-    // What the till will do with each unit sold, said before it happens.
-    for (const unit of units) {
-      if (!unit.isSellable) continue;
-      const own = unit.isBase ? basePrice : unit.price;
-      if (own !== null) continue;
-      if (basePrice === null) {
-        warnings.push(
-          `No price for the ${unit.name}, so the till will not sell it until one is set.`,
-        );
-      } else {
-        warnings.push(
-          `No price of its own for the ${unit.name}, so it will be charged ${unit.factor} × the ${baseName} price.`,
-        );
-      }
+    // Said before it happens: with no prices the till cannot sell it at all.
+    if (!anyPriced) {
+      warnings.push(
+        'No prices in this row, so the till will not sell it until one is set on the product.',
+      );
     }
 
     rows.push({
@@ -441,7 +508,15 @@ function uniqueSku(name: string, used: Set<string>): string {
   return sku;
 }
 
-type Cells = Required<Omit<ImportRowInput, 'line'>>;
+interface Cells {
+  name: string;
+  size: string;
+  category: string;
+  countedIn: string;
+  price: string;
+  units: { name: string; count: string; price: string }[];
+  barcode: string;
+}
 
 function trimAll(input: ImportRowInput): Cells {
   const cell = (value: string | undefined) => (value ?? '').trim();
@@ -451,18 +526,41 @@ function trimAll(input: ImportRowInput): Cells {
     category: cell(input.category),
     countedIn: cell(input.countedIn),
     price: cell(input.price),
-    unit2: cell(input.unit2),
-    unit2Count: cell(input.unit2Count),
-    unit2Price: cell(input.unit2Price),
-    unit3: cell(input.unit3),
-    unit3Count: cell(input.unit3Count),
-    unit3Price: cell(input.unit3Price),
+    units: (input.units ?? []).map((unit) => ({
+      name: cell(unit.name),
+      count: cell(unit.count),
+      price: cell(unit.price),
+    })),
     barcode: cell(input.barcode),
   };
 }
 
 function isBlank(cells: Cells): boolean {
-  return Object.values(cells).every((value) => value === '');
+  const { units, ...rest } = cells;
+  return (
+    Object.values(rest).every((value) => value === '') &&
+    units.every((unit) => !unit.name && !unit.count && !unit.price)
+  );
+}
+
+interface Portion {
+  numerator: number;
+  denominator: number;
+  /** The unit it is a part of — "carton" in "1/2 carton". */
+  unit: string;
+}
+
+/**
+ * "1/2 carton" → a half of the carton. Named with a slash, as the product
+ * form names portions, because the PDF fonts have no ½ or ⅓.
+ */
+function readPortion(name: string): Portion | null {
+  const match = /^(\d+)\s*\/\s*(\d+)\s+(.+)$/.exec(name.trim());
+  if (!match) return null;
+  const numerator = Number(match[1]);
+  const denominator = Number(match[2]);
+  if (numerator < 1 || denominator < 2 || numerator >= denominator) return null;
+  return { numerator, denominator, unit: match[3].trim() };
 }
 
 function errorRow(line: number, name: string, messages: string[]): PlannedRow {

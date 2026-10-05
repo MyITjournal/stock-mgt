@@ -2430,12 +2430,14 @@ async function main() {
   const peakRow = {
     line: 2, name: 'Peak 14g', size: '14g', category: 'Milk',
     countedIn: 'sachet', price: '100',
-    unit2: 'roll', unit2Count: '10', unit2Price: '950',
-    unit3: 'carton', unit3Count: '160', unit3Price: '14,500',
+    units: [
+      { name: 'roll', count: '10', price: '950' },
+      { name: 'carton', count: '160', price: '14,500' },
+    ],
     barcode: '4006381333931',
   };
   const goodRows = [peakRow, { line: 3, name: 'Indomie 70g', category: 'milk', price: 'N250' }];
-  const badRow = { line: 4, name: 'Milo 500g', unit2: 'carton', unit2Count: '0.5' };
+  const badRow = { line: 4, name: 'Milo 500g', units: [{ name: 'carton', count: '0.5' }] };
 
   const preview = (
     await api('POST', '/products/import', {
@@ -2499,11 +2501,37 @@ async function main() {
   ).data;
   eq('importing the same file again skips every row', `${again.adding} ${again.skipped}`, '0 2');
 
+  // A lotion carton of 12 sold only in halves and quarters: the carton has no
+  // price, so it is counted and not sold; the portions are worked out from it.
+  const lotion = (
+    await api('POST', '/products/import', {
+      token: selfToken,
+      key: randomUUID(),
+      body: {
+        rows: [{
+          line: 2, name: 'Even Glow 400ml', countedIn: 'piece',
+          units: [
+            { name: 'carton', count: '12' },
+            { name: '1/2 carton', price: '29,900' },
+            { name: '1/4 carton', price: '14,950' },
+          ],
+        }],
+      },
+    })
+  ).data;
+  eq('a carton sold only in parts imports', lotion.adding, 1);
+  const glow = (await api('GET', '/products?search=Even%20Glow', { token: selfToken })).data[0];
+  eq(
+    'its portions are worked out, and only priced units are sold',
+    glow.units.map((u) => `${u.name}:${u.factor}:${u.isSellable ? 'sold' : 'counted'}`).join(' '),
+    'piece:1:counted 1/4 carton:3:sold 1/2 carton:6:sold carton:12:counted',
+  );
+
   // A whole catalog in one request: past the default 100kb body, and saved in
   // a handful of statements rather than one round trip per product.
   const bigRows = Array.from({ length: 2000 }, (_, i) => ({
     line: i + 2, name: `Bulk item ${i}`, countedIn: 'piece', price: '100',
-    unit2: 'carton', unit2Count: '24', unit2Price: '2,300',
+    units: [{ name: 'carton', count: '24', price: '2,300' }],
   }));
   const started = Date.now();
   const bulk = (

@@ -6,6 +6,8 @@ import { api } from '../api/client';
 import type { components } from '../api/schema';
 import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportPurchases } from './exportReports';
 
 type PurchasesReportView = components['schemas']['PurchasesReportView'];
 type PurchaseGroupRow = components['schemas']['PurchaseGroupRow'];
@@ -44,7 +46,9 @@ export function PurchasesPage() {
     {
       header: 'Received',
       numeric: true,
-      cell: (row) => <span className="tabular-nums">{row.quantityReceived}</span>,
+      cell: (row) => (
+        <span className="tabular-nums">{row.quantityReceived}</span>
+      ),
     },
     {
       header: 'Paid for',
@@ -67,6 +71,12 @@ export function PurchasesPage() {
     <Page
       title="Purchases"
       description="What arrived, from whom, at what the invoices said."
+      actions={
+        <DownloadButton
+          disabled={!data}
+          onDownload={() => exportPurchases(data!)}
+        />
+      }
     >
       <PeriodPicker resolved={data?.period} />
 

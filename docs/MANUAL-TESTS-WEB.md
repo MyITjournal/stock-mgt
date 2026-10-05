@@ -758,11 +758,16 @@ form has its VAT box back, still on the rate each product had.
 beside Add product. Signed in as a cashier, it is not there.
 
 **203. Press it, then Download the template.** A `reho-products-template.csv` downloads. It opens
-in Excel or Google Sheets with the column names and two example rows (Peak 14g, Indomie 70g).
+in Excel or Google Sheets with the column names (Unit 2 to Unit 5) and three example rows: a lotion
+sold in parts of a carton, a roll-on, and Indomie.
 
-**204. [gate] Upload the template untouched.** The preview says **2 to add** and the new
-categories Milk and Noodles. Peak 14g lists sachet ₦100.00, roll of 10 ₦950.00, carton of 160
-₦14,500.00. **Nothing is in Products yet.**
+**204. [gate] Upload the template untouched.** The preview says **3 to add**. Even Glow lists
+piece and carton of 12 as *counted, not sold*, and 1/2 carton of 6 at ₦29,900.00 and 1/4 carton of
+3 at ₦14,950.00 as sold. Dry Impact lists pack of 6, 1/2 pack of 3, carton of 30 and 1/2 carton of
+15, all sold. **Nothing is in Products yet.**
+
+**204a. [gate] Add a Unit 6 column yourself and fill it for one row.** It is read, not ignored.
+Write "1/2 carton" against a carton of 15: the row is red, saying ½ of 15 is 7.5.
 
 **205. In Excel, add a row with Unit 2 "carton" and Unit 2 how many `0.5`, and one whose price is
 `two hundred`; save as .xlsx and upload.** Those rows are red with the reason in words, and
@@ -840,3 +845,31 @@ the amount is what it owes, and recording it turns the row **Paid**.
 that went to it, and the link opens the invoice.
 
 **225. Record a customer payment with Paid on set to last Friday.** Money in shows it dated Friday.
+
+---
+
+## AH. Downloading to Excel
+
+**226. [gate] Open any screen with a Download button, then reload with the browser's network
+panel open.** Nothing named `browser-…js` (the Excel writer) loads until **Download** is pressed.
+
+**227. [gate] Stock → Products → Download.** An `.xlsx` opens in Excel with the import template's
+columns, filled in. A 13-digit barcode reads in full — not `6.154E+12` — and prices are numbers
+Excel can add up.
+
+**228. Upload that same file through Import from spreadsheet.** Every row reads **Skipped —
+already in your products**. (Changing prices by re-uploading is a later step.)
+
+**229. Stock → On hand → Download.** One row per product and location, with on hand and the
+soonest expiry. There is no value column; Reports → Stock → Download has value.
+
+**230. [gate] Reports → Profit, Sales, Purchases, Money in, Movers and Stock → Download each.**
+Each file has the tables the screen shows, a tab each, and a **Period** tab saying which period.
+The totals match the screen.
+
+**231. [gate] Signed in as a cashier, download Sales by product.** The cost, gross profit and
+margin columns are **empty**, not zero.
+
+**232. Money → Invoices → All invoices → Download, and the same on Bills → All bills, Money in and
+Money out.** Each file holds the whole list, not only the page on screen, with Unpaid / Part-paid /
+Paid and, on the payment lists, which were voided.

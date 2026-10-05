@@ -13,6 +13,8 @@ import {
   type InvoiceToSettle,
 } from './RecordPaymentDialog';
 import { useRecordPayment } from './useRecordPayment';
+import { DownloadButton } from '../components/DownloadButton';
+import { exportInvoices } from './exportMoney';
 
 type ReceivablesView = components['schemas']['ReceivablesView'];
 type SaleListView = components['schemas']['SaleListView'];
@@ -312,26 +314,29 @@ function AllInvoices({
 
   return (
     <>
-      <div className="mb-4 max-w-xs">
-        <Field label="Customer" htmlFor="invoices-customer">
-          <Select
-            id="invoices-customer"
-            value={customerId}
-            onChange={(event) => {
-              setCustomerId(event.target.value);
-              setPages([]);
-            }}
-          >
-            <option value="">Everyone</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {[customer.firstName, customer.lastName]
-                  .filter(Boolean)
-                  .join(' ')}
-              </option>
-            ))}
-          </Select>
-        </Field>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div className="w-full max-w-xs">
+          <Field label="Customer" htmlFor="invoices-customer">
+            <Select
+              id="invoices-customer"
+              value={customerId}
+              onChange={(event) => {
+                setCustomerId(event.target.value);
+                setPages([]);
+              }}
+            >
+              <option value="">Everyone</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {[customer.firstName, customer.lastName]
+                    .filter(Boolean)
+                    .join(' ')}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <DownloadButton onDownload={() => exportInvoices(customerId)} />
       </div>
 
       {isPending && <p className="text-sm text-slate-500">Loading…</p>}
