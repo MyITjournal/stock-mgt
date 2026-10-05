@@ -3987,6 +3987,12 @@ export interface components {
             /** Format: date-time */
             receivedAt: string;
         };
+        PaidFromAccount: {
+            /** Format: uuid */
+            id: string;
+            bankName: string;
+            accountName: string;
+        };
         BillPaymentRef: {
             /** Format: uuid */
             id: string;
@@ -3995,6 +4001,7 @@ export interface components {
             reference: string | null;
             /** Format: date-time */
             occurredAt: string;
+            bankAccount: components["schemas"]["PaidFromAccount"] | null;
         };
         SupplierBillView: {
             /** Format: uuid */
@@ -4099,12 +4106,6 @@ export interface components {
             amountDue: number;
             /** Format: date-time */
             issuedAt: string;
-        };
-        PaidFromAccount: {
-            /** Format: uuid */
-            id: string;
-            bankName: string;
-            accountName: string;
         };
         RecorderRef: {
             /** Format: uuid */

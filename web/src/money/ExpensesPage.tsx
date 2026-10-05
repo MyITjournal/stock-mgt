@@ -44,7 +44,9 @@ export function ExpensesPage() {
     <Page
       title="Expenses"
       description="Money out that is not stock."
-      actions={<Button onClick={() => setAdding(true)}>Record an expense</Button>}
+      actions={
+        <Button onClick={() => setAdding(true)}>Record an expense</Button>
+      }
     >
       {data && (
         <div className="mb-6 grid gap-4 sm:grid-cols-[16rem_1fr]">
@@ -94,7 +96,10 @@ export function ExpensesPage() {
           <tbody className="divide-y divide-slate-100">
             {!isPending && data?.expenses.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td
+                  colSpan={5}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   Nothing recorded yet.
                 </td>
               </tr>
@@ -196,8 +201,8 @@ function ExpenseDialog({ onClose }: { onClose: () => void }) {
             goods sold; recording it again here counts the money twice. */}
         <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           Not for paying a supplier for stock — that goes through{' '}
-          <strong>We owe</strong>. Recording it here as well would count the
-          same money twice and make every margin look worse than it is.
+          <strong>Bills</strong>. Recording it here as well would count the same
+          money twice and make every margin look worse than it is.
         </p>
 
         <div className="mt-4 space-y-4">

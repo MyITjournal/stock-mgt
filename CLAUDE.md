@@ -556,6 +556,22 @@ Four from 7.4:
 - **The vendor side is not the customer side mirrored.** One supplier payment settles **exactly one
   bill** (no allocation table), there are **no negative payments** (void is the only correction),
   and overpaying is a **409** rather than credit. Those absences are decisions, not gaps.
+  **"Paid on"** (2026-10-05, `PaidOnField` + `lib/paidOn.ts`, on both payment forms) lets a
+  payment carry the day the money moved — for a bill paid long before it was entered. Today sends
+  nothing; a past day is sent as **noon UTC on that day**, the same calendar day in every zone
+  from UTC−11 to UTC+11, so the browser picks a day and never a period. The server already
+  bounded it to a year back.
+- **Invoices and Bills** (2026-10-05). The Money tabs are pairs: **Invoices** / **Money in** for
+  customers, **Bills** / **Money out** for vendors, then Expenses and **Bank accounts** — they were
+  *Owed to us / Payments / We owe / Paid out / Accounts*, and older notes here still use those
+  names. Addresses did not change. Each side has **Unpaid** (the grouped, longest-owed view) and
+  **All** (paid ones included), and every row carries **Unpaid / Part-paid / Paid** from
+  `payState(balance, paid)` — named from the server's figures, never computed. **Mark as paid** is
+  the ordinary payment form with the amount set to the whole balance (and, for an invoice, the
+  allocation pinned to it); method and account are still asked. A bill opened (`BillDialog`)
+  lists only the payments that count, so they add up to its `paid`; Money out and Money in link
+  each payment to the bill or invoices it settled. `usePaySupplier` and `useRecordPayment` are
+  the one write each side has.
 - **A supplier payment is never an `Expense`.** Stock already reaches profit through cost of goods
   sold, so recording it twice understates every margin. The expense form says so on screen.
 

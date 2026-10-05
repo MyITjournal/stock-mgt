@@ -196,7 +196,7 @@ export function ReceiptDetailPage() {
       <p className="mt-4 text-sm text-slate-500">
         What is owed for this delivery is a bill, not a receipt — see{' '}
         <Link to="/money/payables" className="underline">
-          Money → We owe
+          Money → Bills
         </Link>
         . The goods value above is what the stock lines came to, which the
         vendor&rsquo;s invoice total can legitimately differ from.

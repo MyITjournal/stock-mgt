@@ -8,7 +8,7 @@ import { MAX_MINOR_UNITS } from '../../common/money/is-money.validator';
  *
  * A delivery raises a bill (§16) and counts toward this month's vendor targets
  * and the purchases report. Goods bought and paid for months ago are none of
- * those, and recording them as a delivery put a debt on *We owe* that had been
+ * those, and recording them as a delivery put a debt on *Bills* (then called *We owe*) that had been
  * settled since June. So opening stock is an **opening-balance adjustment**:
  * a lot with the cost the owner gives and nothing paid for through Reho
  * (`quantityPaidFor: 0`), which stock valuation and cost of goods sold read

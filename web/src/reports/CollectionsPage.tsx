@@ -92,7 +92,7 @@ export function CollectionsPage() {
               <p className="mt-1 text-sm text-slate-600">
                 Collections include money paid on older invoices, and exclude
                 credit given this window. What is still owed is on{' '}
-                <strong>Money → Owed to us</strong>.
+                <strong>Money → Invoices</strong>.
               </p>
             </div>
           </div>

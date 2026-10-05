@@ -2221,6 +2221,28 @@ async function main() {
   const reopened = await billOf(partPaid.id);
   eq('voiding a payment puts the bill back to owing', reopened.balance, 12_800_000);
 
+  // A bill paid long before it was entered: the payment carries the day the
+  // money left, as the "Paid on" box sends it — noon UTC on the day picked.
+  const paidDay = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const backdated = (
+    await api('POST', '/supplier-payments', {
+      token: t,
+      key: randomUUID(),
+      body: { billId: older.id, amount: 3_200_000, method: 'cash', occurredAt: `${paidDay}T12:00:00.000Z` },
+    })
+  ).data;
+  eq('a payment made earlier keeps the day it was made', backdated.occurredAt.slice(0, 10), paidDay);
+  const settledBill = (await api('GET', `/supplier-bills/${older.id}`, { token: t })).data;
+  eq('and settles the bill all the same', settledBill.balance, 0);
+  // What the Bills screen shows when a bill is opened: its payments, which
+  // add up to what it says was paid.
+  eq(
+    'the bill lists the payments that add up to what was paid',
+    settledBill.payments.reduce((sum, row) => sum + row.amount, 0),
+    settledBill.paid,
+  );
+  check('and each says which account it left, or none for cash', settledBill.payments.every((row) => 'bankAccount' in row));
+
   // What was bought this month, from the same receipts.
   const purchases = (await api('GET', '/reports/purchases?period=month', { token: t })).data;
   check('the purchases summary knows the month cost something', purchases.total > 0);

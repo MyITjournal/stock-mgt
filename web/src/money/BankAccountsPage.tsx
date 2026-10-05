@@ -54,7 +54,7 @@ export function BankAccountsPage() {
 
   return (
     <Page
-      title="Accounts"
+      title="Bank accounts"
       description="Where money is paid in. Printed on every invoice, default first."
       actions={
         isManager ? (
