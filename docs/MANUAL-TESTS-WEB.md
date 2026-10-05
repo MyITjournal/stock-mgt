@@ -666,3 +666,13 @@ target, its percentage in the middle and *"15 of 100 cartons"* under it. A met t
 
 **181. [gate] In a shop created as Retail**, Reports has no Targets tab, and the home screen has
 no targets section.
+
+---
+
+## Z. The Reho wordmark
+
+**182. [gate] Signed in as the owner, open any screen and click Reho at the top left.** You land on
+the dashboard home.
+
+**183. [gate] Signed in as a cashier (sales_rep), click Reho.** You land on the till — never on the
+dashboard, which a cashier cannot see.
