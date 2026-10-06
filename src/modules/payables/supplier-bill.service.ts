@@ -12,6 +12,7 @@ import {
   UpdateSupplierBillDto,
 } from './dto/supplier-bill.dto';
 import {
+  CREDITED_REBATES,
   LIVE_SUPPLIER_PAYMENTS,
   billBalance,
   withBillBalance,
@@ -35,6 +36,18 @@ const BILL_INCLUDE = {
       occurredAt: true,
       // Which account it left, so a bill can be checked against a statement.
       bankAccount: { select: { id: true, bankName: true, accountName: true } },
+    },
+  },
+  // Every rebate credited on the bill, so it is listed and counted in its
+  // balance. Only credited rebates are linked to a bill at all.
+  rebates: {
+    orderBy: { creditedAt: 'asc' },
+    select: {
+      id: true,
+      periodStart: true,
+      expectedAmount: true,
+      creditedAmount: true,
+      creditedAt: true,
     },
   },
 } as const;
@@ -188,6 +201,7 @@ export class SupplierBillService {
         supplierId: true,
         amountDue: true,
         payments: LIVE_SUPPLIER_PAYMENTS,
+        rebates: CREDITED_REBATES,
       },
     });
     if (!bill) throw new NotFoundException('Supplier bill not found');

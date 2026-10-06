@@ -2115,6 +2115,45 @@ async function main() {
     JSON.stringify(dashboardTargets),
   );
 
+  // A vendor's money target for the month, beside the cartons: one figure,
+  // counted from the invoice value of what arrived, with VAT taken off when the
+  // vendor adds it on top.
+  const moneyTarget = (
+    await api('POST', '/purchase-targets/money', {
+      token: t,
+      key: randomUUID(),
+      body: { supplierId: supplier.id, period: targetMonth, amount: 1_200_000_000, addsVat: true },
+    })
+  ).data;
+  check('a vendor money target is set', !!moneyTarget.id);
+  await api('POST', '/purchase-targets/money', {
+    token: t,
+    key: randomUUID(),
+    body: { supplierId: supplier.id, period: targetMonth, amount: 1 },
+    expect: 409,
+  });
+  check('one money target per vendor per month', true);
+
+  const moneyOf = async () =>
+    (await api('GET', `/purchase-targets/report?supplierId=${supplier.id}`, { token: t })).data.moneyTargets.find(
+      (row) => row.id === moneyTarget.id,
+    );
+  const withVat = await moneyOf();
+  check('it counts what arrived from the vendor this month', withVat.invoiced > 0, `${withVat.invoiced}`);
+  eq(
+    'with the VAT taken off when the vendor adds it',
+    withVat.counted,
+    Math.round((withVat.invoiced * 10_000) / 10_750),
+  );
+  await api('PATCH', `/purchase-targets/money/${moneyTarget.id}`, { token: t, body: { addsVat: false } });
+  eq('and whole when the vendor adds none', (await moneyOf()).counted, withVat.invoiced);
+  check(
+    'the dashboard carries it for its doughnut',
+    (await api('GET', '/reports/dashboard', { token: t })).data.purchasing.moneyTargets.some(
+      (row) => row.id === moneyTarget.id && row.amount === 1_200_000_000,
+    ),
+  );
+
   // -- Payables -------------------------------------------------------------
   // The owner's own worked example, in kobo: ₦199,800 supplied with ₦71,800
   // handed over on the spot, ₦32,000 supplied and untouched, ₦64,000 supplied
@@ -2242,6 +2281,71 @@ async function main() {
     settledBill.paid,
   );
   check('and each says which account it left, or none for cash', settledBill.payments.every((row) => 'bankAccount' in row));
+
+  // Vendor rebates: expected for a month, then credited off a later bill. Not
+  // a payment and not an expense — a term in what the bill owes, and a line of
+  // its own in profit, in the month the credit landed.
+  const profitBefore = (await api('GET', '/reports/profit?period=month', { token: t })).data;
+  const rebate = (
+    await api('POST', '/vendor-rebates', {
+      token: t,
+      key: randomUUID(),
+      body: { supplierId: supplier.id, period: new Date().toISOString(), expectedAmount: 150_000, note: 'Met the month.' },
+    })
+  ).data;
+  eq('a rebate is recorded as expected', rebate.status, 'expected');
+  await api('POST', '/vendor-rebates', {
+    token: t,
+    key: randomUUID(),
+    body: { supplierId: supplier.id, period: new Date().toISOString(), expectedAmount: 1 },
+    expect: 409,
+  });
+  check('one rebate per vendor per month', true);
+
+  // The next bill, dated today, that the credit comes off.
+  const nextBill = await opening(500_000, 0, 'REBATE-NEXT');
+  await api('POST', `/vendor-rebates/${rebate.id}/credit`, {
+    token: t,
+    key: randomUUID(),
+    body: { billId: nextBill.id, amount: 500_001 },
+    expect: 409,
+  });
+  check('a credit bigger than the bill is refused, not carried', true);
+
+  const credited = (
+    await api('POST', `/vendor-rebates/${rebate.id}/credit`, {
+      token: t,
+      key: randomUUID(),
+      // The real figure, which differs from what was expected.
+      body: { billId: nextBill.id, amount: 140_000 },
+    })
+  ).data;
+  eq('the credit lands with its real figure', `${credited.status} ${credited.creditedAmount}`, 'credited 140000');
+  const billAfterRebate = (await api('GET', `/supplier-bills/${nextBill.id}`, { token: t })).data;
+  eq('the bill owes less by the credit', billAfterRebate.balance, 500_000 - 140_000);
+  eq('and says how much was rebated, apart from what was paid', `${billAfterRebate.rebated} ${billAfterRebate.paid}`, '140000 0');
+  const profitAfter = (await api('GET', '/reports/profit?period=month', { token: t })).data;
+  eq('profit shows it as vendor rebates in the month it landed', profitAfter.vendorRebates - profitBefore.vendorRebates, 140_000);
+  eq(
+    'adding it to what is left after expenses, not to gross profit',
+    `${profitAfter.operatingProfit - profitBefore.operatingProfit} ${profitAfter.grossProfit - profitBefore.grossProfit}`,
+    '140000 0',
+  );
+  eq(
+    'and it is not a payment: Money out did not move',
+    (await api('GET', `/supplier-payments?order=desc&limit=200`, { token: t })).data.payments.some((row) => row.billId === nextBill.id),
+    false,
+  );
+
+  // A credit on the wrong bill is taken back: the bill owes again.
+  await api('POST', `/vendor-rebates/${rebate.id}/uncredit`, { token: t });
+  eq('removing the credit puts the bill back to owing', (await api('GET', `/supplier-bills/${nextBill.id}`, { token: t })).data.balance, 500_000);
+  await api('POST', `/vendor-rebates/${rebate.id}/credit`, { token: t, key: randomUUID(), body: { billId: nextBill.id, amount: 140_000 } });
+  eq(
+    'the vendor statement lists the credit',
+    (await api('GET', `/suppliers/${supplier.id}/statement`, { token: t })).data.totalRebated,
+    140_000,
+  );
 
   // What was bought this month, from the same receipts.
   const purchases = (await api('GET', '/reports/purchases?period=month', { token: t })).data;

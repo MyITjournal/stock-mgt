@@ -650,7 +650,11 @@ market comparison found. The rules are pure, in `catalog/product-import.ts`.
 - **Preview and save are one function.** `dryRun` returns every row as `add`, `skip` or `error`
   with reasons in words; the save re-plans against the catalog as it is then and writes only if
   **no** row is in error. All or nothing, in one transaction.
-- **A name already in the catalog is skipped, never changed.** Bulk price changes belong with
+- **A product is its name and size together**, case and spaces aside (`productKey`), as the till and
+  the receipt show it. The first version used the name alone, and an owner's file failed on *Dry
+  Impact* the 50ml roll-on and *Dry Impact* the 200ml spray. Same name and size twice in one file
+  is refused, naming the first row.
+- **A product already in the catalog is skipped, never changed.** Bulk price changes belong with
   export (download, edit, upload back), not here. A side effect worth having: a retry after a save
   that landed, even with a fresh key, finds every name taken and skips every row.
 - **Units sell exactly as the form decides** — `defaultIsSellable` and `chooseDefaultSellingUnit`
@@ -1892,6 +1896,26 @@ unsafe, check the condition still holds before building around it.
 **A target cannot change what it is set against.** Rewriting a lotions target into a roll-on one
 would silently restate what last month's number meant; delete it and set the one that was agreed.
 
+### A vendor's month in money, beside the cartons (2026-10-06)
+
+The per-category money quota was removed with the move to cartons (above), and that stands. What
+the owner then described is different: a vendor often expects **a figure for the whole month** —
+"₦12M from us this month" — on top of its carton targets. So `VendorMoneyTarget` is **one amount
+per vendor per month**, unique, editable (amount, VAT choice, note), removable outright.
+
+- **Progress is the invoice value of what arrived**, summed from `GoodsReceiptLine.totalCost` for
+  that vendor's receipts in the month window — exact invoice figures, never `costPrice × qty`, and
+  free goods add nothing because they carry no value. Received, not ordered, like the cartons.
+- **VAT is a choice on the target, because vendors differ.** The owner confirmed not every vendor
+  adds it. With `addsVat` (the default) the vendor quotes before VAT and puts 7.5% on top of each
+  invoice, so ₦12.9M of invoices meets ₦12M: `moneyProgress` takes VAT off the **month's total,
+  once**, with `splitTaxInclusive` — the split a sale uses — rather than line by line, so rounding
+  happens a single time. Without it, invoices count whole.
+- **Where it shows**: `moneyTargets` on `GET /purchase-targets/report` (and therefore no longer
+  dependent on there being carton targets), `purchasing.moneyTargets` on the dashboard, one ring
+  each — the ring component now has a money variant beside the carton one. The Rebates panel names
+  it ("money target met", or the percentage) as context for the owner's call, never as a gate.
+
 ---
 
 ## 13. Traps already hit
@@ -2855,6 +2879,36 @@ stale one costs more than no comment, because it argues against a change that is
 - **No rep-facing home screen.** Raised while scoping this — staff cannot reach the dashboard at
   all — but it is a screen that does not exist rather than one that needs trimming, and it belongs
   with the mobile slice.
+
+### Vendor rebates: expected for a month, credited off a later bill (2026-10-05)
+
+A vendor scheme pays a rebate when a month's buying meets its target, and pays it **only as credit
+off a later bill** — never cash. Agreed with the owner before building: show "rebate expected"
+with a tentative amount they enter (the vendor calculates the real one later), turn it "credited ✓"
+when it lands on a bill, and count it in profit in the month it arrives, on its own line.
+
+- **Not a payment, not an expense.** No money moves, so Money out never shows it and no bank
+  account is involved; and booking it as negative expense or as revenue would bury what rebates are
+  worth. It is a reduction in what one bill owes, which is exactly what `billBalance` already
+  anticipated growing: `balance = amountDue − paid − rebated`. `CREDITED_REBATES` is the query
+  half, and `rebates` is **required** in `BillBalanceInput` so that a balance query which forgets it
+  fails to compile — the customer side once lost a void filter in a fourth `include` (§11).
+- **Two steps, because the owner knows two things at two times.** `expectedAmount` when the month
+  is earned; `creditedAmount` (the real figure, often different), `billId` and `creditedAt` set
+  together when it lands — a CHECK constraint refuses half a credit. *Remove credit* clears all
+  three: the bill owes again and the rebate is expected again.
+- **No target gate.** Whether a scheme was met is the owner's judgement; schemes differ by vendor
+  and encoding them is accounting software. The Targets page shows "2 of 3 targets met" beside the
+  rebate as context only.
+- **A credit never overpays a bill, and must be that vendor's.** The same rule as a payment, for the
+  same reason: no allocation table on the vendor side (§16). A bigger credit goes on a bigger bill.
+- **Profit counts it in the month of the bill it landed on** (`creditedAt` is the bill's
+  `issuedAt`, so there is no date to type), as `vendorRebates` after gross profit:
+  `operatingProfit = grossProfit + vendorRebates − expenses`. Gross profit and margin are untouched
+  — the goods keep their invoice cost — so what the rebate is worth stays visible on its own line,
+  on the dashboard too, since both read `ReportService.profit`.
+- **One per vendor per month** (unique), editable while expected, removable while expected.
+  Owner, manager and accountant, like everything else on the vendor side.
 
 ### Invoices and Bills, and every payment pointing at what it paid (2026-10-05)
 
@@ -3842,6 +3896,46 @@ wrong in this combination.** Supabase's own quickstart hands you the direct conn
 it works perfectly from a laptop on an IPv6 network. It fails only where this runs. Copying the
 documented default would have produced a deploy that failed with an error naming neither Supabase
 nor IPv6.
+
+### A midnight job on a server that sleeps at midnight (2026-10-05)
+
+`IdempotencyCleanupService` cleared stored write replies with `@Cron(EVERY_DAY_AT_MIDNIGHT)`. **On
+Render's free plan the server is asleep at midnight** — it sleeps after ~15 minutes without a
+request — so on a shop's quiet server the job never ran, and nothing cleared old sign-in sessions
+at all. Measured locally, a stored reply is about a third of the space a sale takes (≈2.2 KB of
+≈9 KB), and each person's session chain grows every fifteen minutes they work. Both piled up in a
+500 MB database. Same shape as §22's trap: **a schedule that is right on a server that never
+sleeps and silently absent on one that does.**
+
+`HousekeepingService` (`src/common/housekeeping/`) replaces it: a sweep **30 seconds after every
+wake-up** (out of a cold start's way, not awaited) and **every hour while awake**, never two at
+once, never throwing. It clears replies past their 48 hours, and sign-in sessions **only a whole
+chain at a time, once the newest token in it has expired** — a replaced token is kept while its
+chain lives, because presenting it again is how `TokenService.rotate` catches a stolen session and
+signs the chain out. First run on the development database cleared 301 dead session rows and left
+every live chain alone; smoke stayed green.
+
+### How far the free plans stretch (measured 2026-10-05)
+
+Per row including indexes, from the development database: a product with three units and prices
+≈ 3 KB; **a three-line paid sale ≈ 8 KB kept for good** (sale, lines, movements, payment,
+allocation — the 48-hour reply copy comes and goes); a ten-line delivery ≈ 25 KB. Against
+Supabase's free **500 MB**, one shop selling 50 a day lasts about three years, 150 a day about
+thirteen months, 500 a day about four — shared between every shop on the instance. Database size
+is on Supabase → Database. **Space is not what bites first**: Render's free plan sleeps (≈50 s
+first request after a lull, which staff will feel every morning), and Supabase's free plan has
+**no restorable backups** — take a `pg_dump` of the session-pooler URL weekly from a laptop until
+the paid plan's daily backups take over.
+
+**Starting the hosted database over** keeps the schema and its migration history and empties
+everything else — tested in a rolled-back transaction, it emptied all 35 data tables and left only
+`_prisma_migrations`:
+
+```sql
+TRUNCATE TABLE organizations, users RESTART IDENTITY CASCADE;
+```
+
+Then sign up again on the site. Product photos on Cloudinary are not touched.
 
 ---
 

@@ -84,6 +84,7 @@ const BILL_COLUMNS: readonly SheetColumn<SupplierBillView>[] = [
   { header: 'Due', kind: 'date', value: (bill) => bill.dueDate },
   { header: 'Billed', kind: 'money', value: (bill) => bill.amountDue },
   { header: 'Paid', kind: 'money', value: (bill) => bill.paid },
+  { header: 'Rebate', kind: 'money', value: (bill) => bill.rebated },
   { header: 'Owing', kind: 'money', value: (bill) => bill.balance },
   {
     header: 'Status',

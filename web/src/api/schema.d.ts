@@ -1256,6 +1256,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vendor-rebates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vendor rebates, expected and credited
+         * @description A rebate a vendor credits off a later bill when a month’s buying earned it. Never a payment and never an expense.
+         */
+        get: operations["PayablesController_listRebates"];
+        put?: never;
+        /**
+         * Record the rebate a month earned
+         * @description A tentative amount: the vendor works out the real one later, and it is entered when the credit lands. One per vendor per month; a second is a 409.
+         */
+        post: operations["PayablesController_createRebate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vendor-rebates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a rebate that is not coming
+         * @description Only while it is expected; a credited one is uncredited first.
+         */
+        delete: operations["PayablesController_removeRebate"];
+        options?: never;
+        head?: never;
+        /**
+         * Change what is expected, or the note
+         * @description The expected amount is fixed once the rebate is credited.
+         */
+        patch: operations["PayablesController_updateRebate"];
+        trace?: never;
+    };
+    "/api/v1/vendor-rebates/{id}/credit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The credit has landed on a bill
+         * @description Takes the real amount off that bill’s balance and marks the rebate credited, counting in profit in the month of the bill’s date. Must be the same vendor’s bill; a credit bigger than what it still owes is a 409.
+         */
+        post: operations["PayablesController_creditRebate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vendor-rebates/{id}/uncredit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take a credit back off the bill it was put on
+         * @description The bill owes again and the rebate is expected again.
+         */
+        post: operations["PayablesController_uncreditRebate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/payments": {
         parameters: {
             query?: never;
@@ -1866,6 +1954,47 @@ export interface paths {
          * @description Only the number of cartons and the note. The vendor, category and month are what the target is — changing them would silently restate what a past month meant — so they are refused; remove it and set the one you mean.
          */
         patch: operations["PurchaseTargetController_update"];
+        trace?: never;
+    };
+    "/api/v1/purchase-targets/money": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a vendor’s money target for a month
+         * @description One figure per vendor per month — “₦12M this month” — beside the carton targets. With addsVat (the default), the vendor adds 7.5% on top of their invoices: the target is before VAT and invoices count without it. Progress is on GET /purchase-targets/report as moneyTargets.
+         */
+        post: operations["PurchaseTargetController_createMoney"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/purchase-targets/money/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a money target */
+        delete: operations["PurchaseTargetController_removeMoney"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a money target
+         * @description The amount, the VAT choice and the note.
+         */
+        patch: operations["PurchaseTargetController_updateMoney"];
         trace?: never;
     };
     "/api/v1/organization": {
@@ -3927,7 +4056,9 @@ export interface components {
             amountDue: number;
             /** @description Settled so far, excluding voided payments. */
             paid: number;
-            /** @description `amountDue − paid`. */
+            /** @description Credited off this bill by vendor rebates. */
+            rebated: number;
+            /** @description `amountDue − paid − rebated`. */
             balance: number;
             /** @description Whole days since the bill was issued. */
             daysOutstanding: number;
@@ -3972,6 +4103,17 @@ export interface components {
             occurredAt: string;
             bill: components["schemas"]["BillRef"];
         };
+        StatementRebateRef: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            periodStart: string;
+            creditedAmount: number | null;
+            /** Format: date-time */
+            creditedAt: string | null;
+            /** Format: uuid */
+            billId: string | null;
+        };
         SupplierStatementView: {
             /** Format: uuid */
             supplierId: string;
@@ -3980,6 +4122,10 @@ export interface components {
             payments: components["schemas"]["StatementPaymentRef"][];
             totalOwed: number;
             totalPaid: number;
+            /** @description Rebates credited off this vendor’s bills. */
+            rebates: components["schemas"]["StatementRebateRef"][];
+            /** @description The sum of those credits. */
+            totalRebated: number;
         };
         ReceiptRef: {
             /** Format: uuid */
@@ -4003,6 +4149,16 @@ export interface components {
             /** Format: date-time */
             occurredAt: string;
             bankAccount: components["schemas"]["PaidFromAccount"] | null;
+        };
+        BillRebateRef: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            periodStart: string;
+            expectedAmount: number;
+            creditedAmount: number | null;
+            /** Format: date-time */
+            creditedAt: string | null;
         };
         SupplierBillView: {
             /** Format: uuid */
@@ -4035,9 +4191,13 @@ export interface components {
             goodsReceipt: components["schemas"]["ReceiptRef"] | null;
             /** @description Live payments only — voided ones are excluded here. */
             payments: components["schemas"]["BillPaymentRef"][];
+            /** @description Vendor rebates credited on this bill. */
+            rebates: components["schemas"]["BillRebateRef"][];
             /** @description Settled so far. */
             paid: number;
-            /** @description `amountDue − paid`. */
+            /** @description Credited off this bill by vendor rebates. */
+            rebated: number;
+            /** @description `amountDue − paid − rebated`. */
             balance: number;
         };
         CreateSupplierBillDto: {
@@ -4197,6 +4357,86 @@ export interface components {
         VoidSupplierPaymentDto: {
             /** @example Keyed against the wrong vendor. */
             reason: string;
+        };
+        RebateSupplierRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        RebateBillRef: {
+            /** Format: uuid */
+            id: string;
+            invoiceNumber: string | null;
+            /** Format: date-time */
+            issuedAt: string;
+        };
+        VendorRebateView: {
+            /** Format: uuid */
+            id: string;
+            supplier: components["schemas"]["RebateSupplierRef"];
+            /**
+             * Format: date-time
+             * @description First instant of the month it was earned, in the organization’s timezone.
+             */
+            periodStart: string;
+            /** @description What was expected, in kobo. */
+            expectedAmount: number;
+            note: string | null;
+            /**
+             * @description `credited` once it has landed on a bill.
+             * @enum {string}
+             */
+            status: "expected" | "credited";
+            /** @description What was actually credited, in kobo. */
+            creditedAmount: number | null;
+            /**
+             * Format: date-time
+             * @description The day it counts in profit: the date of the bill it was credited on.
+             */
+            creditedAt: string | null;
+            bill: components["schemas"]["RebateBillRef"] | null;
+        };
+        CreateVendorRebateDto: {
+            /**
+             * Format: uuid
+             * @description Optional client-supplied id.
+             */
+            id?: string;
+            /** Format: uuid */
+            supplierId: string;
+            /**
+             * Format: date-time
+             * @description Any instant inside the month the rebate was earned. Snapped to the first of that month in the organization’s timezone, as a purchase target is.
+             */
+            period: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 12000000
+             */
+            expectedAmount: number;
+            /** @example Met the October lotion target. */
+            note?: string;
+        };
+        UpdateVendorRebateDto: {
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 12000000
+             */
+            expectedAmount?: number;
+            /** @description Send an empty string to clear it. */
+            note?: string;
+        };
+        CreditVendorRebateDto: {
+            /**
+             * Format: uuid
+             * @description The bill the vendor took it off. Must be the same vendor’s, and owe at least this much.
+             */
+            billId: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 11850000
+             */
+            amount: number;
         };
         PaidByCustomer: {
             /** Format: uuid */
@@ -5290,11 +5530,28 @@ export interface components {
              */
             achievedBps: number;
         };
+        MoneyTargetGlance: {
+            /** Format: uuid */
+            id: string;
+            /** @example Unilever */
+            supplier: string;
+            /** @description The target, in kobo — before VAT when addsVat. */
+            amount: number;
+            addsVat: boolean;
+            /** @description What counts so far, in kobo. */
+            counted: number;
+            /** @description In kobo; never negative. */
+            remaining: number;
+            /** @description Basis points of the target. */
+            achievedBps: number;
+        };
         PurchasingSummary: {
             payables: components["schemas"]["PayablesSummary"];
             purchases: components["schemas"]["PurchasesSummary"];
             /** @description Every vendor target for this month, in cartons. Empty when there are none. */
             targets: components["schemas"]["TargetGlance"][];
+            /** @description Every vendor money target for this month. Empty when there are none. */
+            moneyTargets: components["schemas"]["MoneyTargetGlance"][];
         };
         TrendDay: {
             /** @example 2026-09-19 */
@@ -5352,9 +5609,11 @@ export interface components {
             cogs: number;
             /** @description `revenue − cogs`. */
             grossProfit: number;
+            /** @description Vendor rebates credited on bills dated in the window — credit a vendor took off a bill because a month’s buying earned it. Its own line: not revenue, and not taken off cost of goods. */
+            vendorRebates: number;
             /** @description Expenses recorded in the window. */
             expenses: number;
-            /** @description `grossProfit − expenses`. */
+            /** @description `grossProfit + vendorRebates − expenses`. */
             operatingProfit: number;
             /** @description Gross margin in basis points. 250 is 2.5%. */
             marginBps: number;
@@ -5661,6 +5920,26 @@ export interface components {
             category: components["schemas"]["TargetCategoryRef"];
             progress: components["schemas"]["TargetProgressView"];
         };
+        MoneyTargetWithProgress: {
+            /** Format: uuid */
+            id: string;
+            supplier: components["schemas"]["TargetSupplierRef"];
+            /** Format: date-time */
+            periodStart: string;
+            /** @description The target in kobo — before VAT when `addsVat`. */
+            amount: number;
+            /** @description The vendor adds 7.5% VAT on top of their invoices, so invoices count without it. */
+            addsVat: boolean;
+            note: string | null;
+            /** @description Goods received from the vendor this month, at invoice value, in kobo. */
+            invoiced: number;
+            /** @description What counts toward the target: `invoiced`, less VAT when the vendor adds it. */
+            counted: number;
+            /** @description Never negative. */
+            remaining: number;
+            /** @description In basis points; over 10,000 once beaten. */
+            achievedBps: number;
+        };
         PurchaseTargetReportView: {
             /**
              * Format: date-time
@@ -5674,6 +5953,8 @@ export interface components {
             periodEnd: string;
             /** @description Always present, and empty when nothing was quotaed for the month — which is the common case, and not an error. */
             targets: components["schemas"]["PurchaseTargetWithProgress"][];
+            /** @description Each vendor’s money target for the month, if it has one. */
+            moneyTargets: components["schemas"]["MoneyTargetWithProgress"][];
         };
         CreatePurchaseTargetDto: {
             /**
@@ -5711,6 +5992,42 @@ export interface components {
              */
             targetCartons?: number;
             /** @description An empty string clears it; leaving it out leaves it alone. */
+            note?: string;
+        };
+        CreateMoneyTargetDto: {
+            /**
+             * Format: uuid
+             * @description Optional client-supplied id.
+             */
+            id?: string;
+            /** Format: uuid */
+            supplierId: string;
+            /**
+             * Format: date-time
+             * @description Any instant inside the target month. Snapped to the first of that month in the organization’s timezone, as a carton target is.
+             */
+            period: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 1200000000
+             */
+            amount: number;
+            /**
+             * @description The vendor adds 7.5% VAT on top of their invoices, so the target is before VAT and invoices count without it.
+             * @default true
+             */
+            addsVat: boolean;
+            /** @example Agreed with the area rep. */
+            note?: string;
+        };
+        UpdateMoneyTargetDto: {
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 1200000000
+             */
+            amount?: number;
+            addsVat?: boolean;
+            /** @description Send an empty string to clear it. */
             note?: string;
         };
         OrganizationView: {
@@ -8050,6 +8367,150 @@ export interface operations {
             };
         };
     };
+    PayablesController_listRebates: {
+        parameters: {
+            query?: {
+                supplierId?: string;
+                /** @description Any instant inside a month: only that month’s rebates. */
+                period?: string;
+                /** @description Only rebates not yet credited — what a bill can take. */
+                expectedOnly?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorRebateView"][];
+                };
+            };
+        };
+    };
+    PayablesController_createRebate: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original rebate. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateVendorRebateDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorRebateView"];
+                };
+            };
+        };
+    };
+    PayablesController_removeRebate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PayablesController_updateRebate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateVendorRebateDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorRebateView"];
+                };
+            };
+        };
+    };
+    PayablesController_creditRebate: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original result. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreditVendorRebateDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorRebateView"];
+                };
+            };
+        };
+    };
+    PayablesController_uncreditRebate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorRebateView"];
+                };
+            };
+        };
+    };
     PaymentController_findAll: {
         parameters: {
             query?: {
@@ -9061,6 +9522,74 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PurchaseTargetView"];
                 };
+            };
+        };
+    };
+    PurchaseTargetController_createMoney: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original target. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMoneyTargetDto"];
+            };
+        };
+        responses: {
+            /** @description The new target’s id. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PurchaseTargetController_removeMoney: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PurchaseTargetController_updateMoney: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMoneyTargetDto"];
+            };
+        };
+        responses: {
+            /** @description The target’s id. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

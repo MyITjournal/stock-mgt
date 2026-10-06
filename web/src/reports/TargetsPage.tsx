@@ -10,6 +10,8 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useIsManager } from '../auth/useAuth';
 import { formatCartons } from '../lib/quantity';
+import { RebatesPanel } from './RebatesPanel';
+import { MoneyTargets } from './MoneyTargets';
 import type { components } from '../api/schema';
 
 type PurchaseTargetReportView =
@@ -131,17 +133,29 @@ export function TargetsPage() {
       </div>
 
       {error && (
-        <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700" role="alert">
+        <p
+          className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700"
+          role="alert"
+        >
           {error}
         </p>
       )}
 
       {isPending && <p className="text-sm text-slate-500">Loading…</p>}
 
+      {data && (
+        <MoneyTargets
+          month={month}
+          supplierId={supplierId}
+          targets={data.moneyTargets}
+          canEdit={isManager}
+        />
+      )}
+
       {data && data.targets.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500">
-          No targets for this month. Set one when a vendor agrees a scheme —
-          a category and a number of cartons.
+          No carton targets for this month. Set one when a vendor agrees a
+          scheme — a category and a number of cartons.
         </div>
       )}
 
@@ -157,6 +171,14 @@ export function TargetsPage() {
           />
         ))}
       </div>
+
+      <RebatesPanel
+        month={month}
+        supplierId={supplierId}
+        targets={data?.targets ?? []}
+        moneyTargets={data?.moneyTargets ?? []}
+        canEdit={isManager}
+      />
 
       {dialog && (
         <TargetDialog
@@ -248,9 +270,13 @@ function TargetCard({
       {progress.productsWithoutCarton.length > 0 && (
         <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs text-amber-800">
           Not counted — no carton set up:{' '}
-          {progress.productsWithoutCarton.map((product) => product.name).join(', ')}
+          {progress.productsWithoutCarton
+            .map((product) => product.name)
+            .join(', ')}
           . Give {progress.productsWithoutCarton.length === 1 ? 'it' : 'them'} a
-          carton unit on the product to count {progress.productsWithoutCarton.length === 1 ? 'its' : 'their'} deliveries.
+          carton unit on the product to count{' '}
+          {progress.productsWithoutCarton.length === 1 ? 'its' : 'their'}{' '}
+          deliveries.
         </p>
       )}
     </article>
@@ -314,12 +340,15 @@ function TargetDialog({
     },
     onError: (caught) =>
       setError(
-        caught instanceof ApiError ? caught.message : 'Could not save that target.',
+        caught instanceof ApiError
+          ? caught.message
+          : 'Could not save that target.',
       ),
   });
 
   const ready =
-    cartons >= 1 && (editing ? true : Boolean(supplierId && categoryId && targetMonth));
+    cartons >= 1 &&
+    (editing ? true : Boolean(supplierId && categoryId && targetMonth));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -423,7 +452,11 @@ function TargetDialog({
             />
           </Field>
 
-          <Field label="Note" htmlFor="target-note" hint="Optional — the scheme's terms, a promo.">
+          <Field
+            label="Note"
+            htmlFor="target-note"
+            hint="Optional — the scheme's terms, a promo."
+          >
             <Input
               id="target-note"
               value={note}
@@ -434,17 +467,29 @@ function TargetDialog({
         </div>
 
         {error && (
-          <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700" role="alert">
+          <p
+            className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700"
+            role="alert"
+          >
             {error}
           </p>
         )}
 
         <div className="mt-6 flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={save.isPending}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onClose}
+            disabled={save.isPending}
+          >
             Cancel
           </Button>
           <Button type="submit" disabled={save.isPending || !ready}>
-            {save.isPending ? 'Saving…' : editing ? 'Save changes' : 'Set target'}
+            {save.isPending
+              ? 'Saving…'
+              : editing
+                ? 'Save changes'
+                : 'Set target'}
           </Button>
         </div>
       </form>

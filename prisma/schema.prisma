@@ -48,10 +48,10 @@ model Category {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  parent       Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children     Category[]   @relation("CategoryTree")
-  products     Product[]
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent          Category?        @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children        Category[]       @relation("CategoryTree")
+  products        Product[]
   purchaseTargets PurchaseTarget[]
 
   @@unique([organizationId, name])
@@ -793,35 +793,37 @@ model Organization {
   memberships   Membership[]
   refreshTokens RefreshToken[]
 
-  categories        Category[]
-  packagingTypes    PackagingType[]
-  products          Product[]
-  productUnits      ProductUnit[]
-  priceTiers        PriceTier[]
-  productPrices     ProductPrice[]
-  customers         Customer[]
-  sales             Sale[]
-  saleLines         SaleLine[]
-  saleReturns       SaleReturn[]
-  payments          Payment[]
-  allocations       PaymentAllocation[]
-  expenses          Expense[]
-  expenseCategories ExpenseCategory[]
-  stocktakes        Stocktake[]
-  stocktakeLines    StocktakeLine[]
-  barcodes          ProductBarcode[]
-  idempotencyKeys   IdempotencyKey[]
-  locations         Location[]
-  suppliers         Supplier[]
-  stockBatches      StockBatch[]
-  stockMovements    StockMovement[]
-  stockBalances     StockBalance[]
-  goodsReceipts     GoodsReceipt[]
-  goodsReceiptLines GoodsReceiptLine[]
-  purchaseTargets   PurchaseTarget[]
-  bankAccounts      BankAccount[]
-  supplierBills     SupplierBill[]
-  supplierPayments  SupplierPayment[]
+  categories         Category[]
+  packagingTypes     PackagingType[]
+  products           Product[]
+  productUnits       ProductUnit[]
+  priceTiers         PriceTier[]
+  productPrices      ProductPrice[]
+  customers          Customer[]
+  sales              Sale[]
+  saleLines          SaleLine[]
+  saleReturns        SaleReturn[]
+  payments           Payment[]
+  allocations        PaymentAllocation[]
+  expenses           Expense[]
+  expenseCategories  ExpenseCategory[]
+  stocktakes         Stocktake[]
+  stocktakeLines     StocktakeLine[]
+  barcodes           ProductBarcode[]
+  idempotencyKeys    IdempotencyKey[]
+  locations          Location[]
+  suppliers          Supplier[]
+  stockBatches       StockBatch[]
+  stockMovements     StockMovement[]
+  stockBalances      StockBalance[]
+  goodsReceipts      GoodsReceipt[]
+  goodsReceiptLines  GoodsReceiptLine[]
+  purchaseTargets    PurchaseTarget[]
+  bankAccounts       BankAccount[]
+  supplierBills      SupplierBill[]
+  supplierPayments   SupplierPayment[]
+  vendorRebates      VendorRebate[]
+  vendorMoneyTargets VendorMoneyTarget[]
 
   @@map("organizations")
 }
@@ -927,22 +929,22 @@ model User {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  resetPasswords ResetPassword[]
-  memberships    Membership[]
-  refreshTokens  RefreshToken[]
-  stockMovements StockMovement[]
-  sales          Sale[]
-  saleReturns    SaleReturn[]
-  payments       Payment[]      @relation("PaymentRecordedBy")
-  voidedPayments Payment[]      @relation("PaymentVoidedBy")
+  resetPasswords         ResetPassword[]
+  memberships            Membership[]
+  refreshTokens          RefreshToken[]
+  stockMovements         StockMovement[]
+  sales                  Sale[]
+  saleReturns            SaleReturn[]
+  payments               Payment[]         @relation("PaymentRecordedBy")
+  voidedPayments         Payment[]         @relation("PaymentVoidedBy")
   supplierBills          SupplierBill[]    @relation("SupplierBillRecordedBy")
   supplierPayments       SupplierPayment[] @relation("SupplierPaymentRecordedBy")
   voidedSupplierPayments SupplierPayment[] @relation("SupplierPaymentVoidedBy")
-  stocktakesStarted Stocktake[]     @relation("StocktakeStartedBy")
-  stocktakesPosted  Stocktake[]     @relation("StocktakePostedBy")
-  stocktakeLines    StocktakeLine[]
-  expenses       Expense[]
-  goodsReceipts  GoodsReceipt[]
+  stocktakesStarted      Stocktake[]       @relation("StocktakeStartedBy")
+  stocktakesPosted       Stocktake[]       @relation("StocktakePostedBy")
+  stocktakeLines         StocktakeLine[]
+  expenses               Expense[]
+  goodsReceipts          GoodsReceipt[]
 
   @@map("users")
 }
@@ -1044,13 +1046,15 @@ model Supplier {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   batches         StockBatch[]
   goodsReceipts   GoodsReceipt[]
   expenses        Expense[]
   purchaseTargets PurchaseTarget[]
   bills           SupplierBill[]
   payments        SupplierPayment[]
+  rebates         VendorRebate[]
+  moneyTargets    VendorMoneyTarget[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1441,8 +1445,8 @@ model BankAccount {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  payments        Payment[]
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payments         Payment[]
   supplierPayments SupplierPayment[]
 
   /// One row per account number at a bank. The same number at two different
@@ -1522,6 +1526,8 @@ model SupplierBill {
   goodsReceipt GoodsReceipt?     @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
   recordedBy   User?             @relation("SupplierBillRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
   payments     SupplierPayment[]
+  /// Rebates credited on this bill. Each one lowers what it owes.
+  rebates      VendorRebate[]
 
   @@index([organizationId])
   @@index([organizationId, supplierId])
@@ -1599,4 +1605,89 @@ model SupplierPayment {
   /// Delta sync pages on `updatedAt`, because voiding mutates the row.
   @@index([organizationId, updatedAt, id])
   @@map("supplier_payments")
+}
+
+/// A rebate a vendor owes for a month's buying, and the bill it was credited on.
+///
+/// The vendor pays it **only as credit off a later bill**, never in cash, so it
+/// is neither a payment (no money moved) nor an expense. It starts as what the
+/// owner expects — a tentative figure, because the vendor works out the real
+/// one later — and becomes credited when it lands on a bill: `billId`,
+/// `creditedAmount` and `creditedAt` are set together, and that bill's balance
+/// drops by the amount (`payables/balance.ts`). Profit counts it in the month
+/// it was credited (`creditedAt`), on its own line, and it never touches stock
+/// cost: the goods keep the cost their invoice gave them.
+///
+/// Whether the month's target was met is the owner's call, not a rule here.
+model VendorRebate {
+  id             String @id @default(uuid())
+  organizationId String
+  supplierId     String
+
+  /// First instant of the month the rebate was earned, in the organization's
+  /// timezone — the same snapping a purchase target uses.
+  periodStart DateTime
+
+  /// What the owner expects, in kobo. Tentative until it is credited.
+  expectedAmount Int
+  note           String?
+
+  /// Set together when the credit lands on a bill, and cleared together if
+  /// that was a mistake.
+  billId         String?
+  creditedAmount Int?
+  /// The day the credit counts in profit: the bill's own date.
+  creditedAt     DateTime?
+
+  recordedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  bill         SupplierBill? @relation(fields: [billId], references: [id], onDelete: SetNull)
+
+  /// One rebate per vendor per month.
+  @@unique([organizationId, supplierId, periodStart])
+  @@index([organizationId])
+  @@index([billId])
+  @@index([organizationId, creditedAt])
+  @@map("vendor_rebates")
+}
+
+/// What a vendor expects bought from them in a month, in money — "₦12M this
+/// month" — beside the carton targets, which are per category.
+///
+/// One figure per vendor per month. Progress is the invoice value of the goods
+/// **received** from them that month (`GoodsReceiptLine.totalCost`, exact), so
+/// free goods add nothing. Many vendors quote the target **before VAT** and add
+/// 7.5% on top of their invoices, so ₦12M of target is ₦12.9M of invoices;
+/// `addsVat` says this vendor does, and progress then counts each invoice
+/// without its VAT. Not every vendor does, which is why it is a choice.
+model VendorMoneyTarget {
+  id             String @id @default(uuid())
+  organizationId String
+  supplierId     String
+
+  /// First instant of the month, in the organization's timezone.
+  periodStart DateTime
+
+  /// The target, in kobo — before VAT when `addsVat`.
+  amount  Int
+  /// The vendor adds 7.5% VAT on top of their invoices, so the target is
+  /// before VAT and invoices are counted without it.
+  addsVat Boolean @default(true)
+  note    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  /// One per vendor per month.
+  @@unique([organizationId, supplierId, periodStart])
+  @@index([organizationId])
+  @@map("vendor_money_targets")
 }

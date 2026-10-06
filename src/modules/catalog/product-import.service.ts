@@ -12,6 +12,7 @@ import { ImportProductsDto } from './dto/product-import.dto';
 import { ImportReportView } from './dto/product-import.response';
 import {
   planImport,
+  productKey,
   type ImportContext,
   type ImportPlan,
 } from './product-import';
@@ -61,7 +62,7 @@ export class ProductImportService {
         // Deleted products too: their SKUs still hold the unique constraint,
         // though their names are free to be used again.
         this.prisma.product.findMany({
-          select: { name: true, sku: true, deletedAt: true },
+          select: { name: true, size: true, sku: true, deletedAt: true },
         }),
         this.prisma.productBarcode.findMany({ select: { code: true } }),
         this.prisma.category.findMany({
@@ -80,10 +81,10 @@ export class ProductImportService {
       ]);
 
     return {
-      existingNames: new Set(
+      existingProducts: new Set(
         products
           .filter((row) => !row.deletedAt)
-          .map((row) => row.name.toLowerCase()),
+          .map((row) => productKey(row.name, row.size)),
       ),
       existingSkus: new Set(products.map((row) => row.sku)),
       existingBarcodes: new Set(barcodes.map((row) => row.code)),

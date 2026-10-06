@@ -873,3 +873,53 @@ margin columns are **empty**, not zero.
 **232. Money → Invoices → All invoices → Download, and the same on Bills → All bills, Money in and
 Money out.** Each file holds the whole list, not only the page on screen, with Unpaid / Part-paid /
 Paid and, on the payment lists, which were voided.
+
+---
+
+## AI. Vendor rebates
+
+**233. [gate] Reports → Targets for this month, Record expected rebate.** Pick a vendor and enter
+₦150,000. Under *Rebates this month* it reads **Expected ₦150,000.00**, with "n of m targets met"
+beside it when that vendor has targets. Recording a second for the same vendor and month is
+refused.
+
+**234. [gate] Money → Bills → All bills, open a later bill from that vendor.** It says the vendor has
+a rebate expected. **Apply rebate to this bill**, change the amount to ₦140,000 and apply. The bill
+shows **Billed · Paid · Rebate ₦140,000.00 · Still owing** — owing lower by exactly that — and lists
+the rebate as **Credited ✓**.
+
+**235. Back on Targets.** The rebate reads **Credited ✓ ₦140,000.00**, off that bill, expected
+₦150,000.00.
+
+**236. [gate] Reports → Profit for the bill's month.** A **Plus vendor rebates ₦140,000.00** line sits
+between Gross profit and Less expenses. Gross profit and margin did not change; After expenses
+went up by ₦140,000.
+
+**237. [gate] Money → Money out.** Nothing new: a rebate is not a payment.
+
+**238. Apply a rebate larger than a bill owes.** Refused, naming both amounts. Apply one to another
+vendor's bill: not offered, and refused by the server.
+
+**239. Remove credit on the bill.** The bill owes ₦140,000 more again, the rebate reads Expected,
+and the Profit line goes.
+
+---
+
+## AJ. A vendor's money target
+
+**240. [gate] Reports → Targets → Set a money target.** Pick a vendor, enter ₦12,000,000 and leave
+**This vendor adds 7.5% VAT on top of their invoices** ticked. A ring appears under *Money targets
+this month*, saying "Money target, before VAT".
+
+**241. [gate] Record a delivery from that vendor worth ₦12,900,000 this month.** The ring reads
+**Target met** at 100% — ₦12,000,000 of ₦12,000,000 — because VAT came off the invoices.
+
+**242. Change it and untick the VAT box.** The ring now counts the full ₦12,900,000 and reads
+**Over target**.
+
+**243. Setting a second money target for the same vendor and month** is refused.
+
+**244. [gate] Home.** The money ring sits beside the carton rings under *Vendor targets this month*.
+
+**245. Under *Rebates this month*,** that vendor's row says "money target met" next to the carton
+count. Recording the rebate still works whether or not it is met.

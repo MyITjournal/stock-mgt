@@ -16,6 +16,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -27,6 +28,13 @@ import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { PayableService } from './payable.service';
 import { SupplierBillService } from './supplier-bill.service';
 import { SupplierPaymentService } from './supplier-payment.service';
+import { VendorRebateService } from './vendor-rebate.service';
+import {
+  CreateVendorRebateDto,
+  CreditVendorRebateDto,
+  UpdateVendorRebateDto,
+} from './dto/vendor-rebate.dto';
+import { VendorRebateView } from './dto/vendor-rebate.response';
 import {
   CreateSupplierBillDto,
   UpdateSupplierBillDto,
@@ -64,6 +72,7 @@ export class PayablesController {
     private readonly payables: PayableService,
     private readonly bills: SupplierBillService,
     private readonly payments: SupplierPaymentService,
+    private readonly rebates: VendorRebateService,
   ) {}
 
   @Get('payables')
@@ -231,5 +240,101 @@ export class PayablesController {
     @Body() dto: VoidSupplierPaymentDto,
   ) {
     return this.payments.void(id, dto);
+  }
+
+  // -- Vendor rebates --------------------------------------------------------
+
+  @Get('vendor-rebates')
+  @ApiQuery({ name: 'supplierId', required: false })
+  @ApiQuery({
+    name: 'period',
+    required: false,
+    description: 'Any instant inside a month: only that month’s rebates.',
+  })
+  @ApiQuery({
+    name: 'expectedOnly',
+    required: false,
+    type: Boolean,
+    description: 'Only rebates not yet credited — what a bill can take.',
+  })
+  @ApiOperation({
+    summary: 'Vendor rebates, expected and credited',
+    description:
+      'A rebate a vendor credits off a later bill when a month’s buying earned it. Never a payment and never an expense.',
+  })
+  @ApiOkResponse({ type: [VendorRebateView] })
+  listRebates(
+    @Query('supplierId') supplierId?: string,
+    @Query('period') period?: string,
+    @Query('expectedOnly', new ParseBoolPipe({ optional: true }))
+    expectedOnly?: boolean,
+  ): Promise<VendorRebateView[]> {
+    return this.rebates.findAll({ supplierId, period, expectedOnly });
+  }
+
+  @Post('vendor-rebates')
+  @Idempotent('A retry with the same key returns the original rebate.')
+  @ApiOperation({
+    summary: 'Record the rebate a month earned',
+    description:
+      'A tentative amount: the vendor works out the real one later, and it is entered when the credit lands. One per vendor per month; a second is a 409.',
+  })
+  @ApiCreatedResponse({ type: VendorRebateView })
+  createRebate(@Body() dto: CreateVendorRebateDto): Promise<VendorRebateView> {
+    return this.rebates.create(dto);
+  }
+
+  @Patch('vendor-rebates/:id')
+  @ApiOperation({
+    summary: 'Change what is expected, or the note',
+    description: 'The expected amount is fixed once the rebate is credited.',
+  })
+  @ApiOkResponse({ type: VendorRebateView })
+  updateRebate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateVendorRebateDto,
+  ): Promise<VendorRebateView> {
+    return this.rebates.update(id, dto);
+  }
+
+  @Delete('vendor-rebates/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Remove a rebate that is not coming',
+    description:
+      'Only while it is expected; a credited one is uncredited first.',
+  })
+  @ApiNoContentResponse()
+  removeRebate(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.rebates.remove(id);
+  }
+
+  @Post('vendor-rebates/:id/credit')
+  @HttpCode(HttpStatus.OK)
+  @Idempotent('A retry with the same key returns the original result.')
+  @ApiOperation({
+    summary: 'The credit has landed on a bill',
+    description:
+      'Takes the real amount off that bill’s balance and marks the rebate credited, counting in profit in the month of the bill’s date. Must be the same vendor’s bill; a credit bigger than what it still owes is a 409.',
+  })
+  @ApiOkResponse({ type: VendorRebateView })
+  creditRebate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreditVendorRebateDto,
+  ): Promise<VendorRebateView> {
+    return this.rebates.credit(id, dto);
+  }
+
+  @Post('vendor-rebates/:id/uncredit')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Take a credit back off the bill it was put on',
+    description: 'The bill owes again and the rebate is expected again.',
+  })
+  @ApiOkResponse({ type: VendorRebateView })
+  uncreditRebate(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<VendorRebateView> {
+    return this.rebates.uncredit(id);
   }
 }

@@ -194,6 +194,16 @@ export class DashboardService {
           remainingCartons: target.progress.remainingCartons,
           achievedBps: target.progress.achievedBps,
         })),
+        /** This month's money targets, one doughnut each beside the cartons. */
+        moneyTargets: monthTargets.moneyTargets.map((target) => ({
+          id: target.id,
+          supplier: target.supplier.name,
+          amount: target.amount,
+          addsVat: target.addsVat,
+          counted: target.counted,
+          remaining: target.remaining,
+          achievedBps: target.achievedBps,
+        })),
       },
 
       trend: { days: daily },

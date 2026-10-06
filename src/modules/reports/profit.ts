@@ -52,8 +52,16 @@ export interface Profit {
   cogs: Minor;
   /** `revenue − cogs`. */
   grossProfit: Minor;
+  /**
+   * Vendor rebates credited in the period — credit a vendor took off a bill
+   * because a month's buying earned it. Counted in the month the credit
+   * landed, on its own line: not revenue (nothing was sold), and not taken off
+   * cost of goods (the goods keep their invoice cost), so what rebates are
+   * worth to the business stays visible.
+   */
+  vendorRebates: Minor;
   expenses: Minor;
-  /** `grossProfit − expenses`. */
+  /** `grossProfit + vendorRebates − expenses`. */
   operatingProfit: Minor;
   /** Gross margin in basis points, so it stays an integer (750 = 7.5%). */
   marginBps: number;
@@ -63,6 +71,7 @@ export function computeProfit(input: {
   sales: readonly SoldInPeriod[];
   returns: readonly ReturnedInPeriod[];
   expenses: readonly { amount: Minor }[];
+  rebates: readonly { creditedAmount: Minor | null }[];
 }): Profit {
   const grossSales = sum(input.sales.map((sale) => sale.total));
   const salesTax = sum(input.sales.map((sale) => sale.taxTotal));
@@ -82,6 +91,9 @@ export function computeProfit(input: {
   const cogs = soldCost - returnedCost;
   const grossProfit = revenue - cogs;
   const expenses = sum(input.expenses.map((row) => row.amount));
+  const vendorRebates = sum(
+    input.rebates.map((row) => row.creditedAmount ?? 0),
+  );
 
   return {
     revenue,
@@ -90,8 +102,9 @@ export function computeProfit(input: {
     returned,
     cogs,
     grossProfit,
+    vendorRebates,
     expenses,
-    operatingProfit: grossProfit - expenses,
+    operatingProfit: grossProfit + vendorRebates - expenses,
     marginBps: marginBps(grossProfit, revenue),
   };
 }

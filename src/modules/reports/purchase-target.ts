@@ -1,3 +1,5 @@
+import { splitTaxInclusive, type Minor } from '../../common/money/money';
+
 /**
  * Vendor purchase targets: how many cartons of a category have actually
  * arrived this month.
@@ -111,4 +113,40 @@ function oneDecimal(value: number): number {
 function achievedShare(achieved: number, target: number): number {
   if (target <= 0) return 10000;
   return Math.round((achieved / target) * 10000);
+}
+
+/** Nigeria's VAT, which a vendor that adds VAT puts on top of each invoice. */
+export const VENDOR_VAT_BPS = 750;
+
+export interface MoneyTargetProgress {
+  /** The goods received from the vendor in the month, at invoice value. */
+  invoiced: Minor;
+  /** What counts toward the target: `invoiced`, less VAT when the vendor adds it. */
+  counted: Minor;
+  /** Never negative: once met, nothing remains. */
+  remaining: Minor;
+  /** `counted` as a share of the target, in basis points — over 10,000 once beaten. */
+  achievedBps: number;
+}
+
+/**
+ * A vendor's money target against what arrived from them.
+ *
+ * A vendor that adds VAT quotes the target before it, so ₦12,000,000 of target
+ * is met by ₦12,900,000 of invoices: VAT is taken off the month's total once,
+ * by the same exact split a sale uses, never line by line.
+ */
+export function moneyProgress(
+  target: { amount: Minor; addsVat: boolean },
+  invoiced: Minor,
+): MoneyTargetProgress {
+  const counted = target.addsVat
+    ? splitTaxInclusive(invoiced, VENDOR_VAT_BPS).net
+    : invoiced;
+  return {
+    invoiced,
+    counted,
+    remaining: Math.max(0, target.amount - counted),
+    achievedBps: Math.floor((counted * 10_000) / target.amount),
+  };
 }

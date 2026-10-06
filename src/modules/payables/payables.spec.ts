@@ -44,17 +44,22 @@ describe('paying vendors', () => {
           supplierId: 'supplier-1',
           amountDue: 199_800 * NAIRA,
           payments: [{ amount: 71_800 * NAIRA }],
+          rebates: [],
         }),
         findMany: jest.fn().mockResolvedValue([]),
         // Both stand in for a `BILL_INCLUDE` read, which always carries
         // `payments` — the balance is attached on the way out and walks it.
-        create: jest
-          .fn()
-          .mockResolvedValue({ id: 'bill-1', amountDue: 0, payments: [] }),
+        create: jest.fn().mockResolvedValue({
+          id: 'bill-1',
+          amountDue: 0,
+          payments: [],
+          rebates: [],
+        }),
         update: jest.fn().mockResolvedValue({
           id: 'bill-1',
           amountDue: 190_000 * NAIRA,
           payments: [{ amount: 71_800 * NAIRA }],
+          rebates: [],
         }),
       },
       supplierPayment: {

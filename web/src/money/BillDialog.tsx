@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import type { components } from '../api/schema';
 import { PaySupplierDialog } from './PaySupplierDialog';
 import { usePaySupplier } from './usePaySupplier';
+import { BillRebates } from './BillRebates';
 
 type SupplierBillView = components['schemas']['SupplierBillView'];
 
@@ -30,6 +31,10 @@ const METHOD_LABELS: Record<string, string> = {
  *
  * Opened from Bills and from Money out, so a payment always leads back to
  * the bill it paid.
+ *
+ * **Billed − Paid − Rebate = Still owing.** A vendor rebate credited on the
+ * bill is its own figure, never folded into Paid, because no money moved —
+ * and it is applied or removed here (`BillRebates`).
  */
 export function BillDialog({
   billId,
@@ -109,7 +114,11 @@ export function BillDialog({
               <PaidStatus balance={bill.balance} paid={bill.paid} />
             </div>
 
-            <dl className="mt-4 grid grid-cols-3 gap-3 rounded-md bg-slate-50 p-3 text-sm">
+            <dl
+              className={`mt-4 grid gap-3 rounded-md bg-slate-50 p-3 text-sm ${
+                bill.rebated > 0 ? 'grid-cols-4' : 'grid-cols-3'
+              }`}
+            >
               <div>
                 <dt className="text-xs text-slate-500">Billed</dt>
                 <dd className="font-medium text-slate-900">
@@ -122,6 +131,14 @@ export function BillDialog({
                   <Money value={bill.paid} />
                 </dd>
               </div>
+              {bill.rebated > 0 && (
+                <div>
+                  <dt className="text-xs text-slate-500">Rebate</dt>
+                  <dd className="font-medium text-emerald-700">
+                    <Money value={bill.rebated} />
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs text-slate-500">Still owing</dt>
                 <dd className="font-semibold text-slate-900">
@@ -171,6 +188,8 @@ export function BillDialog({
               A voided payment is not listed and does not count. It stays on
               Money out, struck through.
             </p>
+
+            <BillRebates bill={bill} />
 
             {bill.balance > 0 && (
               <div className="mt-6 flex justify-end gap-2">

@@ -37,8 +37,11 @@ import { chooseDefaultSellingUnit, defaultIsSellable } from './selling-units';
  *
  * ## What it deliberately does not do
  *
- * - **Update a product that already exists.** Same name, case aside, and the
- *   row is skipped with a reason. Changing prices in bulk belongs with export:
+ * - **Update a product that already exists.** Same name **and size**, case
+ *   aside, and the row is skipped with a reason. Name and size together are a
+ *   product's identity here, as they are on the till and the receipt: "Dry
+ *   Impact" the 50ml roll-on and "Dry Impact" the 200ml spray are two
+ *   products, and the first version refused the second as a repeat. Changing prices in bulk belongs with export:
  *   download, edit, upload back.
  * - **Take a cost or opening stock.** Cost comes from deliveries (§2); opening
  *   stock is its own step, because it needs what was paid.
@@ -72,8 +75,8 @@ export const MAX_IMPORT_UNITS = 12;
 
 /** What the catalog already holds, read once before planning. */
 export interface ImportContext {
-  /** Live product names, lower-cased. */
-  existingNames: ReadonlySet<string>;
+  /** Live products, as `productKey(name, size)`. */
+  existingProducts: ReadonlySet<string>;
   /** Every SKU in use, deleted products included — the constraint sees them. */
   existingSkus: ReadonlySet<string>;
   /** Every barcode in use. */
@@ -130,6 +133,18 @@ export interface ImportPlan {
   defaultTierId: string | null;
 }
 
+/**
+ * What makes two products the same one: the name and the size, each with case
+ * and surrounding spaces ignored. "Dry Impact" 50ml and "Dry Impact" 200ml are
+ * two products; "dry impact" 50ML is the first of them again.
+ */
+export function productKey(
+  name: string,
+  size: string | null | undefined,
+): string {
+  return `${name.trim().toLowerCase()}|${(size ?? '').trim().toLowerCase()}`;
+}
+
 /** The most rows one file may carry. */
 export const MAX_IMPORT_ROWS = 2000;
 
@@ -174,13 +189,17 @@ export function planImport(
       errors.push(`The name is longer than ${LIMITS.name} characters.`);
     }
 
-    const key = name.toLowerCase();
-    if (context.existingNames.has(key)) {
+    const key = productKey(name, cells.size);
+    if (context.existingProducts.has(key)) {
       rows.push({
         line,
         name,
         status: 'skip',
-        messages: ['Already in your products, so it is left as it is.'],
+        messages: [
+          cells.size
+            ? `Already in your products as ${name} ${cells.size}, so it is left as it is.`
+            : 'Already in your products, so it is left as it is.',
+        ],
         product: null,
       });
       return;
@@ -189,7 +208,7 @@ export function planImport(
     if (earlier !== undefined) {
       rows.push(
         errorRow(line, name, [
-          `Same name as row ${earlier}. Each product goes in once.`,
+          `Same name and size as row ${earlier}. Each product goes in once — if they are different products, give them different sizes.`,
         ]),
       );
       return;

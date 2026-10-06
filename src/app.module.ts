@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { TenancyModule } from './common/tenancy/tenancy.module';
 import { TenantContextMiddleware } from './common/tenancy/tenant-context.middleware';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
+import { HousekeepingModule } from './common/housekeeping/housekeeping.module';
 import { MailModule } from './modules/mail/mail.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
@@ -34,6 +35,7 @@ import { UsersModule } from './modules/users/users.module';
     PrismaModule,
     TenancyModule,
     IdempotencyModule,
+    HousekeepingModule,
     MailModule,
     AuthModule,
     UsersModule,

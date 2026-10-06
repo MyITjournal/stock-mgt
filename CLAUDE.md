@@ -138,6 +138,16 @@ note only; vendor, category and month are what the target is. On `GET /reports/d
 shops (navigation only). The migration **cleared every existing target** — they were pieces, and
 a category's pieces cannot be turned back into cartons.
 
+**Beside them, one money target per vendor per month** (§12, 2026-10-06): `VendorMoneyTarget` and
+`/purchase-targets/money` — "₦12M this month" from a vendor, **not per category** (the
+per-category money quota stays gone). Progress is the **invoice value of goods received** from that
+vendor in the month (`GoodsReceiptLine.totalCost`, so free goods add nothing), reported on
+`GET /purchase-targets/report` as `moneyTargets` and on the dashboard as
+`purchasing.moneyTargets`. **`addsVat` is a choice per target, default on**, because not every
+vendor adds VAT: on, the target is before VAT and VAT comes off the month's total **once**, by the
+same `splitTaxInclusive` a sale uses (`moneyProgress`, pure) — ₦12.9M of invoices meets ₦12M. The
+Rebates panel shows it as context ("money target met"), never as a rule.
+
 **Money owed to vendors is Slice 6.6** (§16), in `src/modules/payables/`. `GET /payables` is the
 mirror of `GET /receivables` — bills with money still on them, longest-owed first, grouped per
 vendor, with `total` as the headline figure the dashboard shows and the list behind it as what a
@@ -174,6 +184,21 @@ All of it is buying-price data and closed to `sales_rep`. Both halves reach
 `GET /reports/dashboard` under `purchasing`, which was safe to do because **that endpoint has
 always been `@Roles(...SEES_COST)`** — the older note saying targets were kept off it because
 "reps see the dashboard" described a risk the route had already closed.
+
+**Vendor rebates are a credit off a later bill** (§16, 2026-10-05): `VendorRebate` and
+`/vendor-rebates`, in `src/modules/payables/`. A vendor pays a rebate **only as credit off a later
+bill**, so it is **neither a payment** (no money moved — Money out never shows it) **nor an
+expense**. Two steps: **expected** — vendor, month, a *tentative* amount, recorded on Reports →
+Targets when the owner judges the month earned it (targets are shown beside it, never checked) —
+then **credited** on a bill with the real figure (Bills → open the bill → Apply rebate), which
+sets `billId`, `creditedAmount` and `creditedAt` together (a CHECK enforces it). Load-bearing:
+**`billBalance` grew a term — `amountDue − paid − rebated`** — and `rebates: CREDITED_REBATES` is
+**required** in `BillBalanceInput`, so any new query feeding a balance that forgets it will not
+compile. A credit **bigger than what the bill owes is refused** (no allocation table on the vendor
+side), and **must be that vendor's bill**. **Profit counts it in the month of the bill it landed
+on** (`creditedAt` = the bill's `issuedAt`), as `vendorRebates` between gross profit and
+expenses — not revenue, and not off cost of goods, so margins are untouched. One per vendor per
+month; *Remove credit* puts the bill back to owing.
 
 **Payments name the account they landed in** (§11). `BankAccount` is the set of accounts the
 business is paid into — several is normal, five is not unusual — and `Payment.bankAccountId` says
@@ -327,6 +352,13 @@ the paid-tier note above). Three consequences are load-bearing:
 - **Free means cold starts again** (~50s after ~15 minutes idle), which **un-supersedes** §15
   item 1's free-tier notes. It also means the in-memory rate-limit counters reset on every cold
   start (§15 item 0), and that Supabase free projects pause after about a week idle.
+- **A server that sleeps never reaches midnight** (2026-10-05). The nightly clear-out of stored
+  write replies never ran on the free plan, and nothing cleared old sign-in sessions at all.
+  `HousekeepingService` now sweeps **30 s after every wake-up and hourly while awake**, removing
+  replies past 48 hours and sign-in chains **only once their newest token has expired** (a replaced
+  token in a live chain is what catches a stolen session). **Any new scheduled job must not rely on
+  a time of day** for the same reason. Space per sale, how far 500 MB goes, backups and the
+  one-line reset of the hosted database are in §21.
 
 **`render.yaml` is written (2026-09-29, revised 2026-09-30): exactly one web service and no
 `databases:` block, and the "one service" is load-bearing.** The API serves the built dashboard from its own origin (`serveDashboard` in
@@ -768,7 +800,8 @@ sold at the till while one without is counted only** (fixed 2026-10-05 after a r
 carton of 12 sold only as 1/2 and 1/4 had nowhere to say so, and every row failed on two units both
 called "carton"). No prices at all falls back to the form's defaults. **Every cell travels as text and the server
 reads it** (`parseNaira`, exact), and **the preview and the save are the same `planImport`**, so
-they cannot disagree. A name already there is **skipped, never changed**; no cost, no opening
+they cannot disagree. A product is **its name and size together** (`productKey`) — *Dry Impact* 50ml
+and 200ml are two — and one already there is **skipped, never changed**; no cost, no opening
 stock, no price-list column. ⚠ **A path-scoped body parser must not be named `jsonParser`**:
 Nest skips its own global JSON parser if it finds one by that name anywhere, and every other
 request arrives empty — see the wrapper in `main.ts`.
