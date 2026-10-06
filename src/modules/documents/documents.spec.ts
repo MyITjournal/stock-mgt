@@ -174,6 +174,12 @@ describe('invoiceDefinition', () => {
     expect(doc).toContain('22 Sept 2026');
   });
 
+  it('is half an A4 sheet, because a printed invoice was mostly blank paper', () => {
+    const doc = invoiceDefinition({ organization: ORG, accounts: [], invoice });
+
+    expect(doc.pageSize).toBe('A5');
+  });
+
   it('prints no due date once nothing is owed', () => {
     const doc = JSON.stringify(
       invoiceDefinition({ organization: ORG, accounts: [], invoice }),

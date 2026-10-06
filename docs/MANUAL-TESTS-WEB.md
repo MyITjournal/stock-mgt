@@ -994,3 +994,7 @@ recorded" receipt for a Pay later sale shows it too.
 overdue* under it once late.
 
 **264. Invoices → All invoices → Download.** The sheet has a **Due** column, empty for paid ones.
+
+**265. [gate] Print an invoice from a sale.** The PDF is **A5** (half an A4 sheet): letterhead,
+lines, totals and the accounts to pay into all fit, nothing cut off at the right edge. An invoice
+with many lines runs onto a second A5 page. The customer statement is still A4.

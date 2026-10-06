@@ -175,6 +175,11 @@ export function invoiceDefinition(args: {
 
   return {
     info: { title: `Invoice ${invoice.number}`, author: org.name },
+    // A5, half an A4 sheet (2026-10-06): an invoice is a header, a few lines
+    // and the accounts to pay into, and on A4 most of the page was blank paper.
+    // A long invoice still breaks onto a second page. The statement stays A4 —
+    // it is a list that grows, and is sent more often than printed.
+    ...INVOICE_PAGE,
     content,
     footer: (page: number, total: number) => ({
       columns: [
@@ -185,9 +190,9 @@ export function invoiceDefinition(args: {
           style: 'footer',
         },
       ],
-      margin: [40, 10, 40, 0] as Margin,
+      margin: [INVOICE_SIDE_MARGIN, 8, INVOICE_SIDE_MARGIN, 0] as Margin,
     }),
-    styles: DOCUMENT_STYLES,
+    styles: { ...DOCUMENT_STYLES, ...INVOICE_STYLES },
   };
 }
 
@@ -286,6 +291,25 @@ function totalRow(
     },
   ];
 }
+
+/** Points; A5 is 420 × 595, so this leaves 364 across for the table. */
+const INVOICE_SIDE_MARGIN = 28;
+
+export const INVOICE_PAGE = {
+  pageSize: 'A5',
+  pageMargins: [INVOICE_SIDE_MARGIN, 28, INVOICE_SIDE_MARGIN, 36] as Margin,
+  defaultStyle: { font: 'Helvetica', fontSize: 8 },
+} as const;
+
+/** A step smaller than the A4 statement's, so the page keeps its proportions. */
+const INVOICE_STYLES = {
+  businessName: { fontSize: 13, bold: true },
+  documentTitle: { fontSize: 12, bold: true },
+  documentNumber: { fontSize: 10 },
+  tableHeader: { bold: true, fontSize: 8 },
+  label: { fontSize: 7, bold: true, color: '#555555' },
+  note: { fontSize: 7, color: '#555555' },
+};
 
 export const DOCUMENT_STYLES = {
   businessName: { fontSize: 15, bold: true },

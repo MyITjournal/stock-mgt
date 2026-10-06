@@ -217,7 +217,9 @@ Chromium is ~300MB and Render's free tier already has 30–50s cold starts. Four
 documents **recompute nothing** (they read `SaleService.receipt` and `ReceivableService.statement`,
 so print and screen cannot disagree); **VAT prints as "of which"**, never added on top, because
 prices are tax-inclusive; money prints as `NGN 2,500.00` because the built-in fonts have no ₦
-glyph; and **every active bank account is printed, default first**.
+glyph; and **every active bank account is printed, default first**. **The invoice is A5, the
+statement A4** (2026-10-06) — `INVOICE_PAGE` in `invoice.ts`; A5 saves paper only on a printer
+loaded with A5 (§6).
 
 `Organization` carries an optional letterhead — address, phone, email, taxId, rcNumber, logoUrl —
 **all nullable on purpose**: a business that never opened the profile screen must still be able to

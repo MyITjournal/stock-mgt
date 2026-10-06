@@ -1127,6 +1127,15 @@ Three printing needs, and they do not belong in the same place (decided 2026-08-
   *can* be printed; nothing renders a sheet yet, and nothing needs one until there is a screen to
   press the button on.
 
+**The invoice is A5, the statement stays A4** (2026-10-06, owner: A4 "would only be wasting
+paper"). An invoice is a header, a few lines and the accounts to pay into; on A4 two-thirds of the
+sheet was blank. `INVOICE_PAGE` in `invoice.ts` sets the size, margins and a step-smaller type; a
+long invoice still flows onto a second page. The statement is a list that grows and is sent over
+WhatsApp more often than printed, so it was left alone. ⚠ **A5 only saves paper when the printer
+has A5 paper in it.** On an A4-only printer the browser prints the A5 page on an A4 sheet, either
+at actual size (half the sheet blank, nothing saved) or scaled up. The real saver at a busy counter
+is a till-roll receipt, which is still the mobile slice's job (above).
+
 ### PDFs: pdfmake, and why not a browser
 
 Built 2026-09-17 in `src/modules/documents/`: `GET /sales/:id/invoice.pdf` and
