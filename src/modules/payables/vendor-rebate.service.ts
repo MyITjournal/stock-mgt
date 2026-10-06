@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { shopMoney } from '../../common/money/shop-money';
 import { startOfMonth } from '../reports/period';
 import { SupplierBillService } from './supplier-bill.service';
 import {
@@ -181,8 +182,9 @@ export class VendorRebateService {
         );
       }
       if (input.amount > bill.balance) {
+        const money = await shopMoney(tx);
         throw new ConflictException(
-          `This bill still owes ${naira(bill.balance)}, and a credit of ${naira(input.amount)} is more than that. Apply it to a bigger bill from this vendor.`,
+          `This bill still owes ${money(bill.balance)}, and a credit of ${money(input.amount)} is more than that. Apply it to a bigger bill from this vendor.`,
         );
       }
 
@@ -245,14 +247,6 @@ function view(row: RebateRow): VendorRebateView {
     ...row,
     status: row.creditedAt ? 'credited' : 'expected',
   };
-}
-
-/** For a message a person reads: ₦12,500.00. */
-function naira(kobo: number): string {
-  return `₦${(kobo / 100).toLocaleString('en-NG', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 }
 
 function isUniqueViolation(error: unknown): boolean {

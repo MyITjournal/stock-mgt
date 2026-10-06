@@ -9,6 +9,7 @@ import { StockAdjustmentReason, StockMovementType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { shopMoney } from '../../common/money/shop-money';
 import { SupplierBillService } from '../payables/supplier-bill.service';
 import { StockService, type StockWriter } from './stock.service';
 import { ReceivingService } from './receiving.service';
@@ -115,8 +116,9 @@ export class DeliveryCorrectionService {
           billAmountAfter = bill.amountDue + plan.valueDelta;
           const settled = current.paid + current.rebated;
           if (billAmountAfter < settled) {
+            const money = await shopMoney(tx);
             throw new ConflictException(
-              `The corrected bill would be ${naira(billAmountAfter)}, but ${naira(settled)} has already been paid or credited against it. Void the payment that was too much first, then correct the delivery.`,
+              `The corrected bill would be ${money(billAmountAfter)}, but ${money(settled)} has already been paid or credited against it. Void the payment that was too much first, then correct the delivery.`,
             );
           }
           await tx.supplierBill.update({
@@ -265,14 +267,6 @@ export class DeliveryCorrectionService {
       },
     });
   }
-}
-
-/** For a message a person reads: ₦12,500.00. */
-function naira(kobo: number): string {
-  return `₦${(kobo / 100).toLocaleString('en-NG', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 }
 
 /** Carries a preview out of a transaction it has just rolled back. */

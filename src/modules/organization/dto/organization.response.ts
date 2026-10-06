@@ -14,10 +14,8 @@ import { BusinessType } from '@prisma/client';
  * does not have.
  *
  * `nextSaleNumber` is deliberately **absent**: it is an internal counter, and
- * exposing it invites somebody to try to set it. `currency`, `timezone` and the
- * invoice numbering are readable but **cannot be changed** — periods resolve in
- * the timezone, and rewinding the counter would produce duplicate invoice
- * numbers.
+ * exposing it invites somebody to try to set it. `currency` and `timezone` can
+ * be changed only while `currencyLocked` is false (§2).
  */
 export class OrganizationView {
   @ApiProperty({ format: 'uuid' })
@@ -36,16 +34,22 @@ export class OrganizationView {
   @ApiProperty({
     example: 'NGN',
     description:
-      'Not editable. Money is stored as an integer count of minor units.',
+      'ISO 4217. Money is stored as an integer count of its minor units. Editable only while `currencyLocked` is false.',
   })
   currency!: string;
 
   @ApiProperty({
     example: 'Africa/Lagos',
     description:
-      'Not editable. Every report period resolves in this zone, so changing it would restate history.',
+      'Every report period resolves in this zone. Editable only while `currencyLocked` is false.',
   })
   timezone!: string;
+
+  @ApiProperty({
+    description:
+      'True once anything with money in it exists — a price, sale, delivery, payment, bill or expense. From then on the currency and time zone stay as they are, because changing them would relabel every figure already entered.',
+  })
+  currencyLocked!: boolean;
 
   @ApiProperty({
     example: 5,

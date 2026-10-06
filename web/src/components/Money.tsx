@@ -1,4 +1,5 @@
 import { ABSENT, formatMoney, type Minor } from '../lib/money';
+import { useShopCurrency } from '../lib/shopCurrency';
 
 interface MoneyProps {
   /**
@@ -11,6 +12,7 @@ interface MoneyProps {
    * with that, which is why they all go through this one.
    */
   value: Minor | null | undefined;
+  /** Omitted — the usual case — it is the shop's own (`useShopCurrency`). */
   currency?: string;
   /** Colour negatives red. Off by default: a negative is often expected. */
   signed?: boolean;
@@ -20,16 +22,17 @@ interface MoneyProps {
 /**
  * Money on screen, and the only place it should appear.
  *
- * Using this everywhere means the day the currency is not naira, or absent
- * figures should read differently, is one change rather than forty.
+ * Using this everywhere is what made a shop in cedis one change rather than
+ * forty (2026-10-06): the currency comes from the shop, not the call site.
  */
 export function Money({
   value,
-  currency = 'NGN',
+  currency,
   signed = false,
   className = '',
 }: MoneyProps) {
-  const text = formatMoney(value, currency);
+  const shopCurrency = useShopCurrency();
+  const text = formatMoney(value, currency ?? shopCurrency);
   const absent = text === ABSENT;
   const negative = typeof value === 'number' && value < 0;
 

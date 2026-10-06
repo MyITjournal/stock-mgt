@@ -1,9 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BusinessType } from '@prisma/client';
 import {
+  DEFAULT_CURRENCY,
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from '../../../common/money/currencies';
+import {
   IsEmail,
   IsEnum,
+  IsIn,
   IsOptional,
+  IsTimeZone,
   IsString,
   Matches,
   MaxLength,
@@ -97,4 +104,33 @@ export class SignUpDto {
     message: 'Choose retail, wholesale or both.',
   })
   businessType?: BusinessType;
+
+  /**
+   * The currency the shop keeps its books in. Chosen once: it can be changed in
+   * Settings only until something with money in it is recorded (§2).
+   */
+  @ApiPropertyOptional({
+    enum: SUPPORTED_CURRENCIES,
+    default: DEFAULT_CURRENCY,
+    description:
+      'The currency every price and payment in this shop is in. One per shop; it can be changed in Settings until the first price, sale, delivery, payment or expense is recorded.',
+  })
+  @IsOptional()
+  @IsIn(SUPPORTED_CURRENCIES, {
+    message: `Choose one of ${SUPPORTED_CURRENCIES.join(', ')}.`,
+  })
+  currency?: SupportedCurrency;
+
+  /**
+   * Sent by the sign-up screen from the browser's own clock, never asked: an
+   * owner signing up in Accra is on Accra time whatever currency they chose.
+   */
+  @ApiPropertyOptional({
+    example: 'Africa/Lagos',
+    description:
+      "The owner's time zone, as the browser reports it. Every report period resolves in it. Omitted, the currency's home zone is used.",
+  })
+  @IsOptional()
+  @IsTimeZone({ message: 'That is not a time zone this server knows.' })
+  timezone?: string;
 }

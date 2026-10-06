@@ -12,8 +12,11 @@ const ORG = 'org-1';
  * effect on the bill and on profit are walked against a server in smoke.
  */
 describe('crediting a vendor rebate', () => {
-  const build = (rebate: object, bill: object) => {
+  const build = (rebate: object, bill: object, currency = 'NGN') => {
     const tx = {
+      organization: {
+        findFirst: jest.fn().mockResolvedValue({ currency }),
+      },
       vendorRebate: {
         findFirst: jest.fn().mockResolvedValue(rebate),
         update: jest.fn().mockResolvedValue({
@@ -66,6 +69,17 @@ describe('crediting a vendor rebate', () => {
       { id: 'bill-1', supplierId: 'supplier-1', balance: 500_000 },
     );
     await expect(run(600_000)).rejects.toThrow(/₦5,000\.00.*₦6,000\.00/);
+  });
+
+  it('names them in the shop’s own currency', async () => {
+    const { run } = build(
+      { id: 'rebate-1', supplierId: 'supplier-1', creditedAt: null },
+      { id: 'bill-1', supplierId: 'supplier-1', balance: 500_000 },
+      'GHS',
+    );
+    await expect(run(600_000)).rejects.toThrow(
+      /GHS.?5,000\.00.*GHS.?6,000\.00/,
+    );
   });
 
   it('counts it in the month of the bill it lands on', async () => {

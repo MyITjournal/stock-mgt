@@ -111,6 +111,37 @@ Four details:
   per-customer exemptions. The owner asked for it so VAT could be turned off while they confirm
   their position with an accountant; anything more is a step toward accounting software (§1).
 
+### One currency per shop, locked once money is recorded (2026-10-06)
+
+A shop keeps its books in **one** of NGN (the default), USD, GBP, EUR, GHS or KES —
+`SUPPORTED_CURRENCIES` in `src/common/money/currencies.ts`. Ghana and Kenya were chosen as the
+nearest markets with the same distributor-and-carton trade; the owner accepted the list as is.
+
+- **Chosen at sign-up, changeable in Settings only until money is recorded.** Every amount is a
+  bare integer of the shop's currency, so once a price, sale, delivery (any stock movement),
+  payment, bill or expense exists, changing it would relabel all of them — ₦50,000 would read
+  £50,000. `OrganizationView.currencyLocked` says which side of that line a shop is on and
+  `PATCH /organization` answers 409 past it. **A price counts**: a catalogue imported in naira and
+  then switched to cedis is wrong on every line. Settings is for a wrong choice at sign-up.
+- **The time zone moves with it, under the same lock.** Sign-up takes it from the browser's own
+  clock (a Lagos importer pricing in dollars is still on Lagos time); a client that sends none
+  gets the currency's home zone. It was never editable before; now it is, while unlocked, so a
+  shop in Nairobi is not stuck an hour out of step with its own "today".
+- **A customer paying in another currency is not a second currency** (owner, 2026-10-06). A
+  diaspora buyer's transfer lands in the shop's currency; dollars taken in cash or into a
+  domiciliary account are recorded at what the shop accepted for them, with the foreign amount in
+  the payment's reference. Several currencies in one shop means exchange rates and gains and
+  losses on them, which is accounting (§1).
+- **Every currency here has two decimal places**, which the integer minor units assume. The West
+  African CFA franc (XOF) has none, so adding it changes how amounts are typed and shown — it is
+  not one more entry in the list.
+- **On screen, the currency comes from the shop, never the call site**: `ShopCurrencyProvider`
+  reads `GET /organization` once and `<Money>` defaults to it, with the short mark (`$`, `GH₵`).
+  PDFs already printed `Organization.currency` as a code (`GHS 2,500.00`). Server messages that
+  name an amount use `shopMoney` — two of them had `₦` written into the string.
+- **The product VAT rate still starts at 7.5%**, Nigeria's. A shop elsewhere that charges VAT sets
+  its own rate on each product; new shops start with VAT off, so most never meet it.
+
 ### Cost: store exact totals, derive averages
 
 **The rule:** money someone actually paid is stored exactly as an integer. A per-unit average is
