@@ -1,3 +1,4 @@
+import { dueDateFor } from './due';
 import {
   BadRequestException,
   ConflictException,
@@ -150,10 +151,11 @@ export class SaleService {
     // invoice all follow from the sale itself, and switching VAT back on later
     // rewrites nothing already sold. Organization is not tenant-scoped (it *is*
     // the tenant), so the id is named.
-    const { chargesVat } = await this.prisma.organization.findUniqueOrThrow({
-      where: { id: organizationId },
-      select: { chargesVat: true },
-    });
+    const { chargesVat, timezone } =
+      await this.prisma.organization.findUniqueOrThrow({
+        where: { id: organizationId },
+        select: { chargesVat: true, timezone: true },
+      });
 
     await this.prisma.$transaction(async (tx) => {
       const writer = tx as unknown as StockWriter;
@@ -215,6 +217,12 @@ export class SaleService {
           note: input.note ?? null,
           creditOverrideReason: input.creditOverrideReason?.trim() || null,
           occurredAt,
+          // Not paid in full now: due five days on, so it reaches the
+          // reminder every member of staff sees (`due.ts`).
+          dueDate:
+            paid < total
+              ? dueDateFor(timezone || 'Africa/Lagos', occurredAt)
+              : null,
           recordedByUserId,
         },
       });

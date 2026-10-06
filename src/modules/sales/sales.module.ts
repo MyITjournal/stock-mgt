@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { SaleController } from './sale.controller';
 import { SaleService } from './sale.service';
 import { SaleReturnService } from './sale-return.service';
+import { DueService } from './due.service';
 import { InventoryModule } from '../inventory/inventory.module';
 import { PaymentsModule } from '../payments/payments.module';
 
@@ -13,7 +14,7 @@ import { PaymentsModule } from '../payments/payments.module';
 @Module({
   imports: [InventoryModule, PaymentsModule],
   controllers: [SaleController],
-  providers: [SaleService, SaleReturnService],
+  providers: [SaleService, SaleReturnService, DueService],
   exports: [SaleService],
 })
 export class SalesModule {}

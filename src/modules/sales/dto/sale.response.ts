@@ -314,6 +314,15 @@ export class SaleView {
   @ApiProperty({
     type: String,
     format: 'date-time',
+    nullable: true,
+    description:
+      'When a sale that went out on credit should be paid — five days after it. Null when it was paid in full at the time.',
+  })
+  dueDate!: Date | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
     description:
       "When it happened by the recording device's clock. `createdAt` is when the server stored it.",
   })

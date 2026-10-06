@@ -1558,6 +1558,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sales/due": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payments due
+         * @description Credit sales still owing whose due day — five days after the sale — is past, today, or within the next two days, oldest first, with days past due in the shop’s timezone. Open to every member of staff: it is who to ask, not what anything cost.
+         */
+        get: operations["SaleController_dueInvoices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sales/{id}": {
         parameters: {
             query?: never;
@@ -5100,6 +5120,11 @@ export interface components {
             creditOverrideReason: string | null;
             /**
              * Format: date-time
+             * @description When a sale that went out on credit should be paid — five days after it. Null when it was paid in full at the time.
+             */
+            dueDate: string | null;
+            /**
+             * Format: date-time
              * @description When it happened by the recording device's clock. `createdAt` is when the server stored it.
              */
             occurredAt: string;
@@ -5134,6 +5159,30 @@ export interface components {
              */
             syncedThrough: string;
             hasMore: boolean;
+        };
+        DueCustomerRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            phone: string | null;
+        };
+        DueInvoiceView: {
+            /** Format: uuid */
+            saleId: string;
+            /** @example INV-0042 */
+            number: string;
+            customer: components["schemas"]["DueCustomerRef"];
+            /** @description What is still owed, in kobo. */
+            balance: number;
+            /** Format: date-time */
+            dueDate: string;
+            /** @description Whole days past the due day in the shop’s timezone: positive once overdue, 0 on the day, negative while days are left. */
+            daysPastDue: number;
+        };
+        DueInvoicesView: {
+            invoices: components["schemas"]["DueInvoiceView"][];
+            /** @description How many are past their due day. */
+            overdue: number;
         };
         ReceiptLineView: {
             /** @example Peak Milk Powder 400g */
@@ -8982,6 +9031,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SaleView"];
+                };
+            };
+        };
+    };
+    SaleController_dueInvoices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DueInvoicesView"];
                 };
             };
         };

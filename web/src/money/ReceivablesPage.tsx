@@ -358,6 +358,7 @@ function AllInvoices({
                 <th className="px-4 py-2 text-right font-medium">Total</th>
                 <th className="px-4 py-2 text-right font-medium">Paid</th>
                 <th className="px-4 py-2 text-right font-medium">Owing</th>
+                <th className="px-4 py-2 font-medium">Due</th>
                 <th className="px-4 py-2 font-medium" />
                 <th className="px-4 py-2" />
               </tr>
@@ -391,6 +392,11 @@ function AllInvoices({
                   </td>
                   <td className="px-4 py-2 text-right font-medium">
                     <Money value={sale.balance} signed />
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-600">
+                    {sale.dueDate && sale.balance > 0
+                      ? new Date(sale.dueDate).toLocaleDateString('en-NG')
+                      : '—'}
                   </td>
                   <td className="px-4 py-2">
                     <PaidStatus balance={sale.balance} paid={sale.allocated} />

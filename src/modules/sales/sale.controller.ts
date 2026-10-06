@@ -21,6 +21,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { SaleService } from './sale.service';
 import { SaleReturnService } from './sale-return.service';
+import { DueService } from './due.service';
+import { DueInvoicesView } from './dto/due.response';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { CreateReturnDto } from './dto/create-return.dto';
 import { SaleListView, SaleReceiptView, SaleView } from './dto/sale.response';
@@ -40,6 +42,7 @@ export class SaleController {
   constructor(
     private readonly sales: SaleService,
     private readonly returns: SaleReturnService,
+    private readonly due: DueService,
   ) {}
 
   @Get()
@@ -93,6 +96,18 @@ export class SaleController {
       cursor,
       limit,
     });
+  }
+
+  // Declared before ':id', which would otherwise take "due" for an id.
+  @Get('due')
+  @ApiOperation({
+    summary: 'Payments due',
+    description:
+      'Credit sales still owing whose due day — five days after the sale — is past, today, or within the next two days, oldest first, with days past due in the shop’s timezone. Open to every member of staff: it is who to ask, not what anything cost.',
+  })
+  @ApiOkResponse({ type: DueInvoicesView })
+  dueInvoices(): Promise<DueInvoicesView> {
+    return this.due.list();
   }
 
   @Get(':id')

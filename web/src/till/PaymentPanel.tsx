@@ -5,6 +5,7 @@ import type { Minor } from '../lib/money';
 import type { components } from '../api/schema';
 import {
   needsBankAccount,
+  payingNow,
   type PaymentMethod,
   type PaymentState,
 } from './payment';
@@ -52,7 +53,7 @@ export function PaymentPanel({
   busy: boolean;
   canSubmit: boolean;
 }) {
-  const paying = state.amount ?? total;
+  const paying = payingNow(state, total);
   const owing = total - paying;
   const requiresAccount = needsBankAccount(state.method);
 
@@ -112,100 +113,134 @@ export function PaymentPanel({
           </div>
         </Field>
 
-        <Field label="Method" htmlFor="method">
-          <Select
-            id="method"
-            value={state.method}
+        {/*
+          Pay later: the goods go now, the money comes another day. Nothing
+          is taken, so there is no method, account or amount to ask — and the
+          button says what really happens instead of "Take payment".
+        */}
+        <label className="flex items-start gap-2 rounded-md border border-slate-200 p-3 text-sm text-slate-800">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={state.payLater}
             disabled={busy}
-            onChange={(event) => {
-              const method = event.target.value as PaymentMethod;
+            onChange={(event) =>
               onChange({
                 ...state,
-                method,
-                // Cash must not carry an account, so drop one chosen earlier
-                // rather than sending it and being refused.
-                bankAccountId: needsBankAccount(method)
-                  ? state.bankAccountId
-                  : null,
-              });
-            }}
-          >
-            <option value="cash">Cash</option>
-            <option value="transfer">Transfer</option>
-            <option value="pos">POS</option>
-            <option value="cheque">Cheque</option>
-          </Select>
-        </Field>
-
-        {requiresAccount && (
-          <Field
-            label="Paid into"
-            htmlFor="bank-account"
-            hint="Which account took the money. Never guessed — a wrong one only shows up at reconciliation."
-            error={
-              accounts.length === 0
-                ? 'No active bank accounts. Add one before taking transfers.'
-                : undefined
+                payLater: event.target.checked,
+                // Nothing typed earlier may ride along on a credit sale.
+                amount: null,
+                bankAccountId: null,
+                reference: '',
+              })
             }
-          >
-            <Select
-              id="bank-account"
-              value={state.bankAccountId ?? ''}
-              disabled={busy || accounts.length === 0}
-              onChange={(event) =>
-                onChange({
-                  ...state,
-                  bankAccountId: event.target.value || null,
-                })
-              }
-            >
-              <option value="">Choose an account…</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.bankName} · {account.accountNumber}
-                  {account.isDefault ? ' (default)' : ''}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        )}
-
-        {state.method !== 'cash' && (
-          <Field
-            label="Reference"
-            htmlFor="reference"
-            hint="Optional. The transfer or terminal reference, so it can be matched later."
-          >
-            <Input
-              id="reference"
-              value={state.reference}
-              disabled={busy}
-              onChange={(event) =>
-                onChange({ ...state, reference: event.target.value })
-              }
-              placeholder="FT26083012345"
-            />
-          </Field>
-        )}
-
-        <Field
-          label="Amount paid"
-          htmlFor="amount"
-          hint="Blank means paying in full."
-        >
-          <MoneyInput
-            id="amount"
-            value={state.amount}
-            disabled={busy}
-            onChange={(amount) => onChange({ ...state, amount })}
-            placeholder={(total / 100).toFixed(2)}
           />
-        </Field>
+          <span>
+            Pay later
+            <span className="block text-xs text-slate-500">
+              The customer takes the goods now and pays another day.
+            </span>
+          </span>
+        </label>
+
+        {!state.payLater && (
+          <>
+            <Field label="Method" htmlFor="method">
+              <Select
+                id="method"
+                value={state.method}
+                disabled={busy}
+                onChange={(event) => {
+                  const method = event.target.value as PaymentMethod;
+                  onChange({
+                    ...state,
+                    method,
+                    // Cash must not carry an account, so drop one chosen earlier
+                    // rather than sending it and being refused.
+                    bankAccountId: needsBankAccount(method)
+                      ? state.bankAccountId
+                      : null,
+                  });
+                }}
+              >
+                <option value="cash">Cash</option>
+                <option value="transfer">Transfer</option>
+                <option value="pos">POS</option>
+                <option value="cheque">Cheque</option>
+              </Select>
+            </Field>
+
+            {requiresAccount && (
+              <Field
+                label="Paid into"
+                htmlFor="bank-account"
+                hint="Which account took the money. Never guessed — a wrong one only shows up at reconciliation."
+                error={
+                  accounts.length === 0
+                    ? 'No active bank accounts. Add one before taking transfers.'
+                    : undefined
+                }
+              >
+                <Select
+                  id="bank-account"
+                  value={state.bankAccountId ?? ''}
+                  disabled={busy || accounts.length === 0}
+                  onChange={(event) =>
+                    onChange({
+                      ...state,
+                      bankAccountId: event.target.value || null,
+                    })
+                  }
+                >
+                  <option value="">Choose an account…</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.bankName} · {account.accountNumber}
+                      {account.isDefault ? ' (default)' : ''}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+
+            {state.method !== 'cash' && (
+              <Field
+                label="Reference"
+                htmlFor="reference"
+                hint="Optional. The transfer or terminal reference, so it can be matched later."
+              >
+                <Input
+                  id="reference"
+                  value={state.reference}
+                  disabled={busy}
+                  onChange={(event) =>
+                    onChange({ ...state, reference: event.target.value })
+                  }
+                  placeholder="FT26083012345"
+                />
+              </Field>
+            )}
+
+            <Field
+              label="Amount paid"
+              htmlFor="amount"
+              hint="Blank means paying in full."
+            >
+              <MoneyInput
+                id="amount"
+                value={state.amount}
+                disabled={busy}
+                onChange={(amount) => onChange({ ...state, amount })}
+                placeholder={(total / 100).toFixed(2)}
+              />
+            </Field>
+          </>
+        )}
 
         {owing > 0 && (
           <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
             <div className="flex justify-between">
-              <span>On credit</span>
+              <span>{state.payLater ? 'All on credit' : 'On credit'}</span>
               <span className="font-medium">
                 <Money value={owing} />
               </span>
@@ -226,7 +261,11 @@ export function PaymentPanel({
         disabled={busy || !canSubmit}
         className="mt-6 h-12 w-full text-base"
       >
-        {busy ? 'Recording…' : 'Take payment'}
+        {busy
+          ? 'Recording…'
+          : state.payLater
+            ? 'Record sale on credit'
+            : 'Take payment'}
       </Button>
     </div>
   );
