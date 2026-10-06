@@ -1896,6 +1896,26 @@ unsafe, check the condition still holds before building around it.
 **A target cannot change what it is set against.** Rewriting a lotions target into a roll-on one
 would silently restate what last month's number meant; delete it and set the one that was agreed.
 
+### A vendor's month in money, beside the cartons (2026-10-06)
+
+The per-category money quota was removed with the move to cartons (above), and that stands. What
+the owner then described is different: a vendor often expects **a figure for the whole month** —
+"₦12M from us this month" — on top of its carton targets. So `VendorMoneyTarget` is **one amount
+per vendor per month**, unique, editable (amount, VAT choice, note), removable outright.
+
+- **Progress is the invoice value of what arrived**, summed from `GoodsReceiptLine.totalCost` for
+  that vendor's receipts in the month window — exact invoice figures, never `costPrice × qty`, and
+  free goods add nothing because they carry no value. Received, not ordered, like the cartons.
+- **VAT is a choice on the target, because vendors differ.** The owner confirmed not every vendor
+  adds it. With `addsVat` (the default) the vendor quotes before VAT and puts 7.5% on top of each
+  invoice, so ₦12.9M of invoices meets ₦12M: `moneyProgress` takes VAT off the **month's total,
+  once**, with `splitTaxInclusive` — the split a sale uses — rather than line by line, so rounding
+  happens a single time. Without it, invoices count whole.
+- **Where it shows**: `moneyTargets` on `GET /purchase-targets/report` (and therefore no longer
+  dependent on there being carton targets), `purchasing.moneyTargets` on the dashboard, one ring
+  each — the ring component now has a money variant beside the carton one. The Rebates panel names
+  it ("money target met", or the percentage) as context for the owner's call, never as a gate.
+
 ---
 
 ## 13. Traps already hit

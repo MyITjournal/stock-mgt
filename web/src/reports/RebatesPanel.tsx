@@ -10,6 +10,7 @@ import type { components } from '../api/schema';
 
 type VendorRebateView = components['schemas']['VendorRebateView'];
 type SupplierView = components['schemas']['SupplierView'];
+type MoneyTargetWithProgress = components['schemas']['MoneyTargetWithProgress'];
 type PurchaseTargetWithProgress =
   components['schemas']['PurchaseTargetWithProgress'];
 
@@ -30,12 +31,14 @@ export function RebatesPanel({
   month,
   supplierId,
   targets,
+  moneyTargets,
   canEdit,
 }: {
   /** `YYYY-MM`, as the Targets page holds it. */
   month: string;
   supplierId: string;
   targets: readonly PurchaseTargetWithProgress[];
+  moneyTargets: readonly MoneyTargetWithProgress[];
   canEdit: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -65,10 +68,23 @@ export function RebatesPanel({
 
   /** "2 of 3 met" for a vendor this month — counted, for context only. */
   const metFor = (id: string) => {
+    const parts: string[] = [];
     const theirs = targets.filter((target) => target.supplierId === id);
-    if (theirs.length === 0) return null;
-    const met = theirs.filter((t) => t.progress.achievedBps >= 10_000).length;
-    return `${met} of ${theirs.length} target${theirs.length === 1 ? '' : 's'} met`;
+    if (theirs.length > 0) {
+      const met = theirs.filter((t) => t.progress.achievedBps >= 10_000).length;
+      parts.push(
+        `${met} of ${theirs.length} carton target${theirs.length === 1 ? '' : 's'} met`,
+      );
+    }
+    const money = moneyTargets.find((target) => target.supplier.id === id);
+    if (money) {
+      parts.push(
+        money.achievedBps >= 10_000
+          ? 'money target met'
+          : `money target ${Math.round(money.achievedBps / 100)}%`,
+      );
+    }
+    return parts.length > 0 ? parts.join(', ') : null;
   };
 
   return (

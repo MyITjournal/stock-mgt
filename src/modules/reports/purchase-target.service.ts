@@ -13,14 +13,20 @@ import {
   ReceiptLine,
   TargetRow,
   cartonFactor,
+  moneyProgress,
   rollUpTargets,
 } from './purchase-target';
+import {
+  CreateMoneyTargetDto,
+  UpdateMoneyTargetDto,
+} from './dto/money-target.dto';
 import {
   CreatePurchaseTargetDto,
   PurchaseTargetQueryDto,
   UpdatePurchaseTargetDto,
 } from './dto/purchase-target.dto';
 import {
+  MoneyTargetWithProgress,
   PurchaseTargetReportView,
   PurchaseTargetView,
 } from './dto/purchase-target.response';
@@ -146,8 +152,14 @@ export class PurchaseTargetService {
       orderBy: { createdAt: 'asc' },
     });
 
+    const moneyTargets = await this.moneyTargets(
+      periodStart,
+      periodEnd,
+      query.supplierId,
+    );
+
     if (targets.length === 0) {
-      return { periodStart, periodEnd, targets: [] };
+      return { periodStart, periodEnd, targets: [], moneyTargets };
     }
 
     const suppliers = [...new Set(targets.map((row) => row.supplierId))];
@@ -203,6 +215,7 @@ export class PurchaseTargetService {
     return {
       periodStart,
       periodEnd,
+      moneyTargets,
       targets: targets.map((target) => ({
         ...target,
         progress: {
@@ -245,6 +258,115 @@ export class PurchaseTargetService {
   }
 
   /** Snaps any instant to the first of its month, in the org's timezone. */
+  // -- Money targets -------------------------------------------------------
+
+  async createMoney(input: CreateMoneyTargetDto): Promise<{ id: string }> {
+    await this.assertSupplierExists(input.supplierId);
+    const periodStart = await this.monthStart(input.period);
+    try {
+      const row = await this.prisma.vendorMoneyTarget.create({
+        data: {
+          ...(input.id && { id: input.id }),
+          organizationId: TenantContext.requireOrganizationId(),
+          supplierId: input.supplierId,
+          periodStart,
+          amount: input.amount,
+          addsVat: input.addsVat ?? true,
+          note: input.note?.trim() || null,
+        },
+        select: { id: true },
+      });
+      return row;
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: unknown }).code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'This vendor already has a money target for that month. Change that one instead.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async updateMoney(
+    id: string,
+    input: UpdateMoneyTargetDto,
+  ): Promise<{ id: string }> {
+    await this.findMoneyOrFail(id);
+    return this.prisma.vendorMoneyTarget.update({
+      where: { id },
+      data: {
+        ...(input.amount !== undefined && { amount: input.amount }),
+        ...(input.addsVat !== undefined && { addsVat: input.addsVat }),
+        ...(input.note !== undefined && { note: input.note.trim() || null }),
+      },
+      select: { id: true },
+    });
+  }
+
+  async removeMoney(id: string): Promise<void> {
+    await this.findMoneyOrFail(id);
+    await this.prisma.vendorMoneyTarget.delete({ where: { id } });
+  }
+
+  /**
+   * Each vendor's money target for the month against the invoice value of
+   * what arrived from them. Summed from `GoodsReceiptLine.totalCost` — the
+   * exact invoice figures — so free goods add nothing; VAT comes off the
+   * month's total once, in `moneyProgress`.
+   */
+  private async moneyTargets(
+    periodStart: Date,
+    periodEnd: Date,
+    supplierId?: string,
+  ): Promise<MoneyTargetWithProgress[]> {
+    const targets = await this.prisma.vendorMoneyTarget.findMany({
+      where: { periodStart, ...(supplierId && { supplierId }) },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        periodStart: true,
+        amount: true,
+        addsVat: true,
+        note: true,
+        supplier: { select: { id: true, name: true } },
+      },
+    });
+    if (targets.length === 0) return [];
+
+    const lines = await this.prisma.goodsReceiptLine.findMany({
+      where: {
+        receipt: {
+          supplierId: { in: targets.map((row) => row.supplier.id) },
+          receivedAt: { gte: periodStart, lt: periodEnd },
+        },
+      },
+      select: { totalCost: true, receipt: { select: { supplierId: true } } },
+    });
+    const invoiced = new Map<string, number>();
+    for (const line of lines) {
+      const id = line.receipt.supplierId;
+      invoiced.set(id, (invoiced.get(id) ?? 0) + line.totalCost);
+    }
+
+    return targets.map((target) => ({
+      ...target,
+      ...moneyProgress(target, invoiced.get(target.supplier.id) ?? 0),
+    }));
+  }
+
+  private async findMoneyOrFail(id: string) {
+    const row = await this.prisma.vendorMoneyTarget.findFirst({
+      where: { id },
+      select: { id: true },
+    });
+    if (!row) throw new NotFoundException('Money target not found');
+    return row;
+  }
+
   private async monthStart(period?: string): Promise<Date> {
     const timezone = await this.reports.timezone();
     return startOfMonth(timezone, period ? new Date(period) : new Date());

@@ -138,6 +138,16 @@ note only; vendor, category and month are what the target is. On `GET /reports/d
 shops (navigation only). The migration **cleared every existing target** — they were pieces, and
 a category's pieces cannot be turned back into cartons.
 
+**Beside them, one money target per vendor per month** (§12, 2026-10-06): `VendorMoneyTarget` and
+`/purchase-targets/money` — "₦12M this month" from a vendor, **not per category** (the
+per-category money quota stays gone). Progress is the **invoice value of goods received** from that
+vendor in the month (`GoodsReceiptLine.totalCost`, so free goods add nothing), reported on
+`GET /purchase-targets/report` as `moneyTargets` and on the dashboard as
+`purchasing.moneyTargets`. **`addsVat` is a choice per target, default on**, because not every
+vendor adds VAT: on, the target is before VAT and VAT comes off the month's total **once**, by the
+same `splitTaxInclusive` a sale uses (`moneyProgress`, pure) — ₦12.9M of invoices meets ₦12M. The
+Rebates panel shows it as context ("money target met"), never as a rule.
+
 **Money owed to vendors is Slice 6.6** (§16), in `src/modules/payables/`. `GET /payables` is the
 mirror of `GET /receivables` — bills with money still on them, longest-owed first, grouped per
 vendor, with `total` as the headline figure the dashboard shows and the list behind it as what a

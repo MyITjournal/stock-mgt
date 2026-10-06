@@ -57,6 +57,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'SupplierPayment',
   // A vendor's rebate, credited off a later bill.
   'VendorRebate',
+  // A vendor's monthly target in money, beside the carton targets.
+  'VendorMoneyTarget',
 ]);
 
 /** Reads and writes that select rows through a `where` clause. */

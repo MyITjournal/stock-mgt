@@ -902,3 +902,24 @@ vendor's bill: not offered, and refused by the server.
 
 **239. Remove credit on the bill.** The bill owes ₦140,000 more again, the rebate reads Expected,
 and the Profit line goes.
+
+---
+
+## AJ. A vendor's money target
+
+**240. [gate] Reports → Targets → Set a money target.** Pick a vendor, enter ₦12,000,000 and leave
+**This vendor adds 7.5% VAT on top of their invoices** ticked. A ring appears under *Money targets
+this month*, saying "Money target, before VAT".
+
+**241. [gate] Record a delivery from that vendor worth ₦12,900,000 this month.** The ring reads
+**Target met** at 100% — ₦12,000,000 of ₦12,000,000 — because VAT came off the invoices.
+
+**242. Change it and untick the VAT box.** The ring now counts the full ₦12,900,000 and reads
+**Over target**.
+
+**243. Setting a second money target for the same vendor and month** is refused.
+
+**244. [gate] Home.** The money ring sits beside the carton rings under *Vendor targets this month*.
+
+**245. Under *Rebates this month*,** that vendor's row says "money target met" next to the carton
+count. Recording the rebate still works whether or not it is met.

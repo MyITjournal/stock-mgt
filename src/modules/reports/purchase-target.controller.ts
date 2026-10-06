@@ -24,6 +24,10 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { PurchaseTargetService } from './purchase-target.service';
 import {
+  CreateMoneyTargetDto,
+  UpdateMoneyTargetDto,
+} from './dto/money-target.dto';
+import {
   CreatePurchaseTargetDto,
   PurchaseTargetQueryDto,
   UpdatePurchaseTargetDto,
@@ -122,5 +126,43 @@ export class PurchaseTargetController {
   @ApiNoContentResponse()
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.targets.remove(id);
+  }
+
+  // -- Money targets: one figure per vendor per month ------------------------
+
+  @Post('money')
+  @Roles(...SETS_TARGETS)
+  @Idempotent('A retry with the same key returns the original target.')
+  @ApiOperation({
+    summary: 'Set a vendor’s money target for a month',
+    description:
+      'One figure per vendor per month — “₦12M this month” — beside the carton targets. With addsVat (the default), the vendor adds 7.5% on top of their invoices: the target is before VAT and invoices count without it. Progress is on GET /purchase-targets/report as moneyTargets.',
+  })
+  @ApiCreatedResponse({ description: 'The new target’s id.' })
+  createMoney(@Body() dto: CreateMoneyTargetDto) {
+    return this.targets.createMoney(dto);
+  }
+
+  @Patch('money/:id')
+  @Roles(...SETS_TARGETS)
+  @ApiOperation({
+    summary: 'Change a money target',
+    description: 'The amount, the VAT choice and the note.',
+  })
+  @ApiOkResponse({ description: 'The target’s id.' })
+  updateMoney(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateMoneyTargetDto,
+  ) {
+    return this.targets.updateMoney(id, dto);
+  }
+
+  @Delete('money/:id')
+  @Roles(...SETS_TARGETS)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove a money target' })
+  @ApiNoContentResponse()
+  removeMoney(@Param('id', ParseUUIDPipe) id: string) {
+    return this.targets.removeMoney(id);
   }
 }
