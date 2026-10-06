@@ -30,6 +30,7 @@ const REASON_LABELS: Record<string, string> = {
   theft: 'missing',
   count_correction: 'after counting',
   opening_balance: 'opening balance',
+  receipt_correction: 'delivery correction',
   other: 'other',
 };
 

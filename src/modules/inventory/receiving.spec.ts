@@ -65,7 +65,9 @@ describe('ReceivingService', () => {
         }),
       },
       goodsReceipt: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'receipt-1', lines: [] }),
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'receipt-1', lines: [], corrections: [] }),
         findMany: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest
@@ -268,6 +270,7 @@ describe('ReceivingService', () => {
     prisma.goodsReceipt.findFirst.mockResolvedValue({
       id: 'receipt-1',
       lines: [{ totalCost: INVOICE_TOTAL, quantityReceived: 480 }],
+      corrections: [],
     });
 
     const receipt = await TenantContext.run(
@@ -282,6 +285,7 @@ describe('ReceivingService', () => {
     prisma.goodsReceipt.findFirst.mockResolvedValue({
       id: 'receipt-1',
       lines: [{ totalCost: INVOICE_TOTAL, quantityReceived: 480 }],
+      corrections: [],
     });
 
     const receipt = await TenantContext.run(

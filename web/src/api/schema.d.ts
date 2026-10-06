@@ -780,6 +780,46 @@ export interface paths {
         patch: operations["SupplierController_update"];
         trace?: never;
     };
+    "/api/v1/goods-receipts/{id}/corrections/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a correction to a delivery
+         * @description Runs the correction and rolls it back, so it meets every check the real one does, and says how stock and the bill would move. Saves nothing.
+         */
+        post: operations["GoodsReceiptController_previewCorrection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/goods-receipts/{id}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct a recorded delivery
+         * @description The true figures for the lines that were entered wrong — received and paid for in base units, the invoice value in kobo — and why. The stock difference is a movement on each line’s own lot, the lot and line take the true figures, the bill moves by the change in value, and the figures before are kept as a correction record. Sales already made keep their cost. Can be done any number of times. A 409 if fewer arrived than have already been sold from the delivery (an owner or manager may force it with a reason), or if the bill would drop below what has been paid against it.
+         */
+        post: operations["GoodsReceiptController_correct"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/goods-receipts": {
         parameters: {
             query?: never;
@@ -3173,6 +3213,51 @@ export interface components {
             /** @example Delivers Tuesdays. Rep: Chidi. */
             notes?: string;
         };
+        TrueLineFiguresDto: {
+            /**
+             * Format: uuid
+             * @description The delivery line.
+             */
+            lineId: string;
+            /**
+             * @description What really arrived, in base units — 6½ cartons of 14 is 91. At least one: a line cannot be corrected to nothing, because a lot that received nothing has no cost per piece.
+             * @example 91
+             */
+            received: number;
+            /**
+             * @description What was really paid for, in base units. The rest is free goods.
+             * @example 84
+             */
+            paidFor: number;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 9800000
+             */
+            totalCost: number;
+        };
+        CorrectDeliveryDto: {
+            /** @example Miscounted: 6½ cartons arrived, not 7. */
+            reason: string;
+            lines: components["schemas"]["TrueLineFiguresDto"][];
+            /** @description Record it even though fewer arrived than have already been sold from the delivery — owner or manager, with forcedReason. */
+            force?: boolean;
+            forcedReason?: string;
+        };
+        CorrectionPreviewLine: {
+            /** Format: uuid */
+            lineId: string;
+            /** @description Base units; negative when fewer arrived than were recorded. */
+            stockDelta: number;
+        };
+        CorrectionPreviewView: {
+            /** @description The change in the delivery’s value, in kobo. */
+            valueDelta: number;
+            /** @description The bill now, in kobo. Null when the delivery has no bill. */
+            billAmountBefore: number | null;
+            /** @description The bill after the correction, in kobo. */
+            billAmountAfter: number | null;
+            lines: components["schemas"]["CorrectionPreviewLine"][];
+        };
         ReceiptSupplierRef: {
             /** Format: uuid */
             id: string;
@@ -3185,6 +3270,12 @@ export interface components {
             /** @example Main Store */
             name: string;
         };
+        ReceiptRecorderRef: {
+            /** Format: uuid */
+            id: string;
+            firstName: string | null;
+            lastName: string | null;
+        };
         ReceiptProductRef: {
             /** Format: uuid */
             id: string;
@@ -3192,71 +3283,6 @@ export interface components {
             name: string;
             /** @example PEAK-400 */
             sku: string;
-        };
-        GoodsReceiptLineSummary: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            organizationId: string;
-            /** Format: uuid */
-            receiptId: string;
-            /** Format: uuid */
-            productId: string;
-            /** Format: uuid */
-            unitId: string;
-            /** Format: uuid */
-            batchId: string;
-            /** @description As entered, in the unit named — cartons, not pieces. */
-            quantityReceivedInUnit: number;
-            /** @description What the invoice charged for, in the same unit. */
-            quantityPaidForInUnit: number;
-            /** @description The factor applied at write time. A snapshot: redefining what a carton means later cannot rewrite what this delivery put on the shelf. */
-            unitFactor: number;
-            /** @description What arrived, in base units — what the ledger moved. */
-            quantityReceived: number;
-            /** @description What was charged for, in base units. */
-            quantityPaidFor: number;
-            /** @description The exact invoice total for this line, in kobo — never a per-unit price. **Absent** for a role that may not see cost. */
-            totalCost?: number;
-            /** Format: date-time */
-            createdAt: string;
-            product: components["schemas"]["ReceiptProductRef"];
-        };
-        GoodsReceiptSummary: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            organizationId: string;
-            /** Format: uuid */
-            supplierId: string;
-            /** Format: uuid */
-            locationId: string;
-            /**
-             * @description The vendor's own number, which is what they quote.
-             * @example INV-88213
-             */
-            invoiceNumber: string | null;
-            /**
-             * Format: date-time
-             * @description When the delivery arrived, by the recording device. Orders go by phone in this market and are recorded on arrival — there is no purchase order behind this (§6).
-             */
-            receivedAt: string;
-            note: string | null;
-            /** Format: uuid */
-            recordedByUserId: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-            supplier: components["schemas"]["ReceiptSupplierRef"];
-            location: components["schemas"]["ReceiptLocationRef"];
-            lines: components["schemas"]["GoodsReceiptLineSummary"][];
-        };
-        ReceiptRecorderRef: {
-            /** Format: uuid */
-            id: string;
-            firstName: string | null;
-            lastName: string | null;
         };
         ReceiptUnitRef: {
             /** Format: uuid */
@@ -3328,6 +3354,30 @@ export interface components {
             /** @description Output, never input. Divided by what *arrived*, not what was paid for, so free goods pull the cost of every unit down — which is the whole point of them. **Absent** for a role that may not see cost. */
             unitCost?: number;
         };
+        ReceiptCorrectionLineView: {
+            /** Format: uuid */
+            receiptLineId: string;
+            /** @description Base units. */
+            receivedBefore: number;
+            receivedAfter: number;
+            paidForBefore: number;
+            paidForAfter: number;
+            /** @description Kobo. Absent for roles that may not see cost. */
+            totalCostBefore?: number;
+            totalCostAfter?: number;
+        };
+        ReceiptCorrectionView: {
+            /** Format: uuid */
+            id: string;
+            reason: string;
+            /** Format: date-time */
+            createdAt: string;
+            recordedBy: components["schemas"]["ReceiptRecorderRef"] | null;
+            /** @description The bill before, in kobo; null when it did not move. */
+            billAmountBefore?: number | null;
+            billAmountAfter?: number | null;
+            lines: components["schemas"]["ReceiptCorrectionLineView"][];
+        };
         GoodsReceiptView: {
             /** Format: uuid */
             id: string;
@@ -3352,6 +3402,67 @@ export interface components {
             location: components["schemas"]["ReceiptLocationRef"];
             recordedBy: components["schemas"]["ReceiptRecorderRef"] | null;
             lines: components["schemas"]["GoodsReceiptLineView"][];
+            /** @description Every correction made to it, oldest first, with the figures as they were before. Present on a single delivery read. */
+            corrections?: components["schemas"]["ReceiptCorrectionView"][];
+        };
+        GoodsReceiptLineSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            receiptId: string;
+            /** Format: uuid */
+            productId: string;
+            /** Format: uuid */
+            unitId: string;
+            /** Format: uuid */
+            batchId: string;
+            /** @description As entered, in the unit named — cartons, not pieces. */
+            quantityReceivedInUnit: number;
+            /** @description What the invoice charged for, in the same unit. */
+            quantityPaidForInUnit: number;
+            /** @description The factor applied at write time. A snapshot: redefining what a carton means later cannot rewrite what this delivery put on the shelf. */
+            unitFactor: number;
+            /** @description What arrived, in base units — what the ledger moved. */
+            quantityReceived: number;
+            /** @description What was charged for, in base units. */
+            quantityPaidFor: number;
+            /** @description The exact invoice total for this line, in kobo — never a per-unit price. **Absent** for a role that may not see cost. */
+            totalCost?: number;
+            /** Format: date-time */
+            createdAt: string;
+            product: components["schemas"]["ReceiptProductRef"];
+        };
+        GoodsReceiptSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            supplierId: string;
+            /** Format: uuid */
+            locationId: string;
+            /**
+             * @description The vendor's own number, which is what they quote.
+             * @example INV-88213
+             */
+            invoiceNumber: string | null;
+            /**
+             * Format: date-time
+             * @description When the delivery arrived, by the recording device. Orders go by phone in this market and are recorded on arrival — there is no purchase order behind this (§6).
+             */
+            receivedAt: string;
+            note: string | null;
+            /** Format: uuid */
+            recordedByUserId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            supplier: components["schemas"]["ReceiptSupplierRef"];
+            location: components["schemas"]["ReceiptLocationRef"];
+            lines: components["schemas"]["GoodsReceiptLineSummary"][];
         };
         DeliveryPaymentDto: {
             /**
@@ -3553,7 +3664,7 @@ export interface components {
          * @description Why, for an adjustment. Damage and spoilage are movements with a reason, never silent decrements.
          * @enum {string}
          */
-        StockAdjustmentReason: "damage" | "expiry" | "theft" | "count_correction" | "opening_balance" | "other";
+        StockAdjustmentReason: "damage" | "expiry" | "theft" | "count_correction" | "opening_balance" | "receipt_correction" | "other";
         StockUserRef: {
             /** Format: uuid */
             id: string;
@@ -3698,7 +3809,7 @@ export interface components {
              * @example damage
              * @enum {string}
              */
-            reason: "damage" | "expiry" | "theft" | "count_correction" | "opening_balance" | "other";
+            reason: "damage" | "expiry" | "theft" | "count_correction" | "opening_balance" | "receipt_correction" | "other";
             /** @example Crate dropped at the back door. */
             note?: string;
             /**
@@ -7652,6 +7763,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SupplierView"];
+                };
+            };
+        };
+    };
+    GoodsReceiptController_previewCorrection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectDeliveryDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CorrectionPreviewView"];
+                };
+            };
+        };
+    };
+    GoodsReceiptController_correct: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original result instead of correcting twice. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectDeliveryDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoodsReceiptView"];
                 };
             };
         };

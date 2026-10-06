@@ -923,3 +923,29 @@ this month*, saying "Money target, before VAT".
 
 **245. Under *Rebates this month*,** that vendor's row says "money target met" next to the carton
 count. Recording the rebate still works whether or not it is met.
+
+---
+
+## AK. Correcting a delivery
+
+**246. [gate] Receive a delivery of 7 cartons, then open it in Stock → Deliveries.** As an owner or
+manager there is **Correct this delivery**; as a cashier there is not.
+
+**247. [gate] Correct it to 6.5 cartons received and 6 paid for, with the value of 6 cartons, and a
+reason.** Press **Check**: it says how many pieces leave stock, the change in value, and the bill
+before → after. Nothing has changed yet — On hand and the bill are as they were.
+
+**248. Save.** The line now shows the true figures (in pieces, since 6½ cartons is not whole); On
+hand dropped by half a carton; the bill moved by the difference; and a *Corrections* section lists
+the reason, who, when, and received / paid for / value before → after.
+
+**249. Correct it again, back to 7 cartons.** Allowed; the line reads cartons again, stock and the
+bill return, and both corrections are listed.
+
+**250. Try 0.5 of a carton of 15.** Refused, saying it is 7.5 pieces and to enter it in pieces.
+
+**251. Correct a delivery whose bill is already paid in full to a lower value.** Refused: void the
+payment that was too much first.
+
+**252. [gate] Receive a delivery typing 9.5 cartons received, 9 paid for.** It records, in pieces,
+with the half carton as free goods.
