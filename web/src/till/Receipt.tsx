@@ -103,6 +103,14 @@ export function Receipt({
               <Money value={receipt.balance} signed />
             </div>
           )}
+          {receipt.dueDate && (
+            <div className="flex justify-between text-xs text-slate-600">
+              <span>Payment due by</span>
+              <span>
+                {new Date(receipt.dueDate).toLocaleDateString('en-NG')}
+              </span>
+            </div>
+          )}
         </div>
 
         {receipt.note && (

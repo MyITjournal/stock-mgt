@@ -61,7 +61,7 @@ export function BillRebates({ bill }: { bill: SupplierBillView }) {
 
   const credit = useMutation({
     mutationFn: () =>
-      api.post<VendorRebateView>(`/vendor-rebates/${chosen!.id}/credit`, {
+      api.post<VendorRebateView>(`/vendor-rebates/${chosen.id}/credit`, {
         billId: bill.id,
         amount: shown,
       }),

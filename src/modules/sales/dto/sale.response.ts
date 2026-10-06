@@ -465,6 +465,15 @@ export class SaleReceiptView {
   @ApiProperty({ description: 'What is still owed.' })
   balance!: number;
 
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the balance is due — five days after a credit sale (§6). Null once nothing is owed. Added after the first printers, so older ones simply ignore it.',
+  })
+  dueDate!: Date | null;
+
   @ApiProperty({ type: String, nullable: true })
   note!: string | null;
 }

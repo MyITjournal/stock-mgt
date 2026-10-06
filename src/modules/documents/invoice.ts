@@ -46,6 +46,8 @@ export interface InvoiceDocument {
   tax: number;
   paid: number;
   balance: number;
+  /** Printed only while something is owed — see `SaleService.receipt`. */
+  dueDate: Date | null;
   note: string | null;
 }
 
@@ -82,6 +84,21 @@ export function invoiceDefinition(args: {
           stack: [
             { text: 'Date', style: 'label' },
             { text: printDate(invoice.occurredAt, org.timezone) },
+            // A credit sale tells the customer when to pay, on the document
+            // they pay from — the same date the shop's reminder counts from.
+            ...(invoice.dueDate
+              ? [
+                  {
+                    text: 'Payment due by',
+                    style: 'label',
+                    margin: [0, 6, 0, 0] as Margin,
+                  },
+                  {
+                    text: printDate(invoice.dueDate, org.timezone),
+                    bold: true,
+                  },
+                ]
+              : []),
             ...(invoice.customer
               ? [
                   {

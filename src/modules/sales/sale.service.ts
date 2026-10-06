@@ -559,6 +559,8 @@ export class SaleService {
       tax: sale.taxTotal,
       paid: sale.allocated,
       balance: sale.balance,
+      // Only while something is owed: a paid invoice has nothing to be due.
+      dueDate: sale.balance > 0 ? sale.dueDate : null,
       note: sale.note,
     };
   }

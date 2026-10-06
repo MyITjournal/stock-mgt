@@ -981,3 +981,16 @@ number opens the sale.
 
 **260. Record a payment against one of those invoices.** It leaves the list. Void that payment and
 it comes back. When nothing is due, the panel is gone from both screens.
+
+**261. [gate] Money → Invoices → Unpaid, open a customer.** Each invoice reads *N days overdue*
+(red), *Due today* (amber) or *Due in N days* instead of "8d". The customer's own page says the
+same.
+
+**262. [gate] Open a credit sale and download its PDF.** Under the date: **Payment due by** and the
+day — the same day the panel counts from. A paid sale's PDF has no such line. The till's "Sale
+recorded" receipt for a Pay later sale shows it too.
+
+**263. Download the customer's statement.** The last column is **Due**: the date, with *N days
+overdue* under it once late.
+
+**264. Invoices → All invoices → Download.** The sheet has a **Due** column, empty for paid ones.

@@ -14,6 +14,7 @@ import {
 } from './RecordPaymentDialog';
 import { useRecordPayment } from './useRecordPayment';
 import { DownloadButton } from '../components/DownloadButton';
+import { dueStatus } from '../lib/due';
 import { exportInvoices } from './exportMoney';
 
 type ReceivablesView = components['schemas']['ReceivablesView'];
@@ -227,7 +228,7 @@ function UnpaidInvoices({
                               {new Date(invoice.occurredAt).toLocaleDateString(
                                 'en-NG',
                               )}{' '}
-                              · {invoice.daysOutstanding}d
+                              · <DueNote invoice={invoice} />
                             </span>
                           </td>
                           <td className="px-4 py-2 text-right text-slate-500">
@@ -449,4 +450,20 @@ function AllInvoices({
       </div>
     </>
   );
+}
+
+/**
+ * How late an unpaid invoice is, against the date the customer was given.
+ *
+ * Falls back to its age — what this list showed before due dates — for an
+ * invoice with none: one settled at the time and reopened later by a void.
+ */
+function DueNote({
+  invoice,
+}: {
+  invoice: { daysOutstanding: number; daysPastDue: number | null };
+}) {
+  if (invoice.daysPastDue === null) return <>{invoice.daysOutstanding}d</>;
+  const status = dueStatus(invoice.daysPastDue);
+  return <span className={status.tone}>{status.text}</span>;
 }

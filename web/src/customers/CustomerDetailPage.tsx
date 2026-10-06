@@ -5,6 +5,7 @@ import { Money } from '../components/Money';
 import { PdfButton } from '../components/PdfButton';
 import { api } from '../api/client';
 import { useSeesCost } from '../auth/useAuth';
+import { dueStatus } from '../lib/due';
 import type { components } from '../api/schema';
 
 type CustomerView = components['schemas']['CustomerView'];
@@ -93,7 +94,16 @@ export function CustomerDetailPage() {
                             {new Date(invoice.occurredAt).toLocaleDateString(
                               'en-NG',
                             )}{' '}
-                            · {invoice.daysOutstanding} days
+                            ·{' '}
+                            {invoice.daysPastDue === null ? (
+                              `${invoice.daysOutstanding} days`
+                            ) : (
+                              <span
+                                className={dueStatus(invoice.daysPastDue).tone}
+                              >
+                                {dueStatus(invoice.daysPastDue).text}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right text-slate-500">

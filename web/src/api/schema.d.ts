@@ -4772,6 +4772,13 @@ export interface components {
             balance: number;
             /** @description Whole days since the sale. The field the list sorts on. */
             daysOutstanding: number;
+            /**
+             * Format: date-time
+             * @description When the money is due — five days after a credit sale (§6). Null when nothing is owed on it, and on sales recorded before due dates existed that were already settled.
+             */
+            dueDate: string | null;
+            /** @description Days past the due date, counted in the shop’s timezone: 0 on the day, negative before it. Null when there is no due date. */
+            daysPastDue: number | null;
         };
         DebtorGroup: {
             customer: components["schemas"]["DebtorCustomer"] | null;
@@ -5219,6 +5226,11 @@ export interface components {
             paid: number;
             /** @description What is still owed. */
             balance: number;
+            /**
+             * Format: date-time
+             * @description When the balance is due — five days after a credit sale (§6). Null once nothing is owed. Added after the first printers, so older ones simply ignore it.
+             */
+            dueDate: string | null;
             note: string | null;
         };
         SalePaymentDto: {

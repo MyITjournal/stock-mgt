@@ -569,7 +569,12 @@ Four more from the till (7.2), all in `web/src/till/`:
   **open to every role on purpose**: the counter is where the customer walks in, and it carries no
   buying price. `DuePayments` shows it on **Home and on the Till** (folded there; hidden when
   empty), because Home is closed to a rep. All invoices has a **Due** column. A reminder, **not a
-  rule** — nothing is refused for being overdue.
+  rule** — nothing is refused for being overdue. **The same date reaches every report of a debt**
+  (2026-10-06): `GET /receivables` carries `dueDate` and `daysPastDue` (so *Unpaid* and the
+  customer page say "3 days overdue" rather than "8d"), the receipt payload carries `dueDate`
+  (the invoice PDF prints **Payment due by**, the till's receipt too), the statement PDF's last
+  column is **Due**, and the invoice download has a Due column. Each is null once nothing is owed,
+  and an invoice with none falls back to its age. Words from `lib/due.ts` (`dueStatus`).
 
 And three from 7.3:
 
