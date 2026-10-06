@@ -143,6 +143,50 @@ export class PurchaseTargetWithProgress extends PurchaseTargetView {
   progress!: TargetProgressView;
 }
 
+/** A vendor's monthly target in money, with how far along it is. */
+export class MoneyTargetWithProgress {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ type: () => TargetSupplierRef })
+  supplier!: TargetSupplierRef;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  periodStart!: Date;
+
+  @ApiProperty({
+    description: 'The target in kobo — before VAT when `addsVat`.',
+  })
+  amount!: number;
+
+  @ApiProperty({
+    description:
+      'The vendor adds 7.5% VAT on top of their invoices, so invoices count without it.',
+  })
+  addsVat!: boolean;
+
+  @ApiProperty({ type: String, nullable: true })
+  note!: string | null;
+
+  @ApiProperty({
+    description:
+      'Goods received from the vendor this month, at invoice value, in kobo.',
+  })
+  invoiced!: number;
+
+  @ApiProperty({
+    description:
+      'What counts toward the target: `invoiced`, less VAT when the vendor adds it.',
+  })
+  counted!: number;
+
+  @ApiProperty({ description: 'Never negative.' })
+  remaining!: number;
+
+  @ApiProperty({ description: 'In basis points; over 10,000 once beaten.' })
+  achievedBps!: number;
+}
+
 /** Target versus actual for one month. */
 export class PurchaseTargetReportView {
   @ApiProperty({
@@ -161,4 +205,10 @@ export class PurchaseTargetReportView {
       'Always present, and empty when nothing was quotaed for the month — which is the common case, and not an error.',
   })
   targets!: PurchaseTargetWithProgress[];
+
+  @ApiProperty({
+    type: () => [MoneyTargetWithProgress],
+    description: 'Each vendor’s money target for the month, if it has one.',
+  })
+  moneyTargets!: MoneyTargetWithProgress[];
 }

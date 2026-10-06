@@ -2115,6 +2115,45 @@ async function main() {
     JSON.stringify(dashboardTargets),
   );
 
+  // A vendor's money target for the month, beside the cartons: one figure,
+  // counted from the invoice value of what arrived, with VAT taken off when the
+  // vendor adds it on top.
+  const moneyTarget = (
+    await api('POST', '/purchase-targets/money', {
+      token: t,
+      key: randomUUID(),
+      body: { supplierId: supplier.id, period: targetMonth, amount: 1_200_000_000, addsVat: true },
+    })
+  ).data;
+  check('a vendor money target is set', !!moneyTarget.id);
+  await api('POST', '/purchase-targets/money', {
+    token: t,
+    key: randomUUID(),
+    body: { supplierId: supplier.id, period: targetMonth, amount: 1 },
+    expect: 409,
+  });
+  check('one money target per vendor per month', true);
+
+  const moneyOf = async () =>
+    (await api('GET', `/purchase-targets/report?supplierId=${supplier.id}`, { token: t })).data.moneyTargets.find(
+      (row) => row.id === moneyTarget.id,
+    );
+  const withVat = await moneyOf();
+  check('it counts what arrived from the vendor this month', withVat.invoiced > 0, `${withVat.invoiced}`);
+  eq(
+    'with the VAT taken off when the vendor adds it',
+    withVat.counted,
+    Math.round((withVat.invoiced * 10_000) / 10_750),
+  );
+  await api('PATCH', `/purchase-targets/money/${moneyTarget.id}`, { token: t, body: { addsVat: false } });
+  eq('and whole when the vendor adds none', (await moneyOf()).counted, withVat.invoiced);
+  check(
+    'the dashboard carries it for its doughnut',
+    (await api('GET', '/reports/dashboard', { token: t })).data.purchasing.moneyTargets.some(
+      (row) => row.id === moneyTarget.id && row.amount === 1_200_000_000,
+    ),
+  );
+
   // -- Payables -------------------------------------------------------------
   // The owner's own worked example, in kobo: ₦199,800 supplied with ₦71,800
   // handed over on the spot, ₦32,000 supplied and untouched, ₦64,000 supplied

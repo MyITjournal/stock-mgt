@@ -1,5 +1,6 @@
 import {
   cartonFactor,
+  moneyProgress,
   rollUpTargets,
   type ReceiptLine,
 } from './purchase-target';
@@ -107,5 +108,52 @@ describe('cartonFactor', () => {
 
   it('is null for a product with nothing bigger than its base unit', () => {
     expect(cartonFactor([{ factor: 1 }])).toBeNull();
+  });
+});
+
+describe('moneyProgress', () => {
+  const NAIRA = 100;
+  const twelveMillion = 12_000_000 * NAIRA;
+
+  it('meets a before-VAT target with invoices that carry the VAT on top', () => {
+    // The owner's example: ₦12M expected, invoices total ₦12.9M with 7.5% VAT.
+    const progress = moneyProgress(
+      { amount: twelveMillion, addsVat: true },
+      12_900_000 * NAIRA,
+    );
+    expect(progress).toEqual({
+      invoiced: 12_900_000 * NAIRA,
+      counted: twelveMillion,
+      remaining: 0,
+      achievedBps: 10_000,
+    });
+  });
+
+  it('counts invoices whole for a vendor who adds no VAT', () => {
+    const progress = moneyProgress(
+      { amount: twelveMillion, addsVat: false },
+      9_000_000 * NAIRA,
+    );
+    expect(progress.counted).toBe(9_000_000 * NAIRA);
+    expect(progress.remaining).toBe(3_000_000 * NAIRA);
+    expect(progress.achievedBps).toBe(7_500);
+  });
+
+  it('reads over 100% once beaten, and never leaves a negative remainder', () => {
+    const progress = moneyProgress(
+      { amount: twelveMillion, addsVat: false },
+      13_200_000 * NAIRA,
+    );
+    expect(progress.achievedBps).toBe(11_000);
+    expect(progress.remaining).toBe(0);
+  });
+
+  it('is nothing at all before anything arrives', () => {
+    expect(moneyProgress({ amount: twelveMillion, addsVat: true }, 0)).toEqual({
+      invoiced: 0,
+      counted: 0,
+      remaining: twelveMillion,
+      achievedBps: 0,
+    });
   });
 });

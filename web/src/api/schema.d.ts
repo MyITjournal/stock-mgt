@@ -1956,6 +1956,47 @@ export interface paths {
         patch: operations["PurchaseTargetController_update"];
         trace?: never;
     };
+    "/api/v1/purchase-targets/money": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a vendor’s money target for a month
+         * @description One figure per vendor per month — “₦12M this month” — beside the carton targets. With addsVat (the default), the vendor adds 7.5% on top of their invoices: the target is before VAT and invoices count without it. Progress is on GET /purchase-targets/report as moneyTargets.
+         */
+        post: operations["PurchaseTargetController_createMoney"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/purchase-targets/money/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a money target */
+        delete: operations["PurchaseTargetController_removeMoney"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a money target
+         * @description The amount, the VAT choice and the note.
+         */
+        patch: operations["PurchaseTargetController_updateMoney"];
+        trace?: never;
+    };
     "/api/v1/organization": {
         parameters: {
             query?: never;
@@ -5489,11 +5530,28 @@ export interface components {
              */
             achievedBps: number;
         };
+        MoneyTargetGlance: {
+            /** Format: uuid */
+            id: string;
+            /** @example Unilever */
+            supplier: string;
+            /** @description The target, in kobo — before VAT when addsVat. */
+            amount: number;
+            addsVat: boolean;
+            /** @description What counts so far, in kobo. */
+            counted: number;
+            /** @description In kobo; never negative. */
+            remaining: number;
+            /** @description Basis points of the target. */
+            achievedBps: number;
+        };
         PurchasingSummary: {
             payables: components["schemas"]["PayablesSummary"];
             purchases: components["schemas"]["PurchasesSummary"];
             /** @description Every vendor target for this month, in cartons. Empty when there are none. */
             targets: components["schemas"]["TargetGlance"][];
+            /** @description Every vendor money target for this month. Empty when there are none. */
+            moneyTargets: components["schemas"]["MoneyTargetGlance"][];
         };
         TrendDay: {
             /** @example 2026-09-19 */
@@ -5862,6 +5920,26 @@ export interface components {
             category: components["schemas"]["TargetCategoryRef"];
             progress: components["schemas"]["TargetProgressView"];
         };
+        MoneyTargetWithProgress: {
+            /** Format: uuid */
+            id: string;
+            supplier: components["schemas"]["TargetSupplierRef"];
+            /** Format: date-time */
+            periodStart: string;
+            /** @description The target in kobo — before VAT when `addsVat`. */
+            amount: number;
+            /** @description The vendor adds 7.5% VAT on top of their invoices, so invoices count without it. */
+            addsVat: boolean;
+            note: string | null;
+            /** @description Goods received from the vendor this month, at invoice value, in kobo. */
+            invoiced: number;
+            /** @description What counts toward the target: `invoiced`, less VAT when the vendor adds it. */
+            counted: number;
+            /** @description Never negative. */
+            remaining: number;
+            /** @description In basis points; over 10,000 once beaten. */
+            achievedBps: number;
+        };
         PurchaseTargetReportView: {
             /**
              * Format: date-time
@@ -5875,6 +5953,8 @@ export interface components {
             periodEnd: string;
             /** @description Always present, and empty when nothing was quotaed for the month — which is the common case, and not an error. */
             targets: components["schemas"]["PurchaseTargetWithProgress"][];
+            /** @description Each vendor’s money target for the month, if it has one. */
+            moneyTargets: components["schemas"]["MoneyTargetWithProgress"][];
         };
         CreatePurchaseTargetDto: {
             /**
@@ -5912,6 +5992,42 @@ export interface components {
              */
             targetCartons?: number;
             /** @description An empty string clears it; leaving it out leaves it alone. */
+            note?: string;
+        };
+        CreateMoneyTargetDto: {
+            /**
+             * Format: uuid
+             * @description Optional client-supplied id.
+             */
+            id?: string;
+            /** Format: uuid */
+            supplierId: string;
+            /**
+             * Format: date-time
+             * @description Any instant inside the target month. Snapped to the first of that month in the organization’s timezone, as a carton target is.
+             */
+            period: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 1200000000
+             */
+            amount: number;
+            /**
+             * @description The vendor adds 7.5% VAT on top of their invoices, so the target is before VAT and invoices count without it.
+             * @default true
+             */
+            addsVat: boolean;
+            /** @example Agreed with the area rep. */
+            note?: string;
+        };
+        UpdateMoneyTargetDto: {
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 1200000000
+             */
+            amount?: number;
+            addsVat?: boolean;
+            /** @description Send an empty string to clear it. */
             note?: string;
         };
         OrganizationView: {
@@ -9406,6 +9522,74 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PurchaseTargetView"];
                 };
+            };
+        };
+    };
+    PurchaseTargetController_createMoney: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original target. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMoneyTargetDto"];
+            };
+        };
+        responses: {
+            /** @description The new target’s id. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PurchaseTargetController_removeMoney: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PurchaseTargetController_updateMoney: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMoneyTargetDto"];
+            };
+        };
+        responses: {
+            /** @description The target’s id. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

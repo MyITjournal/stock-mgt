@@ -388,6 +388,32 @@ class TargetGlance {
   achievedBps!: number;
 }
 
+/** One vendor's money target this month, for a doughnut. */
+class MoneyTargetGlance {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Unilever' })
+  supplier!: string;
+
+  @ApiProperty({
+    description: 'The target, in kobo — before VAT when addsVat.',
+  })
+  amount!: number;
+
+  @ApiProperty()
+  addsVat!: boolean;
+
+  @ApiProperty({ description: 'What counts so far, in kobo.' })
+  counted!: number;
+
+  @ApiProperty({ description: 'In kobo; never negative.' })
+  remaining!: number;
+
+  @ApiProperty({ description: 'Basis points of the target.' })
+  achievedBps!: number;
+}
+
 class PurchasingSummary {
   @ApiProperty({ type: () => PayablesSummary })
   payables!: PayablesSummary;
@@ -401,6 +427,13 @@ class PurchasingSummary {
       'Every vendor target for this month, in cartons. Empty when there are none.',
   })
   targets!: TargetGlance[];
+
+  @ApiProperty({
+    type: () => [MoneyTargetGlance],
+    description:
+      'Every vendor money target for this month. Empty when there are none.',
+  })
+  moneyTargets!: MoneyTargetGlance[];
 }
 
 class TrendDay {

@@ -793,36 +793,37 @@ model Organization {
   memberships   Membership[]
   refreshTokens RefreshToken[]
 
-  categories        Category[]
-  packagingTypes    PackagingType[]
-  products          Product[]
-  productUnits      ProductUnit[]
-  priceTiers        PriceTier[]
-  productPrices     ProductPrice[]
-  customers         Customer[]
-  sales             Sale[]
-  saleLines         SaleLine[]
-  saleReturns       SaleReturn[]
-  payments          Payment[]
-  allocations       PaymentAllocation[]
-  expenses          Expense[]
-  expenseCategories ExpenseCategory[]
-  stocktakes        Stocktake[]
-  stocktakeLines    StocktakeLine[]
-  barcodes          ProductBarcode[]
-  idempotencyKeys   IdempotencyKey[]
-  locations         Location[]
-  suppliers         Supplier[]
-  stockBatches      StockBatch[]
-  stockMovements    StockMovement[]
-  stockBalances     StockBalance[]
-  goodsReceipts     GoodsReceipt[]
-  goodsReceiptLines GoodsReceiptLine[]
-  purchaseTargets   PurchaseTarget[]
-  bankAccounts      BankAccount[]
-  supplierBills     SupplierBill[]
-  supplierPayments  SupplierPayment[]
-  vendorRebates     VendorRebate[]
+  categories         Category[]
+  packagingTypes     PackagingType[]
+  products           Product[]
+  productUnits       ProductUnit[]
+  priceTiers         PriceTier[]
+  productPrices      ProductPrice[]
+  customers          Customer[]
+  sales              Sale[]
+  saleLines          SaleLine[]
+  saleReturns        SaleReturn[]
+  payments           Payment[]
+  allocations        PaymentAllocation[]
+  expenses           Expense[]
+  expenseCategories  ExpenseCategory[]
+  stocktakes         Stocktake[]
+  stocktakeLines     StocktakeLine[]
+  barcodes           ProductBarcode[]
+  idempotencyKeys    IdempotencyKey[]
+  locations          Location[]
+  suppliers          Supplier[]
+  stockBatches       StockBatch[]
+  stockMovements     StockMovement[]
+  stockBalances      StockBalance[]
+  goodsReceipts      GoodsReceipt[]
+  goodsReceiptLines  GoodsReceiptLine[]
+  purchaseTargets    PurchaseTarget[]
+  bankAccounts       BankAccount[]
+  supplierBills      SupplierBill[]
+  supplierPayments   SupplierPayment[]
+  vendorRebates      VendorRebate[]
+  vendorMoneyTargets VendorMoneyTarget[]
 
   @@map("organizations")
 }
@@ -1045,7 +1046,7 @@ model Supplier {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   batches         StockBatch[]
   goodsReceipts   GoodsReceipt[]
   expenses        Expense[]
@@ -1053,6 +1054,7 @@ model Supplier {
   bills           SupplierBill[]
   payments        SupplierPayment[]
   rebates         VendorRebate[]
+  moneyTargets    VendorMoneyTarget[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -1652,4 +1654,40 @@ model VendorRebate {
   @@index([billId])
   @@index([organizationId, creditedAt])
   @@map("vendor_rebates")
+}
+
+/// What a vendor expects bought from them in a month, in money — "₦12M this
+/// month" — beside the carton targets, which are per category.
+///
+/// One figure per vendor per month. Progress is the invoice value of the goods
+/// **received** from them that month (`GoodsReceiptLine.totalCost`, exact), so
+/// free goods add nothing. Many vendors quote the target **before VAT** and add
+/// 7.5% on top of their invoices, so ₦12M of target is ₦12.9M of invoices;
+/// `addsVat` says this vendor does, and progress then counts each invoice
+/// without its VAT. Not every vendor does, which is why it is a choice.
+model VendorMoneyTarget {
+  id             String @id @default(uuid())
+  organizationId String
+  supplierId     String
+
+  /// First instant of the month, in the organization's timezone.
+  periodStart DateTime
+
+  /// The target, in kobo — before VAT when `addsVat`.
+  amount  Int
+  /// The vendor adds 7.5% VAT on top of their invoices, so the target is
+  /// before VAT and invoices are counted without it.
+  addsVat Boolean @default(true)
+  note    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  /// One per vendor per month.
+  @@unique([organizationId, supplierId, periodStart])
+  @@index([organizationId])
+  @@map("vendor_money_targets")
 }
