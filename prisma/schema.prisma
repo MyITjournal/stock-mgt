@@ -600,6 +600,11 @@ model ExpenseCategory {
   description    String?
   /// Display order in pickers; ties break on name.
   sortOrder      Int     @default(0)
+  /// The one category the Salaries screen records into (2026-10-06). Exactly
+  /// one per shop, seeded with it and never deletable; the Expenses screen
+  /// leaves it out, and profit reports it on its own line. Salaries are still
+  /// an expense — leaving them out of profit would overstate it.
+  isSalaries     Boolean @default(false)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -630,8 +635,15 @@ model Expense {
 
   method PaymentMethod @default(cash)
 
-  /// Who was paid, when it happens to be a supplier already on file.
+  /// Who was paid, when it happens to be a supplier already on file. No longer
+  /// asked by the dashboard — vendors are paid through bills — but kept for the
+  /// rows that have it.
   supplierId String?
+
+  /// Who received the money, as typed: the landlord, the mechanic, a member
+  /// of staff. Required on every new expense (2026-10-06); null only on rows
+  /// from before, where no supplier was named either.
+  paidTo String?
 
   reference String?
   note      String?

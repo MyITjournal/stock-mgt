@@ -636,6 +636,12 @@ Four from 7.4:
   the one write each side has.
 - **A supplier payment is never an `Expense`.** Stock already reaches profit through cost of goods
   sold, so recording it twice understates every margin. The expense form says so on screen.
+- **"Paid to" is a required typed name, and salaries have their own tab** (§11, 2026-10-06).
+  `Expense.paidTo` replaced a vendor pick defaulting to "Nobody in particular". *Money → Salaries*
+  records into the shop's one `ExpenseCategory` with `isSalaries` (seeded, backfilled, **never
+  deletable**); `GET /expenses?kind=salaries|other` splits the lists. **Salaries stay an expense**
+  — profit reports `salaries` and `otherExpenses` (summing to `expenses`) on separate lines and
+  still subtracts both. No payslips, deductions or dividends.
 
 And four from 7.5b, in `web/src/stock/`:
 

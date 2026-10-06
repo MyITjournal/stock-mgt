@@ -34,6 +34,12 @@ export class ExpenseCategoryView {
   @ApiProperty()
   sortOrder!: number;
 
+  @ApiProperty({
+    description:
+      'The one category the Salaries screen records into. Never deletable; the Expenses screen leaves it out, and profit shows it on its own line.',
+  })
+  isSalaries!: boolean;
+
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: Date;
 
@@ -50,6 +56,9 @@ class CategoryRef {
 
   @ApiProperty({ example: 'Fuel' })
   name!: string;
+
+  @ApiProperty()
+  isSalaries!: boolean;
 }
 
 class SupplierRef {
@@ -95,6 +104,15 @@ export class ExpenseView {
       'Who the money went to, for attribution only. **Not** a way to settle a supplier bill — that is `POST /supplier-payments`, and recording it here instead would count the same money twice (§16).',
   })
   supplierId!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: 'Mr Okafor (landlord)',
+    description:
+      'Who received the money, as typed. Required on every new expense; null only on rows recorded before it was asked.',
+  })
+  paidTo!: string | null;
 
   @ApiProperty({ type: String, nullable: true })
   reference!: string | null;

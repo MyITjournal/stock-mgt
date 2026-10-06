@@ -115,3 +115,31 @@ describe('ExpenseCategoryService', () => {
     );
   });
 });
+
+describe('the salaries category', () => {
+  it('is seeded, and is the only one marked as salaries', () => {
+    const marked = defaultExpenseCategoryRows(ORG).filter(
+      (row) => row.isSalaries,
+    );
+    expect(marked.map((row) => row.name)).toEqual(['salaries']);
+  });
+
+  it('cannot be removed — the Salaries screen records into it', async () => {
+    const prisma = {
+      expenseCategory: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'salaries-1', isSalaries: true }),
+        update: jest.fn(),
+      },
+    };
+    const service = new ExpenseCategoryService(prisma as never);
+
+    await expect(
+      TenantContext.run({ organizationId: ORG, orgRole: OrgRole.owner }, () =>
+        service.remove('salaries-1'),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.expenseCategory.update).not.toHaveBeenCalled();
+  });
+});

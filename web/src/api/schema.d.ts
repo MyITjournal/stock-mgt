@@ -5366,6 +5366,7 @@ export interface components {
             id: string;
             /** @example Fuel */
             name: string;
+            isSalaries: boolean;
         };
         SupplierRef: {
             /** Format: uuid */
@@ -5390,6 +5391,11 @@ export interface components {
              * @description Who the money went to, for attribution only. **Not** a way to settle a supplier bill — that is `POST /supplier-payments`, and recording it here instead would count the same money twice (§16).
              */
             supplierId: string | null;
+            /**
+             * @description Who received the money, as typed. Required on every new expense; null only on rows recorded before it was asked.
+             * @example Mr Okafor (landlord)
+             */
+            paidTo: string | null;
             reference: string | null;
             note: string | null;
             /** Format: date-time */
@@ -5443,9 +5449,11 @@ export interface components {
              * @enum {string}
              */
             method: "cash" | "transfer" | "pos" | "cheque";
+            /** @example Mr Okafor (landlord) */
+            paidTo: string;
             /**
              * Format: uuid
-             * @description Who was paid, when it happens to be a supplier on file.
+             * @description Who was paid, when it happens to be a supplier on file. Kept for older clients; the dashboard asks for `paidTo` instead.
              */
             supplierId?: string;
             /** @example Receipt 4471 */
@@ -5476,9 +5484,11 @@ export interface components {
              * @enum {string}
              */
             method: "cash" | "transfer" | "pos" | "cheque";
+            /** @example Mr Okafor (landlord) */
+            paidTo?: string;
             /**
              * Format: uuid
-             * @description Who was paid, when it happens to be a supplier on file.
+             * @description Who was paid, when it happens to be a supplier on file. Kept for older clients; the dashboard asks for `paidTo` instead.
              */
             supplierId?: string;
             /** @example Receipt 4471 */
@@ -5500,6 +5510,8 @@ export interface components {
             name: string;
             description: string | null;
             sortOrder: number;
+            /** @description The one category the Salaries screen records into. Never deletable; the Expenses screen leaves it out, and profit shows it on its own line. */
+            isSalaries: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -5794,8 +5806,12 @@ export interface components {
             grossProfit: number;
             /** @description Vendor rebates credited on bills dated in the window — credit a vendor took off a bill because a month’s buying earned it. Its own line: not revenue, and not taken off cost of goods. */
             vendorRebates: number;
-            /** @description Expenses recorded in the window. */
+            /** @description Every expense recorded in the window, salaries included: `salaries + otherExpenses`. */
             expenses: number;
+            /** @description Pay to staff, recorded on the Salaries screen. Its own line, and still part of `expenses` — leaving it out would overstate profit. */
+            salaries: number;
+            /** @description Every other expense: rent, fuel, the generator. */
+            otherExpenses: number;
             /** @description `grossProfit + vendorRebates − expenses`. */
             operatingProfit: number;
             /** @description Gross margin in basis points. 250 is 2.5%. */
@@ -9163,6 +9179,8 @@ export interface operations {
         parameters: {
             query?: {
                 categoryId?: string;
+                /** @description `salaries` for the Salaries screen, `other` for everything else. Omitted, both — totals then include salaries, as profit does. */
+                kind?: "salaries" | "other";
                 /** @description ISO date-time. */
                 from?: string;
                 /** @description ISO date-time. */

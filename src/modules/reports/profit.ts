@@ -60,7 +60,16 @@ export interface Profit {
    * worth to the business stays visible.
    */
   vendorRebates: Minor;
+  /** Every expense, salaries included: `salaries + otherExpenses`. */
   expenses: Minor;
+  /**
+   * Pay to staff, on its own line (2026-10-06) — still part of `expenses` and
+   * still taken off profit, because a month that paid ₦300,000 in wages did not
+   * make that ₦300,000.
+   */
+  salaries: Minor;
+  /** Everything else: rent, fuel, the generator. */
+  otherExpenses: Minor;
   /** `grossProfit + vendorRebates − expenses`. */
   operatingProfit: Minor;
   /** Gross margin in basis points, so it stays an integer (750 = 7.5%). */
@@ -70,7 +79,8 @@ export interface Profit {
 export function computeProfit(input: {
   sales: readonly SoldInPeriod[];
   returns: readonly ReturnedInPeriod[];
-  expenses: readonly { amount: Minor }[];
+  /** `isSalary` from the category's `isSalaries`; absent means not. */
+  expenses: readonly { amount: Minor; isSalary?: boolean }[];
   rebates: readonly { creditedAmount: Minor | null }[];
 }): Profit {
   const grossSales = sum(input.sales.map((sale) => sale.total));
@@ -90,7 +100,13 @@ export function computeProfit(input: {
   const revenue = grossSales - salesTax - (returned - returnedTax);
   const cogs = soldCost - returnedCost;
   const grossProfit = revenue - cogs;
-  const expenses = sum(input.expenses.map((row) => row.amount));
+  const salaries = sum(
+    input.expenses.filter((row) => row.isSalary).map((row) => row.amount),
+  );
+  const otherExpenses = sum(
+    input.expenses.filter((row) => !row.isSalary).map((row) => row.amount),
+  );
+  const expenses = salaries + otherExpenses;
   const vendorRebates = sum(
     input.rebates.map((row) => row.creditedAmount ?? 0),
   );
@@ -104,6 +120,8 @@ export function computeProfit(input: {
     grossProfit,
     vendorRebates,
     expenses,
+    salaries,
+    otherExpenses,
     operatingProfit: grossProfit + vendorRebates - expenses,
     marginBps: marginBps(grossProfit, revenue),
   };

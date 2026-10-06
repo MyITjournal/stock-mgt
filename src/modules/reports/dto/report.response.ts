@@ -99,8 +99,22 @@ export class ProfitReportView {
   })
   vendorRebates!: number;
 
-  @ApiProperty({ description: 'Expenses recorded in the window.' })
+  @ApiProperty({
+    description:
+      'Every expense recorded in the window, salaries included: `salaries + otherExpenses`.',
+  })
   expenses!: number;
+
+  @ApiProperty({
+    description:
+      'Pay to staff, recorded on the Salaries screen. Its own line, and still part of `expenses` — leaving it out would overstate profit.',
+  })
+  salaries!: number;
+
+  @ApiProperty({
+    description: 'Every other expense: rent, fuel, the generator.',
+  })
+  otherExpenses!: number;
 
   @ApiProperty({ description: '`grossProfit + vendorRebates − expenses`.' })
   operatingProfit!: number;

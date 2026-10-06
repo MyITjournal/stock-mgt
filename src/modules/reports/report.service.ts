@@ -162,7 +162,7 @@ export class ReportService {
       }),
       this.prisma.expense.findMany({
         where: { deletedAt: null, occurredAt: window },
-        select: { amount: true },
+        select: { amount: true, category: { select: { isSalaries: true } } },
       }),
       // Credited in the window — the month the credit landed on a bill.
       this.prisma.vendorRebate.findMany({
@@ -178,7 +178,10 @@ export class ReportService {
         costAmount: row.costAmount,
         taxRateBps: row.saleLine.taxRateBps,
       })),
-      expenses,
+      expenses: expenses.map((row) => ({
+        amount: row.amount,
+        isSalary: row.category.isSalaries,
+      })),
       rebates,
     });
 

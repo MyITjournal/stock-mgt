@@ -59,6 +59,21 @@ describe('computeProfit', () => {
     expect(grossProfit).toBe(revenue - cogs);
   });
 
+  it('shows salaries on their own line, and still takes them off profit', () => {
+    const result = computeProfit({
+      ...nothing,
+      expenses: [
+        { amount: 3_000_000, isSalary: true },
+        { amount: 500_000 },
+        { amount: 200_000, isSalary: false },
+      ],
+    });
+    expect(result.salaries).toBe(3_000_000);
+    expect(result.otherExpenses).toBe(700_000);
+    expect(result.expenses).toBe(3_700_000);
+    expect(result.operatingProfit).toBe(-3_700_000);
+  });
+
   it('subtracts expenses to get the operating figure', () => {
     const result = computeProfit({
       ...nothing,

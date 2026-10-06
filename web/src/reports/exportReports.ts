@@ -46,7 +46,8 @@ export function exportProfit(data: S['ProfitReportView']) {
     { label: 'Gross profit', value: data.grossProfit, kind: 'money' },
     { label: 'Margin', value: data.marginBps, kind: 'percent' },
     { label: 'Plus vendor rebates', value: data.vendorRebates, kind: 'money' },
-    { label: 'Less expenses', value: -data.expenses, kind: 'money' },
+    { label: 'Less salaries', value: -data.salaries, kind: 'money' },
+    { label: 'Less other expenses', value: -data.otherExpenses, kind: 'money' },
     { label: 'After expenses', value: data.operatingProfit, kind: 'money' },
     {
       label: 'Of the cost of goods, estimated',

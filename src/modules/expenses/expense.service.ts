@@ -19,6 +19,12 @@ const MAX_PAGE = 500;
 
 export interface ExpenseQuery {
   categoryId?: string;
+  /**
+   * `salaries` for the Salaries screen, `other` for the Expenses screen;
+   * omitted, everything — which is what a syncing device and the profit
+   * report want.
+   */
+  kind?: 'salaries' | 'other';
   from?: Date;
   to?: Date;
   /** Sync mode: page by `updatedAt` from here. */
@@ -30,7 +36,7 @@ export interface ExpenseQuery {
 }
 
 const EXPENSE_INCLUDE = {
-  category: { select: { id: true, name: true } },
+  category: { select: { id: true, name: true, isSalaries: true } },
   supplier: { select: { id: true, name: true } },
   recordedBy: { select: { id: true, firstName: true, lastName: true } },
 } as const;
@@ -62,6 +68,7 @@ export class ExpenseService {
         amount: input.amount,
         method: input.method ?? PaymentMethod.cash,
         supplierId: input.supplierId ?? null,
+        paidTo: input.paidTo,
         reference: input.reference ?? null,
         note: input.note ?? null,
         occurredAt: input.occurredAt ? new Date(input.occurredAt) : new Date(),
@@ -100,6 +107,9 @@ export class ExpenseService {
     const scope = {
       ...(!filter.includeDeleted && { deletedAt: null }),
       ...(filter.categoryId && { categoryId: filter.categoryId }),
+      ...(filter.kind && {
+        category: { isSalaries: filter.kind === 'salaries' },
+      }),
       ...((filter.from || filter.to) && {
         occurredAt: {
           ...(filter.from && { gte: filter.from }),
@@ -183,6 +193,7 @@ export class ExpenseService {
         ...(input.amount !== undefined && { amount: input.amount }),
         ...(input.method !== undefined && { method: input.method }),
         ...(input.supplierId !== undefined && { supplierId: input.supplierId }),
+        ...(input.paidTo !== undefined && { paidTo: input.paidTo }),
         ...(input.reference !== undefined && { reference: input.reference }),
         ...(input.note !== undefined && { note: input.note }),
         ...(input.occurredAt !== undefined && {

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -54,6 +55,13 @@ export class ExpenseController {
   @Get()
   @Roles(...SPENDERS)
   @ApiQuery({ name: 'categoryId', required: false })
+  @ApiQuery({
+    name: 'kind',
+    required: false,
+    enum: ['salaries', 'other'],
+    description:
+      '`salaries` for the Salaries screen, `other` for everything else. Omitted, both — totals then include salaries, as profit does.',
+  })
   @ApiQuery({ name: 'from', required: false, description: 'ISO date-time.' })
   @ApiQuery({ name: 'to', required: false, description: 'ISO date-time.' })
   @ApiQuery({
@@ -82,6 +90,7 @@ export class ExpenseController {
   @ApiOkResponse({ type: ExpenseListView })
   findAll(
     @Query('categoryId') categoryId?: string,
+    @Query('kind') kind?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('since') since?: string,
@@ -89,8 +98,12 @@ export class ExpenseController {
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
     @Query('includeDeleted') includeDeleted?: string,
   ) {
+    if (kind !== undefined && kind !== 'salaries' && kind !== 'other') {
+      throw new BadRequestException('kind is salaries or other.');
+    }
     return this.expenses.findAll({
       categoryId,
+      kind,
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,
       since: since ? new Date(since) : undefined,

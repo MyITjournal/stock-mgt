@@ -20,7 +20,7 @@ import { PaymentsPage } from './money/PaymentsPage';
 import { BankAccountsPage } from './money/BankAccountsPage';
 import { PayablesPage } from './money/PayablesPage';
 import { SupplierPaymentsPage } from './money/SupplierPaymentsPage';
-import { ExpensesPage } from './money/ExpensesPage';
+import { ExpensesPage, SalariesPage } from './money/ExpensesPage';
 import { StockLayout } from './catalog/StockLayout';
 import { ProductsPage } from './catalog/ProductsPage';
 import { ImportProductsPage } from './catalog/ImportProductsPage';
@@ -106,6 +106,7 @@ export default function App() {
                     <Route path="payables" element={<PayablesPage />} />
                     <Route path="paid" element={<SupplierPaymentsPage />} />
                     <Route path="expenses" element={<ExpensesPage />} />
+                    <Route path="salaries" element={<SalariesPage />} />
                     <Route path="accounts" element={<BankAccountsPage />} />
                   </Route>
                   <Route path="stock" element={<StockLayout />}>

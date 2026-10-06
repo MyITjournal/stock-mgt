@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { PaymentMethod } from '@prisma/client';
+import { Transform } from 'class-transformer';
 import {
   IsDateString,
   IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -33,9 +35,25 @@ export class CreateExpenseDto {
   @IsEnum(PaymentMethod)
   method?: PaymentMethod;
 
+  /**
+   * Required, and typed (2026-10-06): the landlord, the mechanic, a member of
+   * staff. "Nobody in particular" was the default and told nobody anything.
+   * Vendors are not picked here — paying a vendor for stock is a bill, never
+   * an expense (§16).
+   */
+  @ApiProperty({ example: 'Mr Okafor (landlord)', maxLength: 120 })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty({ message: 'Say who was paid.' })
+  @MaxLength(120)
+  paidTo!: string;
+
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'Who was paid, when it happens to be a supplier on file.',
+    description:
+      'Who was paid, when it happens to be a supplier on file. Kept for older clients; the dashboard asks for `paidTo` instead.',
   })
   @IsOptional()
   @IsUUID()
