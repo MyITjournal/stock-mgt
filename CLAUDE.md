@@ -823,9 +823,23 @@ non-integer into the ledger smoke's sum-check depends on. Full reasoning in §15
 
 The real case this meets is **buying**: "half a slot" means paying for 9.5 cartons and receiving
 10. That works today by entering the line in **pieces** — the same rows are stored either way,
-since a receipt line keeps base units. The only open question (§18) is whether the form should
-accept `9.5` against *carton* and do the multiplication itself, refusing when it does not divide
-whole. `0.5 × 19` has no answer in whole pieces, and that refusal is the point.
+since a receipt line keeps base units. **Answered 2026-10-06: the delivery form and the correction
+form now accept `6.5` against *carton*** and send the whole number of base units it is
+(`toWholeBaseUnits`, `web/src/lib/decimalQuantity.ts`, read as a decimal string, never a float),
+refusing when it does not divide whole. `0.5 × 19` has no answer in whole pieces, and that refusal
+is the point. The ledger still never sees a fraction.
+
+**A recorded delivery is corrected, never edited** (§5, 2026-10-06): *Deliveries → open one →
+Correct this delivery*, `POST /goods-receipts/:id/corrections` (owner/manager), as many times as
+needed. Each line takes its **true** received, paid-for and invoice value; the stock difference is a
+`receipt_correction` movement on **the line's own lot**, dated the delivery's day; the lot and line
+take the true figures (so value, cost of later sales, purchases and both kinds of vendor target read
+right — sales already made keep their cost); **the bill moves by the change in value**, never below
+what was paid or credited; and a `GoodsReceiptCorrection` keeps what the figures were before, who,
+when and why. **`/corrections/preview` runs the real correction and rolls it back**, so the
+preview meets every check the save does and the browser computes no money. A line is shown in the
+biggest of the product's own units both figures are whole in (`displayUnit`), so 6½ cartons reads
+as pieces and 7 reads as cartons again. A corrected line keeps at least one piece received.
 
 **When a demo org looks wrong, add the movement that fixes it.** The slice walkthroughs force sales
 past the ledger to test the override, which leaves stock negative. Put it right with a **goods

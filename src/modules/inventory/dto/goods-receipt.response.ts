@@ -293,4 +293,99 @@ export class GoodsReceiptView {
 
   @ApiProperty({ type: () => [GoodsReceiptLineView] })
   lines!: GoodsReceiptLineView[];
+
+  @ApiPropertyOptional({
+    type: () => [ReceiptCorrectionView],
+    description:
+      'Every correction made to it, oldest first, with the figures as they were before. Present on a single delivery read.',
+  })
+  corrections?: ReceiptCorrectionView[];
+}
+
+/** One delivery line's figures before and after a correction. */
+class ReceiptCorrectionLineView {
+  @ApiProperty({ format: 'uuid' })
+  receiptLineId!: string;
+
+  @ApiProperty({ description: 'Base units.' })
+  receivedBefore!: number;
+
+  @ApiProperty()
+  receivedAfter!: number;
+
+  @ApiProperty()
+  paidForBefore!: number;
+
+  @ApiProperty()
+  paidForAfter!: number;
+
+  @ApiPropertyOptional({
+    description: 'Kobo. Absent for roles that may not see cost.',
+  })
+  totalCostBefore?: number;
+
+  @ApiPropertyOptional()
+  totalCostAfter?: number;
+}
+
+/** A correction to a recorded delivery: why, who, when, and what changed. */
+class ReceiptCorrectionView {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty()
+  reason!: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt!: Date;
+
+  @ApiProperty({ type: () => ReceiptRecorderRef, nullable: true })
+  recordedBy!: ReceiptRecorderRef | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'The bill before, in kobo; null when it did not move.',
+  })
+  billAmountBefore?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  billAmountAfter?: number | null;
+
+  @ApiProperty({ type: () => [ReceiptCorrectionLineView] })
+  lines!: ReceiptCorrectionLineView[];
+}
+
+/** One line of a correction preview: how stock would move. */
+class CorrectionPreviewLine {
+  @ApiProperty({ format: 'uuid' })
+  lineId!: string;
+
+  @ApiProperty({
+    description: 'Base units; negative when fewer arrived than were recorded.',
+  })
+  stockDelta!: number;
+}
+
+/** What a correction would do, worked out by doing it and rolling back. */
+export class CorrectionPreviewView {
+  @ApiProperty({ description: 'The change in the delivery’s value, in kobo.' })
+  valueDelta!: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'The bill now, in kobo. Null when the delivery has no bill.',
+  })
+  billAmountBefore!: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'The bill after the correction, in kobo.',
+  })
+  billAmountAfter!: number | null;
+
+  @ApiProperty({ type: () => [CorrectionPreviewLine] })
+  lines!: CorrectionPreviewLine[];
 }

@@ -827,6 +827,41 @@ anything down.
   out would be a second, rounder valuation; the Stock report's download is the server's, from lot
   totals rounded once (§2).
 
+### A delivery is corrected, never edited (2026-10-06)
+
+Found in real use: 7 cartons recorded when 6½ arrived, 6 of them paid for. Nothing could put it
+right — receipts were create-only — and the wrong count also put the wrong cost on the lot (the
+value of 84 spread over 91 pieces, or the reverse).
+
+- **The person states the truth, not a difference**: each line's received and paid for (any unit,
+  decimals where they come to whole pieces) and the invoice value. `planCorrection` (pure) works
+  out what moves; a correction that changes nothing is refused.
+- **Stock moves on the line's own lot**, as a `receipt_correction` adjustment — out when fewer
+  arrived, in when more did — dated the delivery's `receivedAt`, so a month's purchases and vendor
+  targets read the corrected figures while `createdAt` says when it was fixed. Fewer than have
+  already been sold from that lot is the usual 409, overridable by an owner or manager with a reason.
+- **The lot and the line take the true figures.** Lots are not the ledger — movements are — and a lot
+  is *what arrived and what it cost*; correcting a fact about it is what makes stock value and the
+  cost of later sales right. Sales already made keep their snapshot cost (§6). `Product.costPrice`
+  is refreshed only if the line is still the product's latest delivery.
+- **The bill moves by the change in value**, in the same transaction, refused if it would drop below
+  what has been paid or credited against it — void the excess payment first.
+- **History is kept**: `GoodsReceiptCorrection` (reason, who, when, bill before and after) and a
+  line each with received / paid for / value before and after. The delivery page lists them; values
+  are redacted like every other cost for a role that may not see cost. Any number of corrections.
+- **The preview is the real thing rolled back.** `/corrections/preview` runs the whole transaction
+  and throws a `RolledBack` carrying the result, so it meets every refusal the save would — the
+  stock 409 included — and the dashboard shows the bill before and after without computing money.
+- **Which unit the line shows in** is the biggest of the product's own units both figures are whole
+  in, portions skipped (`displayUnit`) — chosen from the product, so a line corrected to pieces and
+  back returns to cartons. Smoke caught the first version keeping a line in pieces forever.
+- **A corrected line keeps at least one piece.** Several readers divide by a lot's
+  `quantityReceived`; a line that never arrived at all is left for later.
+
+⚠ **The trap hit verifying it**: a smoke check read `/stock/movements` the sync way (`asc`), which
+holds back the last second, and the correction movements were that recent — the ledger looked 168
+short. Browsing reads use `order=desc` (§8); a check right after a write must too.
+
 ### Opening stock is an opening balance, never a delivery (2026-10-05)
 
 `GET`/`POST /stock/opening` (owner/manager) and *Stock on hand → Opening stock*. The gap it
@@ -3636,12 +3671,9 @@ clean auto-merge would have produced valid, compiling, wrong code.
 
 ### Open, and deliberately not done
 
-- **A decimal quantity in a larger unit.** Buying "half a slot" means paying for 9.5 cartons and
-  receiving 10. Entering the line in **pieces** already works and stores the same rows, so the
-  only question is who does the multiplication. The proposal is to let a decimal be typed against
-  any unit, convert in the browser, show the base-unit result and refuse when it does not divide
-  whole — `0.5 × 19` has no answer in whole pieces. **No schema change**: the line still records
-  base units, which is what makes the ledger's sum-check possible (§15).
+- ~~**A decimal quantity in a larger unit.**~~ **Done 2026-10-06** with delivery corrections (§5):
+  the delivery and correction forms take `6.5` against a carton and send the whole number of base
+  units it is, refusing when it does not divide whole. No schema change, as proposed.
 
 ### Still true
 

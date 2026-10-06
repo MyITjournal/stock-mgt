@@ -9,6 +9,7 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
+import { decimalDraft, toWholeBaseUnits } from '../lib/decimalQuantity';
 
 type ProductView = components['schemas']['ProductView'];
 type SupplierView = components['schemas']['SupplierView'];
@@ -28,6 +29,79 @@ interface DraftLine {
   totalCost: number | null;
   lotCode: string;
   expiryDate: string;
+}
+
+interface ReadLine {
+  /** What to send: the unit and whole counts in it. */
+  unitId?: string;
+  received: number;
+  paidFor?: number;
+  /** In base units, for the free-goods hint. */
+  freeBase: number;
+  baseName: string;
+  error?: string;
+}
+
+/**
+ * A line's quantities as they will be sent. Whole numbers go as typed, in the
+ * unit chosen. **A decimal — 6.5 cartons, "half a slot" — goes as the whole
+ * number of base units it is** (6.5 × 14 = 91 pieces), and one that is not
+ * whole in base units is refused with the reason (DECISIONS.md §15).
+ */
+function readLine(
+  line: DraftLine,
+  units: readonly { id: string; name: string; factor: number }[],
+): ReadLine | null {
+  if (line.quantityReceived === '') return null;
+  const base = units.find((unit) => unit.factor === 1);
+  const baseName = base?.name ?? 'pieces';
+  const unit = units.find((candidate) => candidate.id === line.unitId) ??
+    base ?? {
+      id: '',
+      name: baseName,
+      factor: 1,
+    };
+  const received = toWholeBaseUnits(
+    line.quantityReceived,
+    unit.factor,
+    unit.name,
+    baseName,
+  );
+  const paidText =
+    line.quantityPaidFor === '' ? line.quantityReceived : line.quantityPaidFor;
+  const paid = toWholeBaseUnits(paidText, unit.factor, unit.name, baseName);
+  if ('error' in received)
+    return { received: 0, freeBase: 0, baseName, error: received.error };
+  if ('error' in paid)
+    return { received: 0, freeBase: 0, baseName, error: paid.error };
+  if (paid.base > received.base) {
+    return {
+      received: 0,
+      freeBase: 0,
+      baseName,
+      error: 'More paid for than received.',
+    };
+  }
+
+  const whole =
+    received.base % unit.factor === 0 && paid.base % unit.factor === 0;
+  return whole
+    ? {
+        ...(line.unitId ? { unitId: line.unitId } : {}),
+        received: received.base / unit.factor,
+        ...(line.quantityPaidFor !== ''
+          ? { paidFor: paid.base / unit.factor }
+          : {}),
+        freeBase: received.base - paid.base,
+        baseName,
+      }
+    : {
+        ...(base ? { unitId: base.id } : {}),
+        received: received.base,
+        paidFor: paid.base,
+        freeBase: received.base - paid.base,
+        baseName,
+      };
 }
 
 function emptyLine(): DraftLine {
@@ -117,11 +191,19 @@ export function ReceiveDeliveryPage() {
       current.map((line) => (line.key === key ? { ...line, ...patch } : line)),
     );
 
-  const lineIsComplete = (line: DraftLine) =>
-    Boolean(line.productId) &&
-    Number.isInteger(Number(line.quantityReceived)) &&
-    Number(line.quantityReceived) > 0 &&
-    line.totalCost !== null;
+  const readOf = (line: DraftLine) =>
+    readLine(line, productById.get(line.productId)?.units ?? []);
+
+  const lineIsComplete = (line: DraftLine) => {
+    const read = readOf(line);
+    return (
+      Boolean(line.productId) &&
+      read !== null &&
+      !read.error &&
+      read.received > 0 &&
+      line.totalCost !== null
+    );
+  };
 
   const complete = lines.filter(lineIsComplete);
   const goodsTotal = complete.reduce(
@@ -136,8 +218,12 @@ export function ReceiveDeliveryPage() {
         id: receiptId,
         supplierId,
         ...(locationId ? { locationId } : {}),
-        ...(invoiceNumber.trim() ? { invoiceNumber: invoiceNumber.trim() } : {}),
-        ...(receivedAt ? { receivedAt: new Date(receivedAt).toISOString() } : {}),
+        ...(invoiceNumber.trim()
+          ? { invoiceNumber: invoiceNumber.trim() }
+          : {}),
+        ...(receivedAt
+          ? { receivedAt: new Date(receivedAt).toISOString() }
+          : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
         ...(settlesDeliveries && amountDue !== null ? { amountDue } : {}),
         ...(settlesDeliveries && paying && paidAmount
@@ -151,14 +237,14 @@ export function ReceiveDeliveryPage() {
             }
           : {}),
         lines: complete.map((line) => {
-          const paidFor = Number(line.quantityPaidFor);
+          const read = readOf(line)!;
           return {
             id: line.key,
             productId: line.productId,
-            ...(line.unitId ? { unitId: line.unitId } : {}),
-            quantityReceived: Number(line.quantityReceived),
-            ...(line.quantityPaidFor !== '' && Number.isInteger(paidFor)
-              ? { quantityPaidFor: paidFor }
+            ...(read.unitId ? { unitId: read.unitId } : {}),
+            quantityReceived: read.received,
+            ...(read.paidFor !== undefined
+              ? { quantityPaidFor: read.paidFor }
               : {}),
             totalCost: line.totalCost,
             ...(line.lotCode.trim() ? { lotCode: line.lotCode.trim() } : {}),
@@ -285,15 +371,8 @@ export function ReceiveDeliveryPage() {
             {lines.map((line, index) => {
               const product = productById.get(line.productId);
               const units = product?.units ?? [];
-              const received = Number(line.quantityReceived);
-              const paidFor =
-                line.quantityPaidFor === ''
-                  ? received
-                  : Number(line.quantityPaidFor);
-              const free =
-                Number.isInteger(received) && Number.isInteger(paidFor)
-                  ? received - paidFor
-                  : 0;
+              const read = readLine(line, units);
+              const free = read && !read.error ? read.freeBase : 0;
 
               return (
                 <div key={line.key} className="p-4">
@@ -345,16 +424,16 @@ export function ReceiveDeliveryPage() {
                       <Field
                         label="Received"
                         htmlFor={`line-received-${index}`}
+                        error={read?.error}
                       >
                         <Input
                           id={`line-received-${index}`}
-                          inputMode="numeric"
+                          inputMode="decimal"
                           value={line.quantityReceived}
                           onChange={(event) =>
                             setLine(line.key, {
-                              quantityReceived: event.target.value.replace(
-                                /[^\d]/g,
-                                '',
+                              quantityReceived: decimalDraft(
+                                event.target.value,
                               ),
                             })
                           }
@@ -367,18 +446,19 @@ export function ReceiveDeliveryPage() {
                       <Field
                         label="Paid for"
                         htmlFor={`line-paid-${index}`}
-                        hint={free > 0 ? `${free} free` : undefined}
+                        hint={
+                          free > 0 && read
+                            ? `${free} ${read.baseName} free`
+                            : undefined
+                        }
                       >
                         <Input
                           id={`line-paid-${index}`}
-                          inputMode="numeric"
+                          inputMode="decimal"
                           value={line.quantityPaidFor}
                           onChange={(event) =>
                             setLine(line.key, {
-                              quantityPaidFor: event.target.value.replace(
-                                /[^\d]/g,
-                                '',
-                              ),
+                              quantityPaidFor: decimalDraft(event.target.value),
                             })
                           }
                           placeholder={line.quantityReceived || '20'}

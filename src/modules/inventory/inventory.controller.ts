@@ -42,6 +42,7 @@ import { LocationView } from './dto/location.response';
 import { SupplierView } from './dto/supplier.response';
 import {
   GoodsReceiptSummary,
+  CorrectionPreviewView,
   GoodsReceiptView,
 } from './dto/goods-receipt.response';
 import {
@@ -54,6 +55,8 @@ import {
   TransferResultView,
 } from './dto/stock.response';
 import { OpeningStockService } from './opening-stock.service';
+import { DeliveryCorrectionService } from './delivery-correction.service';
+import { CorrectDeliveryDto } from './dto/delivery-correction.dto';
 import { OpeningStockDto } from './dto/opening-stock.dto';
 import {
   OpeningStockProductView,
@@ -194,7 +197,45 @@ export class SupplierController {
 @ApiBearerAuth('JWT')
 @Controller('goods-receipts')
 export class GoodsReceiptController {
-  constructor(private readonly receiving: ReceivingService) {}
+  constructor(
+    private readonly receiving: ReceivingService,
+    private readonly corrections: DeliveryCorrectionService,
+  ) {}
+
+  @Post(':id/corrections/preview')
+  @Roles(...INVENTORY_EDITORS)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Preview a correction to a delivery',
+    description:
+      'Runs the correction and rolls it back, so it meets every check the real one does, and says how stock and the bill would move. Saves nothing.',
+  })
+  @ApiOkResponse({ type: CorrectionPreviewView })
+  previewCorrection(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectDeliveryDto,
+  ): Promise<CorrectionPreviewView> {
+    return this.corrections.preview(id, dto);
+  }
+
+  @Post(':id/corrections')
+  @Roles(...INVENTORY_EDITORS)
+  @HttpCode(HttpStatus.OK)
+  @Idempotent(
+    'A retry with the same key returns the original result instead of correcting twice.',
+  )
+  @ApiOperation({
+    summary: 'Correct a recorded delivery',
+    description:
+      'The true figures for the lines that were entered wrong — received and paid for in base units, the invoice value in kobo — and why. The stock difference is a movement on each line’s own lot, the lot and line take the true figures, the bill moves by the change in value, and the figures before are kept as a correction record. Sales already made keep their cost. Can be done any number of times. A 409 if fewer arrived than have already been sold from the delivery (an owner or manager may force it with a reason), or if the bill would drop below what has been paid against it.',
+  })
+  @ApiOkResponse({ type: GoodsReceiptView })
+  correct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectDeliveryDto,
+  ): Promise<GoodsReceiptView> {
+    return this.corrections.correct(id, dto);
+  }
 
   @Get()
   @ApiQuery({ name: 'supplierId', required: false })

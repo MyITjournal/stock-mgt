@@ -793,37 +793,39 @@ model Organization {
   memberships   Membership[]
   refreshTokens RefreshToken[]
 
-  categories         Category[]
-  packagingTypes     PackagingType[]
-  products           Product[]
-  productUnits       ProductUnit[]
-  priceTiers         PriceTier[]
-  productPrices      ProductPrice[]
-  customers          Customer[]
-  sales              Sale[]
-  saleLines          SaleLine[]
-  saleReturns        SaleReturn[]
-  payments           Payment[]
-  allocations        PaymentAllocation[]
-  expenses           Expense[]
-  expenseCategories  ExpenseCategory[]
-  stocktakes         Stocktake[]
-  stocktakeLines     StocktakeLine[]
-  barcodes           ProductBarcode[]
-  idempotencyKeys    IdempotencyKey[]
-  locations          Location[]
-  suppliers          Supplier[]
-  stockBatches       StockBatch[]
-  stockMovements     StockMovement[]
-  stockBalances      StockBalance[]
-  goodsReceipts      GoodsReceipt[]
-  goodsReceiptLines  GoodsReceiptLine[]
-  purchaseTargets    PurchaseTarget[]
-  bankAccounts       BankAccount[]
-  supplierBills      SupplierBill[]
-  supplierPayments   SupplierPayment[]
-  vendorRebates      VendorRebate[]
-  vendorMoneyTargets VendorMoneyTarget[]
+  categories                  Category[]
+  packagingTypes              PackagingType[]
+  products                    Product[]
+  productUnits                ProductUnit[]
+  priceTiers                  PriceTier[]
+  productPrices               ProductPrice[]
+  customers                   Customer[]
+  sales                       Sale[]
+  saleLines                   SaleLine[]
+  saleReturns                 SaleReturn[]
+  payments                    Payment[]
+  allocations                 PaymentAllocation[]
+  expenses                    Expense[]
+  expenseCategories           ExpenseCategory[]
+  stocktakes                  Stocktake[]
+  stocktakeLines              StocktakeLine[]
+  barcodes                    ProductBarcode[]
+  idempotencyKeys             IdempotencyKey[]
+  locations                   Location[]
+  suppliers                   Supplier[]
+  stockBatches                StockBatch[]
+  stockMovements              StockMovement[]
+  stockBalances               StockBalance[]
+  goodsReceipts               GoodsReceipt[]
+  goodsReceiptLines           GoodsReceiptLine[]
+  purchaseTargets             PurchaseTarget[]
+  bankAccounts                BankAccount[]
+  supplierBills               SupplierBill[]
+  supplierPayments            SupplierPayment[]
+  vendorRebates               VendorRebate[]
+  vendorMoneyTargets          VendorMoneyTarget[]
+  goodsReceiptCorrections     GoodsReceiptCorrection[]
+  goodsReceiptCorrectionLines GoodsReceiptCorrectionLine[]
 
   @@map("organizations")
 }
@@ -935,13 +937,14 @@ model User {
   stockMovements         StockMovement[]
   sales                  Sale[]
   saleReturns            SaleReturn[]
-  payments               Payment[]         @relation("PaymentRecordedBy")
-  voidedPayments         Payment[]         @relation("PaymentVoidedBy")
-  supplierBills          SupplierBill[]    @relation("SupplierBillRecordedBy")
-  supplierPayments       SupplierPayment[] @relation("SupplierPaymentRecordedBy")
-  voidedSupplierPayments SupplierPayment[] @relation("SupplierPaymentVoidedBy")
-  stocktakesStarted      Stocktake[]       @relation("StocktakeStartedBy")
-  stocktakesPosted       Stocktake[]       @relation("StocktakePostedBy")
+  payments               Payment[]                @relation("PaymentRecordedBy")
+  voidedPayments         Payment[]                @relation("PaymentVoidedBy")
+  supplierBills          SupplierBill[]           @relation("SupplierBillRecordedBy")
+  receiptCorrections     GoodsReceiptCorrection[] @relation("GoodsReceiptCorrectionRecordedBy")
+  supplierPayments       SupplierPayment[]        @relation("SupplierPaymentRecordedBy")
+  voidedSupplierPayments SupplierPayment[]        @relation("SupplierPaymentVoidedBy")
+  stocktakesStarted      Stocktake[]              @relation("StocktakeStartedBy")
+  stocktakesPosted       Stocktake[]              @relation("StocktakePostedBy")
   stocktakeLines         StocktakeLine[]
   expenses               Expense[]
   goodsReceipts          GoodsReceipt[]
@@ -1199,12 +1202,15 @@ model GoodsReceipt {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplier     Supplier           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  location     Location           @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  recordedBy   User?              @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  location     Location                 @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  recordedBy   User?                    @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
   lines        GoodsReceiptLine[]
   bill         SupplierBill?
+  /// Every correction made to it, oldest first. The lines hold the figures as
+  /// they now stand; these hold what they were before.
+  corrections  GoodsReceiptCorrection[]
 
   @@index([organizationId])
   @@index([organizationId, receivedAt])
@@ -1236,11 +1242,12 @@ model GoodsReceiptLine {
 
   createdAt DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  receipt      GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-  product      Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
-  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Restrict)
-  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  organization Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receipt      GoodsReceipt                 @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  product      Product                      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  unit         ProductUnit                  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  batch        StockBatch                   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  corrections  GoodsReceiptCorrectionLine[]
 
   @@index([organizationId])
   @@index([receiptId])
@@ -1355,6 +1362,8 @@ enum StockAdjustmentReason {
   theft
   count_correction
   opening_balance
+  /// A recorded delivery was put right — more or fewer arrived than entered.
+  receipt_correction
   other
 }
 
@@ -1690,4 +1699,63 @@ model VendorMoneyTarget {
   @@unique([organizationId, supplierId, periodStart])
   @@index([organizationId])
   @@map("vendor_money_targets")
+}
+
+/// One correction to a recorded delivery: what was entered was wrong — 7
+/// cartons recorded when 6½ arrived, or the other way round.
+///
+/// The delivery's lines and their lots are set to the true figures, so stock
+/// value, cost of future sales, purchases and vendor targets all read right;
+/// this row and its lines keep **what the figures were before**, who changed
+/// them, when and why. The stock difference is an ordinary movement on the
+/// line's own lot (`receipt_correction`), so the ledger is still only added
+/// to. A delivery can be corrected any number of times.
+model GoodsReceiptCorrection {
+  id             String @id @default(uuid())
+  organizationId String
+  receiptId      String
+
+  reason String
+
+  /// The delivery's bill before and after — it moves by the change in value.
+  /// Null when the delivery had no bill to move.
+  billAmountBefore Int?
+  billAmountAfter  Int?
+
+  recordedByUserId String?
+  createdAt        DateTime @default(now())
+
+  organization Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receipt      GoodsReceipt                 @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  recordedBy   User?                        @relation("GoodsReceiptCorrectionRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  lines        GoodsReceiptCorrectionLine[]
+
+  @@index([organizationId])
+  @@index([receiptId])
+  @@map("goods_receipt_corrections")
+}
+
+/// One line of a correction: a delivery line's figures before and after, in
+/// base units and kobo.
+model GoodsReceiptCorrectionLine {
+  id             String @id @default(uuid())
+  organizationId String
+  correctionId   String
+  receiptLineId  String
+
+  receivedBefore  Int
+  receivedAfter   Int
+  paidForBefore   Int
+  paidForAfter    Int
+  totalCostBefore Int
+  totalCostAfter  Int
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  correction   GoodsReceiptCorrection @relation(fields: [correctionId], references: [id], onDelete: Cascade)
+  receiptLine  GoodsReceiptLine       @relation(fields: [receiptLineId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([correctionId])
+  @@index([receiptLineId])
+  @@map("goods_receipt_correction_lines")
 }

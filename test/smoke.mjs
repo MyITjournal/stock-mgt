@@ -2695,6 +2695,113 @@ async function main() {
   await api('POST', '/stock/opening', { token: selfToken, key: randomUUID(), body: openingBody, expect: 409 });
   check('entering the same opening stock twice is refused, not doubled', true);
 
+  step(46, 'Correcting a delivery: 7 cartons recorded, 6½ arrived');
+
+  // The owner's own mistake: 7 cartons entered, 6½ actually came, 6 of them
+  // paid for. Here a carton is 24, so the truth is 156 received, 144 paid for.
+  const wrong = (
+    await api('POST', '/goods-receipts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        locationId: main.id,
+        invoiceNumber: 'DN-CORRECT',
+        lines: [{ productId: product.id, unitId: carton.id, quantityReceived: 7, quantityPaidFor: 7, totalCost: 8_400_000 }],
+      },
+    })
+  ).data;
+  const billOfWrong = async () =>
+    (await api('GET', `/supplier-bills?supplierId=${supplier.id}`, { token: t })).data.find(
+      (bill) => bill.goodsReceiptId === wrong.id,
+    );
+  eq('the delivery raised its bill at the recorded value', (await billOfWrong()).amountDue, 8_400_000);
+  const levelBeforeFix = await levelAt(t, product.id, main.id);
+
+  // The preview is the real correction, run and rolled back.
+  const fixPreview = (
+    await api('POST', `/goods-receipts/${wrong.id}/corrections/preview`, {
+      token: t,
+      body: {
+        reason: 'Miscounted: 6½ cartons came, 6 paid for.',
+        lines: [{ lineId: wrong.lines[0].id, received: 156, paidFor: 144, totalCost: 7_200_000 }],
+      },
+    })
+  ).data;
+  eq(
+    'the preview says what would move',
+    `${fixPreview.lines[0].stockDelta} ${fixPreview.valueDelta} ${fixPreview.billAmountBefore} ${fixPreview.billAmountAfter}`,
+    '-12 -1200000 8400000 7200000',
+  );
+  eq('and moves nothing', await levelAt(t, product.id, main.id), levelBeforeFix);
+  eq('not even the bill', (await billOfWrong()).amountDue, 8_400_000);
+
+  const corrected = (
+    await api('POST', `/goods-receipts/${wrong.id}/corrections`, {
+      token: t,
+      key: randomUUID(),
+      body: {
+        reason: 'Miscounted: 6½ cartons came, 6 paid for.',
+        lines: [{ lineId: wrong.lines[0].id, received: 156, paidFor: 144, totalCost: 7_200_000 }],
+      },
+    })
+  ).data;
+  eq('the line now says what arrived, in pieces since 6½ cartons is not whole', `${corrected.lines[0].quantityReceived} ${corrected.lines[0].quantityReceivedInUnit} ${corrected.lines[0].unit.factor}`, '156 156 1');
+  eq('the half carton that never came left the stock', await levelAt(t, product.id, main.id), levelBeforeFix - 12);
+  eq('the bill moved with the value', (await billOfWrong()).amountDue, 7_200_000);
+  eq(
+    'and the figures before are kept, with the reason',
+    `${corrected.corrections.length} ${corrected.corrections[0].lines[0].receivedBefore} ${corrected.corrections[0].reason}`,
+    '1 168 Miscounted: 6½ cartons came, 6 paid for.',
+  );
+
+  // It could be the other way round later — and it can be corrected again.
+  const putBack = (
+    await api('POST', `/goods-receipts/${wrong.id}/corrections`, {
+      token: t,
+      key: randomUUID(),
+      body: {
+        reason: 'The other half carton was found in the van.',
+        lines: [{ lineId: wrong.lines[0].id, received: 168, paidFor: 168, totalCost: 8_400_000 }],
+      },
+    })
+  ).data;
+  eq('a delivery can be corrected again, in either direction', await levelAt(t, product.id, main.id), levelBeforeFix);
+  eq('back in whole cartons', `${putBack.lines[0].quantityReceivedInUnit} ${putBack.lines[0].unit.factor}`, '7 24');
+  eq('with both corrections in its history', putBack.corrections.length, 2);
+  eq('and the bill back where it was', (await billOfWrong()).amountDue, 8_400_000);
+
+  await api('POST', `/goods-receipts/${wrong.id}/corrections`, {
+    token: t,
+    key: randomUUID(),
+    body: { reason: 'Nothing really', lines: [{ lineId: wrong.lines[0].id, received: 168, paidFor: 168, totalCost: 8_400_000 }] },
+    expect: 400,
+  });
+  check('a correction that changes nothing is refused', true);
+
+  // The ledger is still only added to, and still adds up to the levels. Read
+  // newest first, as a person browses: the forward walk a phone syncs with
+  // holds back the last second, which is exactly when these were written.
+  let moves = [];
+  for (let cursor = null, guard = 0; guard < 50; guard++) {
+    const page = (
+      await api('GET', `/stock/movements?productId=${product.id}&order=desc&limit=500${cursor ? `&cursor=${cursor}` : ''}`, { token: t })
+    ).data;
+    moves = moves.concat(page.movements);
+    if (!page.nextCursor) break;
+    cursor = page.nextCursor;
+  }
+  const productLevels = (await api('GET', `/stock/levels?productId=${product.id}&includeEmpty=true`, { token: t })).data;
+  eq(
+    'after both corrections the ledger still sums to the levels',
+    moves.reduce((sum, m) => sum + m.quantity, 0),
+    productLevels.reduce((sum, row) => sum + row.quantity, 0),
+  );
+  check(
+    'the corrections are movements of their own, never edits',
+    moves.filter((m) => m.reason === 'receipt_correction').length === 2,
+  );
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

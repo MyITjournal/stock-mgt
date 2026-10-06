@@ -49,6 +49,13 @@ const RECEIPT_LINE_COST_FIELDS = ['totalCost'] as const;
 /** The same, plus the rate `findOne` derives from it on the way out. */
 const RECEIPT_LINE_READ_COST_FIELDS = ['totalCost', 'unitCost'] as const;
 
+/** A correction's bill figures, and each corrected line's values. */
+const CORRECTION_COST_FIELDS = ['billAmountBefore', 'billAmountAfter'] as const;
+const CORRECTION_LINE_COST_FIELDS = [
+  'totalCostBefore',
+  'totalCostAfter',
+] as const;
+
 /** The same invoice total, as it sits on the lot the line created. */
 const BATCH_COST_FIELDS = ['totalCost'] as const;
 
@@ -320,12 +327,27 @@ export class ReceivingService {
             batch: true,
           },
         },
+        corrections: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            recordedBy: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+            lines: true,
+          },
+        },
       },
     });
     if (!receipt) throw new NotFoundException('Goods receipt not found');
 
     return {
       ...receipt,
+      // What the figures were before each correction. Values are cost, so a
+      // role that may not see cost gets the counts and the reason only.
+      corrections: receipt.corrections.map((correction) => ({
+        ...redactCost(correction, CORRECTION_COST_FIELDS),
+        lines: redactCostAll(correction.lines, CORRECTION_LINE_COST_FIELDS),
+      })),
       lines: receipt.lines.map((line) =>
         redactCost(
           {
