@@ -2076,7 +2076,7 @@ export interface paths {
         head?: never;
         /**
          * Update the business details printed on documents
-         * @description Every field is optional and may be cleared. `currency`, `timezone` and invoice numbering are **not** editable here: periods resolve in the timezone, and rewinding the invoice counter would produce duplicate numbers.
+         * @description Every field is optional and may be cleared. `currency` and `timezone` may be changed only until something with money in it is recorded (409 after that). Invoice numbering is never editable: rewinding the counter would produce duplicate numbers.
          */
         patch: operations["OrganizationController_update"];
         trace?: never;
@@ -2240,6 +2240,17 @@ export interface components {
              * @default mixed
              */
             businessType: components["schemas"]["BusinessType"];
+            /**
+             * @description The currency every price and payment in this shop is in. One per shop; it can be changed in Settings until the first price, sale, delivery, payment or expense is recorded.
+             * @default NGN
+             * @enum {string}
+             */
+            currency: "NGN" | "USD" | "GBP" | "EUR" | "GHS" | "KES";
+            /**
+             * @description The owner's time zone, as the browser reports it. Every report period resolves in it. Omitted, the currency's home zone is used.
+             * @example Africa/Lagos
+             */
+            timezone?: string;
         };
         VerifyOtpDto: {
             /** @example owner@example.com */
@@ -6213,15 +6224,17 @@ export interface components {
              */
             slug: string;
             /**
-             * @description Not editable. Money is stored as an integer count of minor units.
+             * @description ISO 4217. Money is stored as an integer count of its minor units. Editable only while `currencyLocked` is false.
              * @example NGN
              */
             currency: string;
             /**
-             * @description Not editable. Every report period resolves in this zone, so changing it would restate history.
+             * @description Every report period resolves in this zone. Editable only while `currencyLocked` is false.
              * @example Africa/Lagos
              */
             timezone: string;
+            /** @description True once anything with money in it exists — a price, sale, delivery, payment, bill or expense. From then on the currency and time zone stay as they are, because changing them would relabel every figure already entered. */
+            currencyLocked: boolean;
             /**
              * @description How many **active** people this plan covers — a column rather than a constant, so the tier line moves without a migration (§9). Checked when somebody is added or reactivated, never when they sign in: a business over its limit keeps working. Exposed so the staff screen can say "4 of 5" rather than letting an owner discover the ceiling by hitting a 409.
              * @example 5
@@ -6316,6 +6329,16 @@ export interface components {
             businessType?: components["schemas"]["BusinessType"];
             /** @description Whether this shop charges VAT. Off, every sale from now on records no VAT and the invoice prints no VAT line; sales already made keep the VAT they were recorded with. */
             chargesVat?: boolean;
+            /**
+             * @description Only until the first price, sale, delivery, payment or expense is recorded; after that it is refused with a 409, because it would relabel every figure already entered.
+             * @enum {string}
+             */
+            currency?: "NGN" | "USD" | "GBP" | "EUR" | "GHS" | "KES";
+            /**
+             * @description Locked at the same moment as the currency: every report period resolves in it.
+             * @example Africa/Lagos
+             */
+            timezone?: string;
         };
         /** @enum {string} */
         OrgRole: "owner" | "manager" | "sales_rep" | "storekeeper" | "accountant";

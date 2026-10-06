@@ -1,13 +1,19 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { BusinessType } from '@prisma/client';
 import {
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from '../../../common/money/currencies';
+import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
+  IsTimeZone,
   IsString,
   Max,
   MaxLength,
@@ -17,10 +23,10 @@ import {
 /**
  * The letterhead, and nothing else.
  *
- * Deliberately not a general "update the organization" DTO: `currency`,
- * `timezone` and `nextSaleNumber` are load-bearing — periods resolve in the
- * timezone (§12) and invoice numbering must not be rewound — so they are not
- * editable through a profile screen.
+ * Deliberately not a general "update the organization" DTO: `nextSaleNumber`
+ * is never editable, because invoice numbering must not be rewound. `currency`
+ * and `timezone` are editable **only until something with money in it is
+ * recorded** (§2) — see `OrganizationService.update`.
  */
 export class UpdateOrganizationDto {
   @ApiPropertyOptional({ example: 'Adebayo Stores Limited' })
@@ -149,4 +155,24 @@ export class UpdateOrganizationDto {
   @IsOptional()
   @IsBoolean()
   chargesVat?: boolean;
+
+  @ApiPropertyOptional({
+    enum: SUPPORTED_CURRENCIES,
+    description:
+      'Only until the first price, sale, delivery, payment or expense is recorded; after that it is refused with a 409, because it would relabel every figure already entered.',
+  })
+  @IsOptional()
+  @IsIn(SUPPORTED_CURRENCIES, {
+    message: `Choose one of ${SUPPORTED_CURRENCIES.join(', ')}.`,
+  })
+  currency?: SupportedCurrency;
+
+  @ApiPropertyOptional({
+    example: 'Africa/Lagos',
+    description:
+      'Locked at the same moment as the currency: every report period resolves in it.',
+  })
+  @IsOptional()
+  @IsTimeZone({ message: 'That is not a time zone this server knows.' })
+  timezone?: string;
 }

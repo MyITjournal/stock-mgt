@@ -5,6 +5,7 @@ import { useAuth, useLandingPath } from './useAuth';
 import { Field, Input, Select } from '../components/Field';
 import { Button } from '../components/Button';
 import { BUSINESS_TYPES, type BusinessType } from '../lib/businessTypes';
+import { CURRENCY_CHOICES, browserTimezone } from '../lib/shopCurrency';
 
 /**
  * Creating a shop, with no email and nothing to wait for.
@@ -31,6 +32,14 @@ import { BUSINESS_TYPES, type BusinessType } from '../lib/businessTypes';
  * every piece it will never sell. It locks nothing and can be changed in
  * Settings, but a default nobody chose is a default nobody notices, so the
  * button stays disabled until one is picked.
+ *
+ * ## Why the currency starts on naira, and the time zone is never asked
+ *
+ * Naira is right for nearly everybody signing up, so it is chosen for them and
+ * the box is there for the shop in Accra or London. It can be put right in
+ * Settings until the first price is entered (§2). The time zone comes from the
+ * browser's own clock: whoever is signing up is standing in the shop's zone far
+ * more often than they would pick it correctly from a list.
  */
 export function SignUpPage() {
   const { user, signUp } = useAuth();
@@ -43,6 +52,8 @@ export function SignUpPage() {
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
   const [businessType, setBusinessType] = useState<BusinessType | null>(null);
+  const [currency, setCurrency] =
+    useState<(typeof CURRENCY_CHOICES)[number]['code']>('NGN');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -69,6 +80,8 @@ export function SignUpPage() {
         username: username.trim().toLowerCase(),
         password,
         businessType: businessType ?? undefined,
+        currency,
+        timezone: browserTimezone(),
         // Omitted rather than sent empty: the server treats absent as 'none',
         // and an empty string would fail its email check.
         ...(email.trim() ? { email: email.trim() } : {}),
@@ -89,7 +102,12 @@ export function SignUpPage() {
         onSubmit={onSubmit}
         className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
       >
-        <Link to="/" className="text-base font-semibold tracking-tight text-brand-700">Reho</Link>
+        <Link
+          to="/"
+          className="text-base font-semibold tracking-tight text-brand-700"
+        >
+          Reho
+        </Link>
         <h1 className="mt-3 text-xl font-semibold text-slate-900">
           Create your shop
         </h1>
@@ -126,7 +144,9 @@ export function SignUpPage() {
               id="business-type"
               value={businessType ?? ''}
               onChange={(event) =>
-                setBusinessType((event.target.value || null) as BusinessType | null)
+                setBusinessType(
+                  (event.target.value || null) as BusinessType | null,
+                )
               }
             >
               <option value="" disabled>
@@ -135,6 +155,26 @@ export function SignUpPage() {
               {BUSINESS_TYPES.map((type) => (
                 <option key={type.value} value={type.value}>
                   {type.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field
+            label="Currency"
+            htmlFor="currency"
+            hint="Every price and payment is in this. You can change it until you enter your first price."
+          >
+            <Select
+              id="currency"
+              value={currency}
+              onChange={(event) =>
+                setCurrency(event.target.value as typeof currency)
+              }
+            >
+              {CURRENCY_CHOICES.map((choice) => (
+                <option key={choice.code} value={choice.code}>
+                  {choice.label}
                 </option>
               ))}
             </Select>
@@ -177,7 +217,11 @@ export function SignUpPage() {
             />
           </Field>
 
-          <Field label="Password" htmlFor="password" hint="At least 8 characters.">
+          <Field
+            label="Password"
+            htmlFor="password"
+            hint="At least 8 characters."
+          >
             <Input
               id="password"
               type="password"

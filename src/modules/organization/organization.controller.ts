@@ -33,7 +33,7 @@ export class OrganizationController {
   @ApiOperation({
     summary: 'Update the business details printed on documents',
     description:
-      'Every field is optional and may be cleared. `currency`, `timezone` and invoice numbering are **not** editable here: periods resolve in the timezone, and rewinding the invoice counter would produce duplicate numbers.',
+      'Every field is optional and may be cleared. `currency` and `timezone` may be changed only until something with money in it is recorded (409 after that). Invoice numbering is never editable: rewinding the counter would produce duplicate numbers.',
   })
   @ApiOkResponse({ type: OrganizationView })
   update(@Body() dto: UpdateOrganizationDto) {

@@ -5,6 +5,7 @@ import type {
   ReactNode,
   SelectHTMLAttributes,
 } from 'react';
+import { LEADING_CURRENCY_MARK } from '../lib/shopCurrency';
 
 /**
  * Form primitives, deliberately not a form engine.
@@ -28,8 +29,7 @@ const inputStyles =
  * than setting one, so a caller writing `max-w-xs` still wants to fill the
  * space up to that bound.
  */
-const SETS_WIDTH =
-  /(?:^|\s)(?:w-|basis-|flex-(?:1|auto|initial|none)(?:\s|$))/;
+const SETS_WIDTH = /(?:^|\s)(?:w-|basis-|flex-(?:1|auto|initial|none)(?:\s|$))/;
 
 /**
  * The base styles, plus whatever the caller asked for — **and `w-full` only
@@ -156,7 +156,9 @@ export function MoneyInput({
         const typed = event.target.value;
         setDraft(typed);
 
-        const cleaned = typed.replace(/[\s,₦]/g, '');
+        const cleaned = typed
+          .replace(/[\s,]/g, '')
+          .replace(LEADING_CURRENCY_MARK, '');
         if (cleaned === '') {
           onChange(null);
           return;

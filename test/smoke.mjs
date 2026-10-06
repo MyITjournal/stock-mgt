@@ -2871,6 +2871,52 @@ async function main() {
     null,
   );
 
+  step(48, 'Currency: chosen at sign-up, changeable only until money is recorded');
+
+  const nairaShop = (await api('GET', '/organization', { token: selfToken })).data;
+  eq('a shop that never chose is in naira, on Lagos time', `${nairaShop.currency} ${nairaShop.timezone}`, 'NGN Africa/Lagos');
+  check('and with sales on it, its currency is locked', nairaShop.currencyLocked === true);
+  await api('PATCH', '/organization', { token: selfToken, body: { currency: 'USD' }, expect: 409 });
+  check('so changing it is refused (409) — every figure would be relabelled', true);
+
+  const cediShop = await api('POST', '/auth/sign-up', {
+    body: {
+      organizationName: `Accra Mart ${shopSuffix}`,
+      firstName: 'Kofi',
+      lastName: 'Mensah',
+      username: `kofi${shopSuffix}`,
+      password: 'correct-horse-battery',
+      currency: 'GHS',
+    },
+    expect: [200, 201],
+  });
+  const cediToken = cediShop.data.accessToken;
+  const cedis = (await api('GET', '/organization', { token: cediToken })).data;
+  eq('a shop signed up in cedis keeps cedis, on Accra time', `${cedis.currency} ${cedis.timezone}`, 'GHS Africa/Accra');
+  check('and, empty, is not locked yet', cedis.currencyLocked === false);
+
+  const currencyFix = (
+    await api('PATCH', '/organization', {
+      token: cediToken,
+      body: { currency: 'KES', timezone: 'Africa/Nairobi' },
+    })
+  ).data;
+  eq('a wrong choice is put right before anything is priced', `${currencyFix.currency} ${currencyFix.timezone}`, 'KES Africa/Nairobi');
+  await api('PATCH', '/organization', { token: cediToken, body: { timezone: 'Nairobi' }, expect: 400 });
+  check('a time zone the server does not know is refused (400)', true);
+  await api('PATCH', '/organization', { token: cediToken, body: { currency: 'XOF' }, expect: 400 });
+  check('and so is a currency Reho does not keep books in (400)', true);
+
+  await api('POST', '/products', {
+    token: cediToken,
+    body: { name: 'Milo 400g', basePrice: 4_500, units: [{ name: 'tin', factor: 1 }] },
+  });
+  check('the first price locks it', (await api('GET', '/organization', { token: cediToken })).data.currencyLocked === true);
+  await api('PATCH', '/organization', { token: cediToken, body: { currency: 'NGN' }, expect: 409 });
+  check('after which changing it is refused (409)', true);
+  await api('PATCH', '/organization', { token: cediToken, body: { currency: 'KES', name: `Nairobi Mart ${shopSuffix}` } });
+  check('while sending the same currency back with other changes still saves', true);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

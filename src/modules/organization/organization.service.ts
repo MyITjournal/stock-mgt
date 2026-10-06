@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -22,17 +23,56 @@ export class OrganizationService {
 
   async current(): Promise<OrganizationView> {
     const id = TenantContext.requireOrganizationId();
-    const organization = await this.prisma.organization.findFirst({
-      where: { id, deletedAt: null },
-      select: ORGANIZATION_FIELDS,
-    });
+    const [organization, currencyLocked] = await Promise.all([
+      this.prisma.organization.findFirst({
+        where: { id, deletedAt: null },
+        select: ORGANIZATION_FIELDS,
+      }),
+      this.hasMoneyRecorded(id),
+    ]);
     if (!organization) throw new NotFoundException('Organization not found');
-    return organization;
+    return { ...organization, currencyLocked };
+  }
+
+  /**
+   * Whether anything with an amount in it exists yet (§2, 2026-10-06).
+   *
+   * Every amount is stored as a bare integer of the shop's currency, so once
+   * one exists, changing the currency would relabel it — ₦50,000 would read
+   * £50,000 — and changing the zone would move every report's day boundaries.
+   * A price counts as much as a sale: a catalogue imported in naira and then
+   * switched to cedis is wrong on every line. Settings is for correcting a
+   * choice made at sign-up, before any of that.
+   */
+  private async hasMoneyRecorded(organizationId: string): Promise<boolean> {
+    const where = { organizationId };
+    const found = await Promise.all([
+      this.prisma.productPrice.findFirst({ where, select: { id: true } }),
+      this.prisma.product.findFirst({
+        where: { organizationId, basePrice: { not: null } },
+        select: { id: true },
+      }),
+      this.prisma.sale.findFirst({ where, select: { id: true } }),
+      this.prisma.stockMovement.findFirst({ where, select: { id: true } }),
+      this.prisma.payment.findFirst({ where, select: { id: true } }),
+      this.prisma.supplierBill.findFirst({ where, select: { id: true } }),
+      this.prisma.expense.findFirst({ where, select: { id: true } }),
+    ]);
+    return found.some(Boolean);
   }
 
   async update(input: UpdateOrganizationDto): Promise<OrganizationView> {
     const id = TenantContext.requireOrganizationId();
     const existing = await this.current();
+
+    const movesMoney =
+      (input.currency !== undefined && input.currency !== existing.currency) ||
+      (input.timezone !== undefined && input.timezone !== existing.timezone);
+    if (movesMoney && existing.currencyLocked) {
+      throw new ConflictException(
+        'The currency and time zone cannot be changed once prices, sales, deliveries, payments or expenses have been recorded — every figure already entered would be relabelled.',
+      );
+    }
 
     // Caught here as well as by the database CHECK, so the message explains the
     // rule instead of naming a constraint. Either time may be sent alone, so
@@ -45,18 +85,22 @@ export class OrganizationService {
       );
     }
 
-    return this.prisma.organization.update({
+    const updated = await this.prisma.organization.update({
       where: { id },
       data: {
         ...(input.name !== undefined && { name: input.name.trim() }),
-        ...(input.address !== undefined && { address: input.address || null }),
+        ...(input.address !== undefined && {
+          address: input.address || null,
+        }),
         ...(input.phone !== undefined && { phone: input.phone || null }),
         ...(input.email !== undefined && { email: input.email || null }),
         ...(input.taxId !== undefined && { taxId: input.taxId || null }),
         ...(input.rcNumber !== undefined && {
           rcNumber: input.rcNumber || null,
         }),
-        ...(input.logoUrl !== undefined && { logoUrl: input.logoUrl || null }),
+        ...(input.logoUrl !== undefined && {
+          logoUrl: input.logoUrl || null,
+        }),
         ...(input.opensAt !== undefined && { opensAt: input.opensAt }),
         ...(input.closesAt !== undefined && { closesAt: input.closesAt }),
         ...(input.workingDays !== undefined && {
@@ -71,9 +115,13 @@ export class OrganizationService {
         ...(input.chargesVat !== undefined && {
           chargesVat: input.chargesVat,
         }),
+        // Checked above: only while nothing with money in it exists.
+        ...(input.currency !== undefined && { currency: input.currency }),
+        ...(input.timezone !== undefined && { timezone: input.timezone }),
       },
       select: ORGANIZATION_FIELDS,
     });
+    return { ...updated, currencyLocked: existing.currencyLocked };
   }
 }
 

@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './auth/AuthProvider';
+import { ShopCurrencyProvider } from './components/ShopCurrencyProvider';
 import { RequireAuth } from './auth/RequireAuth';
 import { SignInPage } from './auth/SignInPage';
 import { SignUpPage } from './auth/SignUpPage';
@@ -75,79 +76,87 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            {/*
+        <ShopCurrencyProvider>
+          <BrowserRouter>
+            <Routes>
+              {/*
               Public, and outside RequireAuth on purpose. `/` is the landing
               page for a stranger and a redirect for anyone signed in — see
               `auth/Landing.tsx`. The dashboard's own home moved to `/home`
               when `/` stopped being the app.
             */}
-            <Route path="/" element={<Home />} />
-            <Route path="/sign-in" element={<SignInPage />} />
-            <Route path="/sign-up" element={<SignUpPage />} />
+              <Route path="/" element={<Home />} />
+              <Route path="/sign-in" element={<SignInPage />} />
+              <Route path="/sign-up" element={<SignUpPage />} />
 
-            <Route element={<RequireAuth />}>
-              <Route element={<Layout />}>
-                <Route path="home" element={<HomePage />} />
-                <Route path="till" element={<TillPage />} />
-                <Route path="sales" element={<SalesPage />} />
-                <Route path="sales/:id" element={<SaleDetailPage />} />
-                <Route path="customers" element={<CustomersPage />} />
-                <Route path="customers/:id" element={<CustomerDetailPage />} />
-                <Route path="money" element={<MoneyLayout />}>
-                  <Route index element={<ReceivablesPage />} />
-                  <Route path="payments" element={<PaymentsPage />} />
-                  <Route path="payables" element={<PayablesPage />} />
-                  <Route path="paid" element={<SupplierPaymentsPage />} />
-                  <Route path="expenses" element={<ExpensesPage />} />
-                  <Route path="accounts" element={<BankAccountsPage />} />
-                </Route>
-                <Route path="stock" element={<StockLayout />}>
-                  <Route index element={<ProductsPage />} />
-                  <Route path="levels" element={<LevelsPage />} />
-                  <Route path="receipts" element={<ReceiptsPage />} />
-                  <Route path="movements" element={<MovementsPage />} />
-                  <Route path="counts" element={<CountsPage />} />
-                  <Route path="places" element={<PlacesPage />} />
-                  <Route path="setup" element={<CatalogSetupPage />} />
-                </Route>
+              <Route element={<RequireAuth />}>
+                <Route element={<Layout />}>
+                  <Route path="home" element={<HomePage />} />
+                  <Route path="till" element={<TillPage />} />
+                  <Route path="sales" element={<SalesPage />} />
+                  <Route path="sales/:id" element={<SaleDetailPage />} />
+                  <Route path="customers" element={<CustomersPage />} />
+                  <Route
+                    path="customers/:id"
+                    element={<CustomerDetailPage />}
+                  />
+                  <Route path="money" element={<MoneyLayout />}>
+                    <Route index element={<ReceivablesPage />} />
+                    <Route path="payments" element={<PaymentsPage />} />
+                    <Route path="payables" element={<PayablesPage />} />
+                    <Route path="paid" element={<SupplierPaymentsPage />} />
+                    <Route path="expenses" element={<ExpensesPage />} />
+                    <Route path="accounts" element={<BankAccountsPage />} />
+                  </Route>
+                  <Route path="stock" element={<StockLayout />}>
+                    <Route index element={<ProductsPage />} />
+                    <Route path="levels" element={<LevelsPage />} />
+                    <Route path="receipts" element={<ReceiptsPage />} />
+                    <Route path="movements" element={<MovementsPage />} />
+                    <Route path="counts" element={<CountsPage />} />
+                    <Route path="places" element={<PlacesPage />} />
+                    <Route path="setup" element={<CatalogSetupPage />} />
+                  </Route>
 
-                {/* Detail and entry screens sit outside the tab strip: they are
+                  {/* Detail and entry screens sit outside the tab strip: they are
                     somewhere you went from a list, not another tab. */}
-                <Route
-                  path="stock/products/:id"
-                  element={<ProductDetailPage />}
-                />
-                <Route path="stock/import" element={<ImportProductsPage />} />
-                <Route path="stock/opening" element={<OpeningStockPage />} />
-                <Route path="stock/receive" element={<ReceiveDeliveryPage />} />
-                <Route
-                  path="stock/receipts/:id"
-                  element={<ReceiptDetailPage />}
-                />
-                <Route path="stock/counts/:id" element={<CountSheetPage />} />
-                <Route path="reports" element={<ReportsLayout />}>
-                  <Route index element={<ProfitPage />} />
-                  <Route path="sales" element={<SalesReportPage />} />
-                  <Route path="purchases" element={<PurchasesPage />} />
-                  <Route path="collections" element={<CollectionsPage />} />
-                  <Route path="stock" element={<StockReportPage />} />
-                  <Route path="movers" element={<MoversPage />} />
-                  <Route path="targets" element={<TargetsPage />} />
-                </Route>
-                <Route path="settings" element={<SettingsLayout />}>
-                  <Route index element={<BusinessPage />} />
-                  <Route path="hours" element={<HoursPage />} />
-                  <Route path="staff" element={<StaffPage />} />
-                  <Route path="password" element={<PasswordPage />} />
+                  <Route
+                    path="stock/products/:id"
+                    element={<ProductDetailPage />}
+                  />
+                  <Route path="stock/import" element={<ImportProductsPage />} />
+                  <Route path="stock/opening" element={<OpeningStockPage />} />
+                  <Route
+                    path="stock/receive"
+                    element={<ReceiveDeliveryPage />}
+                  />
+                  <Route
+                    path="stock/receipts/:id"
+                    element={<ReceiptDetailPage />}
+                  />
+                  <Route path="stock/counts/:id" element={<CountSheetPage />} />
+                  <Route path="reports" element={<ReportsLayout />}>
+                    <Route index element={<ProfitPage />} />
+                    <Route path="sales" element={<SalesReportPage />} />
+                    <Route path="purchases" element={<PurchasesPage />} />
+                    <Route path="collections" element={<CollectionsPage />} />
+                    <Route path="stock" element={<StockReportPage />} />
+                    <Route path="movers" element={<MoversPage />} />
+                    <Route path="targets" element={<TargetsPage />} />
+                  </Route>
+                  <Route path="settings" element={<SettingsLayout />}>
+                    <Route index element={<BusinessPage />} />
+                    <Route path="hours" element={<HoursPage />} />
+                    <Route path="staff" element={<StaffPage />} />
+                    <Route path="password" element={<PasswordPage />} />
+                  </Route>
                 </Route>
               </Route>
-            </Route>
 
-            <Route path="*" element={<LandingRedirect />} />
-          </Routes>
-        </BrowserRouter>
+              <Route path="*" element={<LandingRedirect />} />
+            </Routes>
+          </BrowserRouter>
+        </ShopCurrencyProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

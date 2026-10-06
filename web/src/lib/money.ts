@@ -1,3 +1,5 @@
+import { LEADING_CURRENCY_MARK } from './shopCurrency';
+
 /**
  * Money on the screen.
  *
@@ -39,6 +41,9 @@ function formatterFor(currency: string): Intl.NumberFormat {
     formatter = new Intl.NumberFormat('en-NG', {
       style: 'currency',
       currency,
+      // "$" and "GH₵" rather than "US$" and "GHS": a shop has one currency, so
+      // the short mark is never ambiguous on its own screens.
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
@@ -95,7 +100,9 @@ export function previewTotal(lines: readonly { lineTotal: Minor }[]): Minor {
  * has made a mistake this cannot resolve.
  */
 export function parseMoney(input: string): Minor | null {
-  const cleaned = input.replace(/[\s,]/g, '').replace(/^₦/, '');
+  const cleaned = input
+    .replace(/[\s,]/g, '')
+    .replace(LEADING_CURRENCY_MARK, '');
   if (!/^-?\d*\.?\d*$/.test(cleaned) || cleaned === '' || cleaned === '-') {
     return null;
   }

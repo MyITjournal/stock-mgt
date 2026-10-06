@@ -92,6 +92,14 @@ Slice 6 added **reports**, in `src/modules/reports/` — a read-only module with
   the sale like every money figure, so reports needed no change and switching rewrites nothing
   already sold. Existing shops start **on**, new shops **off**; a sale with no VAT prints no VAT
   line. One switch on purpose — not a tax setup.
+- **One currency per shop** (§2, 2026-10-06): NGN by default, or USD, GBP, EUR, GHS, KES
+  (`SUPPORTED_CURRENCIES`). Chosen at sign-up, with the time zone from the browser; **changeable
+  in Settings only until a price, sale, stock movement, payment, bill or expense exists**
+  (`currencyLocked`, 409 after), because every stored amount is a bare integer of it. A customer
+  paying in another currency is recorded at what the shop accepted, foreign amount in the
+  reference — never a second currency. On screen `<Money>` takes the shop's currency from
+  `ShopCurrencyProvider`, so **never pass `currency` at a call site**; server messages naming an
+  amount use `shopMoney`, never a literal `₦`.
 - **Periods resolve in `Organization.timezone`**, never UTC — otherwise "today" rolls over at 1am
   Lagos time. All of it lives in `period.ts`; nothing else does date arithmetic.
 - **A return counts in the period it happened**, not the month of the sale it reverses.

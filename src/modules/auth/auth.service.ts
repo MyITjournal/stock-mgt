@@ -30,6 +30,11 @@ import {
 } from '../staff/working-hours.service';
 import { env } from '../../config/env';
 import { RegisterDto } from './dto/register.dto';
+import {
+  DEFAULT_CURRENCY,
+  startingTimezone,
+  type SupportedCurrency,
+} from '../../common/money/currencies';
 import { LoginDto } from './dto/login.dto';
 
 const OTP_TTL_MS = 10 * 60 * 1000;
@@ -180,6 +185,10 @@ export class AuthService {
     username?: string;
     /** Omitted by the paths that never ask — they get `mixed`, today's behaviour. */
     businessType?: BusinessType;
+    /** Omitted, naira — every shop before currencies existed. */
+    currency?: SupportedCurrency;
+    /** The owner's own zone; omitted, the currency's home zone. */
+    timezone?: string;
   }) {
     if (!input.email && !input.username) {
       throw new BadRequestException(
@@ -243,6 +252,11 @@ export class AuthService {
           name: input.organizationName,
           slug,
           ...(input.businessType && { businessType: input.businessType }),
+          currency: input.currency ?? DEFAULT_CURRENCY,
+          timezone: startingTimezone(
+            input.currency ?? DEFAULT_CURRENCY,
+            input.timezone,
+          ),
         },
       });
 
@@ -308,6 +322,8 @@ export class AuthService {
       password: string;
       email?: string;
       businessType?: BusinessType;
+      currency?: SupportedCurrency;
+      timezone?: string;
     },
     context: TokenContext = {},
   ): Promise<TokenPair> {

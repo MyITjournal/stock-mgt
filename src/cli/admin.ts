@@ -4,6 +4,11 @@ import { NestFactory } from '@nestjs/core';
 import * as readline from 'node:readline';
 import { AppModule } from '../app.module';
 import { AuthService } from '../modules/auth/auth.service';
+import {
+  DEFAULT_CURRENCY,
+  SUPPORTED_CURRENCIES,
+  type SupportedCurrency,
+} from '../common/money/currencies';
 
 /**
  * The operator's way in, for an instance where nobody can sign themselves up.
@@ -33,7 +38,8 @@ import { AuthService } from '../modules/auth/auth.service';
  *   node dist/cli/admin create-org --org "Bello Distributors" \
  *     --first Musa --last Bello --username musa --type wholesale
  *
- * `--type` is retail, wholesale or mixed, and defaults to mixed.
+ * `--type` is retail, wholesale or mixed, and defaults to mixed. `--currency` is
+ * NGN, USD, GBP, EUR, GHS or KES, and defaults to NGN; the time zone follows it.
  *
  *   node dist/cli/admin set-password --email owner@example.com
  *   node dist/cli/admin set-password --username amina@corner-shop-a1b2c3
@@ -190,6 +196,7 @@ async function createOrg(auth: AuthService, args: Map<string, string>) {
   const email = args.get('email');
   const username = args.get('username');
   const type = args.get('type') ?? BusinessType.mixed;
+  const currency = (args.get('currency') ?? DEFAULT_CURRENCY).toUpperCase();
 
   if (!organizationName || !firstName || !lastName) {
     throw new Error(
@@ -203,6 +210,11 @@ async function createOrg(auth: AuthService, args: Map<string, string>) {
   if (!(Object.values(BusinessType) as string[]).includes(type)) {
     throw new Error('--type must be retail, wholesale or mixed.');
   }
+  if (!(SUPPORTED_CURRENCIES as readonly string[]).includes(currency)) {
+    throw new Error(
+      `--currency must be one of ${SUPPORTED_CURRENCIES.join(', ')}.`,
+    );
+  }
 
   const password = await readNewPassword();
 
@@ -214,6 +226,7 @@ async function createOrg(auth: AuthService, args: Map<string, string>) {
     email,
     username,
     businessType: type as BusinessType,
+    currency: currency as SupportedCurrency,
   });
 
   process.stdout.write(
@@ -223,6 +236,7 @@ async function createOrg(auth: AuthService, args: Map<string, string>) {
       `  organization  ${result.organizationId}`,
       `  slug          ${result.organizationSlug}`,
       `  trades as     ${type}`,
+      `  currency      ${currency}`,
       `  owner         ${result.userId}`,
       `  signs in with ${result.email ?? result.username ?? '(none)'}`,
       '',

@@ -998,3 +998,21 @@ overdue* under it once late.
 **265. [gate] Print an invoice from a sale.** The PDF is **A5** (half an A4 sheet): letterhead,
 lines, totals and the accounts to pay into all fit, nothing cut off at the right edge. An invoice
 with many lines runs onto a second A5 page. The customer statement is still A4.
+
+---
+
+## AM. A shop's currency
+
+**266. [gate] Sign up a new shop and leave Currency on naira.** Every amount reads ₦ as before.
+Settings → Business shows Currency and Time zone as boxes you can change, with a note saying until
+when.
+
+**267. [gate] Sign up another shop choosing Ghanaian cedi.** Before adding anything, Settings →
+Business shows **GHS** and your own time zone. Add a product with a price: the till, products list,
+invoices and reports all read **GH₵**, and its PDF invoice reads **GHS 45.00**.
+
+**268. [gate] Back in Settings → Business for that shop.** Currency and Time zone are now under
+*Fixed for this business*, with a line saying why. Saving the letterhead still works.
+
+**269. Sign up a third shop, choose US dollar, then switch it to Kenyan shilling in Settings before
+adding anything.** It saves, and the first product priced afterwards reads **KES**.
