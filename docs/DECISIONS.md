@@ -3877,6 +3877,46 @@ it works perfectly from a laptop on an IPv6 network. It fails only where this ru
 documented default would have produced a deploy that failed with an error naming neither Supabase
 nor IPv6.
 
+### A midnight job on a server that sleeps at midnight (2026-10-05)
+
+`IdempotencyCleanupService` cleared stored write replies with `@Cron(EVERY_DAY_AT_MIDNIGHT)`. **On
+Render's free plan the server is asleep at midnight** — it sleeps after ~15 minutes without a
+request — so on a shop's quiet server the job never ran, and nothing cleared old sign-in sessions
+at all. Measured locally, a stored reply is about a third of the space a sale takes (≈2.2 KB of
+≈9 KB), and each person's session chain grows every fifteen minutes they work. Both piled up in a
+500 MB database. Same shape as §22's trap: **a schedule that is right on a server that never
+sleeps and silently absent on one that does.**
+
+`HousekeepingService` (`src/common/housekeeping/`) replaces it: a sweep **30 seconds after every
+wake-up** (out of a cold start's way, not awaited) and **every hour while awake**, never two at
+once, never throwing. It clears replies past their 48 hours, and sign-in sessions **only a whole
+chain at a time, once the newest token in it has expired** — a replaced token is kept while its
+chain lives, because presenting it again is how `TokenService.rotate` catches a stolen session and
+signs the chain out. First run on the development database cleared 301 dead session rows and left
+every live chain alone; smoke stayed green.
+
+### How far the free plans stretch (measured 2026-10-05)
+
+Per row including indexes, from the development database: a product with three units and prices
+≈ 3 KB; **a three-line paid sale ≈ 8 KB kept for good** (sale, lines, movements, payment,
+allocation — the 48-hour reply copy comes and goes); a ten-line delivery ≈ 25 KB. Against
+Supabase's free **500 MB**, one shop selling 50 a day lasts about three years, 150 a day about
+thirteen months, 500 a day about four — shared between every shop on the instance. Database size
+is on Supabase → Database. **Space is not what bites first**: Render's free plan sleeps (≈50 s
+first request after a lull, which staff will feel every morning), and Supabase's free plan has
+**no restorable backups** — take a `pg_dump` of the session-pooler URL weekly from a laptop until
+the paid plan's daily backups take over.
+
+**Starting the hosted database over** keeps the schema and its migration history and empties
+everything else — tested in a rolled-back transaction, it emptied all 35 data tables and left only
+`_prisma_migrations`:
+
+```sql
+TRUNCATE TABLE organizations, users RESTART IDENTITY CASCADE;
+```
+
+Then sign up again on the site. Product photos on Cloudinary are not touched.
+
 ---
 
 ## 22. Anyone can create their own shop

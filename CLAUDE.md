@@ -342,6 +342,13 @@ the paid-tier note above). Three consequences are load-bearing:
 - **Free means cold starts again** (~50s after ~15 minutes idle), which **un-supersedes** §15
   item 1's free-tier notes. It also means the in-memory rate-limit counters reset on every cold
   start (§15 item 0), and that Supabase free projects pause after about a week idle.
+- **A server that sleeps never reaches midnight** (2026-10-05). The nightly clear-out of stored
+  write replies never ran on the free plan, and nothing cleared old sign-in sessions at all.
+  `HousekeepingService` now sweeps **30 s after every wake-up and hourly while awake**, removing
+  replies past 48 hours and sign-in chains **only once their newest token has expired** (a replaced
+  token in a live chain is what catches a stolen session). **Any new scheduled job must not rely on
+  a time of day** for the same reason. Space per sale, how far 500 MB goes, backups and the
+  one-line reset of the hosted database are in §21.
 
 **`render.yaml` is written (2026-09-29, revised 2026-09-30): exactly one web service and no
 `databases:` block, and the "one service" is load-bearing.** The API serves the built dashboard from its own origin (`serveDashboard` in

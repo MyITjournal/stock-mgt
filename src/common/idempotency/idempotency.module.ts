@@ -1,10 +1,10 @@
 import { Global, Module } from '@nestjs/common';
-import { IdempotencyCleanupService } from './idempotency-cleanup.service';
 import { IdempotencyInterceptor } from './idempotency.interceptor';
 
 @Global()
 @Module({
-  providers: [IdempotencyInterceptor, IdempotencyCleanupService],
+  // Expired keys are cleared by HousekeepingService.
+  providers: [IdempotencyInterceptor],
   exports: [IdempotencyInterceptor],
 })
 export class IdempotencyModule {}
