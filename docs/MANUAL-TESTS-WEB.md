@@ -949,3 +949,35 @@ payment that was too much first.
 
 **252. [gate] Receive a delivery typing 9.5 cartons received, 9 paid for.** It records, in pieces,
 with the half carton as free goods.
+
+---
+
+## AL. Pay later at the till
+
+**253. [gate] Ring up a sale, tick Pay later.** Method, Paid into, Reference and Amount paid
+disappear; the amber box reads **All on credit** with the total; the button reads **Record sale
+on credit**. With no customer chosen the button stays off and the box says a credit sale needs a
+customer.
+
+**254. Choose a customer and record it.** The sale is recorded with nothing paid; Money → Invoices
+lists it **Unpaid**, and Money in shows no payment for it.
+
+**255. [gate] Ring up a second Pay later sale for the same customer, as a cashier.** Refused — they
+still owe. As an owner or manager, the refusal asks for a reason and records it.
+
+**256. Untick Pay later.** The money boxes come back empty, and a normal cash sale works as before.
+
+**257. [gate] Open Money → Invoices → All invoices.** The sale from step 254 has a **Due** date five
+days after it was made. A sale paid in full shows **—**.
+
+**258. [gate] Sign in as a cashier and open the Till.** A **Payments due** line sits above the cart
+once something is due within two days or overdue. A sale made today is not due for five days, so
+this needs an older unpaid invoice — the migration gave every one still owing a due date.
+**Show** opens it: customer, phone, invoice number, amount owed, and *N days overdue* in red, *Due
+today* in amber or *Due in N days*. Tapping the phone number on a phone offers to call; the invoice
+number opens the sale.
+
+**259. As an owner, open Home.** The same list sits at the top, already open.
+
+**260. Record a payment against one of those invoices.** It leaves the list. Void that payment and
+it comes back. When nothing is due, the panel is gone from both screens.

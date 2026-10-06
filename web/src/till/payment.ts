@@ -32,6 +32,13 @@ export interface PaymentState {
   amount: Minor | null;
   bankAccountId: string | null;
   reference: string;
+  /**
+   * The customer takes the goods now and pays later — the whole sale goes on
+   * credit and **no money is taken**, so there is no method, account or amount
+   * to ask. Before this, the only way was to type 0 against "Cash" and press
+   * "Take payment", which said the opposite of what happened.
+   */
+  payLater: boolean;
 }
 
 export const EMPTY_PAYMENT: PaymentState = {
@@ -40,4 +47,11 @@ export const EMPTY_PAYMENT: PaymentState = {
   amount: null,
   bankAccountId: null,
   reference: '',
+  payLater: false,
 };
+
+/** What is paid now: nothing on credit, else what was typed, else the total. */
+export function payingNow(state: PaymentState, total: Minor): Minor {
+  if (state.payLater) return 0;
+  return state.amount ?? total;
+}

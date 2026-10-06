@@ -5,6 +5,7 @@ import { Page } from '../components/Layout';
 import { DataTable } from '../components/DataTable';
 import { MoneyTargetRing, TargetRing } from '../components/TargetRing';
 import { Spinner } from '../auth/RequireAuth';
+import { DuePayments } from '../components/DuePayments';
 
 /**
  * The whole screen, from one request.
@@ -60,6 +61,8 @@ export function HomePage() {
         data.generatedAt,
       ).toLocaleTimeString()}.`}
     >
+      <DuePayments />
+
       {/*
         Sales and collections sit next to each other on purpose. On a credit
         route they diverge constantly, and a business reading only the first

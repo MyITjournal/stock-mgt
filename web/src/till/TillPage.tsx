@@ -22,10 +22,16 @@ import { ScanBox } from './ScanBox';
 import { CameraScanner } from '../components/CameraScanner';
 import { CartLines } from './CartLines';
 import { PaymentPanel } from './PaymentPanel';
-import { EMPTY_PAYMENT, needsBankAccount, type PaymentState } from './payment';
+import {
+  EMPTY_PAYMENT,
+  needsBankAccount,
+  payingNow,
+  type PaymentState,
+} from './payment';
 import { OverrideDialog, type OverrideKind } from './OverrideDialog';
 import { Receipt } from './Receipt';
 import { CustomerDialog } from '../customers/CustomerDialog';
+import { DuePayments } from '../components/DuePayments';
 
 type ScanResult = components['schemas']['ScanResult'];
 type ProductView = components['schemas']['ProductView'];
@@ -539,7 +545,7 @@ export function TillPage() {
       setBusy(true);
       setError(null);
 
-      const paying = payment.amount ?? total;
+      const paying = payingNow(payment, total);
 
       try {
         const sale = await api.post<SaleView>(
@@ -548,16 +554,21 @@ export function TillPage() {
             id: saleId.current,
             ...(payment.customerId && { customerId: payment.customerId }),
             lines: toSaleLines(lines),
-            payment: {
-              amount: paying,
-              method: payment.method,
-              ...(payment.reference.trim() && {
-                reference: payment.reference.trim(),
-              }),
-              ...(payment.bankAccountId && {
-                bankAccountId: payment.bankAccountId,
-              }),
-            },
+            // Paying later is a sale with nothing paid: no money moved, so
+            // no account or reference rides along — the server writes no
+            // payment row for an amount of 0 and the invoice is owed.
+            payment: payment.payLater
+              ? { amount: 0, method: 'cash' }
+              : {
+                  amount: paying,
+                  method: payment.method,
+                  ...(payment.reference.trim() && {
+                    reference: payment.reference.trim(),
+                  }),
+                  ...(payment.bankAccountId && {
+                    bankAccountId: payment.bankAccountId,
+                  }),
+                },
             ...(reasons?.forcedReason && {
               force: true,
               forcedReason: reasons.forcedReason,
@@ -657,10 +668,12 @@ export function TillPage() {
     );
   }
 
-  const paying = payment.amount ?? total;
+  const paying = payingNow(payment, total);
   const canSubmit =
     lines.length > 0 &&
-    (!needsBankAccount(payment.method) || Boolean(payment.bankAccountId)) &&
+    (payment.payLater ||
+      !needsBankAccount(payment.method) ||
+      Boolean(payment.bankAccountId)) &&
     (paying >= total || Boolean(payment.customerId));
 
   return (
@@ -675,6 +688,7 @@ export function TillPage() {
         ) : undefined
       }
     >
+      <DuePayments collapsible />
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-4">
           {cameraOpen ? (

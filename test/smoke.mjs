@@ -2802,6 +2802,60 @@ async function main() {
     moves.filter((m) => m.reason === 'receipt_correction').length === 2,
   );
 
+  step(47, 'Pay later: due in five days, and on everyone’s reminder');
+
+  // In the shop from step 43, which has stock from step 45. A customer takes
+  // goods "six days ago" and pays later, so the invoice is a day overdue.
+  const lateCustomer = (
+    await api('POST', '/customers', {
+      token: selfToken,
+      body: { id: randomUUID(), firstName: 'Late', lastName: 'Payer', phone: '08030000000' },
+    })
+  ).data;
+  const madeSixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+  const laterSale = (
+    await api('POST', '/sales', {
+      token: selfToken,
+      key: randomUUID(),
+      body: {
+        customerId: lateCustomer.id,
+        occurredAt: madeSixDaysAgo,
+        lines: [{ productId: peakImported.id, quantity: 1 }],
+        payment: { amount: 0, method: 'cash' },
+      },
+    })
+  ).data;
+  check('a sale on credit gets a due date', !!laterSale.dueDate);
+  const daysUntilDue = Math.round(
+    (new Date(laterSale.dueDate).getTime() - new Date(madeSixDaysAgo).getTime()) / 86_400_000,
+  );
+  check('five days after the sale', daysUntilDue >= 4 && daysUntilDue <= 5, `${daysUntilDue} days`);
+
+  const dueNow = (await api('GET', '/sales/due', { token: selfToken })).data;
+  const ourDue = dueNow.invoices.find((row) => row.saleId === laterSale.id);
+  eq('it is on the reminder, a day overdue', ourDue?.daysPastDue, 1);
+  eq('with who to ask and what they owe', `${ourDue?.customer.name} ${ourDue?.customer.phone} ${ourDue?.balance}`, `Late Payer 08030000000 ${laterSale.total}`);
+  check('and counted as overdue', dueNow.overdue >= 1);
+
+  await api('GET', '/sales/due', { token: bolaToken });
+  check('a cashier can read the reminder — they are the ones who ask', true);
+
+  await api('POST', '/payments', {
+    token: selfToken,
+    key: randomUUID(),
+    body: {
+      id: randomUUID(),
+      customerId: lateCustomer.id,
+      amount: laterSale.total,
+      method: 'cash',
+      allocations: [{ saleId: laterSale.id, amount: laterSale.total }],
+    },
+  });
+  check(
+    'once paid, it leaves the reminder',
+    !(await api('GET', '/sales/due', { token: selfToken })).data.invoices.some((row) => row.saleId === laterSale.id),
+  );
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

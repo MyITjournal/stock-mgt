@@ -555,6 +555,21 @@ Four more from the till (7.2), all in `web/src/till/`:
 - **A 409 is a rule, not an error.** Not enough stock and "this customer still owes" both come back
   as refusals an owner or manager overrides with a reason, and **supplying the reason is the
   override**. A cashier sees the refusal and no dialog.
+- **Pay later is its own switch, not "0 against Cash"** (2026-10-06). On, the panel hides method,
+  account, reference and amount, the button reads **Record sale on credit**, and the request is
+  `{ amount: 0 }` with nothing else — the server writes no payment row and the invoice is owed. It
+  still needs a customer, and **the rule that refuses more credit to a customer who still owes stays**
+  (owner's decision, 2026-10-06): an owner or manager overrides with a reason, as before.
+  `payingNow` in `till/payment.ts` is the one place that says what is paid now.
+- **A credit sale is due five days after it is made, and everybody sees who is due** (§6,
+  2026-10-06). `Sale.dueDate` is **stored** — the start of the fifth day in the shop's timezone,
+  set only when less than the total was paid (`dueDateFor`, `sales/due.ts`) — so changing
+  `CREDIT_DAYS` moves future sales, never past ones. `GET /sales/due` lists what is overdue, due
+  today or due in two days, owed-ness decided by `saleBalance` over `LIVE_ALLOCATIONS`, and is
+  **open to every role on purpose**: the counter is where the customer walks in, and it carries no
+  buying price. `DuePayments` shows it on **Home and on the Till** (folded there; hidden when
+  empty), because Home is closed to a rep. All invoices has a **Due** column. A reminder, **not a
+  rule** — nothing is refused for being overdue.
 
 And three from 7.3:
 

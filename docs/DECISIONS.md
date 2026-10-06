@@ -1063,6 +1063,39 @@ deliveries, which is how a distributor's receivables become uncollectable. The
 ledger still records whatever actually happened; it is the *write path* that is
 opinionated, exactly as with negative stock (§5).
 
+### Credit is due in five days, and every member of staff sees who is due (2026-10-06)
+
+The till gained **Pay later** (§17): a switch, not "0 against Cash", which sends
+`payment: { amount: 0 }` so no payment row is written and the invoice is owed. The
+gate above stays — the owner was explicit that it must not be relaxed.
+
+The same branch gave a credit sale a **due date: five days after the sale**, at the
+start of that day in the shop's timezone (`Sale.dueDate`, set by `dueDateFor` in
+`sales/due.ts` when the sale is recorded with less paid than its total). Four
+details worth keeping:
+
+- **It is stored, not derived**, so changing `CREDIT_DAYS` later moves future sales
+  and leaves the past alone — the same snapshot rule as every money figure on a
+  sale. The migration backfilled sales that still owed, five days from when they
+  happened. A sale paid in full has none.
+- **The due date does not move when the sale is paid.** What decides whether a sale
+  is on the reminder is its balance, through the one rule (`saleBalance` over
+  `LIVE_ALLOCATIONS`), so a voided payment puts it straight back on and a returned
+  invoice drops off.
+- **`GET /sales/due` is open to every role.** The owner asked for it on purpose: the
+  person at the counter sees the customer walk in and is the one who can ask. It
+  carries names, phone numbers, invoice numbers and what is owed — nothing that
+  reveals a buying price, so `SEES_COST` has nothing to guard. It lists what is
+  overdue, due today, or due in the next two days, oldest first, and counts the
+  days in the shop's timezone (`daysPastDue`) so the browser never works out a day.
+- **It shows on the Till as well as Home**, because Home is closed to a sales rep and
+  a cashier would otherwise never see it. On the till it starts folded to one line;
+  when nothing is due it is not shown at all.
+
+The due date is a **reminder, not a rule.** Nothing refuses a sale because an invoice
+is overdue — the gate above already refuses new credit to anyone who owes at all,
+so a second, date-based rule would refuse nobody new.
+
 ### Printing: the server serves payloads and PDFs, the device drives the printer
 
 `GET /sales/:id/receipt` returns a deliberately narrow payload — what the customer is handed and

@@ -348,6 +348,12 @@ model Sale {
   /// syncing at 5pm. `createdAt` is when the server stored it.
   occurredAt DateTime @default(now())
 
+  /// When a sale that went out on credit should be paid: five days after the
+  /// sale, snapped to the day in the organization's timezone when read. Set
+  /// only when the sale was not paid in full at the time; stored rather than
+  /// derived so changing the rule later does not move what was already agreed.
+  dueDate DateTime?
+
   recordedByUserId String?
 
   createdAt DateTime @default(now())
@@ -366,6 +372,7 @@ model Sale {
   @@index([organizationId])
   @@index([customerId])
   @@index([occurredAt])
+  @@index([organizationId, dueDate])
   @@map("sales")
 }
 
