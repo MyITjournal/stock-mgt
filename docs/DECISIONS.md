@@ -1819,6 +1819,33 @@ deleted name revives the buried row rather than colliding with the unique constr
 `PaymentMethod`, by contrast, **is** a Prisma enum — cash, transfer, POS, cheque. That vocabulary
 is set by the payment rails, not by what a particular business does.
 
+### Who was paid is typed, and salaries have their own screen (2026-10-06)
+
+The owner found "Paid to" offering only vendors, defaulting to **"Nobody in particular"**. Vendors
+are paid through bills (§16), so the list offered the wrong people and the default said nothing.
+**`Expense.paidTo` is now a required typed name** — the landlord, the mechanic, a member of staff —
+with names already used offered as suggestions. `supplierId` stays on the row and the API for
+older data; the migration copied each named supplier into `paidTo`. Rows from before keep a null.
+
+**Salaries are still an expense, shown apart.** The owner asked for them "standalone". Taking them
+out of profit would overstate it — a month that paid ₦300,000 in wages did not make that ₦300,000
+— so they stay in `expenses` and the subtraction, and what is standalone is where they are seen:
+
+- **`ExpenseCategory.isSalaries`** marks the one category the *Money → Salaries* screen records
+  into. Seeded with every shop, backfilled onto each shop's existing "salaries" (or created), and
+  **never deletable** (409) — renaming is fine. No partial unique index enforces "one per shop":
+  Prisma cannot express one and would propose dropping it in every later diff, so the seed, the
+  backfill and the refused delete are what keep it single.
+- `GET /expenses?kind=salaries|other` splits the two lists; omitted, both, as sync and profit want.
+  The Expenses picker leaves the salaries category out, so pay is never filed as diesel.
+- **Profit reports `salaries` and `otherExpenses` beside `expenses`** (their sum), each computed on
+  the server, and the profit screen shows *Less salaries* and *Less other expenses*.
+- **No payslips, deductions, pension or dividends.** Those are where payroll and accounting start.
+  A dividend is not a cost of running the shop — recording one as an expense would understate
+  profit, the same trap as a vendor payment.
+- Expenses were already closed to cashiers and reps (`SPENDERS`), so nobody at the counter sees a
+  colleague's pay. A manager does.
+
 ### Vendor bills are still not a thing
 
 Purchasing was cut (§6), and the payments slice was where a bill would have crept back in as

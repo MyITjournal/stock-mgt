@@ -1290,6 +1290,7 @@ async function main() {
     body: {
       categoryId: fuel.id,
       amount: 1_500_000,
+      paidTo: 'Total filling station',
       note: 'Diesel for the Tuesday route.',
     },
   });
@@ -1301,10 +1302,22 @@ async function main() {
         categoryId: transport.id,
         amount: 800_000,
         method: 'transfer',
+        paidTo: 'Musa (lorry hire)',
         reference: 'Receipt 4471',
       },
     })
   ).data;
+  eq('an expense says who was paid', lorry.paidTo, 'Musa (lorry hire)');
+
+  for (const paidTo of [undefined, '   ']) {
+    await api('POST', '/expenses', {
+      token: t,
+      key: randomUUID(),
+      body: { categoryId: fuel.id, amount: 1_000, ...(paidTo !== undefined && { paidTo }) },
+      expect: 400,
+    });
+  }
+  check('and one that does not — or names only spaces — is refused (400)', true);
 
   let spend = (await api('GET', '/expenses', { token: t })).data;
   eq('both are on the books', spend.expenses.length, 2);
@@ -2916,6 +2929,53 @@ async function main() {
   check('after which changing it is refused (409)', true);
   await api('PATCH', '/organization', { token: cediToken, body: { currency: 'KES', name: `Nairobi Mart ${shopSuffix}` } });
   check('while sending the same currency back with other changes still saves', true);
+
+  step(49, 'Salaries: their own screen and their own profit line, still an expense');
+
+  const salariesCategory = (await api('GET', '/expense-categories', { token: t })).data.find(
+    (c) => c.isSalaries,
+  );
+  check('every shop has one salaries category', !!salariesCategory, '');
+  const profitBeforePay = (await api('GET', '/reports/profit?period=today', { token: t })).data;
+
+  const pay = (
+    await api('POST', '/expenses', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        categoryId: salariesCategory.id,
+        amount: 4_500_000,
+        method: 'transfer',
+        paidTo: 'Amina Bello',
+        note: 'September',
+      },
+    })
+  ).data;
+  check('a salary is recorded like any expense', pay.category.isSalaries === true);
+
+  const salaryList = (await api('GET', '/expenses?kind=salaries', { token: t })).data;
+  check('the Salaries screen lists it', salaryList.expenses.some((e) => e.id === pay.id));
+  const otherList = (await api('GET', '/expenses?kind=other', { token: t })).data;
+  check('and the Expenses screen does not', !otherList.expenses.some((e) => e.id === pay.id));
+  check(
+    'whose total leaves salaries out',
+    otherList.expenses.every((e) => !e.category.isSalaries),
+  );
+  await api('GET', '/expenses?kind=bonuses', { token: t, expect: 400 });
+  check('an unknown kind is refused (400)', true);
+
+  const profitAfterPay = (await api('GET', '/reports/profit?period=today', { token: t })).data;
+  eq('profit shows salaries on their own line', profitAfterPay.salaries - profitBeforePay.salaries, 4_500_000);
+  eq('other expenses are untouched by it', profitAfterPay.otherExpenses, profitBeforePay.otherExpenses);
+  eq('and the two add up to expenses', profitAfterPay.expenses, profitAfterPay.salaries + profitAfterPay.otherExpenses);
+  eq(
+    'still taken off profit — wages paid are not money made',
+    profitBeforePay.operatingProfit - profitAfterPay.operatingProfit,
+    4_500_000,
+  );
+
+  await api('DELETE', `/expense-categories/${salariesCategory.id}`, { token: t, expect: 409 });
+  check('the salaries category cannot be removed (409)', true);
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

@@ -113,7 +113,21 @@ export function ProfitPage() {
                     hint="Credited off vendor bills in this period"
                   />
                 )}
-                <Line label="Less expenses" value={-data.expenses} />
+                {/*
+                  Salaries on their own line (2026-10-06), and still taken
+                  off: both figures are the server's, never split here.
+                */}
+                {data.salaries !== 0 && (
+                  <Line label="Less salaries" value={-data.salaries} />
+                )}
+                <Line
+                  label={
+                    data.salaries !== 0
+                      ? 'Less other expenses'
+                      : 'Less expenses'
+                  }
+                  value={-data.otherExpenses}
+                />
                 <Line
                   label="Operating profit"
                   value={data.operatingProfit}

@@ -39,8 +39,13 @@ export function defaultExpenseCategoryRows(organizationId: string) {
     organizationId,
     name,
     sortOrder: (index + 1) * 10,
+    // The one the Salaries screen records into.
+    isSalaries: name === SALARIES_CATEGORY,
   }));
 }
+
+/** The seeded category the Salaries screen records into. */
+export const SALARIES_CATEGORY = 'salaries';
 
 @Injectable()
 export class ExpenseCategoryService {
@@ -116,7 +121,14 @@ export class ExpenseCategoryService {
    * spend still reports as fuel after the business stops tracking it.
    */
   async remove(id: string) {
-    await this.findOneOrFail(id);
+    const category = await this.findOneOrFail(id);
+    // Salaries has its own screen, which records into this row; removing it
+    // would leave that screen with nowhere to write.
+    if (category.isSalaries) {
+      throw new ConflictException(
+        'Salaries has its own screen and cannot be removed. Rename it if you call it something else.',
+      );
+    }
     await this.prisma.expenseCategory.update({
       where: { id },
       data: { deletedAt: new Date() },

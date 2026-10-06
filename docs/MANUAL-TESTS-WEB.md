@@ -1016,3 +1016,21 @@ invoices and reports all read **GH₵**, and its PDF invoice reads **GHS 45.00**
 
 **269. Sign up a third shop, choose US dollar, then switch it to Kenyan shilling in Settings before
 adding anything.** It saves, and the first product priced afterwards reads **KES**.
+
+---
+
+## AN. Who was paid, and salaries
+
+**270. [gate] Money → Expenses → Record an expense.** **Paid to** is a box to type in, first on the
+form, and the button stays off until it has a name. There is no "Nobody in particular" and no list
+of vendors. **What for** does not offer *salaries*. A **Paid on** date is there for something paid
+earlier.
+
+**271. Record one, then open the form again.** The name you typed is offered as a suggestion. The
+list shows it under Paid to, and the note beside it.
+
+**272. [gate] Money → Salaries → Pay a salary.** No category to pick. Record one for a member of
+staff: it appears on Salaries and **not** on Expenses.
+
+**273. [gate] Reports → Profit for this month.** *Less salaries* and *Less other expenses* are two
+lines, and operating profit has come down by the salary.
