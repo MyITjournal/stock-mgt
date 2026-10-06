@@ -2840,6 +2840,16 @@ async function main() {
   await api('GET', '/sales/due', { token: bolaToken });
   check('a cashier can read the reminder — they are the ones who ask', true);
 
+  // The same date reaches the unpaid list, the statement and the invoice.
+  const owedList = (
+    await api('GET', `/receivables?customerId=${lateCustomer.id}`, { token: selfToken })
+  ).data;
+  const owedRow = owedList.invoices.find((row) => row.id === laterSale.id);
+  eq('the unpaid list carries the due date', owedRow?.dueDate, laterSale.dueDate);
+  eq('and how late it is, the same count as the reminder', owedRow?.daysPastDue, 1);
+  const lateReceipt = (await api('GET', `/sales/${laterSale.id}/receipt`, { token: selfToken })).data;
+  eq('the receipt the invoice prints from says when it is due', lateReceipt.dueDate, laterSale.dueDate);
+
   await api('POST', '/payments', {
     token: selfToken,
     key: randomUUID(),
@@ -2854,6 +2864,11 @@ async function main() {
   check(
     'once paid, it leaves the reminder',
     !(await api('GET', '/sales/due', { token: selfToken })).data.invoices.some((row) => row.saleId === laterSale.id),
+  );
+  eq(
+    'and a paid invoice prints no due date',
+    (await api('GET', `/sales/${laterSale.id}/receipt`, { token: selfToken })).data.dueDate,
+    null,
   );
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.

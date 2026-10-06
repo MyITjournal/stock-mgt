@@ -137,7 +137,11 @@ export function VoidPaymentDialog({
           >
             Keep it
           </Button>
-          <Button type="submit" variant="danger" disabled={busy || !reason.trim()}>
+          <Button
+            type="submit"
+            variant="danger"
+            disabled={busy || !reason.trim()}
+          >
             {busy ? 'Voiding…' : 'Void payment'}
           </Button>
         </div>

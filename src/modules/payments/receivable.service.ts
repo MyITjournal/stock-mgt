@@ -1,6 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
+import { TenantContext } from '../../common/tenancy/tenant-context';
+import { daysPastDue } from '../sales/due';
 import { LIVE_ALLOCATIONS, saleBalance, splitOwed } from './balance';
 import {
   DebtorCustomer,
@@ -30,23 +32,31 @@ export class ReceivableService {
   async outstanding(
     filter: { customerId?: string } = {},
   ): Promise<ReceivablesView> {
-    const sales = await this.prisma.sale.findMany({
-      where: { ...(filter.customerId && { customerId: filter.customerId }) },
-      orderBy: [{ occurredAt: 'asc' }, { number: 'asc' }],
-      select: {
-        id: true,
-        number: true,
-        occurredAt: true,
-        total: true,
-        customer: {
-          select: { id: true, firstName: true, lastName: true, phone: true },
+    const [organization, sales] = await Promise.all([
+      this.prisma.organization.findFirst({
+        where: { id: TenantContext.requireOrganizationId() },
+        select: { timezone: true },
+      }),
+      this.prisma.sale.findMany({
+        where: { ...(filter.customerId && { customerId: filter.customerId }) },
+        orderBy: [{ occurredAt: 'asc' }, { number: 'asc' }],
+        select: {
+          id: true,
+          number: true,
+          occurredAt: true,
+          dueDate: true,
+          total: true,
+          customer: {
+            select: { id: true, firstName: true, lastName: true, phone: true },
+          },
+          allocations: LIVE_ALLOCATIONS,
+          returns: { select: { refundAmount: true } },
         },
-        allocations: LIVE_ALLOCATIONS,
-        returns: { select: { refundAmount: true } },
-      },
-    });
+      }),
+    ]);
+    const timezone = organization?.timezone || 'Africa/Lagos';
 
-    const now = Date.now();
+    const now = new Date();
     const invoices = sales
       .map((sale) => ({
         id: sale.id,
@@ -56,10 +66,21 @@ export class ReceivableService {
         total: sale.total,
         ...saleBalance(sale),
         daysOutstanding: Math.floor(
-          (now - sale.occurredAt.getTime()) / MS_PER_DAY,
+          (now.getTime() - sale.occurredAt.getTime()) / MS_PER_DAY,
         ),
+        dueDate: sale.dueDate,
       }))
-      .filter((sale) => sale.balance !== 0);
+      .filter((sale) => sale.balance !== 0)
+      // The due date only means something while money is owed: an invoice in
+      // credit (goods returned after paying) is not "overdue" for anything.
+      .map((sale) => {
+        const dueDate = sale.balance > 0 ? sale.dueDate : null;
+        return {
+          ...sale,
+          dueDate,
+          daysPastDue: dueDate ? daysPastDue(timezone, dueDate, now) : null,
+        };
+      });
 
     const split = splitOwed(invoices.map((sale) => sale.balance));
 

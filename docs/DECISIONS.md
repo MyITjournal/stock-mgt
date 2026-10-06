@@ -1096,6 +1096,17 @@ The due date is a **reminder, not a rule.** Nothing refuses a sale because an in
 is overdue — the gate above already refuses new credit to anyone who owes at all,
 so a second, date-based rule would refuse nobody new.
 
+**Every report of a debt says the same date** (same day, a follow-up branch). The
+unpaid list (`GET /receivables`, and so the customer page and the statement) carries
+`dueDate` and `daysPastDue`; the receipt payload carries `dueDate`, so the invoice PDF
+tells the customer **Payment due by** on the document they pay from; the invoice
+download has a Due column. All of them read the stored date and the one count in
+`due.ts`, so the reminder, the list and the paper cannot disagree. A due date is
+shown **only while money is owed** — an invoice in credit is not overdue for
+anything — and an invoice without one (settled before due dates existed, reopened by
+a void) shows its age, as the list did before. Adding `dueDate` to the receipt is
+safe for printers: it is a contract that may grow, never one that may change.
+
 ### Printing: the server serves payloads and PDFs, the device drives the printer
 
 `GET /sales/:id/receipt` returns a deliberately narrow payload — what the customer is handed and

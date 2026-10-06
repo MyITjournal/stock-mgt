@@ -57,6 +57,12 @@ const INVOICE_COLUMNS: readonly SheetColumn<SaleView>[] = [
   { header: 'Refunded', kind: 'money', value: (sale) => sale.refunded },
   { header: 'Owing', kind: 'money', value: (sale) => sale.balance },
   {
+    // Only while owed, as on screen: a paid invoice has nothing to be due.
+    header: 'Due',
+    kind: 'date',
+    value: (sale) => (sale.balance > 0 ? sale.dueDate : null),
+  },
+  {
     header: 'Status',
     value: (sale) => PAY_STATE_LABEL[payState(sale.balance, sale.allocated)],
     width: 10,

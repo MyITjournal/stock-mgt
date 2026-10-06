@@ -5,6 +5,7 @@ import {
   invoiceDefinition,
   payableBlock,
 } from './invoice';
+import { StatementDocument, statementDefinition } from './statement';
 
 const ORG: Letterhead = {
   name: 'Adebayo Stores Limited',
@@ -128,6 +129,7 @@ describe('invoiceDefinition', () => {
     tax: 753_488,
     paid: 4_000_000,
     balance: 6_800_000,
+    dueDate: null as Date | null,
     note: null,
   };
 
@@ -157,6 +159,29 @@ describe('invoiceDefinition', () => {
     expect(doc).toContain('Balance due');
   });
 
+  it('says when a credit sale is due, in the shop’s own calendar', () => {
+    // Midnight in Lagos on the 22nd is 23:00 UTC on the 21st; printed in UTC
+    // it would tell the customer a day early.
+    const doc = JSON.stringify(
+      invoiceDefinition({
+        organization: ORG,
+        accounts: [],
+        invoice: { ...invoice, dueDate: new Date('2026-09-21T23:00:00.000Z') },
+      }),
+    );
+
+    expect(doc).toContain('Payment due by');
+    expect(doc).toContain('22 Sept 2026');
+  });
+
+  it('prints no due date once nothing is owed', () => {
+    const doc = JSON.stringify(
+      invoiceDefinition({ organization: ORG, accounts: [], invoice }),
+    );
+
+    expect(doc).not.toContain('Payment due');
+  });
+
   it('renders for a business that has filled nothing in', () => {
     // The letterhead fields are all nullable on purpose: a business that never
     // visited the profile screen still has to be able to invoice today.
@@ -177,5 +202,55 @@ describe('invoiceDefinition', () => {
 
     expect(JSON.stringify(doc)).toContain('Adebayo Stores Limited');
     expect(() => JSON.stringify(doc)).not.toThrow();
+  });
+});
+
+describe('statementDefinition', () => {
+  const row = (
+    over: Partial<StatementDocument['invoices'][number]>,
+  ): StatementDocument['invoices'][number] => ({
+    number: 'INV-0001',
+    occurredAt: new Date('2026-09-10T10:00:00.000Z'),
+    total: 500_000,
+    balance: 500_000,
+    daysOutstanding: 12,
+    dueDate: new Date('2026-09-14T23:00:00.000Z'),
+    daysPastDue: 7,
+    ...over,
+  });
+  const render = (invoices: StatementDocument['invoices']) =>
+    JSON.stringify(
+      statementDefinition({
+        organization: ORG,
+        accounts: [],
+        statement: {
+          customer: { name: 'Chidi Provisions', phone: null },
+          invoices,
+          payments: [],
+          credit: 0,
+          owed: invoices.reduce((sum, invoice) => sum + invoice.balance, 0),
+        },
+      }),
+    );
+
+  it('shows when each invoice was due and how late it is', () => {
+    const doc = render([row({})]);
+
+    expect(doc).toContain('15 Sept 2026');
+    expect(doc).toContain('7 days overdue');
+  });
+
+  it('says "due today" on the day, and nothing extra before it', () => {
+    expect(render([row({ daysPastDue: 0 })])).toContain('due today');
+
+    const early = render([row({ daysPastDue: -2 })]);
+    expect(early).not.toContain('overdue');
+    expect(early).not.toContain('due today');
+  });
+
+  it('falls back to the age of an invoice with no due date', () => {
+    const doc = render([row({ dueDate: null, daysPastDue: null })]);
+
+    expect(doc).toContain('12 days old');
   });
 });

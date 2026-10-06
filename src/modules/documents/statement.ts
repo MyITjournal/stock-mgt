@@ -22,6 +22,8 @@ export interface StatementDocument {
     total: number;
     balance: number;
     daysOutstanding: number;
+    dueDate: Date | null;
+    daysPastDue: number | null;
   }[];
   payments: {
     occurredAt: Date;
@@ -31,6 +33,36 @@ export interface StatementDocument {
   }[];
   credit: number;
   owed: number;
+}
+
+/**
+ * When an invoice was due, and how late it now is.
+ *
+ * The list is still oldest-first (§11) — who has owed longest is a sort. This
+ * column says what the customer was told: the date on their invoice, and
+ * "3 days overdue" once it has passed. An invoice with no due date — one from
+ * before due dates, settled at the time and later reopened — falls back to its
+ * age, which is what this column used to say.
+ */
+function dueCell(
+  invoice: StatementDocument['invoices'][number],
+  date: (value: Date) => string,
+): TableCell {
+  if (!invoice.dueDate || invoice.daysPastDue === null) {
+    return { text: `${invoice.daysOutstanding} days old`, alignment: 'right' };
+  }
+  const late = invoice.daysPastDue;
+  return {
+    alignment: 'right',
+    stack: [
+      { text: date(invoice.dueDate) },
+      ...(late > 0
+        ? [{ text: `${late} day${late === 1 ? '' : 's'} overdue`, bold: true }]
+        : late === 0
+          ? [{ text: 'due today', bold: true }]
+          : []),
+    ],
+  };
 }
 
 /**
@@ -94,20 +126,14 @@ export function statementDefinition(args: {
                 { text: 'Date', style: 'tableHeader' },
                 { text: 'Total', style: 'tableHeader', alignment: 'right' },
                 { text: 'Balance', style: 'tableHeader', alignment: 'right' },
-                { text: 'Age', style: 'tableHeader', alignment: 'right' },
+                { text: 'Due', style: 'tableHeader', alignment: 'right' },
               ],
               ...statement.invoices.map((invoice): TableCell[] => [
                 invoice.number,
                 date(invoice.occurredAt),
                 { text: money(invoice.total), alignment: 'right' },
                 { text: money(invoice.balance), alignment: 'right' },
-                {
-                  // Oldest-first is how the list is sorted (§11): the question
-                  // people ask is who has owed longest, which is a sort rather
-                  // than a set of buckets.
-                  text: `${invoice.daysOutstanding} days`,
-                  alignment: 'right',
-                },
+                dueCell(invoice, date),
               ]),
             ],
           },

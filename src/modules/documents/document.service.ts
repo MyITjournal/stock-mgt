@@ -48,6 +48,7 @@ export class DocumentService {
           tax: receipt.tax,
           paid: receipt.paid,
           balance: receipt.balance,
+          dueDate: receipt.dueDate,
           note: receipt.note,
         },
       }),
@@ -81,6 +82,8 @@ export class DocumentService {
             total: invoice.total,
             balance: invoice.balance,
             daysOutstanding: invoice.daysOutstanding,
+            dueDate: invoice.dueDate,
+            daysPastDue: invoice.daysPastDue,
           })),
           payments: statement.payments.map((payment) => ({
             occurredAt: payment.occurredAt,

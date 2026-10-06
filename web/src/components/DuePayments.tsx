@@ -4,25 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Money } from './Money';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
+import { dueStatus } from '../lib/due';
 
 type DueInvoicesView = components['schemas']['DueInvoicesView'];
-
-/** "3 days overdue", "Due today", "Due in 2 days" — the server's count, in words. */
-function when(daysPastDue: number): { text: string; tone: string } {
-  if (daysPastDue > 0) {
-    return {
-      text: `${daysPastDue} day${daysPastDue === 1 ? '' : 's'} overdue`,
-      tone: 'text-red-700 font-medium',
-    };
-  }
-  if (daysPastDue === 0)
-    return { text: 'Due today', tone: 'text-amber-700 font-medium' };
-  const left = -daysPastDue;
-  return {
-    text: `Due in ${left} day${left === 1 ? '' : 's'}`,
-    tone: 'text-slate-600',
-  };
-}
 
 /**
  * Payments due — who to ask for money, and how late they are.
@@ -82,7 +66,7 @@ export function DuePayments({
       {open && (
         <ul className="mt-3 divide-y divide-slate-200/70 text-sm">
           {data.invoices.map((invoice) => {
-            const status = when(invoice.daysPastDue);
+            const status = dueStatus(invoice.daysPastDue);
             return (
               <li
                 key={invoice.saleId}
