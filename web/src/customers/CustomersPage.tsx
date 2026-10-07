@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Button } from '../components/Button';
@@ -29,6 +29,7 @@ type ReceivablesView = components['schemas']['ReceivablesView'];
  * they are selling to.
  */
 export function CustomersPage() {
+  const navigate = useNavigate();
   const seesCost = useSeesCost();
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState('');
@@ -178,7 +179,13 @@ export function CustomersPage() {
         </table>
       </div>
 
-      {adding && <CustomerDialog onClose={() => setAdding(false)} />}
+      {adding && (
+        <CustomerDialog
+          onClose={() => setAdding(false)}
+          // Already a customer: open them rather than add a second.
+          onPickExisting={(customer) => navigate(`/customers/${customer.id}`)}
+        />
+      )}
     </Page>
   );
 }

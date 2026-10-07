@@ -3277,6 +3277,57 @@ async function main() {
     !('totalValue' in cashierSummary) && cashierSummary.rows.every((row) => !('value' in row)),
   );
 
+  step(53, 'Merging a customer entered twice, and bills paid on the home screen');
+
+  const twinA = (
+    await api('POST', '/customers', { token: t, body: { id: randomUUID(), firstName: 'Twin', lastName: `Shop ${shopSuffix}` } })
+  ).data;
+  const twinB = (
+    await api('POST', '/customers', { token: t, body: { id: randomUUID(), firstName: 'Twin', lastName: `Shop ${shopSuffix}`, phone: '08055555555' } })
+  ).data;
+  for (const who of [twinA, twinB]) {
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: { customerId: who.id, lines: [{ productId: soap.id, quantity: 1 }], payment: { amount: 0, method: 'cash' } },
+    });
+  }
+  await api('POST', `/customers/${twinB.id}/merge`, {
+    token: bolaToken,
+    key: randomUUID(),
+    body: { intoCustomerId: twinA.id },
+    expect: 403,
+  });
+  check('a cashier cannot merge customers (403)', true);
+  const merged = (
+    await api('POST', `/customers/${twinB.id}/merge`, { token: t, key: randomUUID(), body: { intoCustomerId: twinA.id } })
+  ).data;
+  eq('the duplicate’s invoice moved to the customer kept', merged.movedSales, 1);
+  eq('and the phone the kept one lacked came with it', merged.customer.phone, '08055555555');
+  eq(
+    'the kept customer now holds both invoices',
+    (await api('GET', `/receivables?customerId=${twinA.id}`, { token: t })).data.invoices.length,
+    2,
+  );
+  await api('GET', `/customers/${twinB.id}`, { token: t, expect: 404 });
+  check('and the duplicate is gone from the list', !(await api('GET', '/customers', { token: t })).data.some((c) => c.id === twinB.id));
+
+  // Bills paid this month, beside what is still owed.
+  const paidBefore = (await api('GET', '/reports/dashboard', { token: t })).data.purchasing.payables.paidThisMonth;
+  const mixBill = (await api('GET', `/supplier-bills?supplierId=${supplier.id}`, { token: t })).data.find(
+    (bill) => bill.goodsReceiptId === mixUp.id,
+  );
+  await api('POST', '/supplier-payments', {
+    token: t,
+    key: randomUUID(),
+    body: { billId: mixBill.id, amount: 1_000, method: 'cash' },
+  });
+  eq(
+    'the home screen’s bills paid this month moves by exactly the payment',
+    (await api('GET', '/reports/dashboard', { token: t })).data.purchasing.payables.paidThisMonth - paidBefore,
+    1_000,
+  );
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

@@ -7,6 +7,8 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import { OrgRole } from '@prisma/client';
+import { Roles } from '../../common/decorators/roles.decorator';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -15,9 +17,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CustomerService } from './customer.service';
-import { CustomerView } from './dto/customer.response';
+import { CustomerMergeView, CustomerView } from './dto/customer.response';
 import {
   CreateCustomerDto,
+  MergeCustomerDto,
   UpdateCustomerDto,
 } from './dto/create-customer.dto';
 
@@ -46,6 +49,21 @@ export class CustomerController {
   @ApiCreatedResponse({ type: CustomerView })
   create(@Body() dto: CreateCustomerDto) {
     return this.svc.create(dto);
+  }
+
+  @Post(':id/merge')
+  @Roles(OrgRole.owner, OrgRole.manager)
+  @ApiOperation({
+    summary: 'Merge a duplicate customer into another',
+    description:
+      'The same customer entered twice: every invoice and payment of this one moves to `intoCustomerId`, a phone, email or surname the kept customer lacks is copied over, and this one is removed, remembering where it went.',
+  })
+  @ApiCreatedResponse({ type: CustomerMergeView })
+  merge(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: MergeCustomerDto,
+  ): Promise<CustomerMergeView> {
+    return this.svc.merge(id, dto);
   }
 
   @Patch(':id')

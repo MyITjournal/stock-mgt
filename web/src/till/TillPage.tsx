@@ -912,6 +912,9 @@ export function TillPage() {
           brief
           onClose={() => setAddingCustomer(false)}
           onCreated={takeNewCustomer}
+          // Already a customer: the sale goes in their name, nothing added.
+          onPickExisting={takeNewCustomer}
+          pickLabel="Use"
         />
       )}
 
