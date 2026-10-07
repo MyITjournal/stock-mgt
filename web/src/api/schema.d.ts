@@ -6204,6 +6204,18 @@ export interface components {
             /** @example 12 */
             factor: number;
         };
+        StockSummaryValues: {
+            /** @description Stock at the start, and opening stock entered in the period, at cost. */
+            opening: number;
+            /** @description Deliveries at their invoice value, corrections included. */
+            delivered: number;
+            /** @description What sold, at its lot’s cost today. The profit report uses the cost frozen onto each sale; they differ only where a lot was corrected since. */
+            sold: number;
+            /** @description Write-offs, counts and moves, signed, at cost. */
+            adjusted: number;
+            /** @description What is left, at cost — the stock value. */
+            closing: number;
+        };
         StockSummaryRow: {
             product: components["schemas"]["SummaryProductRef"];
             /** @description The product’s units, smallest first, so a screen can say "6 carton, 3 piece". */
@@ -6218,11 +6230,15 @@ export interface components {
             adjusted: number;
             /** @description On hand when the period ended. */
             closing: number;
+            /** @description The same in money. **Absent** for a role that may not see cost. */
+            value?: components["schemas"]["StockSummaryValues"];
         };
         StockSummaryView: {
             period: components["schemas"]["PeriodView"];
             /** @description One per product with stock or movement, by name. */
             rows: components["schemas"]["StockSummaryRow"][];
+            /** @description Every product together, summed exactly and rounded once — the closing figure is the stock value. **Absent** for a role that may not see cost. */
+            totalValue?: components["schemas"]["StockSummaryValues"];
         };
         /** @enum {string} */
         AuditMovementType: "adjustment" | "damage";
