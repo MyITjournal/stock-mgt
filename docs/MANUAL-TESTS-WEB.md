@@ -1145,3 +1145,19 @@ worth and what it will be. Save stays off until there is a reason. Save: *Cost e
 changes, the quantity does not, and Reports → Margins moves to match.
 
 **300. Change the unit after typing a cost.** The cost empties and asks again.
+
+---
+
+## AU. A delivery line that was the wrong product, or never came
+
+**301. [gate] Deliveries → open one → Correct this delivery.** Each line has a small **Wrong
+product?** link and nothing else new.
+
+**302. [gate] Tap it and type the right product's name; pick it.** The recorded name is struck
+through, the right one beside it with **undo**, and the unit boxes are the right product's. Check:
+it says how many of the wrong product come out of stock and how many of the right one go in, and
+the value is unchanged. Save: the delivery line names the right product; Stock on hand shows the
+wrong one down and the right one up.
+
+**303. Set a line's received, paid for and value to 0.** Check, then save: it is accepted (it used
+to say "At least one piece"), its stock comes out and the bill drops by its value.

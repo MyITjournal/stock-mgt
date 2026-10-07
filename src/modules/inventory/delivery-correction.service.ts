@@ -18,7 +18,11 @@ import {
   CorrectionPreviewView,
   GoodsReceiptView,
 } from './dto/goods-receipt.response';
-import { displayUnit, planCorrection } from './delivery-correction';
+import {
+  displayUnit,
+  planCorrection,
+  type LineChange,
+} from './delivery-correction';
 
 /**
  * `POST /goods-receipts/:id/corrections` — a recorded delivery put right.
@@ -127,7 +131,19 @@ export class DeliveryCorrectionService {
           });
         }
 
+        // For the preview: what came out and went in when a line was the
+        // wrong product.
+        const swapped = new Map<string, { removed: string; added: string }>();
+
         for (const change of plan.changes) {
+          if (change.newProductId) {
+            swapped.set(
+              change.line.id,
+              await this.moveToRightProduct(tx, writer, receipt, change, input),
+            );
+            continue;
+          }
+
           // Stock: the difference, on the line's own lot.
           if (change.stockDelta < 0) {
             await this.stock.recordOutbound(
@@ -222,6 +238,10 @@ export class DeliveryCorrectionService {
                 paidForAfter: change.paidFor,
                 totalCostBefore: change.line.totalCost,
                 totalCostAfter: change.totalCost,
+                ...(change.newProductId && {
+                  productIdBefore: change.line.productId,
+                  productIdAfter: change.newProductId,
+                }),
               })),
             },
           },
@@ -232,15 +252,160 @@ export class DeliveryCorrectionService {
             valueDelta: plan.valueDelta,
             billAmountBefore: bill ? bill.amountDue : null,
             billAmountAfter: bill ? (billAmountAfter ?? bill.amountDue) : null,
-            lines: plan.changes.map((change) => ({
-              lineId: change.line.id,
-              stockDelta: change.stockDelta,
-            })),
+            lines: plan.changes.map((change) => {
+              const names = swapped.get(change.line.id);
+              return {
+                lineId: change.line.id,
+                stockDelta: change.stockDelta,
+                ...(names && {
+                  removedProductName: names.removed,
+                  removed: change.line.quantityReceived,
+                  addedProductName: names.added,
+                }),
+              };
+            }),
           });
         }
       },
       { timeout: 30_000 },
     );
+  }
+
+  /**
+   * A line entered as the wrong product (2026-10-07): the recorded product's
+   * stock comes back out of the line's own lot, the right product's goes in as
+   * a lot of its own at the line's cost, dated the delivery's day, and the line
+   * names the right product — so purchases and vendor targets count what came.
+   * The old lot is left empty, with its movements, rather than deleted: the
+   * ledger is only added to.
+   *
+   * If some of the wrong product has already been sold from that lot, taking
+   * it back out is refused like any shortfall (409), and an owner or manager
+   * may still record it with a reason.
+   */
+  private async moveToRightProduct(
+    tx: Pick<TenantPrisma, 'stockBatch' | 'product' | 'goodsReceiptLine'>,
+    writer: StockWriter,
+    receipt: { id: string; locationId: string; receivedAt: Date },
+    change: LineChange,
+    input: CorrectDeliveryDto,
+  ): Promise<{ removed: string; added: string }> {
+    const [oldLot, product, wrong] = await Promise.all([
+      tx.stockBatch.findFirst({
+        where: { id: change.line.batchId },
+        select: { supplierId: true, lotCode: true, expiryDate: true },
+      }),
+      tx.product.findFirst({
+        where: { id: change.newProductId!, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          trackStock: true,
+          units: { select: { id: true, name: true, factor: true } },
+        },
+      }),
+      tx.product.findFirst({
+        where: { id: change.line.productId },
+        select: { name: true },
+      }),
+    ]);
+    if (!product) {
+      throw new BadRequestException('That product is not in your catalog.');
+    }
+    if (!product.trackStock) {
+      throw new BadRequestException(
+        `${product.name} does not keep stock, so it cannot arrive on a delivery.`,
+      );
+    }
+
+    // Out: everything this line brought in of the wrong product, from its lot.
+    if (change.line.quantityReceived > 0) {
+      await this.stock.recordOutbound(
+        {
+          productId: change.line.productId,
+          locationId: receipt.locationId,
+          batchId: change.line.batchId,
+          quantity: change.line.quantityReceived,
+          type: StockMovementType.adjustment,
+          reason: StockAdjustmentReason.receipt_correction,
+          note: input.reason,
+          occurredAt: receipt.receivedAt,
+          referenceType: 'goods_receipt',
+          referenceId: receipt.id,
+          force: input.force,
+          forcedReason: input.forcedReason,
+        },
+        writer,
+      );
+    }
+    await tx.stockBatch.update({
+      where: { id: change.line.batchId },
+      data: { quantityReceived: 0, quantityPaidFor: 0, totalCost: 0 },
+    });
+
+    // In: the right product, as its own lot at this line's figures.
+    const lot = await tx.stockBatch.create({
+      data: {
+        organizationId: TenantContext.requireOrganizationId(),
+        productId: product.id,
+        supplierId: oldLot?.supplierId ?? null,
+        lotCode: oldLot?.lotCode ?? null,
+        expiryDate: oldLot?.expiryDate ?? null,
+        receivedAt: receipt.receivedAt,
+        quantityReceived: change.received,
+        quantityPaidFor: change.paidFor,
+        totalCost: change.totalCost,
+      },
+      select: { id: true },
+    });
+    await this.stock.recordInbound(
+      {
+        productId: product.id,
+        locationId: receipt.locationId,
+        batchId: lot.id,
+        quantity: change.received,
+        type: StockMovementType.adjustment,
+        reason: StockAdjustmentReason.receipt_correction,
+        note: input.reason,
+        occurredAt: receipt.receivedAt,
+        referenceType: 'goods_receipt',
+        referenceId: receipt.id,
+      },
+      writer,
+    );
+
+    const unit = displayUnit(change, product.units);
+    await tx.goodsReceiptLine.update({
+      where: { id: change.line.id },
+      data: {
+        productId: product.id,
+        batchId: lot.id,
+        quantityReceived: change.received,
+        quantityPaidFor: change.paidFor,
+        totalCost: change.totalCost,
+        unitId: unit.id,
+        unitFactor: unit.factor,
+        quantityReceivedInUnit: change.received / unit.factor,
+        quantityPaidForInUnit: change.paidFor / unit.factor,
+      },
+    });
+
+    await this.refreshCostPrice(tx, product.id, change.line.id);
+    // The wrong product's cost display came from this line; it now comes from
+    // whichever of its deliveries is latest, if any.
+    const latest = await tx.goodsReceiptLine.findFirst({
+      where: { productId: change.line.productId, quantityReceived: { gt: 0 } },
+      orderBy: [{ receipt: { receivedAt: 'desc' } }, { createdAt: 'desc' }],
+      select: { id: true },
+    });
+    if (latest) {
+      await this.refreshCostPrice(tx, change.line.productId, latest.id);
+    }
+
+    return {
+      removed: wrong?.name ?? 'the recorded product',
+      added: product.name,
+    };
   }
 
   /**

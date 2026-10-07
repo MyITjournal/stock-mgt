@@ -886,8 +886,30 @@ value of 84 spread over 91 pieces, or the reverse).
 - **Which unit the line shows in** is the biggest of the product's own units both figures are whole
   in, portions skipped (`displayUnit`) — chosen from the product, so a line corrected to pieces and
   back returns to cartons. Smoke caught the first version keeping a line in pieces forever.
-- **A corrected line keeps at least one piece.** Several readers divide by a lot's
-  `quantityReceived`; a line that never arrived at all is left for later.
+- ~~**A corrected line keeps at least one piece.**~~ Superseded 2026-10-07, below: every reader
+  that divides by a lot's `quantityReceived` already guarded zero (valuation, margins, unit costs,
+  `costPrice`), and the one that did not — a count's surplus borrowing the *newest lot anywhere* —
+  now skips lots that received nothing.
+
+**The wrong product, and a line that never came** (2026-10-07). Found in real use: Deep Impact
+**roll-on** entered when the lotion came, with no way to say so — the form fixed figures, never
+the product, and refused a line of zero. The owner asked for it **without it getting more
+cumbersome**, so it is one *Wrong product?* link per line that swaps the name for a type-to-find
+product box; the line's figures stay as typed, in the right product's units.
+
+- **Swapping** sends `productId` with the line's true figures. The recorded product's whole
+  `quantityReceived` comes back out of the line's own lot (`receipt_correction`, the usual 409 and
+  override if some has sold); the old lot is zeroed and kept with its movements, since the ledger
+  is only added to; the right product goes in as **a new lot** at the line's figures, same supplier,
+  lot code and expiry, dated the delivery's day; and the line points at it, so the purchases
+  report and vendor targets count what really came. The bill moves only if the value did. Both
+  products' `costPrice` displays are refreshed from their latest delivery.
+- **A line may go to zero** when it never arrived, and then its value is zero too: a vendor who
+  still charged for it is a change to the bill's amount, not to the goods. The right product with
+  nothing of it arriving is refused as meaningless.
+- `GoodsReceiptCorrectionLine.productIdBefore/After` keep a swap; null when the product was right.
+- The preview names what comes out and what goes in (`removedProductName`, `removed`,
+  `addedProductName` on its line), from the same rolled-back transaction as before.
 
 ⚠ **The trap hit verifying it**: a smoke check read `/stock/movements` the sync way (`asc`), which
 holds back the last second, and the correction movements were that recent — the ledger looked 168

@@ -362,9 +362,26 @@ class CorrectionPreviewLine {
   lineId!: string;
 
   @ApiProperty({
-    description: 'Base units; negative when fewer arrived than were recorded.',
+    description:
+      'Base units; negative when fewer arrived than were recorded. For a wrong product, what goes in of the right one.',
   })
   stockDelta!: number;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'When the line was the wrong product: the one that comes out of stock (all of what was recorded), and the one that goes in.',
+  })
+  removedProductName?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Base units of the wrong product that come out.',
+  })
+  removed?: number;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  addedProductName?: string | null;
 }
 
 /** What a correction would do, worked out by doing it and rolling back. */
