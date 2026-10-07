@@ -1161,3 +1161,12 @@ wrong one down and the right one up.
 
 **303. Set a line's received, paid for and value to 0.** Check, then save: it is accepted (it used
 to say "At least one piece"), its stock comes out and the bill drops by its value.
+
+---
+
+## AV. One line per item in "Decisions somebody made"
+
+**304. [gate] Reports → Stock → Decisions somebody made, for a period with opening stock.** A
+product entered as cartons plus loose pieces is one line with the quantities added up (e.g.
++192), and the time cell says "2 entries added up". A damage write-off of the same product is its
+own line, and so is anything marked **forced**. *Movements* above still counts every entry.
