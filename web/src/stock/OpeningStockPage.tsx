@@ -8,6 +8,7 @@ import { Money } from '../components/Money';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
+import { decimalDraft, toWholeBaseUnits } from '../lib/decimalQuantity';
 
 type OpeningProduct = components['schemas']['OpeningStockProductView'];
 type OpeningResult = components['schemas']['OpeningStockResultView'];
@@ -162,6 +163,12 @@ function Sheet({ locationId }: { locationId: string }) {
       .map((line) => ({ product, line })),
   );
   const missingCost = filled.filter(({ line }) => line.unitCost === null);
+  // A decimal must come to whole counted-in units — 6.25 cartons of 12 does,
+  // 6.1 does not. Checked here so the line says so before saving; the server
+  // checks again (2026-10-07).
+  const notWhole = filled.filter(
+    ({ product, line }) => quantityProblem(product, line) !== null,
+  );
   const filledProducts = new Set(filled.map(({ product }) => product.id)).size;
 
   const save = useMutation({
@@ -243,6 +250,7 @@ function Sheet({ locationId }: { locationId: string }) {
             <SaveBar
               filledProducts={filledProducts}
               missingCost={missingCost.length}
+              notWhole={notWhole.length}
               busy={save.isPending}
               onSave={() => save.mutate()}
             />
@@ -277,6 +285,7 @@ function Sheet({ locationId }: { locationId: string }) {
                         ?.name ?? 'unit';
                     const needsCost =
                       line.quantity !== '' && line.unitCost === null;
+                    const problem = quantityProblem(product, line);
                     return (
                       <tr key={line.key} className="align-top">
                         <td className="px-3 py-2">
@@ -305,16 +314,22 @@ function Sheet({ locationId }: { locationId: string }) {
                         <td className="px-3 py-2">
                           <Input
                             aria-label={`How many ${unitName} of ${product.name}`}
-                            inputMode="numeric"
+                            inputMode="decimal"
                             className="w-24"
                             value={line.quantity}
                             onChange={(event) =>
                               update(product, line.key, {
-                                // Digits only, so it can always be cleared.
-                                quantity: event.target.value.replace(/\D/g, ''),
+                                // Digits and one dot — 6.25 cartons is one
+                                // line, not cartons plus a loose line.
+                                quantity: decimalDraft(event.target.value),
                               })
                             }
                           />
+                          {problem && (
+                            <div className="mt-1 max-w-[12rem] text-xs text-red-600">
+                              {problem}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <Select
@@ -324,6 +339,11 @@ function Sheet({ locationId }: { locationId: string }) {
                             onChange={(event) =>
                               update(product, line.key, {
                                 unitId: event.target.value,
+                                // A cost typed for a carton is not the cost
+                                // of a piece. Keeping it when the unit changes
+                                // would value the stock at the wrong unit,
+                                // silently — so it is asked again.
+                                unitCost: null,
                               })
                             }
                           >
@@ -337,16 +357,24 @@ function Sheet({ locationId }: { locationId: string }) {
                           </Select>
                         </td>
                         <td className="px-3 py-2">
-                          <MoneyInput
-                            id={`opening-cost-${line.key}`}
-                            aria-label={`Cost per ${unitName} of ${product.name}`}
-                            className="w-32"
-                            value={line.unitCost}
-                            onChange={(unitCost) =>
-                              update(product, line.key, { unitCost })
-                            }
-                            placeholder={`per ${unitName}`}
-                          />
+                          <div className="flex items-center gap-2">
+                            <MoneyInput
+                              id={`opening-cost-${line.key}`}
+                              aria-label={`Cost per ${unitName} of ${product.name}`}
+                              className="w-32"
+                              value={line.unitCost}
+                              onChange={(unitCost) =>
+                                update(product, line.key, { unitCost })
+                              }
+                              placeholder="0.00"
+                            />
+                            {/* Always visible: the cost is for one of the unit
+                                on this line, and a placeholder vanishes the
+                                moment somebody types. */}
+                            <span className="whitespace-nowrap text-xs text-slate-500">
+                              per {unitName}
+                            </span>
+                          </div>
                           {needsCost && (
                             <div className="mt-1 text-xs text-red-600">
                               What did one {unitName} cost?
@@ -400,6 +428,7 @@ function Sheet({ locationId }: { locationId: string }) {
             <SaveBar
               filledProducts={filledProducts}
               missingCost={missingCost.length}
+              notWhole={notWhole.length}
               busy={save.isPending}
               onSave={() => save.mutate()}
             />
@@ -410,20 +439,50 @@ function Sheet({ locationId }: { locationId: string }) {
   );
 }
 
+/**
+ * Why a line's quantity cannot be saved, in words — or null when it can.
+ * Empty lines are fine: they are simply not sent.
+ */
+function quantityProblem(
+  product: OpeningProduct,
+  line: { quantity: string; unitId: string },
+): string | null {
+  if (line.quantity === '' || Number(line.quantity) === 0) return null;
+  const unit = product.units.find((row) => row.id === line.unitId);
+  const base = product.units.find((row) => row.factor === 1);
+  if (!unit || !base) return null;
+  // "6." is somebody halfway through typing 6.5, not a mistake.
+  const read = toWholeBaseUnits(
+    line.quantity.replace(/\.$/, ''),
+    unit.factor,
+    unit.name,
+    base.name,
+  );
+  return 'error' in read ? read.error : null;
+}
+
 /** The save button, with the reason it is not ready when it is not. */
 function SaveBar({
   filledProducts,
   missingCost,
+  notWhole,
   busy,
   onSave,
 }: {
   filledProducts: number;
   missingCost: number;
+  notWhole: number;
   busy: boolean;
   onSave: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
+      {notWhole > 0 && (
+        <span className="text-sm text-red-700">
+          {notWhole} {notWhole === 1 ? 'quantity does' : 'quantities do'} not
+          come to whole units.
+        </span>
+      )}
       {missingCost > 0 && (
         <span className="text-sm text-red-700">
           {missingCost} {missingCost === 1 ? 'line needs' : 'lines need'} a
@@ -433,7 +492,9 @@ function SaveBar({
       <Button
         type="button"
         onClick={onSave}
-        disabled={busy || filledProducts === 0 || missingCost > 0}
+        disabled={
+          busy || filledProducts === 0 || missingCost > 0 || notWhole > 0
+        }
       >
         {busy
           ? 'Saving…'

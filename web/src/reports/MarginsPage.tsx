@@ -198,8 +198,9 @@ export function MarginsPage() {
       </div>
 
       <p className="mb-4 text-xs text-slate-500">
-        Cost is the average of the stock you have now; the last delivery is
-        beside it, with any free goods it came with.{' '}
+        One row per product, in the biggest unit you sell it in. Cost is the
+        average of the stock you have now; the last delivery is beside it, with
+        any free goods it came with.{' '}
         {data?.chargesVat
           ? 'Margins are on the price without VAT, as your profit report is.'
           : 'You do not charge VAT, so the margin is on the whole price.'}{' '}

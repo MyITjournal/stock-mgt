@@ -61,6 +61,44 @@ describe('planOpeningStock', () => {
     expect(plan.lines.map((line) => line.quantity)).toEqual([2240, 30]);
   });
 
+  it('takes a decimal in the chosen unit as one line, when it is whole rolls', () => {
+    // 14.25 cartons of 160 sachets is 2,280 sachets — one line, not two.
+    const plan = planOpeningStock(
+      [
+        {
+          productId: 'peak',
+          unitId: 'carton',
+          quantity: 14.25,
+          unitCost: 1_400_000,
+        },
+      ],
+      catalog,
+      new Set(),
+    );
+    expect(plan.lines).toEqual([
+      { productId: 'peak', quantity: 2_280, totalCost: 19_950_000 },
+    ]);
+  });
+
+  it('rounds the total once when a decimal does not divide the cost evenly', () => {
+    const plan = planOpeningStock(
+      [{ productId: 'peak', unitId: 'roll', quantity: 2.5, unitCost: 90_001 }],
+      catalog,
+      new Set(),
+    );
+    expect(plan.lines[0]).toMatchObject({ quantity: 25, totalCost: 225_003 });
+  });
+
+  it('refuses a decimal that is not a whole number of the counted-in unit', () => {
+    const plan = planOpeningStock(
+      [{ productId: 'peak', unitId: 'roll', quantity: 2.25, unitCost: 90_000 }],
+      catalog,
+      new Set(),
+    );
+    expect(plan.lines).toEqual([]);
+    expect(plan.problems[0]).toMatch(/2\.25 roll is not a whole number/);
+  });
+
   it('keeps the expiry when one is given', () => {
     const plan = planOpeningStock(
       [

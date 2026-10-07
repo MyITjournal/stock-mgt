@@ -2674,21 +2674,29 @@ async function main() {
 
   const openingBody = {
     lines: [
-      // 14 cartons at ₦14,000 and 3 loose rolls at ₦900: two lots.
+      // 14 cartons at ₦14,000, and 2½ rolls at ₦900 — a decimal in the
+      // chosen unit, since it comes to whole sachets: two lots.
       { productId: peakImported.id, unitId: unitIdOf('carton'), quantity: 14, unitCost: 1_400_000, expiryDate: '2027-03-31' },
-      { productId: peakImported.id, unitId: unitIdOf('roll'), quantity: 3, unitCost: 90_000 },
+      { productId: peakImported.id, unitId: unitIdOf('roll'), quantity: 2.5, unitCost: 90_000 },
     ],
   };
+  await api('POST', '/stock/opening', {
+    token: selfToken,
+    key: randomUUID(),
+    body: { lines: [{ ...openingBody.lines[1], quantity: 2.25 }] },
+    expect: 400,
+  });
+  check('2.25 rolls is refused — it is not a whole number of sachets — and nothing is saved', true);
   const opened = (
     await api('POST', '/stock/opening', { token: selfToken, key: randomUUID(), body: openingBody })
   ).data;
   eq('both lines are recorded for one product', `${opened.products} ${opened.lines}`, '1 2');
-  eq('valued at cost × quantity, exactly', opened.totalValue, 14 * 1_400_000 + 3 * 90_000);
+  eq('valued at cost × quantity, the decimal included', opened.totalValue, 14 * 1_400_000 + 225_000);
 
   eq(
     'stock is on the shelf, in sachets',
     (await onHand(selfToken, peakImported.id, selfLocations[0].id)).quantity,
-    14 * 160 + 3 * 10,
+    14 * 160 + 25,
   );
   eq(
     'and no bill was raised for goods paid for long ago',
@@ -2698,7 +2706,7 @@ async function main() {
   eq(
     'stock valuation reads the cost given',
     (await api('GET', '/reports/stock-valuation', { token: selfToken })).data.total,
-    14 * 1_400_000 + 3 * 90_000,
+    14 * 1_400_000 + 225_000,
   );
   check(
     'and the product leaves the opening sheet',
@@ -3041,7 +3049,10 @@ async function main() {
     Math.round(((netCarton - 8_308) / netCarton) * 10_000),
   );
   eq('the deal is said the way a vendor says it', JSON.stringify(cartonRow.lastDelivery?.deal), '{"received":13,"paidFor":12}');
-  eq('a piece is costed from the same stock', rowOf(margins, 'piece').cost, 692);
+  check(
+    'one row per product, in the biggest unit the till sells',
+    margins.rows.filter((r) => r.productId === soap.id).map((r) => r.unitName).join() === 'carton',
+  );
   check(
     'rows with a margin come before rows without one',
     margins.rows.findIndex((r) => r.marginBps === null) === -1 ||

@@ -711,8 +711,9 @@ And three from 7.6a, in `web/src/reports/`:
   is not shown, both because money is displayed rather than computed and because that subtraction
   would be wrong: collections include payments on invoices from months ago.
 - **Margins are a projection, at the average cost of the stock on hand** (§12, 2026-10-07).
-  *Reports → Margins* (`GET /reports/margins`, `SEES_COST`) puts each selling unit's price on a
-  chosen list beside its cost — valued from lot totals and rounded once, never `costPrice` — with
+  *Reports → Margins* (`GET /reports/margins`, `SEES_COST`) puts each product's price on a chosen
+  list — **one row per product, in the biggest unit the till sells** (owner, 2026-10-07: a 1/2
+  pack, pack and carton were three rows of the same margin) — beside its cost — valued from lot totals and rounded once, never `costPrice` — with
   the last delivery and its free-goods deal ("13 for 12") alongside. Nothing on hand falls back
   to the last delivery, **flagged**; no cost at all is null, never zero. Margin is on the price
   without VAT, as profit's is. Services and unsold units are left out.
@@ -865,6 +866,12 @@ an `opening_balance` lot valued at **cost per unit × quantity (cost required)**
 never had stock come in at that location are offered**, and the save re-checks in its
 transaction, so it cannot be entered twice; a product sold before it was counted still appears.
 Bulk-written by `StockService.recordNewLots`, which keeps every ledger write in one service.
+**A line's quantity may be a decimal in its unit** (2026-10-07) — 6.25 cartons is one line, not
+cartons plus a "loose" line — as long as it comes to whole counted-in units (`planOpeningStock`
+refuses 2.25 rolls of 10; the form says so first, with `toWholeBaseUnits`). The lot is still
+whole base units; the total is `unitCost × quantity` **rounded once**. The cost box names its
+unit permanently, and **changing a line's unit clears its cost** — a carton's cost kept against
+a piece valued the lot twelve times over, silently.
 
 **A catalog can be imported from a spreadsheet** (§4, 2026-10-05): `POST /products/import` and
 *Products → Import from spreadsheet* — template, upload `.xlsx` or `.csv`, preview every row, then
