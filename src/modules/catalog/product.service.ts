@@ -16,10 +16,15 @@ import {
 import { splitTaxInclusive } from '../../common/money/money';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { BarcodeSymbology, BusinessType } from '@prisma/client';
-import { chooseDefaultSellingUnit, defaultIsSellable } from './selling-units';
+import {
+  chooseDefaultSellingUnit,
+  defaultIsSellable,
+  tillFirstUnit,
+} from './selling-units';
 import { resolveBarcode } from './barcode';
 import { resolveUnitPrice } from './pricing';
 import {
+  ProductTillUnitView,
   ProductUnitCostView,
   ProductView,
   ResolvedUnitPrice,
@@ -208,9 +213,59 @@ export class ProductService {
     });
 
     return redactCostAll(
-      await this.withUnitCosts(products),
+      await this.withUnitCosts(this.withTillUnit(products)),
       PRODUCT_COST_FIELDS,
     );
+  }
+
+  /**
+   * The unit the till picks first and the price it would charge for it, on
+   * the default price list — the same `tillFirstUnit` and `resolveUnitPrice`
+   * the till uses, so a products list cannot show a different unit or price
+   * from the one a cashier is handed (2026-10-07). Null price: the till would
+   * refuse it for want of one.
+   */
+  private withTillUnit<
+    P extends {
+      basePrice: number | null;
+      taxRateBps: number;
+      units?: readonly {
+        id: string;
+        name: string;
+        factor: number;
+        isSellable: boolean;
+        isDefaultSelling: boolean;
+      }[];
+      prices?: readonly {
+        tierId: string;
+        unitId: string;
+        price: number;
+        tier?: { isDefault: boolean } | null;
+      }[];
+    },
+  >(products: P[]): (P & { tillUnit: ProductTillUnitView | null })[] {
+    return products.map((product) => {
+      const prices = product.prices ?? [];
+      const unit = tillFirstUnit(product.units ?? []);
+      // The default list, read off the prices this product already carries —
+      // no lookup. With no row on it there is nothing to find there anyway,
+      // and `resolveUnitPrice` falls back exactly as it does for the till.
+      const tierId = prices.find((row) => row.tier?.isDefault)?.tierId;
+      return {
+        ...product,
+        tillUnit: unit
+          ? {
+              unitId: unit.id,
+              unitName: unit.name,
+              price: resolveUnitPrice(
+                { ...product, basePrice: product.basePrice ?? null, prices },
+                unit,
+                tierId,
+              ).price,
+            }
+          : null,
+      };
+    });
   }
 
   /**
@@ -319,9 +374,7 @@ export class ProductService {
           size: product.size,
           sku: product.sku,
           trackStock: product.trackStock,
-          defaultUnitId: (
-            sellable.find((unit) => unit.isDefaultSelling) ?? sellable[0]
-          ).id,
+          defaultUnitId: tillFirstUnit(sellable)!.id,
           units,
         },
       ];
@@ -814,7 +867,7 @@ export class ProductService {
       include: PRODUCT_INCLUDE,
     });
     if (!product) throw new NotFoundException('Product not found');
-    const [withCosts] = await this.withUnitCosts([product]);
+    const [withCosts] = await this.withUnitCosts(this.withTillUnit([product]));
     return redactCost(withCosts, PRODUCT_COST_FIELDS);
   }
 

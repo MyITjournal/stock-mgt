@@ -86,3 +86,20 @@ export function chooseDefaultSellingUnit(
     businessType === BusinessType.wholesale ? byFactor.at(-1) : byFactor[0];
   return (chosen as SettledUnit).id;
 }
+
+/**
+ * The unit the till picks first when an item is added: the default selling
+ * unit, or else the smallest one the till may sell. Null when it sells none.
+ *
+ * One rule, read by the till's search and by every product read, so the price
+ * and cost a products list shows are always for the unit a cashier is handed
+ * (2026-10-07). `units` in any order.
+ */
+export function tillFirstUnit<
+  U extends { isSellable: boolean; isDefaultSelling: boolean; factor: number },
+>(units: readonly U[]): U | null {
+  const sellable = units
+    .filter((unit) => unit.isSellable)
+    .sort((a, b) => a.factor - b.factor);
+  return sellable.find((unit) => unit.isDefaultSelling) ?? sellable[0] ?? null;
+}

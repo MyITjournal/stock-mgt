@@ -3715,6 +3715,16 @@ list and the product page both read the unit from `lib/shelfPrice.ts`, so a cart
 has a carton cost beside it. (Margins, §12, still measures against the average of stock on hand — a
 different question, and the report says which it uses.)
 
+**And the unit is the one the till picks first** (same day, owner: "use the till picks first unit
+for both the cost and sales price"). The browser used to choose — the default selling unit, and
+when that had no price, the base price per piece, which is a different unit from the one the till
+would hand a cashier. Now the server sends `ProductView.tillUnit`: the unit from `tillFirstUnit`
+(`catalog/selling-units.ts`, also what the till's search now calls, so there is one rule) and the
+price `resolveUnitPrice` gives it on the default list, fallback included — exactly the till's
+arithmetic. The default list is read off the product's own price rows (each carries its tier), so
+the read costs no extra query; with no row on that list there was nothing to find there anyway.
+The screens show that price and that unit's cost and choose nothing themselves.
+
 ### The till moved under Sales, and learned a date (2026-10-07)
 
 **One section, two tabs.** Owner: the till "could be with the sale, since sale is just showing the
