@@ -3328,6 +3328,42 @@ async function main() {
     1_000,
   );
 
+  step(54, 'Staff sign in with just their name; a customer with no history can be removed');
+
+  // Open all day, so a run after 7pm is not refused by working hours (§9).
+  await api('PATCH', '/organization', { token: selfToken, body: { opensAt: 0, closesAt: 1440 } });
+  const daveName = `dave${shopSuffix}`.toLowerCase();
+  const dave = (
+    await api('POST', '/staff', {
+      token: selfToken,
+      key: randomUUID(),
+      body: { firstName: 'Dave', username: daveName, password: 'dave-password-123', role: 'sales_rep' },
+    })
+  ).data;
+  check('the stored username carries the shop', dave.user.username.startsWith(`${daveName}@`), dave.user.username);
+  // Sign-in allows five attempts a minute per address, and the staff steps
+  // above have just spent them — the limiter working, not a failure. Wait it
+  // out rather than loosen it.
+  console.log('      waiting a minute for the sign-in limit to reset…');
+  await new Promise((resolve) => setTimeout(resolve, 61_000));
+  const plainLogin = (
+    await api('POST', '/auth/login', { body: { username: daveName, password: 'dave-password-123' } })
+  ).data;
+  check('and he signs in with just his name', !!(plainLogin.accessToken ?? plainLogin.tokens?.accessToken));
+  await api('POST', '/auth/login', { body: { username: daveName, password: 'not-his-password' }, expect: 401 });
+  check('with the wrong password it is the usual refusal (401)', true);
+
+  // Removing: only a customer with no invoices or payments.
+  const mistake = (
+    await api('POST', '/customers', { token: t, body: { id: randomUUID(), firstName: `Typo ${shopSuffix}` } })
+  ).data;
+  await api('DELETE', `/customers/${mistake.id}`, { token: bolaToken, expect: 403 });
+  check('a cashier cannot remove a customer (403)', true);
+  await api('DELETE', `/customers/${mistake.id}`, { token: t, expect: 204 });
+  check('one added by mistake is removed', !(await api('GET', '/customers', { token: t })).data.some((c) => c.id === mistake.id));
+  await api('DELETE', `/customers/${twinA.id}`, { token: t, expect: 409 });
+  check('one with invoices stays (409) — merging is how a duplicate goes', true);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

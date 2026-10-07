@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -162,6 +163,30 @@ export class CustomerService {
         movedSales: sales.count,
         movedPayments: payments.count,
       };
+    });
+  }
+
+  /**
+   * Removing a customer (2026-10-07) — **only one with no invoices and no
+   * payments**: added by mistake, never sold to. A customer with history keeps
+   * it; if they are a duplicate, merging moves that history to the one kept,
+   * and if not, their invoices are what the business is owed. Soft, like
+   * every removal here.
+   */
+  async remove(id: string): Promise<void> {
+    await this.findOne(id);
+    const [sales, payments] = await Promise.all([
+      this.prisma.sale.count({ where: { customerId: id } }),
+      this.prisma.payment.count({ where: { customerId: id } }),
+    ]);
+    if (sales + payments > 0) {
+      throw new ConflictException(
+        `This customer has ${sales} invoice${sales === 1 ? '' : 's'} and ${payments} payment${payments === 1 ? '' : 's'}, so they stay. If they are the same as another customer, use "Same as another customer?" to merge them.`,
+      );
+    }
+    await this.prisma.customer.update({
+      where: { id },
+      data: { deletedAt: new Date() },
     });
   }
 

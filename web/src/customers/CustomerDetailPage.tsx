@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { useIsManager, useSeesCost } from '../auth/useAuth';
 import { Button } from '../components/Button';
 import { MergeCustomerDialog } from './MergeCustomerDialog';
+import { RemoveCustomerButton } from './RemoveCustomerButton';
 import { dueStatus } from '../lib/due';
 import type { components } from '../api/schema';
 
@@ -60,6 +61,9 @@ export function CustomerDetailPage() {
             <Button variant="secondary" onClick={() => setMerging(true)}>
               Same as another customer?
             </Button>
+          )}
+          {canMerge && customer && (
+            <RemoveCustomerButton customerId={customer.id} />
           )}
           {seesCost && (
             <PdfButton

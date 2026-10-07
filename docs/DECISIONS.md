@@ -4341,6 +4341,17 @@ an `amina`; nobody types those by choice, they are handed over. **An owner picks
 sign-up and types it from memory every morning**, so it is globally unique instead, and they are
 told at sign-up if the one they wanted is taken — the ordinary bargain everywhere else.
 
+**Staff type just their name** (2026-10-07). The qualified form was right for storage and wrong
+for a person: an owner added "Davidyo", and neither he nor the owner could sign in with it,
+because the account was `davidyo@<shop>-<6 hex>` and the screen said only "do not match". Now a
+plain name that is not itself a username is tried against every staff account named `name@…`
+(`getStaffCredentialsByName`, the same allow-listed `select`, ten at most), and **the password
+chooses**. Exactly one fits: signed in. Two fit — the same name *and* password at two shops —
+and they are asked for the full username; that message can only appear to someone who already
+knows a working password, so it reveals nothing a stranger could use. No fit is the usual
+`Invalid credentials`; the rate limit counts every attempt as before. Usernames are still stored
+qualified, so two shops can still each have a David.
+
 ### What this does not fix, and the form says so
 
 **A shop owner with no email still cannot recover their own password.** Sign-up offers an optional

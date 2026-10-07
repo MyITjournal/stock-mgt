@@ -362,7 +362,11 @@ export interface paths {
         get: operations["CustomerController_findOne"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Remove a customer with no invoices or payments
+         * @description For one added by mistake. A customer with history is a 409: their invoices are what the business is owed, and a duplicate is merged instead, which moves that history to the customer kept.
+         */
+        delete: operations["CustomerController_remove"];
         options?: never;
         head?: never;
         /**
@@ -7298,6 +7302,25 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CustomerView"];
                 };
+            };
+        };
+    };
+    CustomerController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
