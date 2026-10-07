@@ -5,7 +5,7 @@ import { Button } from '../components/Button';
 import { Money } from '../components/Money';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
-import { useIsManager } from '../auth/useAuth';
+import { useAuth, useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import {
   addToCart,
@@ -34,6 +34,7 @@ import { CustomerDialog } from '../customers/CustomerDialog';
 import { DuePayments } from '../components/DuePayments';
 import { SaleDateBar } from './SaleDateBar';
 import { occurredAtFor, today } from '../lib/paidOn';
+import { keptAt, useKeepDraft, useRestoredDraft } from '../lib/draft';
 
 type ScanResult = components['schemas']['ScanResult'];
 type ProductView = components['schemas']['ProductView'];
@@ -67,16 +68,36 @@ const SUGGEST_AFTER_MS = 250;
  *    still owes, both come back as refusals an owner or manager may override
  *    with a reason — and the reason is the override (§5, §6).
  */
+/** What the till keeps in the browser until the sale is saved. */
+interface TillDraft {
+  saleId: string;
+  lines: CartLine[];
+  payment: PaymentState;
+  saleDay: string;
+}
+
 export function TillPage() {
   const isManager = useIsManager();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
-  const [lines, setLines] = useState<CartLine[]>([]);
-  const [payment, setPayment] = useState<PaymentState>(EMPTY_PAYMENT);
+  // A sale being rung up is kept in this browser until the server accepts it,
+  // so a failed save or a refresh brings it back instead of losing it.
+  const draftKey = user ? `till.${user.organizationId}` : null;
+  const draft = useRestoredDraft<TillDraft>(draftKey);
+  const kept = draft.restored?.value;
+
+  const [lines, setLines] = useState<CartLine[]>(kept?.lines ?? []);
+  const [payment, setPayment] = useState<PaymentState>(
+    kept?.payment ?? EMPTY_PAYMENT,
+  );
   // The day these sales were made — today unless an owner or manager is
   // typing in an earlier day's sales. Not cleared between sales, so a day's
   // notebook goes in as a run; `SaleDateBar` says so while it is not today.
-  const [saleDay, setSaleDay] = useState(today);
+  const [saleDay, setSaleDay] = useState(kept?.saleDay ?? today);
+  // Bumped to hand the cursor back to the item search.
+  const [focusKey, setFocusKey] = useState(0);
+  const backToSearch = useCallback(() => setFocusKey((n) => n + 1), []);
   // What is in the search box, and the same text once typing has paused —
   // suggestions follow the second, so a request is not sent per keystroke.
   const [term, setTerm] = useState('');
@@ -116,7 +137,11 @@ export function TillPage() {
    * makes two attempts the *same sale* is that they carry the same `id` and the
    * same line ids (§8); a fresh key rides along with each attempt.
    */
-  const saleId = useRef<string>(crypto.randomUUID());
+  // Restored with the draft: the same sale, so a retry after a lost reply can
+  // never record it twice.
+  const [saleId, setSaleId] = useState<string>(
+    () => kept?.saleId ?? crypto.randomUUID(),
+  );
   const [addingCustomer, setAddingCustomer] = useState(false);
 
   const { data: customers = [] } = useQuery({
@@ -335,9 +360,10 @@ export function TillPage() {
         }),
       );
       void loadUnits(scan.product.id);
+      backToSearch();
       return true;
     },
-    [loadUnits],
+    [loadUnits, backToSearch],
   );
 
   /**
@@ -417,8 +443,9 @@ export function TillPage() {
         }),
       );
       clearSearch();
+      backToSearch();
     },
-    [clearSearch],
+    [clearSearch, backToSearch],
   );
 
   /**
@@ -557,7 +584,7 @@ export function TillPage() {
         const sale = await api.post<SaleView>(
           '/sales',
           {
-            id: saleId.current,
+            id: saleId,
             // Today sends nothing, so the server's clock dates it as before.
             ...(isManager && occurredAtFor(saleDay)),
             ...(payment.customerId && { customerId: payment.customerId }),
@@ -618,7 +645,7 @@ export function TillPage() {
         setBusy(false);
       }
     },
-    [isManager, lines, payment, saleDay, total, queryClient],
+    [isManager, lines, payment, saleDay, saleId, total, queryClient],
   );
 
   // The last line for the product the camera read — after a unit change the
@@ -644,7 +671,16 @@ export function TillPage() {
           : current;
       }),
     onRemove: (key: string) => setLines((current) => removeLine(current, key)),
+    onDone: backToSearch,
   };
+
+  // Kept while there is something to lose; cleared once the sale is saved
+  // (`completed`) or the cart is emptied.
+  useKeepDraft<TillDraft>(
+    draftKey,
+    { saleId, lines, payment, saleDay },
+    lines.length > 0 && !completed,
+  );
 
   const startNewSale = useCallback(() => {
     setLines([]);
@@ -657,7 +693,7 @@ export function TillPage() {
     setLastScannedId(null);
     setError(null);
     setNotice(null);
-    saleId.current = crypto.randomUUID();
+    setSaleId(crypto.randomUUID());
     // A re-pricing still in flight belongs to the sale just abandoned; this
     // makes its answer stale so it cannot speak up on the new one.
     repriceRun.current += 1;
@@ -697,6 +733,18 @@ export function TillPage() {
       }
     >
       <DuePayments collapsible />
+      {draft.noticeOpen && draft.restored && lines.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <span>
+            The sale you were ringing up at {keptAt(draft.restored.savedAt)} was
+            not saved, so it has been brought back. Check it and take the
+            payment again.
+          </span>
+          <Button variant="secondary" onClick={draft.dismiss}>
+            OK
+          </Button>
+        </div>
+      )}
       {isManager && (
         <SaleDateBar day={saleDay} onChange={setSaleDay} disabled={busy} />
       )}
@@ -751,6 +799,7 @@ export function TillPage() {
             onNavigate={navigate}
             busy={busy}
             disabled={Boolean(override) || cameraOpen}
+            focusKey={focusKey}
             listId={suggestions.length > 0 ? 'till-suggestions' : undefined}
             activeId={
               activeIndex >= 0 ? `till-suggestion-${activeIndex}` : undefined

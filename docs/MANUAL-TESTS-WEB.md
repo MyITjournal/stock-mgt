@@ -1069,3 +1069,26 @@ gives the same table in Excel.
 
 **281. [gate] As a cashier or rep, Reports is not in the top bar** and `/reports/margins` shows
 nothing — buying prices stay closed.
+
+---
+
+## AQ. Till and delivery corrections
+
+**282. [gate] At the till, each line has − and + beside its quantity.** + adds one, − takes one
+away and stops at 1. On a computer the cursor goes back to the search box after each tap.
+
+**283. [gate] Type a name, pick a suggestion.** The item is added and the cursor is back in the
+search box, ready for the next item. Type a quantity and press Enter: the cursor goes back too.
+
+**284. [gate] Put three items in the cart and refresh the page.** A blue note says the sale was not
+saved and has been brought back, with the same items, customer and payment choices. **Clear**
+empties it for good; a sale that is taken leaves nothing to bring back.
+
+**285. [gate] Stock → Deliveries → Record a delivery: fill in a vendor and two products, then
+refresh.** The form comes back as it was, with the same note. **Cancel** throws it away. The button
+under the lines reads **Add a product**.
+
+**286. Settings → Staff.** The button reads **Add a staff**; the form's button reads **Add staff**.
+
+**287. [gate] On the hosted site, record a delivery with twenty or more lines.** It saves — it
+used to fail with an internal server error once it took longer than five seconds.

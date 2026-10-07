@@ -571,6 +571,14 @@ Four more from the till (7.2), all in `web/src/till/`:
   still needs a customer, and **the rule that refuses more credit to a customer who still owes stays**
   (owner's decision, 2026-10-06): an owner or manager overrides with a reason, as before.
   `payingNow` in `till/payment.ts` is the one place that says what is paid now.
+- **Every transaction may run 30 seconds, and long forms keep a draft** (§13, 2026-10-07). Prisma's
+  default 5 s was rolling back long deliveries on the hosted pair (each statement crosses
+  Frankfurt→Ireland) as a 500 — `TRANSACTION_LIMITS` in `PrismaService` sets it once. The till's
+  cart and the delivery form are copied to `localStorage` (`lib/draft.ts`) until the server
+  accepts them, **with the same sale/receipt id**, so a retry after a lost reply cannot record
+  twice; leaving on purpose (Clear, Cancel) throws the copy away. The till also has **+ / −** per
+  line, and the cursor returns to the item search after an item is picked or a line is set with
+  Enter (`ScanBox` `focusKey` — picking a suggestion sends no request, so `busy` never fell).
 - **The till sits under Sales, and can date a sale** (2026-10-07). One top-bar item, *Sales*,
   opens on the till, with **Till** and **History** tabs (`SalesLayout`); the addresses are still
   `/till` and `/sales`, so `landingPath` and saved links are untouched. **Sale date**
