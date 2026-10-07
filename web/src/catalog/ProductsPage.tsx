@@ -13,10 +13,42 @@ import { ProductForm } from './ProductForm';
 import { DownloadButton } from '../components/DownloadButton';
 import { exportProducts } from './exportProducts';
 import { describeCount } from '../lib/quantity';
+import { sortRows, useSort, type SortValue } from '../lib/sort';
+import { SortHeading } from '../components/SortHeading';
 
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
 type StockLevelRow = components['schemas']['StockLevelRow'];
+type PriceTierView = components['schemas']['PriceTierView'];
+
+/**
+ * The price a customer is told: the default selling unit's price on the
+ * default price list — "₦12,500 / carton". Only when that unit has none does
+ * the base price show, per counted-in unit; it is never multiplied up here,
+ * because the browser never works out a price (§17). Null: no price at all.
+ *
+ * "Base price" used to be the column, and a catalog priced by its units —
+ * which an import makes — showed a dash on every row (2026-10-07).
+ */
+function shelfPrice(
+  product: ProductView,
+  defaultTierId: string | undefined,
+): { amount: number; unitName: string } | null {
+  const unit =
+    product.units.find((row) => row.isDefaultSelling) ??
+    product.units.find((row) => row.isSellable);
+  const listed =
+    unit && defaultTierId
+      ? product.prices.find(
+          (row) => row.tierId === defaultTierId && row.unitId === unit.id,
+        )
+      : undefined;
+  if (unit && listed) return { amount: listed.price, unitName: unit.name };
+  const base = product.units.find((row) => row.isBase);
+  return product.basePrice !== null && base
+    ? { amount: product.basePrice, unitName: base.name }
+    : null;
+}
 
 /**
  * What the business sells.
@@ -53,6 +85,13 @@ export function ProductsPage() {
     queryFn: () => api.get<CategoryView[]>('/categories'),
   });
 
+  const { data: tiers = [] } = useQuery({
+    queryKey: ['price-tiers'],
+    queryFn: () => api.get<PriceTierView[]>('/price-tiers'),
+  });
+  const defaultTierId = tiers.find((tier) => tier.isDefault)?.id;
+  const { sort, toggle } = useSort();
+
   // One request for the whole shop, summed per product across locations —
   // the same sum the product page shows, without a request per row. Lots are
   // left out: this column is a count, and the lots are a click away.
@@ -68,6 +107,18 @@ export function ProductsPage() {
     );
   }
   const columns = seesCost ? 6 : 5;
+
+  // Tap a heading to sort; the search and category still narrow first.
+  const sortValue: Record<string, (product: ProductView) => SortValue> = {
+    name: (product) => `${product.name} ${product.size ?? ''}`,
+    onHand: (product) =>
+      product.trackStock ? (onHand.get(product.id) ?? 0) : null,
+    price: (product) => shelfPrice(product, defaultTierId)?.amount,
+    cost: (product) => product.costPrice,
+  };
+  const shown = sort
+    ? sortRows(products, sortValue[sort.key], sort.direction)
+    : products;
 
   return (
     <Page
@@ -117,12 +168,35 @@ export function ProductsPage() {
         <table className="w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-2 font-medium">Product</th>
+              <SortHeading
+                label="Product"
+                sortKey="name"
+                sort={sort}
+                onToggle={toggle}
+              />
               <th className="px-4 py-2 font-medium">Units</th>
-              <th className="px-4 py-2 text-right font-medium">On hand</th>
-              <th className="px-4 py-2 text-right font-medium">Base price</th>
+              <SortHeading
+                label="On hand"
+                sortKey="onHand"
+                sort={sort}
+                onToggle={toggle}
+                numeric
+              />
+              <SortHeading
+                label="Price"
+                sortKey="price"
+                sort={sort}
+                onToggle={toggle}
+                numeric
+              />
               {seesCost && (
-                <th className="px-4 py-2 text-right font-medium">Cost</th>
+                <SortHeading
+                  label="Cost"
+                  sortKey="cost"
+                  sort={sort}
+                  onToggle={toggle}
+                  numeric
+                />
               )}
               <th className="px-4 py-2" />
             </tr>
@@ -148,7 +222,7 @@ export function ProductsPage() {
                 </td>
               </tr>
             )}
-            {products.map((product) => (
+            {shown.map((product) => (
               <tr
                 key={product.id}
                 className="cursor-pointer transition hover:bg-slate-50"
@@ -190,11 +264,21 @@ export function ProductsPage() {
                   />
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <Money value={product.basePrice} />
+                  <ShelfPrice price={shelfPrice(product, defaultTierId)} />
                 </td>
                 {seesCost && (
                   <td className="px-4 py-3 text-right">
-                    <Money value={product.costPrice} />
+                    {/* Last delivery's cost of one counted-in unit. */}
+                    {product.costPrice === null ? (
+                      <span className="text-xs text-slate-400">none yet</span>
+                    ) : (
+                      <span>
+                        <Money value={product.costPrice} />
+                        <span className="block text-xs text-slate-500">
+                          / {product.units.find((unit) => unit.isBase)?.name}
+                        </span>
+                      </span>
+                    )}
                   </td>
                 )}
                 <td className="px-4 py-3 text-right">
@@ -263,6 +347,20 @@ export function ProductsPage() {
  * Negative is possible (a forced sale ran past the ledger) and is shown in red
  * rather than hidden, because it is the thing somebody needs to fix.
  */
+function ShelfPrice({
+  price,
+}: {
+  price: { amount: number; unitName: string } | null;
+}) {
+  if (!price) return <span className="text-xs text-slate-400">no price</span>;
+  return (
+    <span>
+      <Money value={price.amount} />
+      <span className="block text-xs text-slate-500">/ {price.unitName}</span>
+    </span>
+  );
+}
+
 function OnHand({
   product,
   quantity,

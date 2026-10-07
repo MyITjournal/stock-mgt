@@ -69,10 +69,16 @@ export function StockReportPage() {
   });
 
   const valuationColumns: readonly Column<ValuationGroupRow>[] = [
-    { header: 'Name', cell: (row) => row.label },
-    { header: 'Units', numeric: true, cell: (row) => row.units },
+    { header: 'Name', sortValue: (row) => row.label, cell: (row) => row.label },
+    {
+      header: 'Units',
+      sortValue: (row) => row.units,
+      numeric: true,
+      cell: (row) => row.units,
+    },
     {
       header: 'Value',
+      sortValue: (row) => row.value,
       numeric: true,
       cell: (row) => <Money value={row.value} />,
     },
@@ -81,6 +87,7 @@ export function StockReportPage() {
   const alertColumns: readonly Column<StockAlertRow>[] = [
     {
       header: 'Product',
+      sortValue: (row) => row.name,
       cell: (row) => (
         <span>
           <span className="block text-slate-900">{row.name}</span>
@@ -90,6 +97,7 @@ export function StockReportPage() {
     },
     {
       header: 'On hand',
+      sortValue: (row) => row.quantity,
       numeric: true,
       cell: (row) => (
         <span
@@ -101,6 +109,7 @@ export function StockReportPage() {
     },
     {
       header: 'Reorder at',
+      sortValue: (row) => row.reorderPoint,
       numeric: true,
       cell: (row) =>
         row.reorderPoint ?? <span className="text-slate-300">not set</span>,

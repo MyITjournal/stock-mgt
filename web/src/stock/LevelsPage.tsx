@@ -13,6 +13,31 @@ import { TransferDialog } from './TransferDialog';
 import { ExpiryPanel } from './ExpiryPanel';
 import { DownloadButton } from '../components/DownloadButton';
 import { downloadSheet, stamp, type SheetColumn } from '../lib/exportSheet';
+import { sortRows } from '../lib/sort';
+
+/**
+ * How the cards can be ordered (2026-10-07). A "Sort by" box rather than
+ * tappable headings, because this list is cards and has none. The server's
+ * order — by product — is "Name".
+ */
+const LEVEL_ORDER = {
+  name: {
+    label: 'Name, A to Z',
+    value: (row: StockLevelRow) => row.product.name,
+    direction: 'asc',
+  },
+  most: {
+    label: 'Most on hand',
+    value: (row: StockLevelRow) => row.quantity,
+    direction: 'desc',
+  },
+  least: {
+    label: 'Least on hand',
+    value: (row: StockLevelRow) => row.quantity,
+    direction: 'asc',
+  },
+} as const;
+type LevelOrder = keyof typeof LEVEL_ORDER;
 
 /**
  * On hand as a spreadsheet: the rows on screen, searched and filtered as they
@@ -77,6 +102,7 @@ export function LevelsPage() {
   const [adjusting, setAdjusting] = useState<StockLevelRow | null>(null);
   const [transferring, setTransferring] = useState<StockLevelRow | null>(null);
 
+  const [orderBy, setOrderBy] = useState<LevelOrder>('name');
   const query = new URLSearchParams({ includeBatches: 'true' });
   if (locationId) query.set('locationId', locationId);
   if (includeEmpty) query.set('includeEmpty', 'true');
@@ -95,13 +121,15 @@ export function LevelsPage() {
   // productId, not a search: it is one row per product and location, already
   // scoped to a location, so the list a shop scrolls is small.
   const needle = search.trim().toLowerCase();
-  const rows = needle
+  const matching = needle
     ? levels.filter(
         (row) =>
           row.product.name.toLowerCase().includes(needle) ||
           row.product.sku.toLowerCase().includes(needle),
       )
     : levels;
+  const order = LEVEL_ORDER[orderBy];
+  const rows = sortRows(matching, order.value, order.direction);
 
   const negatives = rows.filter((row) => row.quantity < 0).length;
   const navigate = useNavigate();
@@ -135,7 +163,7 @@ export function LevelsPage() {
     >
       <ExpiryPanel locationId={locationId} />
 
-      <div className="mb-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-3">
+      <div className="mb-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-4">
         <Field label="Search" htmlFor="level-search">
           <Input
             id="level-search"
@@ -155,6 +183,20 @@ export function LevelsPage() {
             {locations.map((location) => (
               <option key={location.id} value={location.id}>
                 {location.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <Field label="Sort by" htmlFor="level-order">
+          <Select
+            id="level-order"
+            value={orderBy}
+            onChange={(event) => setOrderBy(event.target.value as LevelOrder)}
+          >
+            {Object.entries(LEVEL_ORDER).map(([key, option]) => (
+              <option key={key} value={key}>
+                {option.label}
               </option>
             ))}
           </Select>

@@ -1092,3 +1092,22 @@ under the lines reads **Add a product**.
 
 **287. [gate] On the hosted site, record a delivery with twenty or more lines.** It saves — it
 used to fail with an internal server error once it took longer than five seconds.
+
+---
+
+## AR. Sorting, and the price on the products list
+
+**288. [gate] Stock → Products, as an owner.** The column is **Price**, not Base price: each row
+shows its selling unit's price, e.g. "₦12,500 / carton". A product with no price at all reads
+**no price** — hovering it says nothing about your role. Cost reads "₦4,027.00 / piece".
+
+**289. [gate] Tap the Price heading.** Cheapest first, with an ↑; tap again for dearest first (↓);
+a third tap puts the list back. Rows with no price stay at the bottom either way. Name, On hand
+and Cost work the same, and still within whatever the search and category have narrowed to.
+
+**290. Customers.** A search box finds by name, phone or email; Name and Owes sort.
+
+**291. Stock on hand → Sort by: Most on hand / Least on hand / Name.**
+
+**292. Reports → Margins, Sales, Purchases, Stock and Movers.** Headings with ↕ sort that table.
+History lists (sales, payments, deliveries, movements) do not offer sorting.

@@ -34,6 +34,11 @@ export function Money({
   const shopCurrency = useShopCurrency();
   const text = formatMoney(value, currency ?? shopCurrency);
   const absent = text === ABSENT;
+  // `undefined` is a figure the server removed for this role (`redactCost`);
+  // `null` is a figure that does not exist — a product with no base price.
+  // Only the first is "not for your role": telling an owner that about a price
+  // nobody set was the bug (2026-10-07).
+  const hidden = value === undefined;
   const negative = typeof value === 'number' && value < 0;
 
   const tone = absent
@@ -46,8 +51,8 @@ export function Money({
     <span
       className={`tabular-nums ${tone} ${className}`.trim()}
       // Screen readers otherwise announce the em dash as punctuation or skip it.
-      aria-label={absent ? 'not available' : undefined}
-      title={absent ? 'Not available for your role' : undefined}
+      aria-label={absent ? (hidden ? 'not available' : 'none') : undefined}
+      title={hidden ? 'Not available for your role' : undefined}
     >
       {text}
     </span>

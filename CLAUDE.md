@@ -545,6 +545,17 @@ working, since `start:prod` needs a build first and will not pick up changes.
 - **Every amount renders through `<Money>`.** A cost field may be **absent rather than null**,
   because `redactCost` removes keys for roles that may not see them; a component that assumes the
   key exists prints `NaN` to a rep.
+- **`<Money>` says "not for your role" only for `undefined`** (2026-10-07). `undefined` is a key
+  `redactCost` removed; `null` is a figure that does not exist (no base price, no cost yet). The
+  tooltip used to say it for both, and told an owner they could not see prices nobody had set.
+- **Lists sort by tapping a heading — only where the whole list is on screen** (2026-10-07).
+  `lib/sort.ts` + `SortHeading`: asc → desc → off, blanks always last. Products, Customers (which
+  also gained a search box), Margins and the report tables (`DataTable` columns opt in with
+  `sortValue`); Stock on hand is cards, so it has a *Sort by* box. **Never on a paged feed** —
+  sorting one page misleads — and an oldest-first switch for those is not built: `order=asc` is
+  the sync mode, which ignores `until` and holds back the last second. The products list's
+  **Price** is the default selling unit on the default list ("₦12,500 / carton"), falling back
+  to the base price per counted-in unit, never multiplied in the browser.
 - **Money is displayed, never computed.** The one exception is the till's running total, which is
   exact only because prices are tax-inclusive — see `lib/money.ts`.
 - **Role checks in the UI are navigation, not security.** The server enforces every one of them.

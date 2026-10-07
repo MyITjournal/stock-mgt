@@ -3683,6 +3683,28 @@ being able to read the letterhead they issue invoices with.
 arithmetic and the refusals are checked and the rendering is not. That gap now spans the whole
 dashboard and is the first thing worth closing after deployment.
 
+### Sorting by tapping a heading, and a price an owner was told they could not see (2026-10-07)
+
+The owner asked for sorting "without having to narrow them down to categories… easy for laymen".
+**Tap a heading**: first tap low-to-high, second high-to-low, third back to the screen's own
+order; rows with nothing in that column always go last, so sorting by price never opens on a
+page of blanks (`lib/sort.ts`, `SortHeading`). On Products, Customers (which gained a search box —
+it had none), Margins and the report tables; `DataTable` sorts only columns that supply a
+`sortValue`. Stock on hand is a list of cards with no headings, so it has a *Sort by* box.
+
+**Not on the paged history lists**, and that is the rule rather than an omission: a table holding
+one keyset page would sort the page and say something untrue about the rest. An *Oldest first*
+switch for them was proposed and **not built** — `order=asc` on those feeds is the sync walk, which
+ignores `until` and holds back the last second, so it needs a third, browsing-forward mode on four
+endpoints the mobile app depends on. Its own branch if anyone asks twice.
+
+**The bug found alongside it.** An owner saw "Not available for your role" on the products list's
+*Base price*. Nothing was hidden: the catalog was priced by unit (an import does that), so
+`basePrice` was **null** — and `<Money>` used one tooltip for null and for undefined. Undefined is
+a key `redactCost` removed; null is a figure that does not exist. Only the first is about a role
+now. And the column became **Price**: the default selling unit's price on the default list,
+falling back to the base price *per counted-in unit*, never multiplied up in the browser (§17).
+
 ### The till moved under Sales, and learned a date (2026-10-07)
 
 **One section, two tabs.** Owner: the till "could be with the sale, since sale is just showing the
