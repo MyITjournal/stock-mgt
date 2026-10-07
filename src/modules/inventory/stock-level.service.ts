@@ -1,3 +1,4 @@
+import { StockAdjustmentReason } from '@prisma/client';
 import { Inject, Injectable } from '@nestjs/common';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
@@ -51,6 +52,12 @@ export class StockLevelService {
             receivedAt: true,
             quantityReceived: true,
             totalCost: true,
+            receiptLine: { select: { id: true } },
+            movements: {
+              where: { reason: StockAdjustmentReason.opening_balance },
+              select: { id: true },
+              take: 1,
+            },
           },
         },
       },
@@ -79,6 +86,7 @@ export class StockLevelService {
            * price, and `includeBatches=true` was handing it to any member.
            */
           unitCost?: number | null;
+          isOpening: boolean;
         }[];
       }
     >();
@@ -98,6 +106,9 @@ export class StockLevelService {
         quantity: balance.quantity,
         lotCode: balance.batch.lotCode,
         expiryDate: balance.batch.expiryDate,
+        // Opening stock: entered with a cost, never on a delivery.
+        isOpening:
+          !balance.batch.receiptLine && balance.batch.movements.length > 0,
         ...(seesCost && {
           unitCost:
             balance.batch.quantityReceived > 0

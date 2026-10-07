@@ -1,4 +1,5 @@
 import {
+  correctedOpeningTotal,
   costPriceAfterOpening,
   planOpeningStock,
   type OpeningProduct,
@@ -174,5 +175,38 @@ describe('costPriceAfterOpening', () => {
       { productId: 'peak', quantity: 30, totalCost: 270_000 },
     ]);
     expect(prices.get('peak')).toBe(Math.round(19_870_000 / 2270));
+  });
+});
+
+describe('correctedOpeningTotal', () => {
+  it('values the lot at the cost of one of the chosen unit, rounded once', () => {
+    // The owner's case: 3 pieces, entered at a pack's cost; really ₦12,433.36
+    // per 1/2 pack of 3.
+    expect(
+      correctedOpeningTotal({
+        quantityReceived: 3,
+        unitFactor: 3,
+        unitCost: 1_243_336,
+      }),
+    ).toBe(1_243_336);
+    // The same lot priced per piece.
+    expect(
+      correctedOpeningTotal({
+        quantityReceived: 3,
+        unitFactor: 1,
+        unitCost: 414_445,
+      }),
+    ).toBe(1_243_335);
+  });
+
+  it('takes a unit bigger than the lot, rounding the total once', () => {
+    // 25 sachets at ₦1,000.01 a roll of 10 is ₦2,500.025 → ₦2,500.03.
+    expect(
+      correctedOpeningTotal({
+        quantityReceived: 25,
+        unitFactor: 10,
+        unitCost: 100_001,
+      }),
+    ).toBe(250_003);
   });
 });

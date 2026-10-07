@@ -7,9 +7,12 @@ import {
   IsDateString,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { IsMoney } from '../../../common/money/is-money.validator';
@@ -86,4 +89,31 @@ export class OpeningStockDto {
   @ValidateNested({ each: true })
   @Type(() => OpeningStockLineDto)
   lines!: OpeningStockLineDto[];
+}
+
+/** A cost for an opening lot, in one of its product's units — checked, not saved. */
+export class LotCostPreviewDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'Which of the product’s units `unitCost` is for.',
+  })
+  @IsUUID()
+  unitId!: string;
+
+  @IsMoney({ example: 1_243_336 })
+  /** What **one** of `unitId` really cost, in kobo. */
+  unitCost!: number;
+}
+
+/** The same, saved — with the reason, which is required. */
+export class CorrectLotCostDto extends LotCostPreviewDto {
+  @ApiProperty({
+    example: 'Entered at a pack’s cost; it was half a pack.',
+    minLength: 3,
+    maxLength: 500,
+  })
+  @IsString()
+  @MinLength(3, { message: 'Say why the cost is being corrected.' })
+  @MaxLength(500)
+  reason!: string;
 }

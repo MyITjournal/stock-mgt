@@ -61,6 +61,7 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'VendorMoneyTarget',
   // Corrections to a recorded delivery, and their lines.
   'GoodsReceiptCorrection',
+  'LotCostCorrection',
   'GoodsReceiptCorrectionLine',
 ]);
 

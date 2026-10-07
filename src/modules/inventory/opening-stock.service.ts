@@ -3,18 +3,27 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { StockAdjustmentReason, StockMovementType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { LocationService } from './location.service';
 import { StockService, type StockWriter } from './stock.service';
-import { OpeningStockDto } from './dto/opening-stock.dto';
 import {
+  CorrectLotCostDto,
+  LotCostPreviewDto,
+  OpeningStockDto,
+} from './dto/opening-stock.dto';
+import {
+  LotCostCorrectionView,
   OpeningStockProductView,
   OpeningStockResultView,
 } from './dto/opening-stock.response';
+import { TenantContext } from '../../common/tenancy/tenant-context';
+import { MAX_MINOR_UNITS } from '../../common/money/is-money.validator';
 import {
+  correctedOpeningTotal,
   costPriceAfterOpening,
   planOpeningStock,
   type OpeningProduct,
@@ -176,5 +185,139 @@ export class OpeningStockService {
       select: { productId: true },
     });
     return new Set(rows.map((row) => row.productId));
+  }
+
+  /**
+   * What an opening lot would be worth at a corrected cost — nothing written.
+   * The screen shows this before anyone saves, so the browser computes no
+   * money (§17).
+   */
+  async previewCostCorrection(
+    batchId: string,
+    input: LotCostPreviewDto,
+  ): Promise<LotCostCorrectionView> {
+    const planned = await this.planCostCorrection(this.prisma, batchId, input);
+    return { ...planned.view, saved: false };
+  }
+
+  /**
+   * Puts an opening lot's value right (2026-10-07). Only the value: the lot
+   * keeps its quantity and its movements, sales already made keep the cost
+   * they recorded, and a `LotCostCorrection` says what it was before, who
+   * changed it and why. Stock value, margins and later sales read the new
+   * total at once.
+   */
+  async correctCost(
+    batchId: string,
+    input: CorrectLotCostDto,
+  ): Promise<LotCostCorrectionView> {
+    return this.prisma.$transaction(async (tx) => {
+      const db = tx as unknown as TenantPrisma;
+      const planned = await this.planCostCorrection(db, batchId, input);
+      await db.stockBatch.update({
+        where: { id: batchId },
+        data: { totalCost: planned.view.totalCostAfter },
+      });
+      await db.lotCostCorrection.create({
+        data: {
+          organizationId: TenantContext.requireOrganizationId(),
+          batchId,
+          totalCostBefore: planned.view.totalCostBefore,
+          totalCostAfter: planned.view.totalCostAfter,
+          reason: input.reason.trim(),
+          recordedByUserId: TenantContext.get()?.userId ?? null,
+        },
+      });
+      // The cost display on the product, when no delivery has set it since:
+      // it was written from this lot, so it was wrong in the same way.
+      if (!planned.deliveredSince) {
+        await db.product.update({
+          where: { id: planned.productId },
+          data: {
+            costPrice: Math.round(
+              planned.view.totalCostAfter / planned.view.quantity,
+            ),
+          },
+        });
+      }
+      return { ...planned.view, saved: true };
+    });
+  }
+
+  /** Loads the lot, checks it is opening stock, and works out the new total. */
+  private async planCostCorrection(
+    db: TenantPrisma,
+    batchId: string,
+    input: LotCostPreviewDto,
+  ) {
+    const lot = await db.stockBatch.findFirst({
+      where: { id: batchId },
+      select: {
+        id: true,
+        productId: true,
+        receivedAt: true,
+        quantityReceived: true,
+        totalCost: true,
+        receiptLine: { select: { id: true } },
+        movements: {
+          where: { reason: StockAdjustmentReason.opening_balance },
+          select: { id: true },
+          take: 1,
+        },
+        product: {
+          select: {
+            name: true,
+            units: { select: { id: true, name: true, factor: true } },
+          },
+        },
+      },
+    });
+    if (!lot) throw new NotFoundException('That lot was not found.');
+    if (lot.receiptLine) {
+      throw new ConflictException(
+        'This lot came in on a delivery. Correct the delivery instead — open it under Deliveries.',
+      );
+    }
+    if (lot.movements.length === 0) {
+      throw new ConflictException(
+        'Only opening stock can have its cost corrected here.',
+      );
+    }
+    const unit = lot.product.units.find((row) => row.id === input.unitId);
+    if (!unit) {
+      throw new BadRequestException(
+        `That unit is not one of ${lot.product.name}'s units.`,
+      );
+    }
+    const base = lot.product.units.find((row) => row.factor === 1);
+    const totalCostAfter = correctedOpeningTotal({
+      quantityReceived: lot.quantityReceived,
+      unitFactor: unit.factor,
+      unitCost: input.unitCost,
+    });
+    if (totalCostAfter > MAX_MINOR_UNITS) {
+      throw new BadRequestException('That cost is too large to record.');
+    }
+    const deliveredSince = await db.stockBatch.findFirst({
+      where: {
+        productId: lot.productId,
+        receiptLine: { isNot: null },
+        receivedAt: { gte: lot.receivedAt },
+      },
+      select: { id: true },
+    });
+
+    return {
+      productId: lot.productId,
+      deliveredSince: Boolean(deliveredSince),
+      view: {
+        batchId: lot.id,
+        productName: lot.product.name,
+        quantity: lot.quantityReceived,
+        baseUnitName: base?.name ?? 'unit',
+        totalCostBefore: lot.totalCost,
+        totalCostAfter,
+      },
+    };
   }
 }

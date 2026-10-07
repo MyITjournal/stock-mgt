@@ -10,6 +10,7 @@ import { useIsManager, useRecordsStock, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { AdjustDialog } from './AdjustDialog';
 import { TransferDialog } from './TransferDialog';
+import { CorrectLotCostDialog } from './CorrectLotCostDialog';
 import { ExpiryPanel } from './ExpiryPanel';
 import { DownloadButton } from '../components/DownloadButton';
 import { downloadSheet, stamp, type SheetColumn } from '../lib/exportSheet';
@@ -101,6 +102,12 @@ export function LevelsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adjusting, setAdjusting] = useState<StockLevelRow | null>(null);
   const [transferring, setTransferring] = useState<StockLevelRow | null>(null);
+  // An opening lot whose cost is being put right (owners and managers).
+  const [correcting, setCorrecting] = useState<{
+    batchId: string;
+    product: { id: string; name: string };
+    quantity: number;
+  } | null>(null);
 
   const [orderBy, setOrderBy] = useState<LevelOrder>('name');
   const query = new URLSearchParams({ includeBatches: 'true' });
@@ -307,6 +314,7 @@ export function LevelsPage() {
                               Cost each
                             </th>
                           )}
+                          {canEnterOpening && <th className="py-1" />}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
@@ -338,6 +346,27 @@ export function LevelsPage() {
                                 <Money value={batch.unitCost} />
                               </td>
                             )}
+                            {canEnterOpening && (
+                              <td className="py-1.5 pl-3 text-right">
+                                {/* Opening stock only: a delivery is
+                                    corrected through its receipt. */}
+                                {batch.isOpening && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setCorrecting({
+                                        batchId: batch.batchId,
+                                        product: row.product,
+                                        quantity: batch.quantity,
+                                      })
+                                    }
+                                    className="text-xs font-medium text-brand-700 underline-offset-2 hover:underline"
+                                  >
+                                    Correct cost
+                                  </button>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -359,6 +388,15 @@ export function LevelsPage() {
           location={adjusting.location}
           onHand={adjusting.quantity}
           onClose={() => setAdjusting(null)}
+        />
+      )}
+
+      {correcting && (
+        <CorrectLotCostDialog
+          batchId={correcting.batchId}
+          product={correcting.product}
+          quantity={correcting.quantity}
+          onClose={() => setCorrecting(null)}
         />
       )}
 
