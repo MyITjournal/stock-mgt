@@ -3332,7 +3332,12 @@ export interface components {
              */
             lineId: string;
             /**
-             * @description What really arrived, in base units — 6½ cartons of 14 is 91. At least one: a line cannot be corrected to nothing, because a lot that received nothing has no cost per piece.
+             * Format: uuid
+             * @description The product that really arrived, when the line was entered as the wrong one (2026-10-07). Its stock goes in and the recorded product’s comes out; the figures below are in this product’s base units. Omitted when the product was right.
+             */
+            productId?: string;
+            /**
+             * @description What really arrived, in base units — 6½ cartons of 14 is 91. Zero when none of it came, and then the paid-for and value are zero too.
              * @example 91
              */
             received: number;
@@ -3358,8 +3363,13 @@ export interface components {
         CorrectionPreviewLine: {
             /** Format: uuid */
             lineId: string;
-            /** @description Base units; negative when fewer arrived than were recorded. */
+            /** @description Base units; negative when fewer arrived than were recorded. For a wrong product, what goes in of the right one. */
             stockDelta: number;
+            /** @description When the line was the wrong product: the one that comes out of stock (all of what was recorded), and the one that goes in. */
+            removedProductName?: string | null;
+            /** @description Base units of the wrong product that come out. */
+            removed?: number;
+            addedProductName?: string | null;
         };
         CorrectionPreviewView: {
             /** @description The change in the delivery’s value, in kobo. */

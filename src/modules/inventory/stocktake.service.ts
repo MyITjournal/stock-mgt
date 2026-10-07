@@ -316,7 +316,9 @@ export class StocktakeService {
     if (here) return here.batchId;
 
     const anywhere = await tx.stockBatch.findFirst({
-      where: { productId },
+      // A lot that received nothing — a delivery line corrected to zero, or
+      // moved to the right product — has no cost to lend a found item.
+      where: { productId, quantityReceived: { gt: 0 } },
       orderBy: { receivedAt: 'desc' },
       select: { id: true },
     });

@@ -22,13 +22,22 @@ export class TrueLineFiguresDto {
   @IsUUID()
   lineId!: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'The product that really arrived, when the line was entered as the wrong one (2026-10-07). Its stock goes in and the recorded product’s comes out; the figures below are in this product’s base units. Omitted when the product was right.',
+  })
+  @IsOptional()
+  @IsUUID()
+  productId?: string;
+
   @ApiProperty({
     example: 91,
     description:
-      'What really arrived, in base units — 6½ cartons of 14 is 91. At least one: a line cannot be corrected to nothing, because a lot that received nothing has no cost per piece.',
+      'What really arrived, in base units — 6½ cartons of 14 is 91. Zero when none of it came, and then the paid-for and value are zero too.',
   })
   @IsInt()
-  @Min(1, { message: 'At least one piece must have arrived on a line.' })
+  @Min(0, { message: 'What arrived cannot be less than nothing.' })
   received!: number;
 
   @ApiProperty({
