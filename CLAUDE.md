@@ -739,6 +739,12 @@ And three from 7.6a, in `web/src/reports/`:
   the last delivery and its free-goods deal ("13 for 12") alongside. Nothing on hand falls back
   to the last delivery, **flagged**; no cost at all is null, never zero. Margin is on the price
   without VAT, as profit's is. Services and unsold units are left out.
+  **It projects the stock on hand** (2026-10-07, owner): if everything on hand sold at today's
+  **carton** price on the chosen list (owner's choice — usually the lowest per piece, so it errs
+  safe), what it sells for, what it cost and the estimated profit — `projection` on the view and
+  `projectedProfit` per row, exact parts summed and rounded once (`projectSale`,
+  `projectionTotals`). Before expenses and salaries; products with stock and no price are counted
+  as `unpriced` and left out, and the screen says so.
 
 And three from 7.6b, in `web/src/settings/`:
 

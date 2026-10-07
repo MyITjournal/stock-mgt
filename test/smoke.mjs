@@ -3102,6 +3102,14 @@ async function main() {
     Math.round(((netCarton - 8_308) / netCarton) * 10_000),
   );
   eq('the deal is said the way a vendor says it', JSON.stringify(cartonRow.lastDelivery?.deal), '{"received":13,"paidFor":12}');
+  // All 156 soaps sold at the carton price: 13 cartons, less the ₦1,080 they cost.
+  eq('the stock on hand is projected at the carton price', cartonRow.projectedProfit, 13 * netCarton - 108_000);
+  const plan = margins.projection;
+  check(
+    'and the shop’s projection adds up: revenue − cost = profit',
+    Math.abs(plan.revenue - plan.cost - plan.profit) <= 1,
+    JSON.stringify(plan),
+  );
   check(
     'one row per product, in the biggest unit the till sells',
     margins.rows.filter((r) => r.productId === soap.id).map((r) => r.unitName).join() === 'carton',

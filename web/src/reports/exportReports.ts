@@ -324,6 +324,11 @@ const marginColumns: readonly SheetColumn<S['MarginRow']>[] = [
   { header: 'Margin', kind: 'money', value: (row) => row.margin },
   { header: 'Margin %', kind: 'percent', value: (row) => row.marginBps },
   {
+    header: 'If it all sells',
+    kind: 'money',
+    value: (row) => row.projectedProfit,
+  },
+  {
     header: 'Last delivery cost',
     kind: 'money',
     value: (row) => row.lastDelivery?.cost,

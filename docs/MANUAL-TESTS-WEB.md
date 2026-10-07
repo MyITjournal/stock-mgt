@@ -1196,3 +1196,8 @@ it. As a cashier there is no Value switch. Download: the *In and out* tab has va
 **310. [gate] Stock → Products, for products that came in only as opening stock.** Cost shows a
 figure per carton (or whichever unit the price is in), not "none yet", and it is the same as that
 product's Cost on Reports → Margins. The product page's *Cost* says "average of the stock on hand".
+
+**311. [gate] Reports → Margins.** A box above the table: "If everything on hand sold at today's
+carton prices" — it would sell for, it cost, estimated profit and its percentage. Each row has
+**If it all sells**; a product with nothing on hand shows a dash. Pick a category: the box
+follows it. Download: the sheet has an *If it all sells* column.
