@@ -3656,6 +3656,35 @@ being able to read the letterhead they issue invoices with.
 arithmetic and the refusals are checked and the rendering is not. That gap now spans the whole
 dashboard and is the first thing worth closing after deployment.
 
+### The till moved under Sales, and learned a date (2026-10-07)
+
+**One section, two tabs.** Owner: the till "could be with the sale, since sale is just showing the
+history". *Till* and *Sales* were two top-bar items; they are now one, *Sales*, opening on the
+till, with **Till** and **History** tabs (`SalesLayout`, a pathless layout route). The addresses
+stayed `/till` and `/sales` on purpose: `landingPath` sends a cashier to `/till`, and moving it
+would have been a fourth place to keep in step (§19). The top-bar item lights up on both through a
+`covers` list on the nav entry, since `NavLink` only knows its own path.
+
+**A sale can be dated.** For typing in sales made earlier — a day's notebook entered the next
+morning. `POST /sales` always accepted `occurredAt` (the mobile app sends its own clock offline),
+and the sale, its payment, its stock movement and its due date already followed it; the till just
+never sent one. `SaleDateBar` sends the picked day as noon UTC (`occurredAtFor`, the "Paid on"
+rule), and nothing for today. Three choices worth keeping:
+
+- **Owners and managers only, on screen.** A cashier's sale filed under last Tuesday puts today's
+  cash-up out by exactly that sale. The server does **not** enforce it: an offline device
+  legitimately syncs yesterday's sales as any role, and refusing old dates would break that. The
+  year-back bound (`IsPlausibleOccurrence`) still applies to everyone.
+- **The day stays picked between sales**, so a notebook goes in as a run — and the bar turns amber
+  with the date spelled out and *Back to today* while it is not today, because forgetting it is the
+  failure.
+- **Prices are today's.** Nothing re-prices a cart to what a product cost last week; the seller
+  types the price a line was actually sold at, which the till has always sent as `unitPrice`.
+
+What it does **not** do is change the date of a sale already recorded. That would move a payment
+between cash-ups and a stock movement between days in an append-only ledger — a correction, not
+an edit, and its own decision if it is ever wanted.
+
 ---
 
 ## 18. The first bug sweep

@@ -11,6 +11,7 @@ import { Home, LandingRedirect } from './auth/Landing';
 import { HomePage } from './home/HomePage';
 import { TillPage } from './till/TillPage';
 import { SalesPage } from './sales/SalesPage';
+import { SalesLayout } from './sales/SalesLayout';
 import { SaleDetailPage } from './sales/SaleDetailPage';
 import { CustomersPage } from './customers/CustomersPage';
 import { CustomerDetailPage } from './customers/CustomerDetailPage';
@@ -92,8 +93,10 @@ export default function App() {
               <Route element={<RequireAuth />}>
                 <Route element={<Layout />}>
                   <Route path="home" element={<HomePage />} />
-                  <Route path="till" element={<TillPage />} />
-                  <Route path="sales" element={<SalesPage />} />
+                  <Route element={<SalesLayout />}>
+                    <Route path="till" element={<TillPage />} />
+                    <Route path="sales" element={<SalesPage />} />
+                  </Route>
                   <Route path="sales/:id" element={<SaleDetailPage />} />
                   <Route path="customers" element={<CustomersPage />} />
                   <Route
