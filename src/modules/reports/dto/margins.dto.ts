@@ -115,6 +115,14 @@ export class MarginRow {
   marginBps!: number | null;
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'What the stock on hand would make sold at this price: on hand × (price without VAT − cost), per counted-in unit, rounded once. Null with nothing on hand, or no price or cost.',
+  })
+  projectedProfit!: number | null;
+
+  @ApiProperty({
     type: () => LastDelivery,
     nullable: true,
     description:
@@ -129,6 +137,33 @@ class MarginTier {
 
   @ApiProperty({ example: 'Retail' })
   name!: string;
+}
+
+/** The whole list's stock on hand, sold at today's carton prices. */
+class MarginsProjection {
+  @ApiProperty({ description: 'What it would sell for, without VAT.' })
+  revenue!: number;
+
+  @ApiProperty({
+    description: 'What it cost — the stock value of the products counted.',
+  })
+  cost!: number;
+
+  @ApiProperty({
+    description: '`revenue − cost`, rounded once from the exact figures.',
+  })
+  profit!: number;
+
+  @ApiProperty({
+    description: 'Profit as a share of revenue, in basis points.',
+  })
+  marginBps!: number;
+
+  @ApiProperty({
+    description:
+      'Products with stock on hand but no price on this list — left out, and counted so a screen says so.',
+  })
+  unpriced!: number;
 }
 
 export class MarginsView {
@@ -151,4 +186,11 @@ export class MarginsView {
       'One per product, in the biggest unit the till sells: thinnest margin first, then rows with no cost, then rows with no price.',
   })
   rows!: MarginRow[];
+
+  @ApiProperty({
+    type: () => MarginsProjection,
+    description:
+      'If everything on hand sold at today’s carton price on this list: a projection to plan by, never a record. Follows the category filter.',
+  })
+  projection!: MarginsProjection;
 }

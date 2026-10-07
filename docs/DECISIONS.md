@@ -2160,6 +2160,13 @@ report still answers what was actually made.
 - **Services are left out** (`trackStock` off: no cost of goods, so always 100%), and so are units
   not sold at the till. Closed to `sales_rep` and cashiers (`SEES_COST`). The pure core is
   `reports/margins.ts`; nothing on the screen is computed.
+- **A projection of the stock on hand** (same day, owner: "can we project the estimated profit
+  with the current info?"): on hand × (price without VAT ÷ factor − exact cost per counted-in
+  unit), per product and for the whole list, each part an exact fraction and every figure rounded
+  once. **At the carton price** — asked, and chosen because the carton is usually the cheapest per
+  piece, so smaller sales only add to it; the till's first unit would be the optimistic number for
+  a wholesaler. Before expenses and salaries; a product with stock and no price is left out and
+  counted (`unpriced`), never valued at zero. Follows the category filter and the chosen list.
 
 ---
 

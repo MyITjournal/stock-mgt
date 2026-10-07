@@ -1,4 +1,10 @@
-import { averageUnitCost, dealOf, unitMargin } from './margins';
+import {
+  averageUnitCost,
+  dealOf,
+  projectSale,
+  projectionTotals,
+  unitMargin,
+} from './margins';
 
 describe('averageUnitCost', () => {
   it('averages the lots on hand, weighted by what each still holds', () => {
@@ -67,5 +73,33 @@ describe('dealOf', () => {
   it('is nothing when nothing came free', () => {
     expect(dealOf(24, 24)).toBeNull();
     expect(dealOf(10, 0)).toBeNull();
+  });
+});
+
+describe('projecting the stock on hand', () => {
+  it('sells what is on hand at the carton price, less what it cost', () => {
+    // 81 pieces of lotion, a carton of 12 at ₦51,000 (no VAT), costing
+    // ₦4,031.35 a piece on average.
+    const part = projectSale({
+      onHand: 81,
+      unitFactor: 12,
+      netPrice: 5_100_000,
+      baseCost: 403_135.0154,
+    });
+    expect(part.revenue).toBe(34_425_000);
+    expect(Math.round(part.cost)).toBe(32_653_936);
+  });
+
+  it('totals every product exactly and rounds once', () => {
+    const totals = projectionTotals([
+      { revenue: 1_000.4, cost: 900.3 },
+      { revenue: 2_000.4, cost: 1_800.3 },
+    ]);
+    expect(totals).toEqual({
+      revenue: 3_001,
+      cost: 2_701,
+      profit: 300,
+      marginBps: 1_000,
+    });
   });
 });

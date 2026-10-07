@@ -3,7 +3,13 @@ import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { resolveUnitPrice } from '../catalog/pricing';
-import { averageUnitCost, dealOf, unitMargin } from './margins';
+import {
+  averageUnitCost,
+  dealOf,
+  projectSale,
+  projectionTotals,
+  unitMargin,
+} from './margins';
 import { MarginRow, MarginsView } from './dto/margins.dto';
 
 /**
@@ -102,6 +108,10 @@ export class MarginService {
     const lastOf = new Map(deliveries.map((lot) => [lot.productId, lot]));
 
     const rows: MarginRow[] = [];
+    // The stock on hand sold at today's carton price: exact parts, summed
+    // and rounded once at the end.
+    const projected: { revenue: number; cost: number }[] = [];
+    let unpriced = 0;
     for (const product of products) {
       const lots = (lotsOf.get(product.id) ?? []).map((row) => ({
         quantity: row.quantity,
@@ -134,6 +144,19 @@ export class MarginService {
           price !== null && cost !== null
             ? unitMargin({ price, taxRateBps, unitCost: cost })
             : null;
+        const part =
+          margin && onHand > 0 && baseCost !== null
+            ? projectSale({
+                onHand,
+                unitFactor: unit.factor,
+                netPrice: margin.netPrice,
+                baseCost,
+              })
+            : null;
+        if (part) projected.push(part);
+        // On the shelf with no price: left out of the projection, and
+        // counted so the screen can say so rather than look complete.
+        if (onHand > 0 && price === null) unpriced += 1;
 
         rows.push({
           productId: product.id,
@@ -149,6 +172,7 @@ export class MarginService {
           onHand,
           margin: margin?.margin ?? null,
           marginBps: margin?.marginBps ?? null,
+          projectedProfit: part ? Math.round(part.revenue - part.cost) : null,
           lastDelivery:
             last && lastUnitCost !== null
               ? {
@@ -161,7 +185,12 @@ export class MarginService {
       }
     }
 
-    return { tier, chargesVat, rows: rows.sort(byThinnestFirst) };
+    return {
+      tier,
+      chargesVat,
+      rows: rows.sort(byThinnestFirst),
+      projection: { ...projectionTotals(projected), unpriced },
+    };
   }
 }
 

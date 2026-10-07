@@ -69,3 +69,38 @@ export function dealOf(
 function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }
+
+/**
+ * What the stock on hand would make if it all sold at today's price for the
+ * row's unit — the carton (owner's choice, 2026-10-07: usually the lowest
+ * price per piece, so the projection errs on the safe side). Exact fractions,
+ * so the totals can be rounded once: `netPrice` is the carton's price without
+ * VAT, `baseCost` the exact cost of one counted-in unit.
+ */
+export function projectSale(input: {
+  onHand: number;
+  unitFactor: number;
+  netPrice: Minor;
+  baseCost: number;
+}): { revenue: number; cost: number } {
+  return {
+    revenue: (input.onHand * input.netPrice) / input.unitFactor,
+    cost: input.onHand * input.baseCost,
+  };
+}
+
+/** The shop's projection: every product's exact figures, each rounded once. */
+export function projectionTotals(
+  parts: readonly { revenue: number; cost: number }[],
+): { revenue: Minor; cost: Minor; profit: Minor; marginBps: number } {
+  const revenue = parts.reduce((sum, part) => sum + part.revenue, 0);
+  const cost = parts.reduce((sum, part) => sum + part.cost, 0);
+  const profit = Math.round(revenue - cost);
+  const rounded = Math.round(revenue);
+  return {
+    revenue: rounded,
+    cost: Math.round(cost),
+    profit,
+    marginBps: marginBps(profit, rounded),
+  };
+}
