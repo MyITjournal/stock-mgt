@@ -2001,6 +2001,24 @@ figures. On a credit route they diverge constantly, and conflating them is how a
 business reads a strong month while running out of cash. Anything else on that
 screen is arithmetic; this pair is the insight the product exists to deliver.
 
+**Each now carries its share of the month's sales** (2026-10-07, owner): `paidShareBps` and
+`uncollectedShareBps` on `collections`, worked out on the server like every other percentage.
+Two choices worth knowing:
+
+- **The base is sales *with* VAT (`sales.monthGross`), not revenue.** Uncollected is defined as
+  `grossSales − collected`, so paid and uncollected add up to the VAT-inclusive figure. Measured
+  against revenue they would add up to 107.5%, and the screen would look broken to anyone who
+  added them. Home says "of ₦X sold" with that figure printed, so nothing is hidden.
+- **Uncollected is `10000 − paid`, not rounded on its own**, so the two never come to 99.9% or
+  100.1%. **Paid may pass 100%**, since collections include older invoices; the screen then says
+  so. **No sales gives null, not 0%**: "0% collected" reads as a month nobody paid.
+
+Beside them, `profit.operatingMarginBps` (operating profit over revenue), and the month's sales
+tile is now **Revenue this month**, with cost of goods sold beneath it. The owner asked for
+"Revenue (COGS)". Revenue and COGS are two figures, so both are shown, each under its own name.
+**A wider renaming to standard accounting terms is planned once the remaining bugs are done**, so
+this is the first of those labels, not a one-off.
+
 ### Periods are resolved in the organization's timezone
 
 Rows are UTC instants; an owner asks about a day in Lagos. Bucketing on the UTC

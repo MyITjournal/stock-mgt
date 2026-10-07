@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ReceivableService } from '../payments/receivable.service';
 import { PayableService } from '../payables/payable.service';
 import { resolvePeriod } from './period';
+import { marginBps, shareBps } from './profit';
 import { ReportService, describe } from './report.service';
 import { PurchaseTargetService } from './purchase-target.service';
 import { DashboardView } from './dto/dashboard.response';
@@ -79,6 +80,11 @@ export class DashboardService {
       this.payables.paidBetween(month),
     ]);
 
+    const paidShareBps = shareBps(
+      monthCollections.total,
+      monthProfit.grossSales,
+    );
+
     return {
       generatedAt: now,
       timezone,
@@ -101,6 +107,14 @@ export class DashboardService {
         byMethod: monthCollections.byMethod,
         /** Sold on credit this month and not yet collected. */
         uncollectedThisMonth: monthProfit.grossSales - monthCollections.total,
+        // Both against what was sold *with* VAT (2026-10-07, owner) — the
+        // figure the two of them add up to, so the shares make 100% together.
+        // Against revenue they would not, by exactly the VAT.
+        // The second is the rest of the first, so rounding can never make
+        // them 99.9% or 100.1% between them.
+        paidShareBps,
+        uncollectedShareBps:
+          paidShareBps === null ? null : 10_000 - paidShareBps,
       },
 
       // 3. What do people owe me?
@@ -119,6 +133,10 @@ export class DashboardService {
         expenses: monthProfit.expenses,
         operatingProfit: monthProfit.operatingProfit,
         marginBps: monthProfit.marginBps,
+        operatingMarginBps: marginBps(
+          monthProfit.operatingProfit,
+          monthProfit.revenue,
+        ),
         // How much of the month rests on a cost we had to guess.
         estimatedCost: monthProfit.estimatedCost,
         estimatedLines: monthProfit.estimatedLines,
