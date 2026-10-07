@@ -43,6 +43,7 @@ import { PurchasesPage } from './reports/PurchasesPage';
 import { CollectionsPage } from './reports/CollectionsPage';
 import { StockReportPage } from './reports/StockReportPage';
 import { MoversPage } from './reports/MoversPage';
+import { MarginsPage } from './reports/MarginsPage';
 import { TargetsPage } from './reports/TargetsPage';
 import { SettingsLayout } from './settings/SettingsLayout';
 import { BusinessPage } from './settings/BusinessPage';
@@ -146,6 +147,7 @@ export default function App() {
                     <Route path="collections" element={<CollectionsPage />} />
                     <Route path="stock" element={<StockReportPage />} />
                     <Route path="movers" element={<MoversPage />} />
+                    <Route path="margins" element={<MarginsPage />} />
                     <Route path="targets" element={<TargetsPage />} />
                   </Route>
                   <Route path="settings" element={<SettingsLayout />}>

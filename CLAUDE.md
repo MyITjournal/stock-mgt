@@ -683,6 +683,12 @@ And three from 7.6a, in `web/src/reports/`:
   screen shows collected *and* sold, because on a credit route they diverge — but the difference
   is not shown, both because money is displayed rather than computed and because that subtraction
   would be wrong: collections include payments on invoices from months ago.
+- **Margins are a projection, at the average cost of the stock on hand** (§12, 2026-10-07).
+  *Reports → Margins* (`GET /reports/margins`, `SEES_COST`) puts each selling unit's price on a
+  chosen list beside its cost — valued from lot totals and rounded once, never `costPrice` — with
+  the last delivery and its free-goods deal ("13 for 12") alongside. Nothing on hand falls back
+  to the last delivery, **flagged**; no cost at all is null, never zero. Margin is on the price
+  without VAT, as profit's is. Services and unsold units are left out.
 
 And three from 7.6b, in `web/src/settings/`:
 

@@ -1051,3 +1051,21 @@ yesterday's date; Reports → Collections for yesterday includes its payment; to
 today**: the bar goes plain and the next sale is today's.
 
 **277. [gate] As a cashier, the till has no Sale date.** Their sales are always today's.
+
+---
+
+## AP. Margins
+
+**278. [gate] Reports → Margins.** One row per product and selling unit, thinnest margin first:
+Price, Cost, Margin (amount and %), Last delivery. Anything below cost is red, under 3% amber.
+A product never delivered reads **no cost yet**, a unit with no price **no price** — neither as 0.
+
+**279. [gate] Receive a delivery with free goods** (e.g. 13 cartons, 12 paid for). Its row's Last
+delivery shows the cheaper cost and **13 for 12**; Cost moves toward it as the new stock joins
+what is on the shelf.
+
+**280. Switch Price list to Wholesale, then a category.** Prices and margins follow; **Download**
+gives the same table in Excel.
+
+**281. [gate] As a cashier or rep, Reports is not in the top bar** and `/reports/margins` shows
+nothing — buying prices stay closed.
