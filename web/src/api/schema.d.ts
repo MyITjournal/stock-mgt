@@ -2724,7 +2724,7 @@ export interface components {
             basePrice: number | null;
             /** @description What one base unit last cost to buy. **Absent** for a role that may not see cost (§9); **null** when nothing has been bought yet. Never an input to stock valuation, which §2 values from lot totals instead. */
             costPrice?: number | null;
-            /** @description What one of each unit cost on the last delivery — a carton as a carton — from the lot’s exact total, rounded once (§2). Empty before any delivery. **Absent** for a role that may not see cost. */
+            /** @description What one of each unit costs now — a carton as a carton: the average cost of the stock on hand (opening stock included), or the latest lot when none is on hand, from lot totals, rounded once (§2). The same basis as the margins report. Empty when nothing has ever come in. **Absent** for a role that may not see cost. */
             unitCosts?: components["schemas"]["ProductUnitCostView"][];
             /** @description The unit the till picks first — the default selling unit, else the smallest sold — and its price on the default list, worked out exactly as the till does. Null when nothing is sold at the till. */
             tillUnit: components["schemas"]["ProductTillUnitView"] | null;

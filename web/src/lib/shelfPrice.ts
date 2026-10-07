@@ -27,9 +27,10 @@ export function shelfPrice(product: ProductView): PerUnit | null {
 }
 
 /**
- * What one of the till's first unit cost on the last delivery — a carton
- * beside a carton. From `unitCosts`, which the server works out from the lot's
- * exact total; nothing is multiplied here.
+ * What one of the till's first unit costs now — a carton beside a carton: the
+ * average cost of the stock on hand, opening stock included, as the margins
+ * report counts it. From `unitCosts`, which the server works out from lot
+ * totals; nothing is multiplied here.
  *
  * `undefined` when the role may not see cost (the key was removed), `null`
  * when nothing has been delivered yet or the till sells no unit of it.

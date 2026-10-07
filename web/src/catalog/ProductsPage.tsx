@@ -234,8 +234,9 @@ export function ProductsPage() {
                 </td>
                 {seesCost && (
                   <td className="px-4 py-3 text-right">
-                    {/* The last delivery's cost of one of the unit the price
-                        is in — a carton beside a carton. */}
+                    {/* What one of the unit the price is in costs now — the
+                        average of the stock on hand — a carton beside a
+                        carton. */}
                     <PerUnitAmount value={costIn(product)} none="none yet" />
                   </td>
                 )}

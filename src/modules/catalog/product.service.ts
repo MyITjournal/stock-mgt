@@ -31,6 +31,8 @@ import {
 } from './dto/product.response';
 import { TillSearchResult } from './dto/till-search.response';
 import { resolveTierId } from './price-tier.service';
+import { averageUnitCost } from '../reports/margins';
+import type { ValuedLot } from '../reports/valuation';
 import {
   CreateProductDto,
   ProductBarcodeInput,
@@ -269,47 +271,69 @@ export class ProductService {
   }
 
   /**
-   * What one of each unit cost on the product's **last delivery** — a carton
-   * as a carton, not a piece times 24 (2026-10-07). A wholesaler reads cost
-   * in the unit they sell, beside the price in that unit.
+   * What one of each unit costs **now** — a carton as a carton, not a piece
+   * times 24 — on the same basis as the margins report (2026-10-07).
    *
-   * From the lot's exact totals, rounded once per unit (§2): `totalCost ×
-   * factor ÷ quantityReceived`. Never `costPrice × factor` — that multiplies
-   * a rounded snapshot, and its rounding error with it, by the factor. Free
-   * goods are in it, as they are in every unit cost: a 13-for-12 lot makes
-   * each carton cheaper. Only for a role that may see cost; nobody else pays
-   * for the query, and `redactCost` drops the key for them regardless.
+   * **The average cost of the stock on hand**, from lot totals (§2): opening
+   * stock included, so a product that came in as opening stock and has had no
+   * delivery yet has a cost — "none yet" beside a priced product, while the
+   * reports valued it, was the bug. With nothing on hand, **the most recent
+   * lot that received anything**. Rounded once per unit; never
+   * `costPrice × factor`, which multiplies a rounded snapshot. Only for a role
+   * that may see cost; nobody else pays for the queries, and `redactCost`
+   * drops the key for them regardless.
    */
   private async withUnitCosts<
     P extends { id: string; units: readonly { id: string; factor: number }[] },
   >(products: P[]): Promise<(P & { unitCosts?: ProductUnitCostView[] })[]> {
     if (products.length === 0 || !callerSeesCost()) return products;
+    const ids = products.map((product) => product.id);
 
-    const lots = await this.prisma.stockBatch.findMany({
-      where: {
-        productId: { in: products.map((product) => product.id) },
-        quantityReceived: { gt: 0 },
-        // A delivery — not opening stock or a count's surplus.
-        receiptLine: { isNot: null },
-      },
-      orderBy: [{ receivedAt: 'desc' }, { createdAt: 'desc' }],
-      distinct: ['productId'],
-      select: { productId: true, totalCost: true, quantityReceived: true },
-    });
-    const lastOf = new Map(lots.map((lot) => [lot.productId, lot]));
+    const [held, latest] = await Promise.all([
+      this.prisma.stockBalance.findMany({
+        where: { productId: { in: ids }, quantity: { gt: 0 } },
+        select: {
+          productId: true,
+          quantity: true,
+          batch: { select: { totalCost: true, quantityReceived: true } },
+        },
+      }),
+      this.prisma.stockBatch.findMany({
+        where: { productId: { in: ids }, quantityReceived: { gt: 0 } },
+        orderBy: [{ receivedAt: 'desc' }, { createdAt: 'desc' }],
+        distinct: ['productId'],
+        select: { productId: true, totalCost: true, quantityReceived: true },
+      }),
+    ]);
+
+    const lotsOf = new Map<string, ValuedLot[]>();
+    for (const row of held) {
+      const lots = lotsOf.get(row.productId) ?? [];
+      lots.push({
+        quantity: row.quantity,
+        totalCost: row.batch.totalCost,
+        quantityReceived: row.batch.quantityReceived,
+      });
+      lotsOf.set(row.productId, lots);
+    }
+    const lastOf = new Map(latest.map((lot) => [lot.productId, lot]));
 
     return products.map((product) => {
-      const lot = lastOf.get(product.id);
+      const last = lastOf.get(product.id);
+      // Exact cost of one counted-in unit: the average on hand, else the
+      // latest lot.
+      const perBase =
+        averageUnitCost(lotsOf.get(product.id) ?? []) ??
+        (last ? last.totalCost / last.quantityReceived : null);
       return {
         ...product,
-        unitCosts: lot
-          ? product.units.map((unit) => ({
-              unitId: unit.id,
-              cost: Math.round(
-                (lot.totalCost * unit.factor) / lot.quantityReceived,
-              ),
-            }))
-          : [],
+        unitCosts:
+          perBase === null
+            ? []
+            : product.units.map((unit) => ({
+                unitId: unit.id,
+                cost: Math.round(perBase * unit.factor),
+              })),
       };
     });
   }
