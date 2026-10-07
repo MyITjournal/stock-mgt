@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UnauthorizedException } from '@nestjs/common';
 import { OrgRole } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { TokenService } from './token.service';
+import { signsInOnOneDevice, TokenService } from './token.service';
 import { WorkingHoursService } from '../staff/working-hours.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -155,6 +155,18 @@ describe('TokenService', () => {
       });
     });
 
+    it('ends a session revoked on purpose without calling it a theft', async () => {
+      // Signed out, password reset, or the same staff member signed in elsewhere.
+      const { verifier, row } = await storedToken({ revokedAt: new Date() });
+      prisma.refreshToken.findUnique.mockResolvedValue(row);
+      prisma.refreshToken.updateMany.mockClear();
+
+      await expect(service.rotate(`sel.${verifier}`)).rejects.toThrow(
+        'This session has ended',
+      );
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+
     it('refuses to rotate once the membership is inactive', async () => {
       const { verifier, row } = await storedToken();
       prisma.refreshToken.findUnique.mockResolvedValue(row);
@@ -185,5 +197,15 @@ describe('TokenService', () => {
         data: { revokedAt: expect.any(Date) as Date, replacedById: 'rt-2' },
       });
     });
+  });
+});
+
+describe('signsInOnOneDevice', () => {
+  it('holds staff to one device and lets owners and managers keep several', () => {
+    expect(signsInOnOneDevice(OrgRole.sales_rep)).toBe(true);
+    expect(signsInOnOneDevice(OrgRole.storekeeper)).toBe(true);
+    expect(signsInOnOneDevice(OrgRole.accountant)).toBe(true);
+    expect(signsInOnOneDevice(OrgRole.owner)).toBe(false);
+    expect(signsInOnOneDevice(OrgRole.manager)).toBe(false);
   });
 });

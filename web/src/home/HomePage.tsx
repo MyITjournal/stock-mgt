@@ -79,16 +79,20 @@ export function HomePage() {
           value={<Money value={collections.today} />}
           note="Money actually received"
         />
+        {/*
+          Tax-exclusive, as profit is, with what those goods cost beside it.
+          "Uncollected this month" sat here until 2026-10-07; the owner read it
+          as the same figure as Unpaid invoices below and it was removed.
+        */}
         <Stat
-          label="Sold this month"
+          label="Revenue this month"
           value={<Money value={sales.month} />}
           note={<Change bps={sales.changeBps} />}
         />
         <Stat
-          label="Uncollected this month"
-          value={<Money value={collections.uncollectedThisMonth} />}
-          note="Sold but not yet paid for"
-          tone={collections.uncollectedThisMonth > 0 ? 'warn' : undefined}
+          label="Cost of goods sold"
+          value={<Money value={profit.cogs} />}
+          note={`${percent(profit.cogsShareBps)} of revenue`}
         />
       </section>
 
@@ -101,7 +105,18 @@ export function HomePage() {
         <Stat
           label="Paid this month"
           value={<Money value={collections.month} />}
-          note="Received from customers"
+          note={
+            <ShareOfSales
+              bps={collections.paidShareBps}
+              sold={sales.monthGross}
+              tail={
+                collections.paidShareBps !== null &&
+                collections.paidShareBps > 10_000
+                  ? 'older invoices paid too'
+                  : 'received from customers'
+              }
+            />
+          }
         />
         <Stat
           label="Unpaid invoices"
@@ -125,22 +140,44 @@ export function HomePage() {
         />
       </section>
 
+      {/*
+        Gross profit − expenses = operating profit, read left to right, then
+        what the month's stock came to (2026-10-07, owner).
+      */}
       <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Gross profit"
           value={<Money value={profit.grossProfit} />}
-          note={`${(profit.marginBps / 100).toFixed(1)}% margin`}
+          note={`${percent(profit.marginBps)} of revenue`}
+        />
+        <Stat
+          label="Expenses"
+          value={<Money value={profit.expenses} />}
+          note={`${percent(profit.expensesShareBps)} of revenue, salaries included`}
         />
         <Stat
           label="Operating profit"
           value={<Money value={profit.operatingProfit} />}
-          note={
-            <>
-              after <Money value={profit.expenses} /> expenses
-            </>
-          }
+          note={`${percent(profit.operatingMarginBps)} of revenue`}
           tone={profit.operatingProfit < 0 ? 'bad' : undefined}
         />
+        {/*
+          Goods available for sale: all the stock the shop handled this month,
+          at cost — what it started with plus what came in. Not what is left;
+          that is the inventory valuation on Reports → Stock.
+        */}
+        {data.stock && (
+          <Stat
+            label="Goods available for sale"
+            value={<Money value={data.stock.available} />}
+            note={
+              <>
+                Opening <Money value={data.stock.opening} /> + delivered{' '}
+                <Money value={data.stock.delivered} />
+              </>
+            }
+          />
+        )}
       </section>
 
       {profit.estimatedLines > 0 && (
@@ -367,6 +404,34 @@ function Panel({
       <h2 className="mb-3 text-sm font-semibold text-slate-900">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/** Basis points as a percentage, one decimal: 9350 → "93.5%". */
+function percent(bps: number): string {
+  return `${(bps / 100).toFixed(1)}%`;
+}
+
+/**
+ * "93.5% of ₦1,075,000 sold" — the share the server worked out, against the
+ * month's sales **with VAT**, which is what paid and uncollected add up to
+ * (2026-10-07). Null means nothing was sold, so there is no share to give.
+ */
+function ShareOfSales({
+  bps,
+  sold,
+  tail,
+}: {
+  bps: number | null;
+  sold: number;
+  tail: string;
+}) {
+  if (bps === null) return <>Nothing sold this month yet</>;
+  return (
+    <>
+      <span className="font-medium text-slate-700">{percent(bps)}</span> of{' '}
+      <Money value={sold} /> sold · {tail}
+    </>
   );
 }
 

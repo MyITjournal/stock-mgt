@@ -2,8 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { ReceivableService } from '../payments/receivable.service';
 import { PayableService } from '../payables/payable.service';
 import { resolvePeriod } from './period';
+import { marginBps, shareBps } from './profit';
 import { ReportService, describe } from './report.service';
 import { PurchaseTargetService } from './purchase-target.service';
+import { StockSummaryService } from './stock-summary.service';
 import { DashboardView } from './dto/dashboard.response';
 
 /** How many rows each attention list shows before it stops being a glance. */
@@ -32,6 +34,7 @@ export class DashboardService {
     private readonly receivables: ReceivableService,
     private readonly payables: PayableService,
     private readonly targets: PurchaseTargetService,
+    private readonly stockSummary: StockSummaryService,
   ) {}
 
   async build(): Promise<DashboardView> {
@@ -57,6 +60,7 @@ export class DashboardService {
       audit,
       owedToVendors,
       monthPurchases,
+      monthStock,
       monthTargets,
       paidToVendors,
     ] = await Promise.all([
@@ -73,11 +77,17 @@ export class DashboardService {
       this.reports.stockAudit(month),
       this.payables.outstanding(),
       this.reports.purchases(month),
+      this.stockSummary.summary(month),
       // No period: the target report defaults to this month in the shop's
       // timezone, which is the month every other figure here is.
       this.targets.report(),
       this.payables.paidBetween(month),
     ]);
+
+    const paidShareBps = shareBps(
+      monthCollections.total,
+      monthProfit.grossSales,
+    );
 
     return {
       generatedAt: now,
@@ -101,6 +111,14 @@ export class DashboardService {
         byMethod: monthCollections.byMethod,
         /** Sold on credit this month and not yet collected. */
         uncollectedThisMonth: monthProfit.grossSales - monthCollections.total,
+        // Both against what was sold *with* VAT (2026-10-07, owner) — the
+        // figure the two of them add up to, so the shares make 100% together.
+        // Against revenue they would not, by exactly the VAT.
+        // The second is the rest of the first, so rounding can never make
+        // them 99.9% or 100.1% between them.
+        paidShareBps,
+        uncollectedShareBps:
+          paidShareBps === null ? null : 10_000 - paidShareBps,
       },
 
       // 3. What do people owe me?
@@ -119,6 +137,14 @@ export class DashboardService {
         expenses: monthProfit.expenses,
         operatingProfit: monthProfit.operatingProfit,
         marginBps: monthProfit.marginBps,
+        // The rest of the margin, so the two always make 100% of revenue.
+        cogsShareBps:
+          monthProfit.revenue === 0 ? 0 : 10_000 - monthProfit.marginBps,
+        expensesShareBps: marginBps(monthProfit.expenses, monthProfit.revenue),
+        operatingMarginBps: marginBps(
+          monthProfit.operatingProfit,
+          monthProfit.revenue,
+        ),
         // How much of the month rests on a cost we had to guess.
         estimatedCost: monthProfit.estimatedCost,
         estimatedLines: monthProfit.estimatedLines,
@@ -211,6 +237,16 @@ export class DashboardService {
       },
 
       trend: { days: daily },
+
+      // 9. What stock did I handle this month? Opening + delivered, at cost —
+      // from the same ledger walk as Reports → Stock, so the two agree.
+      ...(monthStock.totalValue && {
+        stock: {
+          opening: monthStock.totalValue.opening,
+          delivered: monthStock.totalValue.delivered,
+          available: monthStock.availableValue!,
+        },
+      }),
     };
   }
 }

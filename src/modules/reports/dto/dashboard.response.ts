@@ -88,6 +88,22 @@ class CollectionsSummary {
       'Sold this month and not yet collected. Deliberately separate from sales: on a credit route the two diverge, and the gap is the cash position.',
   })
   uncollectedThisMonth!: number;
+
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description:
+      'Collected this month as a share of this month’s sales including VAT, in basis points. Null when nothing was sold; may exceed 10000, because collections include payments for older invoices.',
+  })
+  paidShareBps!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description:
+      'Uncollected as a share of the same figure: exactly 10000 − paidShareBps, so the two never disagree by a rounding. Negative when older invoices were paid this month.',
+  })
+  uncollectedShareBps!: number | null;
 }
 
 class ReceivablesSummary {
@@ -126,6 +142,24 @@ class ProfitSummary {
 
   @ApiProperty()
   marginBps!: number;
+
+  @ApiProperty({
+    description:
+      'Cost of goods sold as a share of revenue, in basis points — exactly 10000 − marginBps. Zero when nothing was sold.',
+  })
+  cogsShareBps!: number;
+
+  @ApiProperty({
+    description:
+      'Expenses, salaries included, as a share of revenue, in basis points. Zero when nothing was sold.',
+  })
+  expensesShareBps!: number;
+
+  @ApiProperty({
+    description:
+      'Operating profit as a share of revenue, in basis points. Zero when nothing was sold.',
+  })
+  operatingMarginBps!: number;
 
   @ApiProperty({
     description:
@@ -461,6 +495,24 @@ class TrendSummary {
   days!: TrendDay[];
 }
 
+/** What stock the shop handled this month, at cost (2026-10-07). */
+class StockHandledSummary {
+  @ApiProperty({
+    description:
+      'Stock at the start of the month, and opening stock entered in it, at cost.',
+  })
+  opening!: number;
+
+  @ApiProperty({ description: 'Delivered this month, at invoice value.' })
+  delivered!: number;
+
+  @ApiProperty({
+    description:
+      'Goods available for sale: opening + delivered, summed exactly and rounded once.',
+  })
+  available!: number;
+}
+
 export class DashboardView {
   @ApiProperty({ type: String, format: 'date-time' })
   generatedAt!: Date;
@@ -494,4 +546,11 @@ export class DashboardView {
 
   @ApiProperty({ type: () => TrendSummary })
   trend!: TrendSummary;
+
+  @ApiPropertyOptional({
+    type: () => StockHandledSummary,
+    description:
+      'The month’s goods available for sale, at cost. Absent for a role that may not see cost — which this endpoint already refuses.',
+  })
+  stock?: StockHandledSummary;
 }

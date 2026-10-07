@@ -138,6 +138,19 @@ export function marginBps(grossProfit: Minor, revenue: Minor): number {
   return Math.round((grossProfit / revenue) * 10_000);
 }
 
+/**
+ * One figure as a share of another, in basis points (9350 = 93.5%).
+ *
+ * **Null when there is nothing to be a share of** — unlike {@link marginBps},
+ * which says 0: "0% of sales were collected" in a month with no sales reads as
+ * a month nobody paid, which is a different and alarming thing. May exceed
+ * 100%: collections include payments for older invoices (2026-10-07).
+ */
+export function shareBps(part: Minor, whole: Minor): number | null {
+  if (whole === 0) return null;
+  return Math.round((part / whole) * 10_000);
+}
+
 function sum(values: readonly number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }

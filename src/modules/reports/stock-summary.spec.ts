@@ -117,9 +117,36 @@ describe('summariseStock', () => {
     expect(totalValue?.closing).toBe(1);
   });
 
+  it('gives goods available for sale — opening + delivered, rounded once', () => {
+    // ₦0.004 opening and ₦0.004 delivered: each rounds to 0, together to 1.
+    const { totalValue, availableValue } = summariseStock(
+      new Map([['a', { quantity: 1, value: 0.4 }]]),
+      [
+        {
+          productId: 'a',
+          type: 'receipt',
+          reason: null,
+          quantity: 1,
+          value: 0.4,
+        },
+        {
+          productId: 'a',
+          type: 'sale',
+          reason: null,
+          quantity: -1,
+          value: -0.4,
+        },
+      ],
+    );
+    expect(totalValue?.opening).toBe(0);
+    expect(totalValue?.delivered).toBe(0);
+    expect(availableValue).toBe(1);
+  });
+
   it('carries no value when it was not given', () => {
     const summary = summariseStock(new Map([['x', { quantity: 2 }]]), []);
     expect(summary.totalValue).toBeUndefined();
+    expect(summary.availableValue).toBeUndefined();
     expect(summary.lines[0]).not.toHaveProperty('value');
   });
 });

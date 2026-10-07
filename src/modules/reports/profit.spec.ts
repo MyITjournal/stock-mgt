@@ -1,5 +1,5 @@
 import { splitTaxInclusive } from '../../common/money/money';
-import { computeProfit, marginBps } from './profit';
+import { computeProfit, marginBps, shareBps } from './profit';
 
 /** A ₦120,000 sale at 7.5% VAT, costing ₦80,000 to buy. */
 const sale = {
@@ -188,5 +188,20 @@ describe('marginBps', () => {
 
   it('goes negative when the goods cost more than they sold for', () => {
     expect(marginBps(-1_000, 10_000)).toBe(-1000);
+  });
+});
+
+describe('shareBps', () => {
+  it('says what share one figure is of another', () => {
+    expect(shareBps(9_350_000, 10_000_000)).toBe(9350);
+  });
+
+  it('is null, not 0, when there is nothing to be a share of', () => {
+    expect(shareBps(0, 0)).toBeNull();
+    expect(shareBps(500_000, 0)).toBeNull();
+  });
+
+  it('may pass 100% — old invoices paid this month', () => {
+    expect(shareBps(15_000_000, 10_000_000)).toBe(15_000);
   });
 });

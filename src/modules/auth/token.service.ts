@@ -34,6 +34,24 @@ export interface TokenContext {
   ip?: string;
 }
 
+/**
+ * **Staff are signed in on one device at a time** (owner, 2026-10-07, after
+ * signing in with a staff member's password while he was signed in too).
+ * Signing in again ends every other session of that person, so a shared or
+ * stolen staff password shows itself: the real person is thrown out. Owners
+ * and managers keep several — a phone at the till and a laptop in the office
+ * is how they work.
+ *
+ * Ended means the refresh token is revoked; the other device's access token
+ * still runs out on its own, so it is out **within 15 minutes**, as with a
+ * suspension or a password reset. Every path that mints a session asks this:
+ * `AuthService.issueForUser` and `switchOrganization` (rotation renews the
+ * same session, so it does not).
+ */
+export function signsInOnOneDevice(role: OrgRole): boolean {
+  return role !== OrgRole.owner && role !== OrgRole.manager;
+}
+
 /** Days a refresh token stays valid, parsed from JWT_REFRESH_EXPIRES_IN ("7d"). */
 function refreshLifetimeMs(): number {
   const raw = env.JWT_REFRESH_EXPIRES_IN;
@@ -125,6 +143,13 @@ export class TokenService {
 
     if (!(await argon2.verify(stored.tokenHash, verifier))) {
       throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    // Revoked and never replaced: the session was ended on purpose — signed
+    // out, password reset, or signed in on another device. Not a theft, so not
+    // logged as one.
+    if (stored.revokedAt && !stored.replacedById) {
+      throw new UnauthorizedException('This session has ended');
     }
 
     if (stored.revokedAt || stored.replacedById) {

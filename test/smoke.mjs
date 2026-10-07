@@ -1457,6 +1457,38 @@ async function main() {
     'sales and collections are different numbers, which is the point',
     dash.collections.month !== dash.sales.monthGross,
   );
+  eq(
+    'paid is its share of the month’s sales with VAT',
+    dash.collections.paidShareBps,
+    Math.round((dash.collections.month / dash.sales.monthGross) * 10_000),
+  );
+  eq(
+    'and paid and uncollected make exactly 100% between them',
+    dash.collections.paidShareBps + dash.collections.uncollectedShareBps,
+    10_000,
+  );
+  eq(
+    'cost of goods sold and gross margin make 100% of revenue',
+    dash.profit.cogsShareBps + dash.profit.marginBps,
+    10_000,
+  );
+  const monthStock = (await api('GET', '/reports/stock-summary?period=month', { token: t })).data;
+  eq('goods available for sale agrees with the stock report', dash.stock?.available, monthStock.availableValue);
+  check(
+    'and is opening + delivered, to the kobo of rounding',
+    Math.abs(dash.stock.opening + dash.stock.delivered - dash.stock.available) <= 1,
+    JSON.stringify(dash.stock),
+  );
+  eq(
+    'expenses carry their share of revenue',
+    dash.profit.expensesShareBps,
+    Math.round((dash.profit.expenses / dash.profit.revenue) * 10_000),
+  );
+  eq(
+    'operating profit carries its share of revenue',
+    dash.profit.operatingMarginBps,
+    Math.round((dash.profit.operatingProfit / dash.profit.revenue) * 10_000),
+  );
 
   eq(
     'receivables agree with the receivables endpoint',
@@ -2440,6 +2472,7 @@ async function main() {
   const theirDash = (await api('GET', '/reports/dashboard', { token: other.token })).data;
   eq('the dashboard shows a new business nothing sold', theirDash.sales.monthGross, 0);
   eq('nothing collected', theirDash.collections.month, 0);
+  eq('and no share of sales to give — null, not 0%', theirDash.collections.paidShareBps, null);
   eq('and no stock to value', theirDash.attention.outOfStockCount, 0);
   eq(
     'and its stock valuation is empty rather than inherited',
@@ -3404,6 +3437,16 @@ async function main() {
     expect: 403,
   });
   check('a cashier cannot take goods back — money and stock both move (403)', true);
+
+  step(56, 'Staff are signed in on one device at a time');
+  const firstDevice = (await signInAsBola([200, 201])).data;
+  const firstRefresh = firstDevice.refreshToken ?? firstDevice.tokens?.refreshToken;
+  const secondDevice = (await signInAsBola([200, 201])).data;
+  const secondRefresh = secondDevice.refreshToken ?? secondDevice.tokens?.refreshToken;
+  await api('POST', '/auth/refresh', { body: { refreshToken: firstRefresh }, expect: 401 });
+  check('signing in again ends the session on the first device (401 on renewal)', true);
+  await api('POST', '/auth/refresh', { body: { refreshToken: secondRefresh } });
+  check('and the newest one carries on', true);
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

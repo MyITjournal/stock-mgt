@@ -5865,6 +5865,10 @@ export interface components {
             byMethod: components["schemas"]["MethodTotal"][];
             /** @description Sold this month and not yet collected. Deliberately separate from sales: on a credit route the two diverge, and the gap is the cash position. */
             uncollectedThisMonth: number;
+            /** @description Collected this month as a share of this month’s sales including VAT, in basis points. Null when nothing was sold; may exceed 10000, because collections include payments for older invoices. */
+            paidShareBps: number | null;
+            /** @description Uncollected as a share of the same figure: exactly 10000 − paidShareBps, so the two never disagree by a rounding. Negative when older invoices were paid this month. */
+            uncollectedShareBps: number | null;
         };
         ReceivablesSummary: {
             /** @description Everything still owed to the business, in kobo. */
@@ -5881,6 +5885,12 @@ export interface components {
             expenses: number;
             operatingProfit: number;
             marginBps: number;
+            /** @description Cost of goods sold as a share of revenue, in basis points — exactly 10000 − marginBps. Zero when nothing was sold. */
+            cogsShareBps: number;
+            /** @description Expenses, salaries included, as a share of revenue, in basis points. Zero when nothing was sold. */
+            expensesShareBps: number;
+            /** @description Operating profit as a share of revenue, in basis points. Zero when nothing was sold. */
+            operatingMarginBps: number;
             /** @description How much of the month’s cost rests on a guess, because goods sold before their delivery was recorded. */
             estimatedCost: number;
             estimatedLines: number;
@@ -6038,6 +6048,14 @@ export interface components {
         TrendSummary: {
             days: components["schemas"]["TrendDay"][];
         };
+        StockHandledSummary: {
+            /** @description Stock at the start of the month, and opening stock entered in it, at cost. */
+            opening: number;
+            /** @description Delivered this month, at invoice value. */
+            delivered: number;
+            /** @description Goods available for sale: opening + delivered, summed exactly and rounded once. */
+            available: number;
+        };
         DashboardView: {
             /** Format: date-time */
             generatedAt: string;
@@ -6052,6 +6070,8 @@ export interface components {
             movers: components["schemas"]["MoversSummary"];
             purchasing: components["schemas"]["PurchasingSummary"];
             trend: components["schemas"]["TrendSummary"];
+            /** @description The month’s goods available for sale, at cost. Absent for a role that may not see cost — which this endpoint already refuses. */
+            stock?: components["schemas"]["StockHandledSummary"];
         };
         SalesTotals: {
             grossSales: number;
@@ -6296,6 +6316,8 @@ export interface components {
             rows: components["schemas"]["StockSummaryRow"][];
             /** @description Every product together, summed exactly and rounded once — the closing figure is the stock value. **Absent** for a role that may not see cost. */
             totalValue?: components["schemas"]["StockSummaryValues"];
+            /** @description Goods available for sale: opening + delivered at cost, summed exactly and rounded once — the value of all the stock handled in the period. **Absent** for a role that may not see cost. */
+            availableValue?: number;
         };
         /** @enum {string} */
         AuditMovementType: "adjustment" | "damage";
