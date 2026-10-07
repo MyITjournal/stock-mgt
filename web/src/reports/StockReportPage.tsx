@@ -9,6 +9,7 @@ import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
 import { DownloadButton } from '../components/DownloadButton';
 import { exportStockValue } from './exportReports';
+import { auditLines } from './auditLines';
 
 type StockValuationView = components['schemas']['StockValuationView'];
 type StockAlertsView = components['schemas']['StockAlertsView'];
@@ -347,13 +348,18 @@ export function StockReportPage() {
         </div>
 
         <DataTable
-          rows={audit?.movements ?? []}
+          rows={auditLines(audit?.movements ?? [])}
           columns={[
             {
               header: 'When',
               cell: (row) => (
                 <span className="whitespace-nowrap text-slate-600">
                   {new Date(row.createdAt).toLocaleString()}
+                  {row.entries > 1 && (
+                    <span className="block text-xs text-slate-400">
+                      {row.entries} entries added up
+                    </span>
+                  )}
                 </span>
               ),
             },
