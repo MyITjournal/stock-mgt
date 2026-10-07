@@ -1034,3 +1034,20 @@ staff: it appears on Salaries and **not** on Expenses.
 
 **273. [gate] Reports → Profit for this month.** *Less salaries* and *Less other expenses* are two
 lines, and operating profit has come down by the salary.
+
+---
+
+## AO. Sales: the till and its history, and a sale's date
+
+**274. [gate] The top bar has one Sales item, and no separate Till.** It opens the till, with
+**Till** and **History** tabs above it; History is the list of sales. Opening a sale from History
+keeps Sales highlighted. A cashier still lands on the till after signing in.
+
+**275. [gate] As an owner, the till shows Sale date set to today.** Pick yesterday: the bar turns
+amber, names the day, and offers **Back to today**. Ring up a cash sale. In History it shows
+yesterday's date; Reports → Collections for yesterday includes its payment; today's does not.
+
+**276. Ring up a second sale without touching the date.** It is dated yesterday too. Press **Back to
+today**: the bar goes plain and the next sale is today's.
+
+**277. [gate] As a cashier, the till has no Sale date.** Their sales are always today's.

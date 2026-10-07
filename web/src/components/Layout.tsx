@@ -11,14 +11,17 @@ import { Button } from './Button';
 interface NavItem {
   to: string;
   label: string;
+  /** Other address prefixes this item stands for, so it lights up there too. */
+  covers?: readonly string[];
   /** Hidden when the signed-in role would only get a 403 or an empty screen. */
   costOnly?: boolean;
 }
 
 const NAV: readonly NavItem[] = [
   { to: '/home', label: 'Home', costOnly: true },
-  { to: '/till', label: 'Till' },
-  { to: '/sales', label: 'Sales' },
+  // The till and the history of sales are one section with two tabs
+  // (`SalesLayout`). It opens on the till, which is what it is used for most.
+  { to: '/till', label: 'Sales', covers: ['/sales'] },
   { to: '/customers', label: 'Customers' },
   { to: '/money', label: 'Money', costOnly: true },
   { to: '/stock', label: 'Stock' },
@@ -36,6 +39,7 @@ const NAV: readonly NavItem[] = [
  */
 export function Layout() {
   const { user, signOut } = useAuth();
+  const { pathname } = useLocation();
   const seesCost = useSeesCost();
   const landing = useLandingPath();
 
@@ -67,7 +71,8 @@ export function Layout() {
                 end={item.to === '/home'}
                 className={({ isActive }) =>
                   `rounded-md px-3 py-1.5 text-sm transition ${
-                    isActive
+                    isActive ||
+                    item.covers?.some((prefix) => pathname.startsWith(prefix))
                       ? 'bg-brand-600 text-white'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`

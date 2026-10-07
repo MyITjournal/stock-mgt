@@ -571,6 +571,13 @@ Four more from the till (7.2), all in `web/src/till/`:
   still needs a customer, and **the rule that refuses more credit to a customer who still owes stays**
   (owner's decision, 2026-10-06): an owner or manager overrides with a reason, as before.
   `payingNow` in `till/payment.ts` is the one place that says what is paid now.
+- **The till sits under Sales, and can date a sale** (2026-10-07). One top-bar item, *Sales*,
+  opens on the till, with **Till** and **History** tabs (`SalesLayout`); the addresses are still
+  `/till` and `/sales`, so `landingPath` and saved links are untouched. **Sale date**
+  (`SaleDateBar`, owners and managers only) sends `occurredAt` for an earlier day — the server
+  already dated the sale, its payment, its stock movement and its due date from it, up to a year
+  back. It **stays on the picked day** so a notebook goes in as a run, and turns amber with *Back
+  to today* while it does. Prices are today's; a line's price can be changed.
 - **A credit sale is due five days after it is made, and everybody sees who is due** (§6,
   2026-10-06). `Sale.dueDate` is **stored** — the start of the fifth day in the shop's timezone,
   set only when less than the total was paid (`dueDateFor`, `sales/due.ts`) — so changing

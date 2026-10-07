@@ -32,6 +32,8 @@ import { OverrideDialog, type OverrideKind } from './OverrideDialog';
 import { Receipt } from './Receipt';
 import { CustomerDialog } from '../customers/CustomerDialog';
 import { DuePayments } from '../components/DuePayments';
+import { SaleDateBar } from './SaleDateBar';
+import { occurredAtFor, today } from '../lib/paidOn';
 
 type ScanResult = components['schemas']['ScanResult'];
 type ProductView = components['schemas']['ProductView'];
@@ -71,6 +73,10 @@ export function TillPage() {
 
   const [lines, setLines] = useState<CartLine[]>([]);
   const [payment, setPayment] = useState<PaymentState>(EMPTY_PAYMENT);
+  // The day these sales were made — today unless an owner or manager is
+  // typing in an earlier day's sales. Not cleared between sales, so a day's
+  // notebook goes in as a run; `SaleDateBar` says so while it is not today.
+  const [saleDay, setSaleDay] = useState(today);
   // What is in the search box, and the same text once typing has paused —
   // suggestions follow the second, so a request is not sent per keystroke.
   const [term, setTerm] = useState('');
@@ -552,6 +558,8 @@ export function TillPage() {
           '/sales',
           {
             id: saleId.current,
+            // Today sends nothing, so the server's clock dates it as before.
+            ...(isManager && occurredAtFor(saleDay)),
             ...(payment.customerId && { customerId: payment.customerId }),
             lines: toSaleLines(lines),
             // Paying later is a sale with nothing paid: no money moved, so
@@ -610,7 +618,7 @@ export function TillPage() {
         setBusy(false);
       }
     },
-    [isManager, lines, payment, total, queryClient],
+    [isManager, lines, payment, saleDay, total, queryClient],
   );
 
   // The last line for the product the camera read — after a unit change the
@@ -689,6 +697,9 @@ export function TillPage() {
       }
     >
       <DuePayments collapsible />
+      {isManager && (
+        <SaleDateBar day={saleDay} onChange={setSaleDay} disabled={busy} />
+      )}
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-4">
           {cameraOpen ? (
