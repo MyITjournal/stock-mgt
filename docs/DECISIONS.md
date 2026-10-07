@@ -2102,6 +2102,38 @@ per vendor per month**, unique, editable (amount, VAT choice, note), removable o
   each — the ring component now has a money variant beside the carton one. The Rebates panel names
   it ("money target met", or the percentage) as context for the owner's call, never as a gate.
 
+### Stock in and out: opening + delivered − sold ± adjusted = total (2026-10-07)
+
+The owner read *Decisions somebody made* (the stock audit) and asked why deliveries were missing.
+They were missing on purpose — that list is hand-made changes, so a write-off is not buried under
+a hundred ordinary sales — but there was nowhere that told a product's whole story for a period.
+`GET /reports/stock-summary` and *Reports → Stock → Stock in and out*: one row per product with
+stock or movement, base units, shown in the shop's own units.
+
+- **Every movement lands in exactly one column**, so a line adds up by construction; the end is
+  never computed separately and hoped to agree. `columnFor` (pure): `opening_balance` → opening,
+  `receipt` and `receipt_correction` → delivered, `sale` and `return_in` → sold (as goods gone,
+  positive), everything else → adjusted, signed (write-offs, counts, transfers, `return_out`).
+- **Opening stock entered during the period counts as opening**, not adjusted — a shop that started
+  on the 7th sees its day-one stock as where the month began.
+- **By `occurredAt`**, like every report: a backdated sale counts on its day. Two `groupBy` reads of
+  the ledger (before the period; during it, by type and reason), so it cannot disagree with the
+  ledger — smoke checks the whole shop's closing total equals stock on hand.
+- **Quantities** are open to every role, like the reorder list. The audit list gained a line
+  saying deliveries and sales are not in it.
+- **And money, for `SEES_COST`** (same day). The owner could see purchases but not what opening
+  stock was worth, and wanted to check opening value + purchases − cost of sales ± adjustments =
+  stock value now, while records are few. The two ledger reads group by `batchId` as well when the
+  caller may see cost; each group is valued at its lot's exact ratio (`totalCost ÷
+  quantityReceived`, the valuation rule, §2), the fractions are summed per row and for the whole
+  shop, and each figure is **rounded once** — `totalValue` is rounded from the exact sum, not
+  from the rounded rows, so its closing figure **is** the stock value (smoke compares it with
+  `/reports/stock-valuation`). "Sold" is at the lot's cost *today*; the profit report keeps each
+  sale's frozen cost, so after a correction the two differ by exactly that correction — stated on
+  screen. Values are absent, never zeroed, for other roles.
+- **Margins stopped colouring under 3% amber** at the same time: in this trade 2–3% is ordinary,
+  so most rows were amber and the colour marked nothing. Red for below cost stays.
+
 ### Margins: today's price beside what the stock cost (2026-10-07)
 
 The owner wanted to compare cost and price per item to decide prices — a vendor promo had moved

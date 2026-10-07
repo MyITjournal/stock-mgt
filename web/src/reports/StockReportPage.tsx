@@ -9,6 +9,7 @@ import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
 import { DownloadButton } from '../components/DownloadButton';
 import { exportStockValue } from './exportReports';
+import { StockInOut } from './StockInOut';
 import { auditLines } from './auditLines';
 
 type StockValuationView = components['schemas']['StockValuationView'];
@@ -16,6 +17,7 @@ type StockAlertsView = components['schemas']['StockAlertsView'];
 type StockAlertRow = components['schemas']['StockAlertRow'];
 type ExpiryReportView = components['schemas']['ExpiryReportView'];
 type StockAuditView = components['schemas']['StockAuditView'];
+type StockSummaryView = components['schemas']['StockSummaryView'];
 type ValuationGroupRow = components['schemas']['ValuationGroupRow'];
 
 const REASON_LABELS: Record<string, string> = {
@@ -62,6 +64,12 @@ export function StockReportPage() {
   const { data: expiry } = useQuery({
     queryKey: ['reports', 'expiry'],
     queryFn: () => api.get<ExpiryReportView>('/reports/expiry'),
+  });
+
+  // Shared with the "Stock in and out" table below, for the download.
+  const { data: summary } = useQuery({
+    queryKey: ['reports', 'stock-summary', query],
+    queryFn: () => api.get<StockSummaryView>(`/reports/stock-summary?${query}`),
   });
 
   const { data: audit } = useQuery({
@@ -124,7 +132,7 @@ export function StockReportPage() {
       actions={
         <DownloadButton
           disabled={!valuation}
-          onDownload={() => exportStockValue(valuation!)}
+          onDownload={() => exportStockValue(valuation!, summary)}
         />
       }
     >
@@ -311,10 +319,18 @@ export function StockReportPage() {
         )}
       </section>
 
+      <StockInOut query={query} />
+
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-slate-900">
+        <h2 className="text-sm font-semibold text-slate-900">
           Decisions somebody made
         </h2>
+        {/* Not deliveries or sales — those are the ordinary flow, in "Stock
+            in and out" above. This is what somebody chose to change. */}
+        <p className="mb-2 text-xs text-slate-500">
+          Changes made by hand — opening stock, write-offs and corrections.
+          Deliveries and sales are in Stock in and out above.
+        </p>
 
         <div className="mb-4 flex flex-wrap gap-6 rounded-lg border border-slate-200 bg-white p-4 text-sm">
           <div>

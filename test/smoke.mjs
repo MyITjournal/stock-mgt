@@ -3203,6 +3203,54 @@ async function main() {
   const lotionLots = (await onHand(t, lotionRight.id, main.id)).batches;
   check('the right product has a lot of its own, not an opening one', lotionLots.length === 1 && lotionLots[0].isOpening === false);
 
+  step(52, 'Stock in and out: opening + delivered − sold ± adjusted = at the end');
+
+  const summary = (await api('GET', '/reports/stock-summary?period=month', { token: t })).data;
+  check(
+    'every line adds up',
+    summary.rows.every((row) => row.opening + row.delivered - row.sold + row.adjusted === row.closing),
+    JSON.stringify(summary.rows.find((row) => row.opening + row.delivered - row.sold + row.adjusted !== row.closing)),
+  );
+  const lotionLine = summary.rows.find((row) => row.product.id === lotionRight.id);
+  eq(
+    'a product moved onto a delivery by a correction reads as delivered',
+    `${lotionLine?.opening} ${lotionLine?.delivered} ${lotionLine?.sold} ${lotionLine?.closing}`,
+    '0 12 0 12',
+  );
+  const soapLine = summary.rows.find((row) => row.product.id === soap.id);
+  eq('and what it ends on is what is on the shelf', soapLine?.closing, (await onHand(t, soap.id, main.id)).quantity);
+  const allLevels = (await api('GET', '/stock/levels', { token: t })).data;
+  eq(
+    'the whole shop ends on its stock on hand',
+    summary.rows.reduce((sum, row) => sum + row.closing, 0),
+    allLevels.reduce((sum, row) => sum + row.quantity, 0),
+  );
+  // In money: opening value + purchases − cost of what sold ± adjustments.
+  const money = summary.totalValue;
+  const shopValue = (await api('GET', '/reports/stock-valuation', { token: t })).data.total;
+  check(
+    'in money, the total is the stock value',
+    money && Math.abs(money.closing - shopValue) <= 1,
+    `${money?.closing} vs ${shopValue}`,
+  );
+  check(
+    'and opening + delivered − sold ± adjusted reaches it, to the kobo of rounding',
+    money && Math.abs(money.opening + money.delivered - money.sold + money.adjusted - money.closing) <= 4,
+    JSON.stringify(money),
+  );
+  const selfSummary = (await api('GET', '/reports/stock-summary?period=month', { token: selfToken })).data;
+  eq(
+    'opening stock is valued at what was entered — corrected cost included',
+    selfSummary.rows.find((row) => row.product.id === peakImported.id)?.value?.opening,
+    14 * 1_400_000 + 250_000,
+  );
+
+  const cashierSummary = (await api('GET', '/reports/stock-summary?period=month', { token: bolaToken })).data;
+  check(
+    'quantities only for a cashier — no values at all',
+    !('totalValue' in cashierSummary) && cashierSummary.rows.every((row) => !('value' in row)),
+  );
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

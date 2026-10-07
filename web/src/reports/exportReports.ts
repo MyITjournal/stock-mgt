@@ -255,11 +255,53 @@ const valuationColumns = (
 ];
 
 /** Stock value now — not a period, so the file is stamped with today. */
-export function exportStockValue(data: S['StockValuationView']) {
+const summaryColumns: readonly SheetColumn<S['StockSummaryRow']>[] = [
+  { header: 'Product', value: (row) => row.product.name, width: 30 },
+  { header: 'Size', value: (row) => row.product.size },
+  {
+    header: 'Counted in',
+    value: (row) => row.units.find((unit) => unit.factor === 1)?.name,
+  },
+  { header: 'Opening', kind: 'number', value: (row) => row.opening },
+  { header: 'Delivered', kind: 'number', value: (row) => row.delivered },
+  { header: 'Sold', kind: 'number', value: (row) => row.sold },
+  { header: 'Adjusted', kind: 'number', value: (row) => row.adjusted },
+  { header: 'Total', kind: 'number', value: (row) => row.closing },
+  // At cost, for a role that may see it; empty cells — never 0 — for others.
+  {
+    header: 'Opening value',
+    kind: 'money',
+    value: (row) => row.value?.opening,
+  },
+  {
+    header: 'Delivered value',
+    kind: 'money',
+    value: (row) => row.value?.delivered,
+  },
+  { header: 'Sold, at cost', kind: 'money', value: (row) => row.value?.sold },
+  {
+    header: 'Adjusted value',
+    kind: 'money',
+    value: (row) => row.value?.adjusted,
+  },
+  { header: 'Stock value', kind: 'money', value: (row) => row.value?.closing },
+];
+
+export function exportStockValue(
+  data: S['StockValuationView'],
+  summary?: S['StockSummaryView'],
+) {
   return downloadWorkbook(stamp('stock-value'), [
     tab('By product', valuationColumns('Product'), data.byProduct),
     tab('By category', valuationColumns('Category'), data.byCategory),
     tab('By location', valuationColumns('Location'), data.byLocation),
+    // In counted-in units, for the period on screen.
+    ...(summary
+      ? [
+          tab('In and out', summaryColumns, summary.rows),
+          periodTab(summary.period),
+        ]
+      : []),
   ]);
 }
 
