@@ -120,7 +120,12 @@ export class MarginService {
         average !== null ? 'on_hand' : last ? 'last_delivery' : null;
       const taxRateBps = chargesVat ? product.taxRateBps : 0;
 
-      for (const unit of product.units) {
+      // One row per product, in the **biggest unit the till sells** (owner,
+      // 2026-10-07): a 1/2 pack, a pack and a carton of the same lotion are the
+      // same margin at three sizes, and three rows of it made the report three
+      // times as long to read. The carton is how a wholesaler thinks of it.
+      const biggest = product.units.at(-1);
+      for (const unit of biggest ? [biggest] : []) {
         const { price } = resolveUnitPrice(product, unit, tier?.id);
         // Rounded once, for the whole selling unit (§2).
         const cost =

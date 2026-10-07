@@ -2066,8 +2066,9 @@ per vendor per month**, unique, editable (amount, VAT choice, note), removable o
 
 The owner wanted to compare cost and price per item to decide prices — a vendor promo had moved
 from "buy 19 get 1 free" to "buy 12 get 1 free", making every piece cheaper. `GET /reports/margins`
-and *Reports → Margins*: one row per product and **selling** unit, on a chosen price list (default
-otherwise), thinnest margin first. **A projection to set prices by, not a record** — the profit
+and *Reports → Margins*: **one row per product, in the biggest unit the till sells** (it was one
+row per selling unit until the owner read it: the same 1.7% on a 1/2 pack, a pack and a carton,
+three times over), on a chosen price list (default otherwise), thinnest margin first. **A projection to set prices by, not a record** — the profit
 report still answers what was actually made.
 
 - **The cost is the average of the stock on hand** — the owner's choice over "last delivery". It

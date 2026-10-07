@@ -3654,7 +3654,10 @@ export interface components {
              * @description Which of the product’s units the quantity is counted in.
              */
             unitId: string;
-            /** @example 14 */
+            /**
+             * @description How many, in the chosen unit. Up to three decimal places, and it must come to whole counted-in units.
+             * @example 6.25
+             */
             quantity: number;
             /**
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
@@ -5654,7 +5657,7 @@ export interface components {
             tier: components["schemas"]["MarginTier"] | null;
             /** @description Whether margins were measured without VAT. Off, the whole price is the shop’s. */
             chargesVat: boolean;
-            /** @description One per product and selling unit: thinnest margin first, then rows with no cost, then rows with no price. */
+            /** @description One per product, in the biggest unit the till sells: thinnest margin first, then rows with no cost, then rows with no price. */
             rows: components["schemas"]["MarginRow"][];
         };
         PeriodView: {

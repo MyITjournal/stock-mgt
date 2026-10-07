@@ -5,7 +5,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
-  IsInt,
+  IsNumber,
   IsOptional,
   IsUUID,
   Max,
@@ -37,14 +37,31 @@ export class OpeningStockLineDto {
   @IsUUID()
   unitId!: string;
 
-  @ApiProperty({ example: 14, minimum: 1 })
-  @IsInt()
-  @Min(1)
+  /**
+   * In `unitId`, and it may be a decimal — **6.25 cartons** — so one product
+   * is one line rather than cartons plus a "loose" line (2026-10-07). It must
+   * come to whole counted-in units: 6.25 cartons of 12 is 75 pieces; 6.1 is
+   * refused. Stock is still stored in whole base units; the decimal only
+   * travels this far.
+   */
+  @ApiProperty({
+    example: 6.25,
+    description:
+      'How many, in the chosen unit. Up to three decimal places, and it must come to whole counted-in units.',
+  })
+  @IsNumber(
+    { maxDecimalPlaces: 3, allowNaN: false, allowInfinity: false },
+    { message: 'quantity must be a number with at most three decimal places' },
+  )
+  @Min(0.001)
   @Max(10_000_000)
   quantity!: number;
 
   @IsMoney({ example: 1_400_000 })
-  /** What one of `unitId` cost, in kobo. Zero is allowed and means free goods. */
+  /**
+   * What **one** of `unitId` cost, in kobo — one carton when the line is in
+   * cartons. Zero is allowed and means free goods.
+   */
   unitCost!: number;
 
   @ApiPropertyOptional({ format: 'date', example: '2027-03-31' })

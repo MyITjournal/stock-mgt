@@ -148,7 +148,7 @@ export class MarginsView {
   @ApiProperty({
     type: () => [MarginRow],
     description:
-      'One per product and selling unit: thinnest margin first, then rows with no cost, then rows with no price.',
+      'One per product, in the biggest unit the till sells: thinnest margin first, then rows with no cost, then rows with no price.',
   })
   rows!: MarginRow[];
 }
