@@ -892,9 +892,21 @@ paid this month* (`purchasing.payables.paidThisMonth`, live supplier payments by
 **Paid and uncollected each say their share of the month's sales** (§12, 2026-10-07) —
 `paidShareBps` / `uncollectedShareBps`, against sales **with VAT** (`monthGross`), because that is
 what the two add up to; uncollected is `10000 − paid` so they make exactly 100%; paid may pass 100%
-(older invoices); no sales is null, never 0%. The month's sales tile is **Revenue this month** with
-**cost of goods sold** beneath it, and operating profit shows `operatingMarginBps`. A wider pass
-to standard accounting terms is planned **after the remaining bugs** — not before.
+(older invoices); no sales is null, never 0%. The month's sales tile is **Revenue this month**; the
+next row reads **Cost of goods sold** (`cogsShareBps`, exactly `10000 − marginBps`) · Gross profit ·
+Operating profit (`operatingMarginBps`) · **Goods available for sale** — `dashboard.stock`, opening +
+delivered at cost for the month, from the same `StockSummaryService` walk as Reports → Stock
+(`availableValue`, summed exactly and rounded once). It is what the shop *handled*, not what is
+left — that is the **Inventory valuation** on Reports → Stock (renamed from "What the stock is
+worth"). A wider pass to standard accounting terms is planned **after the remaining bugs**.
+
+**Staff are signed in on one device at a time** (§9, 2026-10-07, owner). Signing in ends every
+other session of that person (`signsInOnOneDevice` in `token.service.ts`, asked by
+`issueForUser` and `switchOrganization`) — so a shared or stolen staff password shows itself:
+the real person is thrown out. Owners and managers keep several devices. The other device is out
+**within 15 minutes** (its access token runs out; the refresh is refused). A refresh token revoked
+on purpose and never replaced now answers *This session has ended* rather than being logged as
+token theft.
 
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`

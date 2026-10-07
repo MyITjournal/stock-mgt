@@ -81,7 +81,7 @@ export class StockSummaryService {
       opening.set(row.productId, sum);
     }
 
-    const { lines, totalValue } = summariseStock(
+    const { lines, totalValue, availableValue } = summariseStock(
       opening,
       during.map((row) => {
         const quantity = row._sum.quantity ?? 0;
@@ -125,7 +125,7 @@ export class StockSummaryService {
           ...(line.value && { value: line.value }),
         };
       }),
-      ...(totalValue && { totalValue }),
+      ...(totalValue && { totalValue, availableValue }),
     };
   }
 }

@@ -109,4 +109,10 @@ export class StockSummaryView {
       'Every product together, summed exactly and rounded once — the closing figure is the stock value. **Absent** for a role that may not see cost.',
   })
   totalValue?: StockSummaryValues;
+
+  @ApiPropertyOptional({
+    description:
+      'Goods available for sale: opening + delivered at cost, summed exactly and rounded once — the value of all the stock handled in the period. **Absent** for a role that may not see cost.',
+  })
+  availableValue?: number;
 }

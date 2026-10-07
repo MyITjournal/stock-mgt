@@ -84,6 +84,13 @@ export interface StockSummary {
    * not the sum of the rounded lines. Absent when no value was given.
    */
   totalValue?: SummaryFigures;
+  /**
+   * **Goods available for sale** — opening + delivered, every product, summed
+   * exactly and rounded once (2026-10-07, owner: "the value of inventory
+   * already handled for a month"). Not `totalValue.opening + .delivered`,
+   * which adds two roundings. Absent when no value was given.
+   */
+  availableValue?: number;
 }
 
 const zero = (): SummaryFigures => ({
@@ -164,6 +171,9 @@ export function summariseStock(
       ...line.quantity,
       ...(valued && { value: rounded(line.value) }),
     })),
-    ...(valued && { totalValue: rounded(total) }),
+    ...(valued && {
+      totalValue: rounded(total),
+      availableValue: Math.round(total.opening + total.delivered),
+    }),
   };
 }

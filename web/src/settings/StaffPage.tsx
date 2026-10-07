@@ -91,7 +91,7 @@ export function StaffPage() {
   return (
     <Page
       title="Staff"
-      description="Who works here, what they may do, and when they can sign in."
+      description="Who works here, what they may do, and when they can sign in. Staff are signed in on one device at a time — signing in somewhere new signs them out of the last."
       actions={
         isOwner ? (
           <Button onClick={() => setAdding(true)} disabled={full}>

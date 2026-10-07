@@ -31,7 +31,7 @@ const REASON_LABELS: Record<string, string> = {
 };
 
 /**
- * What the stock is worth, what needs attention, and what somebody had to
+ * The inventory valuation, what needs attention, and what somebody had to
  * decide about.
  *
  * **Valuation is from exact lot totals, rounded once** — never
@@ -128,7 +128,7 @@ export function StockReportPage() {
   return (
     <Page
       title="Stock"
-      description="What it is worth, what is running out, and what had to be decided."
+      description="Inventory valuation, what is running out, and what had to be decided."
       actions={
         <DownloadButton
           disabled={!valuation}
@@ -146,7 +146,7 @@ export function StockReportPage() {
 
       <section className="mb-8">
         <h2 className="mb-2 text-sm font-semibold text-slate-900">
-          What the stock is worth
+          Inventory valuation
         </h2>
 
         <div className="mb-4 grid gap-4 sm:grid-cols-2">

@@ -1564,6 +1564,32 @@ The arithmetic is pure, in `staff/working-hours.ts`, beside `period.ts` and `pur
 a comparison and a fallback, both easy to get subtly wrong in a timezone and both worth testing
 without a database.
 
+### Staff are signed in on one device at a time (2026-10-07)
+
+The owner signed in with a staff member's password while he was signed in, and asked whether that
+was a door for hackers. It is not a way in without the password, but before this nothing limited
+how many places one account was signed in, so a leaked password could be used quietly beside its
+owner for as long as anyone liked.
+
+**Now signing in ends every other session of that person, for every role except owner and
+manager** (`signsInOnOneDevice`). A shared or stolen staff password therefore shows itself: the
+real person is thrown out and says so. Owners and managers keep several devices, because a phone
+at the till and a laptop in the office is how they work; the option of one device for everybody
+was offered and not chosen.
+
+- **Both paths that start a session ask it**: `AuthService.issueForUser` and
+  `switchOrganization`. Rotation renews the same session, so it does not — a fourth path that
+  mints a session needs the same line, as with working hours.
+- **Out within 15 minutes, not at once.** Ending a session revokes refresh tokens; the other
+  device's access token is a signed JWT that runs out on its own. Same as a password reset.
+  A cashier cut off mid-sale keeps the cart, because the till keeps a draft (§13).
+- **A revoked, never-replaced refresh token is no longer called theft.** It used to fall into the
+  reuse branch and log *Refresh token reuse detected* — which every ended session would now do.
+  It answers *This session has ended* instead. A *replaced* token presented again is still reuse,
+  and still revokes its whole family.
+
+Smoke step 56 signs Bola in twice and checks the first session can no longer renew.
+
 ### Rate limiting counts people, not addresses
 
 Changed 2026-09-17, found while answering "how many staff can be logged in at once".
@@ -2014,8 +2040,17 @@ Two choices worth knowing:
   so. **No sales gives null, not 0%**: "0% collected" reads as a month nobody paid.
 
 Beside them, `profit.operatingMarginBps` (operating profit over revenue), and the month's sales
-tile is now **Revenue this month**, with cost of goods sold beneath it. The owner asked for
-"Revenue (COGS)". Revenue and COGS are two figures, so both are shown, each under its own name.
+tile is now **Revenue this month**. **Cost of goods sold has its own tile** (owner: "Revenue alone
+is okay. COGS can have its own"), with `cogsShareBps` — exactly `10000 − marginBps`, so the two
+make 100% of revenue — and the row reads revenue − COGS = gross profit, left to right.
+
+**Goods available for sale** (same day, owner: "the value of inventory already handled for a
+month") ends that row: opening stock + delivered this month, at cost, as `dashboard.stock`. It
+comes from the same `StockSummaryService` walk as Reports → Stock, which gained
+`availableValue` — opening + delivered **summed exactly and rounded once**, not the two rounded
+columns added. Offered the closing value instead and declined: that is the inventory valuation,
+already on Reports → Stock, whose heading was renamed from "What the stock is worth" to
+**Inventory valuation** in the same change.
 **A wider renaming to standard accounting terms is planned once the remaining bugs are done**, so
 this is the first of those labels, not a one-off.
 
