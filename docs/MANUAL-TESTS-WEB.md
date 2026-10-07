@@ -1132,3 +1132,16 @@ in a carton: accepted, one line. Type **6.1**: the line says it is not a whole n
 and Save stays off. The cost box says **per carton** beside it, all the time.
 
 **297. Type a cost, then change that line's unit.** The cost empties and asks again.
+
+---
+
+## AT. Correcting an opening lot's cost
+
+**298. [gate] Stock on hand → expand a product with opening stock, as an owner.** The *Opening*
+lot has **Correct cost**; a delivered lot does not. A cashier sees no such link.
+
+**299. [gate] Correct cost: pick 1/2 pack, type 12,433.36.** The blue line shows what the lot was
+worth and what it will be. Save stays off until there is a reason. Save: *Cost each* on the lot
+changes, the quantity does not, and Reports → Margins moves to match.
+
+**300. Change the unit after typing a cost.** The cost empties and asks again.

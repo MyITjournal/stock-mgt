@@ -871,7 +871,15 @@ cartons plus a "loose" line — as long as it comes to whole counted-in units (`
 refuses 2.25 rolls of 10; the form says so first, with `toWholeBaseUnits`). The lot is still
 whole base units; the total is `unitCost × quantity` **rounded once**. The cost box names its
 unit permanently, and **changing a line's unit clears its cost** — a carton's cost kept against
-a piece valued the lot twelve times over, silently.
+a piece valued the lot twelve times over, silently. **An opening lot's cost can be corrected**
+(2026-10-07): *Stock on hand → expand → Correct cost* on a lot with `isOpening`, owner/manager,
+`POST /stock/opening/lots/:batchId/cost` (and `/preview`, which writes nothing, so the screen shows
+the new total from the server). The cost is for one of a chosen unit; the lot's total becomes
+`unitCost × quantityReceived ÷ factor`, rounded once. **Only the value changes** — quantity and
+movements stay, sales already made keep their cost — and a `LotCostCorrection` keeps before, after,
+who and why (reason required). A delivered lot is a 409: deliveries are corrected through their
+receipt, which also moves the bill. Found when 3 opening pieces entered at a pack's cost pushed a
+lotion's average carton cost from ₦48,376 to ₦50,114.
 
 **A catalog can be imported from a spreadsheet** (§4, 2026-10-05): `POST /products/import` and
 *Products → Import from spreadsheet* — template, upload `.xlsx` or `.csv`, preview every row, then

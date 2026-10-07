@@ -52,3 +52,29 @@ export class OpeningStockResultView {
   })
   totalValue!: number;
 }
+
+/** An opening lot's value before and after a cost correction. */
+export class LotCostCorrectionView {
+  @ApiProperty({ format: 'uuid' })
+  batchId!: string;
+
+  @ApiProperty({ example: 'Rich Nourishing Lotion' })
+  productName!: string;
+
+  @ApiProperty({ description: 'What the lot brought in, in counted-in units.' })
+  quantity!: number;
+
+  @ApiProperty({ example: 'piece' })
+  baseUnitName!: string;
+
+  @ApiProperty({ description: 'The lot’s total before, in minor units.' })
+  totalCostBefore!: number;
+
+  @ApiProperty({ description: 'The lot’s total after, rounded once.' })
+  totalCostAfter!: number;
+
+  @ApiProperty({
+    description: 'False for a preview: nothing was written.',
+  })
+  saved!: boolean;
+}

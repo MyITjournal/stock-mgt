@@ -2716,6 +2716,41 @@ async function main() {
   await api('POST', '/stock/opening', { token: selfToken, key: randomUUID(), body: openingBody, expect: 409 });
   check('entering the same opening stock twice is refused, not doubled', true);
 
+  // An opening lot entered at the wrong cost is put right — its value only.
+  const peakLots = (
+    await api('GET', `/stock/levels?productId=${peakImported.id}&includeBatches=true`, { token: selfToken })
+  ).data.flatMap((row) => row.batches);
+  const rollLot = peakLots.find((lot) => lot.isOpening && lot.quantity === 25);
+  check('opening lots say they are opening stock', !!rollLot && peakLots.every((lot) => lot.isOpening));
+  const valueBefore = (await api('GET', '/reports/stock-valuation', { token: selfToken })).data.total;
+  const fix = { unitId: unitIdOf('roll'), unitCost: 100_000 };
+  const costPreview = (
+    await api('POST', `/stock/opening/lots/${rollLot.batchId}/cost/preview`, { token: selfToken, body: fix })
+  ).data;
+  eq(
+    'a preview works out the new value — ₦1,000 a roll over 2½ rolls — and saves nothing',
+    `${costPreview.totalCostBefore} ${costPreview.totalCostAfter} ${costPreview.saved}`,
+    '225000 250000 false',
+  );
+  eq('so the stock value has not moved', (await api('GET', '/reports/stock-valuation', { token: selfToken })).data.total, valueBefore);
+  await api('POST', `/stock/opening/lots/${rollLot.batchId}/cost`, { token: selfToken, key: randomUUID(), body: fix, expect: 400 });
+  check('saving it needs a reason (400)', true);
+  await api('POST', `/stock/opening/lots/${rollLot.batchId}/cost`, {
+    token: selfToken,
+    key: randomUUID(),
+    body: { ...fix, reason: 'Entered at the old price.' },
+  });
+  eq(
+    'saved, the stock value moves by exactly the difference',
+    (await api('GET', '/reports/stock-valuation', { token: selfToken })).data.total,
+    valueBefore + 25_000,
+  );
+  eq(
+    'and the stock itself does not move',
+    (await onHand(selfToken, peakImported.id, selfLocations[0].id)).quantity,
+    14 * 160 + 25,
+  );
+
   step(46, 'Correcting a delivery: 7 cartons recorded, 6½ arrived');
 
   // The owner's own mistake: 7 cartons entered, 6½ actually came, 6 of them
@@ -3062,6 +3097,25 @@ async function main() {
 
   await api('GET', '/reports/margins', { token: bolaToken, expect: 403 });
   check('buying prices stay closed to a cashier (403)', true);
+
+  // A delivered lot is corrected through its delivery, never here.
+  const soapLot = (
+    await api('GET', `/stock/levels?productId=${soap.id}&includeBatches=true`, { token: t })
+  ).data[0].batches[0];
+  check('a delivered lot is not opening stock', soapLot.isOpening === false);
+  await api('POST', `/stock/opening/lots/${soapLot.batchId}/cost`, {
+    token: t,
+    key: randomUUID(),
+    body: { unitId: soapCarton.id, unitCost: 1, reason: 'Trying the wrong door.' },
+    expect: 409,
+  });
+  check('and its cost cannot be changed as if it were (409)', true);
+  await api('POST', `/stock/opening/lots/${soapLot.batchId}/cost/preview`, {
+    token: bolaToken,
+    body: { unitId: soapCarton.id, unitCost: 1 },
+    expect: 403,
+  });
+  check('nor by a cashier (403)', true);
 
   // The products list shows cost in the unit it is sold in.
   const soapAsOwner = (await api('GET', `/products/${soap.id}`, { token: t })).data;

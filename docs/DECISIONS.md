@@ -917,7 +917,25 @@ and purchases report.
   sold before it was counted, since that one has only outbound movements. A product that already
   has stock is corrected with a count. Per location, so a second branch sets up its own shelves.
 - **Mixed units are separate lines**: 14 cartons and 3 loose rolls are two lots, each at its own
-  cost. The sheet starts each product on its biggest unit.
+  cost. The sheet starts each product on its biggest unit. **Amended 2026-10-07: a line's quantity
+  may be a decimal in its unit** (6.25 cartons) when it comes to whole counted-in units, so most
+  products are one line; the total is `unitCost × quantity` rounded once, and the lot stays whole.
+  Changing a line's unit clears its cost, and the cost box names its unit permanently.
+
+**An opening lot's cost can be corrected** (2026-10-07). Found in real use: three pieces entered
+as a 1/2 pack at a whole pack's cost were worth ₦8,054 a piece, and the lotion's average carton cost
+on *Margins* read ₦50,114 against the owner's ₦48,376 — an average above both lots it averaged,
+which is how the cause was found. `POST /stock/opening/lots/:batchId/cost` (owner/manager) takes
+the cost of one of a chosen unit and sets the lot's total to `unitCost × quantityReceived ÷
+factor`, rounded once; `/preview` returns the same without writing, so the dialog shows the new
+total from the server. **Only the value changes**: quantity and movements stay (a wrong count is
+a stocktake's job), sales already made keep the cost they recorded (§2's snapshots), and a
+`LotCostCorrection` keeps before, after, who and why — the reason is required. A lot is opening
+stock when it carries an `opening_balance` movement and has **no receipt line**; a delivered lot is
+a **409**, because deliveries are corrected through their receipt, which also moves the bill
+(§5). `Product.costPrice` is rewritten only when no delivery has set it since. A stock adjustment
+could not have done this cleanly: a write-off takes FEFO from whichever lot goes next, which was
+the 78-piece delivery, and would have shown as a loss.
 - **Written in three statements.** `StockService.recordNewLots` creates lots, movements and
   balances with one `createMany` each — possible because every lot is new, so no balance row can
   exist yet. It lives in `StockService` so every ledger write still goes through one place, and

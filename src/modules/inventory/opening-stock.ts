@@ -141,3 +141,19 @@ export function costPriceAfterOpening(
     ]),
   );
 }
+
+/**
+ * What an opening lot is worth once its cost is put right (2026-10-07): the
+ * cost of one of the chosen unit, times how many of that unit the lot held —
+ * `unitCost × quantityReceived ÷ factor` — **rounded once**, here, like any
+ * lot total (§2). 3 pieces at ₦12,433.36 per 1/2 pack of 3 is ₦12,433.36.
+ */
+export function correctedOpeningTotal(input: {
+  quantityReceived: number;
+  unitFactor: number;
+  unitCost: number;
+}): number {
+  return Math.round(
+    (input.unitCost * input.quantityReceived) / input.unitFactor,
+  );
+}

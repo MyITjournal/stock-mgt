@@ -57,8 +57,13 @@ import {
 import { OpeningStockService } from './opening-stock.service';
 import { DeliveryCorrectionService } from './delivery-correction.service';
 import { CorrectDeliveryDto } from './dto/delivery-correction.dto';
-import { OpeningStockDto } from './dto/opening-stock.dto';
 import {
+  CorrectLotCostDto,
+  LotCostPreviewDto,
+  OpeningStockDto,
+} from './dto/opening-stock.dto';
+import {
+  LotCostCorrectionView,
   OpeningStockProductView,
   OpeningStockResultView,
 } from './dto/opening-stock.response';
@@ -341,6 +346,40 @@ export class StockController {
   @ApiCreatedResponse({ type: OpeningStockResultView })
   recordOpening(@Body() dto: OpeningStockDto): Promise<OpeningStockResultView> {
     return this.opening.record(dto);
+  }
+
+  @Post('opening/lots/:batchId/cost/preview')
+  @Roles(...INVENTORY_EDITORS)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'What an opening lot would be worth at a corrected cost',
+    description:
+      'Nothing is written. The cost is for one of the chosen unit; the lot keeps its quantity.',
+  })
+  @ApiOkResponse({ type: LotCostCorrectionView })
+  previewLotCost(
+    @Param('batchId', ParseUUIDPipe) batchId: string,
+    @Body() dto: LotCostPreviewDto,
+  ): Promise<LotCostCorrectionView> {
+    return this.opening.previewCostCorrection(batchId, dto);
+  }
+
+  @Post('opening/lots/:batchId/cost')
+  @Roles(...INVENTORY_EDITORS)
+  @Idempotent(
+    'A retry with the same key returns the original result rather than correcting twice.',
+  )
+  @ApiOperation({
+    summary: 'Correct what an opening stock lot cost',
+    description:
+      'Only the value changes: the quantity and movements stay, sales already made keep their cost, and the correction is kept with its reason. A 409 for a lot that came on a delivery (correct the delivery) or is not opening stock.',
+  })
+  @ApiCreatedResponse({ type: LotCostCorrectionView })
+  correctLotCost(
+    @Param('batchId', ParseUUIDPipe) batchId: string,
+    @Body() dto: CorrectLotCostDto,
+  ): Promise<LotCostCorrectionView> {
+    return this.opening.correctCost(batchId, dto);
   }
 
   @Get('levels')
