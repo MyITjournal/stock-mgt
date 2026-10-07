@@ -1727,6 +1727,26 @@ export interface paths {
         patch: operations["ExpenseCategoryController_update"];
         trace?: never;
     };
+    "/api/v1/reports/margins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Today’s price beside today’s cost, per selling unit
+         * @description A projection to set prices by, not a record: the cost is the average of the stock on hand (the last delivery when none is), the margin is on the price without VAT, and the newest delivery is shown beside it so a new deal is visible at once. Thinnest margin first.
+         */
+        get: operations["ReportController_margins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/dashboard": {
         parameters: {
             query?: never;
@@ -5550,6 +5570,71 @@ export interface components {
              * @example 30
              */
             sortOrder?: number;
+        };
+        MarginTier: {
+            /** Format: uuid */
+            id: string;
+            /** @example Retail */
+            name: string;
+        };
+        MarginCategory: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        Deal: {
+            /** @example 13 */
+            received: number;
+            /** @example 12 */
+            paidFor: number;
+        };
+        LastDelivery: {
+            /** Format: date-time */
+            receivedAt: string;
+            /** @description What one of this selling unit cost on that delivery, free goods included. */
+            cost: number;
+            /** @description The free goods on that delivery as a vendor would say it — 13 for 12. Null when nothing came free. */
+            deal: components["schemas"]["Deal"] | null;
+        };
+        MarginRow: {
+            /** Format: uuid */
+            productId: string;
+            /** @example Dry Impact Roll-on */
+            productName: string;
+            /** @example 50ml */
+            size: string | null;
+            category: components["schemas"]["MarginCategory"] | null;
+            /** Format: uuid */
+            unitId: string;
+            /** @example carton */
+            unitName: string;
+            /** @description Base units in one of this unit. */
+            factor: number;
+            /** @description Today’s price for this unit on the chosen list. Null: no price, so no margin. */
+            price: number | null;
+            /** @description What one of this unit costs: the average of the stock on hand, or — with none on hand — the last delivery (`costFrom`). Null when neither exists. */
+            cost: number | null;
+            /**
+             * @description Where `cost` came from.
+             * @enum {string|null}
+             */
+            costFrom: "on_hand" | "last_delivery" | null;
+            /** @description Base units on hand, every location. */
+            onHand: number;
+            /** @description The price without VAT, less `cost`. Null without both. */
+            margin: number | null;
+            /** @description `margin` as a share of the price without VAT, in basis points. 740 is 7.4%. */
+            marginBps: number | null;
+            /** @description The newest delivery, shown beside the average so a new deal is visible at once. Not what the margin is measured against. */
+            lastDelivery: components["schemas"]["LastDelivery"] | null;
+        };
+        MarginsView: {
+            /** @description The price list the prices were read from. */
+            tier: components["schemas"]["MarginTier"] | null;
+            /** @description Whether margins were measured without VAT. Off, the whole price is the shop’s. */
+            chargesVat: boolean;
+            /** @description One per product and selling unit: thinnest margin first, then rows with no cost, then rows with no price. */
+            rows: components["schemas"]["MarginRow"][];
         };
         PeriodView: {
             /** @example month */
@@ -9402,6 +9487,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ReportController_margins: {
+        parameters: {
+            query?: {
+                /** @description Which price list to read prices from. Omitted, the default. */
+                tierId?: string;
+                categoryId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarginsView"];
+                };
             };
         };
     };

@@ -2062,6 +2062,32 @@ per vendor per month**, unique, editable (amount, VAT choice, note), removable o
   each — the ring component now has a money variant beside the carton one. The Rebates panel names
   it ("money target met", or the percentage) as context for the owner's call, never as a gate.
 
+### Margins: today's price beside what the stock cost (2026-10-07)
+
+The owner wanted to compare cost and price per item to decide prices — a vendor promo had moved
+from "buy 19 get 1 free" to "buy 12 get 1 free", making every piece cheaper. `GET /reports/margins`
+and *Reports → Margins*: one row per product and **selling** unit, on a chosen price list (default
+otherwise), thinnest margin first. **A projection to set prices by, not a record** — the profit
+report still answers what was actually made.
+
+- **The cost is the average of the stock on hand** — the owner's choice over "last delivery". It
+  is valuation's rule (§2) per product: `Σ onHand × totalCost ÷ quantityReceived` over lots
+  holding stock, divided by what is on hand, rounded **once** at the selling unit. A lot driven
+  negative is left out rather than allowed to subtract. Free goods need no case: a 13-for-12 lot
+  has one more piece for the same total. `Product.costPrice` is never read (§2).
+- **With nothing on hand, the last delivery is the cost**, and `costFrom: 'last_delivery'` says so
+  — a sold-out product still needs a price. With neither, the cost is null and so is the margin:
+  never a zero, which would read as free goods.
+- **The last delivery sits beside the average**, with its deal reduced to how a vendor says it
+  (`dealOf`: 312 for 288 → "13 for 12"), because an average moves slowly — a new deal shows at
+  once there even while the average catches up. "Delivery" means a lot with a receipt line, so
+  opening stock and stocktake surpluses are not it.
+- **The margin is on the price without VAT**, at the rate a sale would record today: the product's,
+  or 0 for a shop that does not charge VAT — the same rule as `profit.ts`.
+- **Services are left out** (`trackStock` off: no cost of goods, so always 100%), and so are units
+  not sold at the till. Closed to `sales_rep` and cashiers (`SEES_COST`). The pure core is
+  `reports/margins.ts`; nothing on the screen is computed.
+
 ---
 
 ## 13. Traps already hit

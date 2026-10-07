@@ -22,6 +22,8 @@ import {
   StockValuationView,
 } from './dto/report.response';
 import { ReportService } from './report.service';
+import { MarginService } from './margin.service';
+import { MarginsQueryDto, MarginsView } from './dto/margins.dto';
 import {
   ExpiryQueryDto,
   PeriodQueryDto,
@@ -37,7 +39,20 @@ export class ReportController {
   constructor(
     private readonly reports: ReportService,
     private readonly dashboard: DashboardService,
+    private readonly marginService: MarginService,
   ) {}
+
+  @Get('margins')
+  @Roles(...SEES_COST)
+  @ApiOperation({
+    summary: 'Today’s price beside today’s cost, per selling unit',
+    description:
+      'A projection to set prices by, not a record: the cost is the average of the stock on hand (the last delivery when none is), the margin is on the price without VAT, and the newest delivery is shown beside it so a new deal is visible at once. Thinnest margin first.',
+  })
+  @ApiOkResponse({ type: MarginsView })
+  margins(@Query() query: MarginsQueryDto): Promise<MarginsView> {
+    return this.marginService.margins(query);
+  }
 
   @Get('dashboard')
   @Roles(...SEES_COST)

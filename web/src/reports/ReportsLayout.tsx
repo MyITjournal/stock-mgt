@@ -12,6 +12,7 @@ const TABS = [
   { to: '/reports/collections', label: 'Money in' },
   { to: '/reports/stock', label: 'Stock' },
   { to: '/reports/movers', label: 'Movers' },
+  { to: '/reports/margins', label: 'Margins' },
   { to: '/reports/targets', label: 'Targets' },
 ];
 

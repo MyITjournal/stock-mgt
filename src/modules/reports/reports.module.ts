@@ -5,6 +5,7 @@ import { ReportController } from './report.controller';
 import { ReportService } from './report.service';
 import { DashboardService } from './dashboard.service';
 import { PurchaseTargetController } from './purchase-target.controller';
+import { MarginService } from './margin.service';
 import { PurchaseTargetService } from './purchase-target.service';
 
 /**
@@ -26,7 +27,12 @@ import { PurchaseTargetService } from './purchase-target.service';
 @Module({
   imports: [PaymentsModule, PayablesModule],
   controllers: [ReportController, PurchaseTargetController],
-  providers: [ReportService, DashboardService, PurchaseTargetService],
+  providers: [
+    ReportService,
+    DashboardService,
+    PurchaseTargetService,
+    MarginService,
+  ],
   exports: [ReportService],
 })
 export class ReportsModule {}

@@ -262,3 +262,51 @@ export function exportStockValue(data: S['StockValuationView']) {
     tab('By location', valuationColumns('Location'), data.byLocation),
   ]);
 }
+
+const marginColumns: readonly SheetColumn<S['MarginRow']>[] = [
+  { header: 'Product', value: (row) => row.productName, width: 30 },
+  { header: 'Size', value: (row) => row.size },
+  { header: 'Category', value: (row) => row.category?.name },
+  { header: 'Unit', value: (row) => row.unitName },
+  { header: 'Price', kind: 'money', value: (row) => row.price },
+  { header: 'Cost', kind: 'money', value: (row) => row.cost },
+  {
+    header: 'Cost from',
+    value: (row) =>
+      row.costFrom === 'on_hand'
+        ? 'stock on hand'
+        : row.costFrom === 'last_delivery'
+          ? 'last delivery'
+          : null,
+  },
+  { header: 'Margin', kind: 'money', value: (row) => row.margin },
+  { header: 'Margin %', kind: 'percent', value: (row) => row.marginBps },
+  {
+    header: 'Last delivery cost',
+    kind: 'money',
+    value: (row) => row.lastDelivery?.cost,
+  },
+  {
+    header: 'Last delivered',
+    kind: 'date',
+    value: (row) => row.lastDelivery?.receivedAt,
+  },
+  {
+    header: 'Free goods',
+    value: (row) =>
+      row.lastDelivery?.deal
+        ? `${row.lastDelivery.deal.received} for ${row.lastDelivery.deal.paidFor}`
+        : null,
+  },
+];
+
+/** Margins now — today's prices and costs, so the file is stamped with today. */
+export function exportMargins(data: S['MarginsView']) {
+  return downloadWorkbook(stamp('margins'), [
+    tab(
+      data.tier ? `Margins (${data.tier.name})` : 'Margins',
+      marginColumns,
+      data.rows,
+    ),
+  ]);
+}

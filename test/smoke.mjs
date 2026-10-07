@@ -2977,6 +2977,81 @@ async function main() {
   await api('DELETE', `/expense-categories/${salariesCategory.id}`, { token: t, expect: 409 });
   check('the salaries category cannot be removed (409)', true);
 
+  step(50, 'Margins: today’s price beside what the stock on hand cost');
+
+  const soap = (
+    await api('POST', '/products', {
+      token: t,
+      body: {
+        name: `Margin Soap ${shopSuffix}`,
+        basePrice: 1_000, // ₦10 a piece, from the fallback
+        taxRateBps: 750,
+        units: [
+          { name: 'piece', factor: 1, isDefaultSelling: true, isSellable: true },
+          { name: 'carton', factor: 12, isSellable: true },
+        ],
+        prices: [{ unit: 'carton', tierId: tier.id, price: 10_750 }],
+      },
+    })
+  ).data;
+  const soapCarton = soap.units.find((u) => u.name === 'carton');
+  const marginsFor = async () =>
+    (await api('GET', `/reports/margins?tierId=${tier.id}`, { token: t })).data;
+  const rowOf = (view, unitName) =>
+    view.rows.find((r) => r.productId === soap.id && r.unitName === unitName);
+
+  let margins = await marginsFor();
+  const unstocked = rowOf(margins, 'carton');
+  check(
+    'with no delivery yet there is no cost and no margin — never a zero',
+    unstocked && unstocked.cost === null && unstocked.margin === null && unstocked.price === 10_750,
+    JSON.stringify(unstocked),
+  );
+
+  // Buy 12 get 1 free: 13 cartons on an invoice for 12 at ₦90.
+  await api('POST', '/goods-receipts', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      supplierId: supplier.id,
+      locationId: main.id,
+      invoiceNumber: `PROMO-${shopSuffix}`,
+      lines: [
+        {
+          productId: soap.id,
+          unitId: soapCarton.id,
+          quantityReceived: 13,
+          quantityPaidFor: 12,
+          totalCost: 108_000,
+        },
+      ],
+    },
+  });
+
+  margins = await marginsFor();
+  const cartonRow = rowOf(margins, 'carton');
+  // ₦1,080 over 156 pieces, times 12, rounded once: ₦83.08 a carton, not ₦90.
+  eq('the free carton makes every carton cheaper', cartonRow.cost, 8_308);
+  eq('measured against the stock on hand', cartonRow.costFrom, 'on_hand');
+  const netCarton = margins.chargesVat ? 10_000 : 10_750;
+  eq('the margin is the price without VAT, less the cost', cartonRow.margin, netCarton - 8_308);
+  eq(
+    'and as a share of that price',
+    cartonRow.marginBps,
+    Math.round(((netCarton - 8_308) / netCarton) * 10_000),
+  );
+  eq('the deal is said the way a vendor says it', JSON.stringify(cartonRow.lastDelivery?.deal), '{"received":13,"paidFor":12}');
+  eq('a piece is costed from the same stock', rowOf(margins, 'piece').cost, 692);
+  check(
+    'rows with a margin come before rows without one',
+    margins.rows.findIndex((r) => r.marginBps === null) === -1 ||
+      margins.rows.findIndex((r) => r.marginBps === null) >
+        margins.rows.findLastIndex((r) => r.marginBps !== null),
+  );
+
+  await api('GET', '/reports/margins', { token: bolaToken, expect: 403 });
+  check('buying prices stay closed to a cashier (403)', true);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',
