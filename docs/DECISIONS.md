@@ -3785,8 +3785,14 @@ Not `costPrice × factor`: `costPrice` is a rounded per-piece snapshot (§2), an
 30 multiplies its rounding error by 30. It is a cost field like `costPrice` — listed in
 `PRODUCT_COST_FIELDS`, and the lot query runs only for a role that may see cost. The products
 list and the product page both read the unit from `lib/shelfPrice.ts`, so a carton price always
-has a carton cost beside it. (Margins, §12, still measures against the average of stock on hand — a
-different question, and the report says which it uses.)
+has a carton cost beside it. ~~(Margins, §12, still measures against the average of stock on hand
+— a different question.)~~ **Changed the same day**: reading only the last *delivery* left every
+product that had come in as **opening stock** saying "none yet" beside its price, while the stock
+and margins reports valued it — the owner went looking for the cost they had seen before. Now
+`unitCosts` is **the average cost of the stock on hand** (`averageUnitCost`, the margins rule,
+opening lots included), falling back to the latest lot that received anything; the products
+list, the product page and *Margins* show one figure for one product, and smoke checks the list
+and the report agree.
 
 **And the unit is the one the till picks first** (same day, owner: "use the till picks first unit
 for both the cost and sales price"). The browser used to choose — the default selling unit, and

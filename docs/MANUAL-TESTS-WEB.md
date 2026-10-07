@@ -1192,3 +1192,7 @@ same figure as the stock value at the top of the page. Opening stock shows what 
 it. As a cashier there is no Value switch. Download: the *In and out* tab has value columns.
 
 **309. Reports → Margins.** Only margins below cost are coloured (red); everything else is plain.
+
+**310. [gate] Stock → Products, for products that came in only as opening stock.** Cost shows a
+figure per carton (or whichever unit the price is in), not "none yet", and it is the same as that
+product's Cost on Reports → Margins. The product page's *Cost* says "average of the stock on hand".

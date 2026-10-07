@@ -339,7 +339,7 @@ export class ProductView {
   @ApiPropertyOptional({
     type: () => [ProductUnitCostView],
     description:
-      'What one of each unit cost on the last delivery — a carton as a carton — from the lot’s exact total, rounded once (§2). Empty before any delivery. **Absent** for a role that may not see cost.',
+      'What one of each unit costs now — a carton as a carton: the average cost of the stock on hand (opening stock included), or the latest lot when none is on hand, from lot totals, rounded once (§2). The same basis as the margins report. Empty when nothing has ever come in. **Absent** for a role that may not see cost.',
   })
   unitCosts?: ProductUnitCostView[];
 
