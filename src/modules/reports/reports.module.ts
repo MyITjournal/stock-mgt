@@ -6,6 +6,7 @@ import { ReportService } from './report.service';
 import { DashboardService } from './dashboard.service';
 import { PurchaseTargetController } from './purchase-target.controller';
 import { MarginService } from './margin.service';
+import { StockSummaryService } from './stock-summary.service';
 import { PurchaseTargetService } from './purchase-target.service';
 
 /**
@@ -32,6 +33,7 @@ import { PurchaseTargetService } from './purchase-target.service';
     DashboardService,
     PurchaseTargetService,
     MarginService,
+    StockSummaryService,
   ],
   exports: [ReportService],
 })

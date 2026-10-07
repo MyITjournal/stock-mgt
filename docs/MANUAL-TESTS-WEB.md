@@ -1170,3 +1170,18 @@ to say "At least one piece"), its stock comes out and the bill drops by its valu
 product entered as cartons plus loose pieces is one line with the quantities added up (e.g.
 +192), and the time cell says "2 entries added up". A damage write-off of the same product is its
 own line, and so is anything marked **forced**. *Movements* above still counts every entry.
+
+---
+
+## AW. Stock in and out
+
+**305. [gate] Reports → Stock, this month.** *Stock in and out* lists each product: Opening,
+Delivered, Sold, Adjusted, Total — in cartons and pieces, the exact count on hover. Pick a
+product and check: opening + delivered − sold ± adjusted is the Total, and the Total is what Stock on
+hand shows.
+
+**306. A product whose opening stock was entered this month** shows it under Opening, not
+Adjusted. A corrected delivery shows what really arrived under Delivered.
+
+**307. Change the period at the top to last month; use the search box; tap a heading to sort.**
+Download: the workbook has an *In and out* tab.

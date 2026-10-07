@@ -23,6 +23,8 @@ import {
 } from './dto/report.response';
 import { ReportService } from './report.service';
 import { MarginService } from './margin.service';
+import { StockSummaryService } from './stock-summary.service';
+import { StockSummaryView } from './dto/stock-summary.dto';
 import { MarginsQueryDto, MarginsView } from './dto/margins.dto';
 import {
   ExpiryQueryDto,
@@ -40,6 +42,7 @@ export class ReportController {
     private readonly reports: ReportService,
     private readonly dashboard: DashboardService,
     private readonly marginService: MarginService,
+    private readonly stockSummary: StockSummaryService,
   ) {}
 
   @Get('margins')
@@ -179,6 +182,20 @@ export class ReportController {
   async customers(@Query() query: PeriodQueryDto) {
     const period = await this.reports.resolve(toPeriodQuery(query));
     return this.reports.customers(period);
+  }
+
+  @Get('stock-summary')
+  @ApiOperation({
+    summary: 'Stock in and out, per product, for a period',
+    description:
+      'Opening + delivered − sold ± adjusted = at the end, in base units, summed from the ledger by when each movement happened. Opening stock entered during the period counts as opening; delivery corrections as delivered; customer returns come off sold. Quantities only.',
+  })
+  @ApiOkResponse({ type: StockSummaryView })
+  async stockSummaryView(
+    @Query() query: PeriodQueryDto,
+  ): Promise<StockSummaryView> {
+    const period = await this.reports.resolve(toPeriodQuery(query));
+    return this.stockSummary.summary(period);
   }
 
   @Get('stock-audit')
