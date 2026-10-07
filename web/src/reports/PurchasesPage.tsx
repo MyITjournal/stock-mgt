@@ -37,14 +37,16 @@ export function PurchasesPage() {
   });
 
   const columns: readonly Column<PurchaseGroupRow>[] = [
-    { header: 'Name', cell: (row) => row.label },
+    { header: 'Name', sortValue: (row) => row.label, cell: (row) => row.label },
     {
       header: 'Value',
+      sortValue: (row) => row.value,
       numeric: true,
       cell: (row) => <Money value={row.value} />,
     },
     {
       header: 'Received',
+      sortValue: (row) => row.quantityReceived,
       numeric: true,
       cell: (row) => (
         <span className="tabular-nums">{row.quantityReceived}</span>
@@ -52,6 +54,7 @@ export function PurchasesPage() {
     },
     {
       header: 'Paid for',
+      sortValue: (row) => row.quantityPaidFor,
       numeric: true,
       cell: (row) => (
         <span className="tabular-nums">
@@ -64,7 +67,12 @@ export function PurchasesPage() {
         </span>
       ),
     },
-    { header: 'Lines', numeric: true, cell: (row) => row.lines },
+    {
+      header: 'Lines',
+      sortValue: (row) => row.lines,
+      numeric: true,
+      cell: (row) => row.lines,
+    },
   ];
 
   return (

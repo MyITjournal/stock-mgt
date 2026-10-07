@@ -7,6 +7,9 @@ import { Money } from '../components/Money';
 import { api } from '../api/client';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
+import { Field, Input } from '../components/Field';
+import { SortHeading } from '../components/SortHeading';
+import { sortRows, useSort, type SortValue } from '../lib/sort';
 import { CustomerDialog } from './CustomerDialog';
 
 type CustomerView = components['schemas']['CustomerView'];
@@ -28,6 +31,8 @@ type ReceivablesView = components['schemas']['ReceivablesView'];
 export function CustomersPage() {
   const seesCost = useSeesCost();
   const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState('');
+  const { sort, toggle } = useSort();
 
   const { data: customers = [], isPending } = useQuery({
     queryKey: ['customers'],
@@ -43,6 +48,25 @@ export function CustomersPage() {
   const balanceFor = (customerId: string) =>
     owed?.byCustomer.find((group) => group.customer?.id === customerId)
       ?.balance;
+  const nameOf = (customer: CustomerView) =>
+    [customer.firstName, customer.lastName].filter(Boolean).join(' ');
+
+  // The whole list is on screen, so it is searched and sorted here (2026-10-07).
+  const term = search.trim().toLowerCase();
+  const matching = term
+    ? customers.filter((customer) =>
+        [nameOf(customer), customer.phone, customer.email]
+          .filter(Boolean)
+          .some((field) => field!.toLowerCase().includes(term)),
+      )
+    : customers;
+  const sortValue: Record<string, (customer: CustomerView) => SortValue> = {
+    name: nameOf,
+    owes: (customer) => balanceFor(customer.id),
+  };
+  const shown = sort
+    ? sortRows(matching, sortValue[sort.key], sort.direction)
+    : matching;
 
   return (
     <Page
@@ -50,15 +74,37 @@ export function CustomersPage() {
       description="Everyone the business sells to on account."
       actions={<Button onClick={() => setAdding(true)}>Add customer</Button>}
     >
+      <div className="mb-4 max-w-sm">
+        <Field label="Search" htmlFor="customer-search">
+          <Input
+            id="customer-search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Name, phone or email"
+          />
+        </Field>
+      </div>
+
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-2 font-medium">Name</th>
+              <SortHeading
+                label="Name"
+                sortKey="name"
+                sort={sort}
+                onToggle={toggle}
+              />
               <th className="px-4 py-2 font-medium">Phone</th>
               <th className="px-4 py-2 font-medium">Email</th>
               {seesCost && (
-                <th className="px-4 py-2 text-right font-medium">Owes</th>
+                <SortHeading
+                  label="Owes"
+                  sortKey="owes"
+                  sort={sort}
+                  onToggle={toggle}
+                  numeric
+                />
               )}
             </tr>
           </thead>
@@ -85,7 +131,18 @@ export function CustomersPage() {
               </tr>
             )}
 
-            {customers.map((customer) => {
+            {!isPending && customers.length > 0 && shown.length === 0 && (
+              <tr>
+                <td
+                  colSpan={4}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
+                  Nobody matches that.
+                </td>
+              </tr>
+            )}
+
+            {shown.map((customer) => {
               const balance = balanceFor(customer.id);
               return (
                 <tr key={customer.id} className="hover:bg-slate-50">

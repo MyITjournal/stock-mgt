@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { sortRows, useSort, type SortValue } from '../lib/sort';
+import { SortHeading } from './SortHeading';
 
 export interface Column<Row> {
   /** Heading text. */
@@ -8,6 +10,11 @@ export interface Column<Row> {
   /** Right-align, which is what every money and quantity column wants. */
   numeric?: boolean;
   className?: string;
+  /**
+   * Makes the heading tappable to sort by this. **Only on a table holding the
+   * whole list** — see the note on `DataTable`.
+   */
+  sortValue?: (row: Row) => SortValue;
 }
 
 interface DataTableProps<Row> {
@@ -28,9 +35,10 @@ interface DataTableProps<Row> {
  * of something, and the difference between deciding alignment, empty states and
  * row affordances once versus twenty times is most of the work in them.
  *
- * Deliberately not sorting, paging or filtering. Those belong to the endpoint
- * behind the screen — the API pages with keyset cursors and filters server
- * side, and a table that sorts the page it happens to be holding tells people
+ * Paging and filtering belong to the endpoint behind the screen. **Sorting is
+ * opt-in per column** (`sortValue`, 2026-10-07) and only for tables that hold
+ * the whole list — a report, the margins. A table holding one page of a keyset
+ * feed must not offer it: sorting the page it happens to have tells people
  * something untrue about the rest of the data.
  */
 export function DataTable<Row>({
@@ -41,6 +49,13 @@ export function DataTable<Row>({
   empty = 'Nothing here yet.',
   loading = false,
 }: DataTableProps<Row>) {
+  const { sort, toggle } = useSort();
+  const sorting = sort
+    ? columns.find((column) => column.header === sort.key)?.sortValue
+    : undefined;
+  const shown =
+    sort && sorting ? sortRows(rows, sorting, sort.direction) : rows;
+
   if (loading) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
@@ -62,21 +77,34 @@ export function DataTable<Row>({
       <table className="w-full text-sm">
         <thead className="border-b border-slate-200 bg-slate-50">
           <tr>
-            {columns.map((column) => (
-              <th
-                key={column.header}
-                scope="col"
-                className={`px-4 py-3 font-medium text-slate-600 ${
-                  column.numeric ? 'text-right' : 'text-left'
-                }`}
-              >
-                {column.header}
-              </th>
-            ))}
+            {columns.map((column) =>
+              column.sortValue ? (
+                <SortHeading
+                  key={column.header}
+                  label={column.header}
+                  sortKey={column.header}
+                  sort={sort}
+                  onToggle={toggle}
+                  numeric={column.numeric}
+                  caps={false}
+                  className="py-3 text-slate-600"
+                />
+              ) : (
+                <th
+                  key={column.header}
+                  scope="col"
+                  className={`px-4 py-3 font-medium text-slate-600 ${
+                    column.numeric ? 'text-right' : 'text-left'
+                  }`}
+                >
+                  {column.header}
+                </th>
+              ),
+            )}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {rows.map((row, index) => (
+          {shown.map((row, index) => (
             <tr
               key={rowKey ? rowKey(row, index) : index}
               onClick={onRowClick ? () => onRowClick(row) : undefined}

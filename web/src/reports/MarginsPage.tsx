@@ -60,6 +60,7 @@ export function MarginsPage() {
   const columns: readonly Column<MarginRow>[] = [
     {
       header: 'Product',
+      sortValue: (row) => `${row.productName} ${row.size ?? ''}`,
       cell: (row) => (
         <Link
           to={`/stock/products/${row.productId}`}
@@ -70,9 +71,14 @@ export function MarginsPage() {
         </Link>
       ),
     },
-    { header: 'Unit', cell: (row) => row.unitName },
+    {
+      header: 'Unit',
+      sortValue: (row) => row.unitName,
+      cell: (row) => row.unitName,
+    },
     {
       header: 'Price',
+      sortValue: (row) => row.price,
       numeric: true,
       cell: (row) =>
         row.price === null ? (
@@ -83,6 +89,7 @@ export function MarginsPage() {
     },
     {
       header: 'Cost',
+      sortValue: (row) => row.cost,
       numeric: true,
       cell: (row) =>
         row.cost === null ? (
@@ -100,6 +107,7 @@ export function MarginsPage() {
     },
     {
       header: 'Margin',
+      sortValue: (row) => row.marginBps,
       numeric: true,
       cell: (row) =>
         row.margin === null || row.marginBps === null ? (
@@ -121,6 +129,7 @@ export function MarginsPage() {
     },
     {
       header: 'Last delivery',
+      sortValue: (row) => row.lastDelivery?.cost,
       numeric: true,
       cell: (row) =>
         row.lastDelivery ? (

@@ -49,15 +49,26 @@ export function MoversPage() {
   });
 
   const productColumns: readonly Column<SalesGroupRow>[] = [
-    { header: 'Product', cell: (row) => row.label },
+    {
+      header: 'Product',
+      sortValue: (row) => row.label,
+      cell: (row) => row.label,
+    },
     {
       header: 'Revenue',
+      sortValue: (row) => row.revenue,
       numeric: true,
       cell: (row) => <Money value={row.revenue} />,
     },
-    { header: 'Units', numeric: true, cell: (row) => row.units },
+    {
+      header: 'Units',
+      sortValue: (row) => row.units,
+      numeric: true,
+      cell: (row) => row.units,
+    },
     {
       header: 'Margin',
+      sortValue: (row) => row.marginBps,
       numeric: true,
       cell: (row) => margin(row.marginBps),
     },
@@ -66,6 +77,7 @@ export function MoversPage() {
   const customerColumns: readonly Column<CustomerReportRow>[] = [
     {
       header: 'Customer',
+      sortValue: (row) => name(row.customer),
       cell: (row) => (
         <Link
           to={`/customers/${row.customer.id}`}
@@ -82,17 +94,25 @@ export function MoversPage() {
     },
     {
       header: 'Spend',
+      sortValue: (row) => row.spend,
       numeric: true,
       cell: (row) => <Money value={row.spend} />,
     },
-    { header: 'Invoices', numeric: true, cell: (row) => row.invoices },
+    {
+      header: 'Invoices',
+      sortValue: (row) => row.invoices,
+      numeric: true,
+      cell: (row) => row.invoices,
+    },
     {
       header: 'Margin',
+      sortValue: (row) => row.marginBps,
       numeric: true,
       cell: (row) => margin(row.marginBps),
     },
     {
       header: 'Still owes',
+      sortValue: (row) => row.balance,
       numeric: true,
       cell: (row) =>
         row.balance === 0 ? (
@@ -103,6 +123,7 @@ export function MoversPage() {
     },
     {
       header: 'Last bought',
+      sortValue: (row) => row.lastPurchase,
       cell: (row) =>
         row.lastPurchase
           ? new Date(row.lastPurchase).toLocaleDateString()

@@ -58,14 +58,20 @@ export function SalesReportPage() {
   };
 
   const columns: readonly Column<SalesGroupRow>[] = [
-    { header: label(groupBy), cell: (row) => row.label },
+    {
+      header: label(groupBy),
+      sortValue: (row) => row.label,
+      cell: (row) => row.label,
+    },
     {
       header: 'Revenue',
+      sortValue: (row) => row.revenue,
       numeric: true,
       cell: (row) => <Money value={row.revenue} />,
     },
     {
       header: 'Returned',
+      sortValue: (row) => row.returned,
       numeric: true,
       cell: (row) =>
         row.returned === 0 ? (
@@ -74,22 +80,35 @@ export function SalesReportPage() {
           <Money value={row.returned} />
         ),
     },
-    { header: 'Units', numeric: true, cell: (row) => row.units },
-    { header: 'Invoices', numeric: true, cell: (row) => row.invoices },
+    {
+      header: 'Units',
+      sortValue: (row) => row.units,
+      numeric: true,
+      cell: (row) => row.units,
+    },
+    {
+      header: 'Invoices',
+      sortValue: (row) => row.invoices,
+      numeric: true,
+      cell: (row) => row.invoices,
+    },
     ...(seesCost
       ? [
           {
             header: 'Cost',
+            sortValue: (row: SalesGroupRow) => row.cogs,
             numeric: true,
             cell: (row: SalesGroupRow) => <Money value={row.cogs} />,
           },
           {
             header: 'Gross profit',
+            sortValue: (row: SalesGroupRow) => row.grossProfit,
             numeric: true,
             cell: (row: SalesGroupRow) => <Money value={row.grossProfit} />,
           },
           {
             header: 'Margin',
+            sortValue: (row: SalesGroupRow) => row.marginBps,
             numeric: true,
             cell: (row: SalesGroupRow) =>
               row.marginBps === undefined ? (
