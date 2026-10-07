@@ -73,10 +73,10 @@ export function useIsManager(): boolean {
 /**
  * Who records stock moving, mirroring `STOCK_RECORDERS` on the server.
  *
- * Everybody except the accountant: receiving a delivery, writing off breakage
- * and moving stock to a van are all daily work rather than decisions. The two
- * things that *are* decisions — forcing a movement through a shortfall, and
- * posting a count — stay with {@link useIsManager}.
+ * Everybody except the accountant may **receive a delivery** — daily work, not
+ * a decision. Writing stock off and moving it are decisions, and since
+ * 2026-10-07 they sit with {@link useIsManager}, as do forcing a movement
+ * through a shortfall and posting a count.
  *
  * Navigation, not security. The server refuses these routes regardless (§9).
  */

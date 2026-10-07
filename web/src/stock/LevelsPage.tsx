@@ -6,7 +6,7 @@ import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api } from '../api/client';
-import { useIsManager, useRecordsStock, useSeesCost } from '../auth/useAuth';
+import { useIsManager, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { AdjustDialog } from './AdjustDialog';
 import { TransferDialog } from './TransferDialog';
@@ -94,7 +94,6 @@ type LocationView = components['schemas']['LocationView'];
  */
 export function LevelsPage() {
   const seesCost = useSeesCost();
-  const recordsStock = useRecordsStock();
 
   const [locationId, setLocationId] = useState('');
   const [search, setSearch] = useState('');
@@ -140,7 +139,7 @@ export function LevelsPage() {
 
   const negatives = rows.filter((row) => row.quantity < 0).length;
   const navigate = useNavigate();
-  const canEnterOpening = useIsManager();
+  const isManager = useIsManager();
 
   return (
     <Page
@@ -156,7 +155,7 @@ export function LevelsPage() {
           />
           {
             // Owner and manager, like the server: the sheet records costs.
-            canEnterOpening && (
+            isManager && (
               <Button
                 variant="secondary"
                 onClick={() => navigate('/stock/opening')}
@@ -276,7 +275,9 @@ export function LevelsPage() {
                   </span>
                 </button>
 
-                {recordsStock && (
+                {/* Adjusting and moving stock is a decision — owner or
+                    manager (2026-10-07), as the server enforces. */}
+                {isManager && (
                   <div className="flex gap-2">
                     <Button
                       variant="secondary"
@@ -314,7 +315,7 @@ export function LevelsPage() {
                               Cost each
                             </th>
                           )}
-                          {canEnterOpening && <th className="py-1" />}
+                          {isManager && <th className="py-1" />}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
@@ -346,7 +347,7 @@ export function LevelsPage() {
                                 <Money value={batch.unitCost} />
                               </td>
                             )}
-                            {canEnterOpening && (
+                            {isManager && (
                               <td className="py-1.5 pl-3 text-right">
                                 {/* Opening stock only: a delivery is
                                     corrected through its receipt. */}

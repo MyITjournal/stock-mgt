@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
+import { useIsManager } from '../auth/useAuth';
 import type { components } from '../api/schema';
 
 type CustomerView = components['schemas']['CustomerView'];
@@ -53,6 +54,7 @@ export function CustomerDialog({
   pickLabel?: string;
 }) {
   const queryClient = useQueryClient();
+  const canSetTier = useIsManager();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
@@ -232,7 +234,9 @@ export function CustomerDialog({
             </Field>
           )}
 
-          {!brief && (
+          {/* Which price list a customer buys on is a pricing decision —
+              the server refuses it from anyone else. */}
+          {!brief && canSetTier && (
             <Field
               label="Price list"
               htmlFor="new-customer-tier"

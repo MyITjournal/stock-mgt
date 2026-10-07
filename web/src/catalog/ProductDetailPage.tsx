@@ -6,7 +6,7 @@ import { Money } from '../components/Money';
 import { Button } from '../components/Button';
 import { DataTable, type Column } from '../components/DataTable';
 import { api, ApiError } from '../api/client';
-import { useSeesCost } from '../auth/useAuth';
+import { useIsManager, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ProductForm } from './ProductForm';
 import { costIn, shelfPrice } from '../lib/shelfPrice';
@@ -44,6 +44,8 @@ const TYPE_LABELS: Record<string, string> = {
 export function ProductDetailPage() {
   const { id = '' } = useParams();
   const seesCost = useSeesCost();
+  // Prices and units are a manager's to change; staff look them up.
+  const canEdit = useIsManager();
   const [editing, setEditing] = useState(false);
 
   const {
@@ -149,7 +151,11 @@ export function ProductDetailPage() {
       back={{ to: '/stock', label: 'Products' }}
       title={product.name}
       description={`${product.sku}${product.category ? ` · ${product.category.name}` : ''}${product.isActive ? '' : ' · retired'}`}
-      actions={<Button onClick={() => setEditing(true)}>Edit</Button>}
+      actions={
+        canEdit ? (
+          <Button onClick={() => setEditing(true)}>Edit</Button>
+        ) : undefined
+      }
     >
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat

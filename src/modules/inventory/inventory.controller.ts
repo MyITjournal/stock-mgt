@@ -71,7 +71,13 @@ import {
 /** Setting up where stock lives and who it comes from is a management job. */
 const INVENTORY_EDITORS = [OrgRole.owner, OrgRole.manager];
 
-/** Recording stock movements is the storekeeper's daily work. */
+/**
+ * Taking a delivery is staff's daily work, so it stays open to them.
+ * **Adjusting and moving stock is not** (owner, 2026-10-07): writing stock off
+ * or moving it is a decision, and those two routes are `INVENTORY_EDITORS`
+ * now. Counting stays open too — a count changes nothing until an owner or
+ * manager posts it (stocktake controller).
+ */
 const STOCK_RECORDERS = [
   OrgRole.owner,
   OrgRole.manager,
@@ -499,7 +505,7 @@ export class StockController {
   }
 
   @Post('adjustments')
-  @Roles(...STOCK_RECORDERS)
+  @Roles(...INVENTORY_EDITORS)
   @Idempotent(
     'A retry with the same key returns the original movement instead of writing the stock off twice.',
   )
@@ -518,7 +524,7 @@ export class StockController {
   }
 
   @Post('transfers')
-  @Roles(...STOCK_RECORDERS)
+  @Roles(...INVENTORY_EDITORS)
   @Idempotent(
     'A retry with the same key returns the original transfer instead of moving the stock twice.',
   )

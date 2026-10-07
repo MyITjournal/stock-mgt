@@ -35,7 +35,7 @@ export function ProductsPage() {
   const navigate = useNavigate();
   const seesCost = useSeesCost();
   // Importing is a catalog write, owner and manager only, like the server.
-  const canImport = useIsManager();
+  const canManage = useIsManager();
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [editing, setEditing] = useState<ProductView | null>(null);
@@ -93,7 +93,7 @@ export function ProductsPage() {
       actions={
         <>
           <DownloadButton onDownload={() => exportProducts(seesCost)} />
-          {canImport && (
+          {canManage && (
             <Button
               variant="secondary"
               onClick={() => navigate('/stock/import')}
@@ -101,7 +101,9 @@ export function ProductsPage() {
               Import from spreadsheet
             </Button>
           )}
-          <Button onClick={() => setCreating(true)}>Add product</Button>
+          {canManage && (
+            <Button onClick={() => setCreating(true)}>Add product</Button>
+          )}
         </>
       }
     >
@@ -249,28 +251,31 @@ export function ProductsPage() {
                     would leave somebody confirming a dialog on top of a screen
                     they did not ask for.
                   */}
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="secondary"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setEditing(product);
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    {product.isActive && (
+                  {/* Staff look prices up; changing them is a manager's. */}
+                  {canManage && (
+                    <div className="flex justify-end gap-2">
                       <Button
-                        variant="ghost"
+                        variant="secondary"
                         onClick={(event) => {
                           event.stopPropagation();
-                          setRetiring(product);
+                          setEditing(product);
                         }}
                       >
-                        Retire
+                        Edit
                       </Button>
-                    )}
-                  </div>
+                      {product.isActive && (
+                        <Button
+                          variant="ghost"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setRetiring(product);
+                          }}
+                        >
+                          Retire
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
