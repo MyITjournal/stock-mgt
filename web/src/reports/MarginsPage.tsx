@@ -114,12 +114,11 @@ export function MarginsPage() {
           <span className="text-slate-300">—</span>
         ) : (
           <span
+            // Red only below cost (2026-10-07). An amber band under 3% coloured
+            // most of an FMCG list, where 2–3% is an ordinary margin — a colour
+            // on nearly every row marks nothing.
             className={
-              row.margin < 0
-                ? 'font-medium text-red-700'
-                : row.marginBps < 300
-                  ? 'text-amber-700'
-                  : 'text-slate-900'
+              row.margin < 0 ? 'font-medium text-red-700' : 'text-slate-900'
             }
           >
             <Money value={row.margin} />
@@ -204,8 +203,8 @@ export function MarginsPage() {
         {data?.chargesVat
           ? 'Margins are on the price without VAT, as your profit report is.'
           : 'You do not charge VAT, so the margin is on the whole price.'}{' '}
-        Red is below cost; amber is under 3%. A forecast from today’s figures —
-        it changes nothing already recorded.
+        Red is below cost. A forecast from today’s figures — it changes nothing
+        already recorded.
       </p>
 
       <DataTable

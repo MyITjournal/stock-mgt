@@ -2119,8 +2119,20 @@ stock or movement, base units, shown in the shop's own units.
 - **By `occurredAt`**, like every report: a backdated sale counts on its day. Two `groupBy` reads of
   the ledger (before the period; during it, by type and reason), so it cannot disagree with the
   ledger — smoke checks the whole shop's closing total equals stock on hand.
-- **Quantities only**, so it is open to every role, like the reorder list. The audit list gained a
-  line saying deliveries and sales are not in it.
+- **Quantities** are open to every role, like the reorder list. The audit list gained a line
+  saying deliveries and sales are not in it.
+- **And money, for `SEES_COST`** (same day). The owner could see purchases but not what opening
+  stock was worth, and wanted to check opening value + purchases − cost of sales ± adjustments =
+  stock value now, while records are few. The two ledger reads group by `batchId` as well when the
+  caller may see cost; each group is valued at its lot's exact ratio (`totalCost ÷
+  quantityReceived`, the valuation rule, §2), the fractions are summed per row and for the whole
+  shop, and each figure is **rounded once** — `totalValue` is rounded from the exact sum, not
+  from the rounded rows, so its closing figure **is** the stock value (smoke compares it with
+  `/reports/stock-valuation`). "Sold" is at the lot's cost *today*; the profit report keeps each
+  sale's frozen cost, so after a correction the two differ by exactly that correction — stated on
+  screen. Values are absent, never zeroed, for other roles.
+- **Margins stopped colouring under 3% amber** at the same time: in this trade 2–3% is ordinary,
+  so most rows were amber and the colour marked nothing. Red for below cost stays.
 
 ### Margins: today's price beside what the stock cost (2026-10-07)
 

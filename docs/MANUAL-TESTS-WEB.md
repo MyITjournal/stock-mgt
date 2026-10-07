@@ -1057,7 +1057,7 @@ today**: the bar goes plain and the next sale is today's.
 ## AP. Margins
 
 **278. [gate] Reports → Margins.** One row per product and selling unit, thinnest margin first:
-Price, Cost, Margin (amount and %), Last delivery. Anything below cost is red, under 3% amber.
+Price, Cost, Margin (amount and %), Last delivery. Anything below cost is red; the rest is plain.
 A product never delivered reads **no cost yet**, a unit with no price **no price** — neither as 0.
 
 **279. [gate] Receive a delivery with free goods** (e.g. 13 cartons, 12 paid for). Its row's Last
@@ -1185,3 +1185,10 @@ Adjusted. A corrected delivery shows what really arrived under Delivered.
 
 **307. Change the period at the top to last month; use the search box; tap a heading to sort.**
 Download: the workbook has an *In and out* tab.
+
+**308. [gate] Reports → Stock → Stock in and out → Value, as an owner.** A line above the table
+reads Opening stock + Delivered − Sold, at cost ± Adjusted = Stock value, and Stock value is the
+same figure as the stock value at the top of the page. Opening stock shows what was entered for
+it. As a cashier there is no Value switch. Download: the *In and out* tab has value columns.
+
+**309. Reports → Margins.** Only margins below cost are coloured (red); everything else is plain.

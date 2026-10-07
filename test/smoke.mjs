@@ -3225,8 +3225,31 @@ async function main() {
     summary.rows.reduce((sum, row) => sum + row.closing, 0),
     allLevels.reduce((sum, row) => sum + row.quantity, 0),
   );
-  await api('GET', '/reports/stock-summary?period=month', { token: bolaToken });
-  check('quantities only, so a cashier may read it too', true);
+  // In money: opening value + purchases − cost of what sold ± adjustments.
+  const money = summary.totalValue;
+  const shopValue = (await api('GET', '/reports/stock-valuation', { token: t })).data.total;
+  check(
+    'in money, the total is the stock value',
+    money && Math.abs(money.closing - shopValue) <= 1,
+    `${money?.closing} vs ${shopValue}`,
+  );
+  check(
+    'and opening + delivered − sold ± adjusted reaches it, to the kobo of rounding',
+    money && Math.abs(money.opening + money.delivered - money.sold + money.adjusted - money.closing) <= 4,
+    JSON.stringify(money),
+  );
+  const selfSummary = (await api('GET', '/reports/stock-summary?period=month', { token: selfToken })).data;
+  eq(
+    'opening stock is valued at what was entered — corrected cost included',
+    selfSummary.rows.find((row) => row.product.id === peakImported.id)?.value?.opening,
+    14 * 1_400_000 + 250_000,
+  );
+
+  const cashierSummary = (await api('GET', '/reports/stock-summary?period=month', { token: bolaToken })).data;
+  check(
+    'quantities only for a cashier — no values at all',
+    !('totalValue' in cashierSummary) && cashierSummary.rows.every((row) => !('value' in row)),
+  );
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

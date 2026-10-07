@@ -267,6 +267,24 @@ const summaryColumns: readonly SheetColumn<S['StockSummaryRow']>[] = [
   { header: 'Sold', kind: 'number', value: (row) => row.sold },
   { header: 'Adjusted', kind: 'number', value: (row) => row.adjusted },
   { header: 'Total', kind: 'number', value: (row) => row.closing },
+  // At cost, for a role that may see it; empty cells — never 0 — for others.
+  {
+    header: 'Opening value',
+    kind: 'money',
+    value: (row) => row.value?.opening,
+  },
+  {
+    header: 'Delivered value',
+    kind: 'money',
+    value: (row) => row.value?.delivered,
+  },
+  { header: 'Sold, at cost', kind: 'money', value: (row) => row.value?.sold },
+  {
+    header: 'Adjusted value',
+    kind: 'money',
+    value: (row) => row.value?.adjusted,
+  },
+  { header: 'Stock value', kind: 'money', value: (row) => row.value?.closing },
 ];
 
 export function exportStockValue(

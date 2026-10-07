@@ -715,8 +715,16 @@ And three from 7.6a, in `web/src/reports/`:
   by `occurredAt`, summed from the ledger with every movement in exactly one column
   (`columnFor` in `reports/stock-summary.ts`): opening stock entered in the period is *opening*,
   delivery corrections are *delivered*, customer returns come off *sold*, the rest is *adjusted*.
-  Quantities only, open to every role. Asked for because the owner read "Decisions somebody made"
-  expecting deliveries in it — that list is hand-made changes only, and now says so.
+  Quantities are open to every role. Asked for because the owner read "Decisions somebody made"
+  expecting deliveries in it — that list is hand-made changes only, and now says so. **In money
+  too, for `SEES_COST`** (same day, owner: needed opening stock's value to check the books while
+  records are few): each movement at **its own lot's exact cost**, summed exactly and rounded
+  once, as `value` per row and `totalValue` for the shop — opening value + purchases − sold at
+  cost ± adjusted = **the stock value** (smoke checks it equals `/reports/stock-valuation`). A
+  *Quantities / Value* switch on the table and a reconciling line above it. "Sold, at cost" is
+  at the lot's cost *today*, so after a correction it differs from the profit report's frozen
+  cost by exactly that correction. Absent — never zero — for other roles. **Margins colours only
+  a loss now**: the amber band under 3% coloured most of an FMCG list.
 - **"Decisions somebody made" shows one line per item** (2026-10-07, owner). `auditLines` in
   `reports/auditLines.ts` adds up movements sharing product, place, reason and person — an
   opening stock entered as cartons plus loose pieces — keeping the latest time and an "N entries

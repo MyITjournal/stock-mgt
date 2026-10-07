@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PeriodView } from './report.response';
 
 class SummaryProductRef {
@@ -18,6 +18,34 @@ class SummaryUnit {
 
   @ApiProperty({ example: 12 })
   factor!: number;
+}
+
+/** The same five figures in money: minor units, each at its lot's exact cost, rounded once. */
+export class StockSummaryValues {
+  @ApiProperty({
+    description:
+      'Stock at the start, and opening stock entered in the period, at cost.',
+  })
+  opening!: number;
+
+  @ApiProperty({
+    description: 'Deliveries at their invoice value, corrections included.',
+  })
+  delivered!: number;
+
+  @ApiProperty({
+    description:
+      'What sold, at its lot’s cost today. The profit report uses the cost frozen onto each sale; they differ only where a lot was corrected since.',
+  })
+  sold!: number;
+
+  @ApiProperty({
+    description: 'Write-offs, counts and moves, signed, at cost.',
+  })
+  adjusted!: number;
+
+  @ApiProperty({ description: 'What is left, at cost — the stock value.' })
+  closing!: number;
 }
 
 /** One product's period, in base units: opening + delivered − sold ± adjusted = closing. */
@@ -56,6 +84,13 @@ export class StockSummaryRow {
 
   @ApiProperty({ description: 'On hand when the period ended.' })
   closing!: number;
+
+  @ApiPropertyOptional({
+    type: () => StockSummaryValues,
+    description:
+      'The same in money. **Absent** for a role that may not see cost.',
+  })
+  value?: StockSummaryValues;
 }
 
 export class StockSummaryView {
@@ -67,4 +102,11 @@ export class StockSummaryView {
     description: 'One per product with stock or movement, by name.',
   })
   rows!: StockSummaryRow[];
+
+  @ApiPropertyOptional({
+    type: () => StockSummaryValues,
+    description:
+      'Every product together, summed exactly and rounded once — the closing figure is the stock value. **Absent** for a role that may not see cost.',
+  })
+  totalValue?: StockSummaryValues;
 }
