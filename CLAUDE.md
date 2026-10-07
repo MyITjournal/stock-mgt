@@ -892,9 +892,11 @@ paid this month* (`purchasing.payables.paidThisMonth`, live supplier payments by
 **Paid and uncollected each say their share of the month's sales** (§12, 2026-10-07) —
 `paidShareBps` / `uncollectedShareBps`, against sales **with VAT** (`monthGross`), because that is
 what the two add up to; uncollected is `10000 − paid` so they make exactly 100%; paid may pass 100%
-(older invoices); no sales is null, never 0%. The month's sales tile is **Revenue this month**; the
-next row reads **Cost of goods sold** (`cogsShareBps`, exactly `10000 − marginBps`) · Gross profit ·
-Operating profit (`operatingMarginBps`) · **Goods available for sale** — `dashboard.stock`, opening +
+(older invoices); no sales is null, never 0%. The first row ends **Revenue this month** · **Cost of goods
+sold** (`cogsShareBps`, exactly `10000 − marginBps`) — *Uncollected this month* was **removed**
+(owner: it read as the same as *Unpaid invoices*; the server still sends it). The profit row reads
+Gross profit · **Expenses** (`expensesShareBps`, salaries included) · Operating profit
+(`operatingMarginBps`) · **Goods available for sale** — `dashboard.stock`, opening +
 delivered at cost for the month, from the same `StockSummaryService` walk as Reports → Stock
 (`availableValue`, summed exactly and rounded once). It is what the shop *handled*, not what is
 left — that is the **Inventory valuation** on Reports → Stock (renamed from "What the stock is
