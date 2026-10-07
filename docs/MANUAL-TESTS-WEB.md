@@ -1111,3 +1111,7 @@ and Cost work the same, and still within whatever the search and category have n
 
 **292. Reports → Margins, Sales, Purchases, Stock and Movers.** Headings with ↕ sort that table.
 History lists (sales, payments, deliveries, movements) do not offer sorting.
+
+**293. [gate] Stock → Products on a shop that sells by the carton.** Cost is in the same unit as
+Price — "₦12,500 / carton" beside "₦9,664 / carton" — not per piece. Open the product: *Price* and
+*Last cost* name the same unit. A product never delivered reads **none yet**.

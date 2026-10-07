@@ -15,40 +15,12 @@ import { exportProducts } from './exportProducts';
 import { describeCount } from '../lib/quantity';
 import { sortRows, useSort, type SortValue } from '../lib/sort';
 import { SortHeading } from '../components/SortHeading';
+import { costIn, shelfPrice, type PerUnit } from '../lib/shelfPrice';
 
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
 type StockLevelRow = components['schemas']['StockLevelRow'];
 type PriceTierView = components['schemas']['PriceTierView'];
-
-/**
- * The price a customer is told: the default selling unit's price on the
- * default price list — "₦12,500 / carton". Only when that unit has none does
- * the base price show, per counted-in unit; it is never multiplied up here,
- * because the browser never works out a price (§17). Null: no price at all.
- *
- * "Base price" used to be the column, and a catalog priced by its units —
- * which an import makes — showed a dash on every row (2026-10-07).
- */
-function shelfPrice(
-  product: ProductView,
-  defaultTierId: string | undefined,
-): { amount: number; unitName: string } | null {
-  const unit =
-    product.units.find((row) => row.isDefaultSelling) ??
-    product.units.find((row) => row.isSellable);
-  const listed =
-    unit && defaultTierId
-      ? product.prices.find(
-          (row) => row.tierId === defaultTierId && row.unitId === unit.id,
-        )
-      : undefined;
-  if (unit && listed) return { amount: listed.price, unitName: unit.name };
-  const base = product.units.find((row) => row.isBase);
-  return product.basePrice !== null && base
-    ? { amount: product.basePrice, unitName: base.name }
-    : null;
-}
 
 /**
  * What the business sells.
@@ -114,7 +86,8 @@ export function ProductsPage() {
     onHand: (product) =>
       product.trackStock ? (onHand.get(product.id) ?? 0) : null,
     price: (product) => shelfPrice(product, defaultTierId)?.amount,
-    cost: (product) => product.costPrice,
+    cost: (product) =>
+      costIn(product, shelfPrice(product, defaultTierId)?.unitId)?.amount,
   };
   const shown = sort
     ? sortRows(products, sortValue[sort.key], sort.direction)
@@ -264,21 +237,22 @@ export function ProductsPage() {
                   />
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <ShelfPrice price={shelfPrice(product, defaultTierId)} />
+                  <PerUnitAmount
+                    value={shelfPrice(product, defaultTierId)}
+                    none="no price"
+                  />
                 </td>
                 {seesCost && (
                   <td className="px-4 py-3 text-right">
-                    {/* Last delivery's cost of one counted-in unit. */}
-                    {product.costPrice === null ? (
-                      <span className="text-xs text-slate-400">none yet</span>
-                    ) : (
-                      <span>
-                        <Money value={product.costPrice} />
-                        <span className="block text-xs text-slate-500">
-                          / {product.units.find((unit) => unit.isBase)?.name}
-                        </span>
-                      </span>
-                    )}
+                    {/* The last delivery's cost of one of the unit the price
+                        is in — a carton beside a carton. */}
+                    <PerUnitAmount
+                      value={costIn(
+                        product,
+                        shelfPrice(product, defaultTierId)?.unitId,
+                      )}
+                      none="none yet"
+                    />
                   </td>
                 )}
                 <td className="px-4 py-3 text-right">
@@ -347,16 +321,19 @@ export function ProductsPage() {
  * Negative is possible (a forced sale ran past the ledger) and is shown in red
  * rather than hidden, because it is the thing somebody needs to fix.
  */
-function ShelfPrice({
-  price,
+/** "₦12,500" over "/ carton"; `none` when there is no figure. */
+function PerUnitAmount({
+  value,
+  none,
 }: {
-  price: { amount: number; unitName: string } | null;
+  value: PerUnit | null | undefined;
+  none: string;
 }) {
-  if (!price) return <span className="text-xs text-slate-400">no price</span>;
+  if (!value) return <span className="text-xs text-slate-400">{none}</span>;
   return (
     <span>
-      <Money value={price.amount} />
-      <span className="block text-xs text-slate-500">/ {price.unitName}</span>
+      <Money value={value.amount} />
+      <span className="block text-xs text-slate-500">/ {value.unitName}</span>
     </span>
   );
 }

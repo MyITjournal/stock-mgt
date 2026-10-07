@@ -3052,6 +3052,16 @@ async function main() {
   await api('GET', '/reports/margins', { token: bolaToken, expect: 403 });
   check('buying prices stay closed to a cashier (403)', true);
 
+  // The products list shows cost in the unit it is sold in.
+  const soapAsOwner = (await api('GET', `/products/${soap.id}`, { token: t })).data;
+  eq(
+    'a product carries what one carton cost on the last delivery — from the lot, not piece × 12',
+    soapAsOwner.unitCosts?.find((u) => u.unitId === soapCarton.id)?.cost,
+    8_308,
+  );
+  const soapAsCashier = (await api('GET', `/products/${soap.id}`, { token: bolaToken })).data;
+  check('and a cashier is not sent it at all', !('unitCosts' in soapAsCashier) && !('costPrice' in soapAsCashier));
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

@@ -8,14 +8,22 @@ import {
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
-import { redactCost, redactCostAll } from '../../common/authz/cost-visibility';
+import {
+  callerSeesCost,
+  redactCost,
+  redactCostAll,
+} from '../../common/authz/cost-visibility';
 import { splitTaxInclusive } from '../../common/money/money';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { BarcodeSymbology, BusinessType } from '@prisma/client';
 import { chooseDefaultSellingUnit, defaultIsSellable } from './selling-units';
 import { resolveBarcode } from './barcode';
 import { resolveUnitPrice } from './pricing';
-import { ProductView, ResolvedUnitPrice } from './dto/product.response';
+import {
+  ProductUnitCostView,
+  ProductView,
+  ResolvedUnitPrice,
+} from './dto/product.response';
 import { TillSearchResult } from './dto/till-search.response';
 import { resolveTierId } from './price-tier.service';
 import {
@@ -40,7 +48,7 @@ const PRODUCT_INCLUDE = {
 const TILL_SEARCH_LIMIT = 10;
 
 /** What a product costs the business. Owner, manager and accountant only. */
-const PRODUCT_COST_FIELDS = ['costPrice'] as const;
+const PRODUCT_COST_FIELDS = ['costPrice', 'unitCosts'] as const;
 
 /**
  * One uploaded file, typed structurally.
@@ -199,7 +207,56 @@ export class ProductService {
       orderBy: { name: 'asc' },
     });
 
-    return redactCostAll(products, PRODUCT_COST_FIELDS);
+    return redactCostAll(
+      await this.withUnitCosts(products),
+      PRODUCT_COST_FIELDS,
+    );
+  }
+
+  /**
+   * What one of each unit cost on the product's **last delivery** — a carton
+   * as a carton, not a piece times 24 (2026-10-07). A wholesaler reads cost
+   * in the unit they sell, beside the price in that unit.
+   *
+   * From the lot's exact totals, rounded once per unit (§2): `totalCost ×
+   * factor ÷ quantityReceived`. Never `costPrice × factor` — that multiplies
+   * a rounded snapshot, and its rounding error with it, by the factor. Free
+   * goods are in it, as they are in every unit cost: a 13-for-12 lot makes
+   * each carton cheaper. Only for a role that may see cost; nobody else pays
+   * for the query, and `redactCost` drops the key for them regardless.
+   */
+  private async withUnitCosts<
+    P extends { id: string; units: readonly { id: string; factor: number }[] },
+  >(products: P[]): Promise<(P & { unitCosts?: ProductUnitCostView[] })[]> {
+    if (products.length === 0 || !callerSeesCost()) return products;
+
+    const lots = await this.prisma.stockBatch.findMany({
+      where: {
+        productId: { in: products.map((product) => product.id) },
+        quantityReceived: { gt: 0 },
+        // A delivery — not opening stock or a count's surplus.
+        receiptLine: { isNot: null },
+      },
+      orderBy: [{ receivedAt: 'desc' }, { createdAt: 'desc' }],
+      distinct: ['productId'],
+      select: { productId: true, totalCost: true, quantityReceived: true },
+    });
+    const lastOf = new Map(lots.map((lot) => [lot.productId, lot]));
+
+    return products.map((product) => {
+      const lot = lastOf.get(product.id);
+      return {
+        ...product,
+        unitCosts: lot
+          ? product.units.map((unit) => ({
+              unitId: unit.id,
+              cost: Math.round(
+                (lot.totalCost * unit.factor) / lot.quantityReceived,
+              ),
+            }))
+          : [],
+      };
+    });
   }
 
   findOne(id: string) {
@@ -757,7 +814,8 @@ export class ProductService {
       include: PRODUCT_INCLUDE,
     });
     if (!product) throw new NotFoundException('Product not found');
-    return redactCost(product, PRODUCT_COST_FIELDS);
+    const [withCosts] = await this.withUnitCosts([product]);
+    return redactCost(withCosts, PRODUCT_COST_FIELDS);
   }
 
   private async assertCategoryExists(categoryId: string) {

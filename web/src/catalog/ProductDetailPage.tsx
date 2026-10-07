@@ -9,6 +9,7 @@ import { api, ApiError } from '../api/client';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ProductForm } from './ProductForm';
+import { costIn, shelfPrice } from '../lib/shelfPrice';
 
 type ProductView = components['schemas']['ProductView'];
 type StockLevelRow = components['schemas']['StockLevelRow'];
@@ -45,9 +46,19 @@ export function ProductDetailPage() {
   const seesCost = useSeesCost();
   const [editing, setEditing] = useState(false);
 
-  const { data: product, isPending, error } = useQuery({
+  const {
+    data: product,
+    isPending,
+    error,
+  } = useQuery({
     queryKey: ['product', id],
     queryFn: () => api.get<ProductView>(`/products/${id}`),
+  });
+
+  const { data: tiers = [] } = useQuery({
+    queryKey: ['price-tiers'],
+    queryFn: () =>
+      api.get<components['schemas']['PriceTierView'][]>('/price-tiers'),
   });
 
   const { data: levels = [] } = useQuery({
@@ -90,6 +101,8 @@ export function ProductDetailPage() {
 
   const onHand = levels.reduce((sum, row) => sum + row.quantity, 0);
   const baseUnit = product.units.find((unit) => unit.factor === 1);
+  const price = shelfPrice(product, tiers.find((tier) => tier.isDefault)?.id);
+  const cost = costIn(product, price?.unitId);
   const movements = ledger?.movements ?? [];
 
   const movementColumns: readonly Column<SyncedMovementView>[] = [
@@ -153,19 +166,41 @@ export function ProductDetailPage() {
             </span>
           }
           note={
-            product.trackStock ? undefined : 'Not stocked — sold without a ledger'
+            product.trackStock
+              ? undefined
+              : 'Not stocked — sold without a ledger'
           }
         />
+        {/* Price and cost in the same unit — the one the till sells by
+            default — so a carton is read beside a carton (2026-10-07). */}
         <Stat
-          label="Base price"
-          value={<Money value={product.basePrice} />}
-          note={baseUnit ? `per ${baseUnit.name}` : undefined}
+          label="Price"
+          value={
+            price ? (
+              <Money value={price.amount} />
+            ) : (
+              <span className="text-slate-400">none</span>
+            )
+          }
+          note={
+            price ? `per ${price.unitName}, default price list` : 'No price set'
+          }
         />
         {seesCost && (
           <Stat
             label="Last cost"
-            value={<Money value={product.costPrice} />}
-            note="From the most recent delivery"
+            value={
+              cost ? (
+                <Money value={cost.amount} />
+              ) : (
+                <span className="text-slate-400">none yet</span>
+              )
+            }
+            note={
+              cost
+                ? `per ${cost.unitName}, from the most recent delivery`
+                : 'Record a delivery to set it'
+            }
           />
         )}
         <Stat
@@ -296,9 +331,9 @@ export function ProductDetailPage() {
           empty="Nothing has moved yet."
         />
         <p className="mt-2 text-xs text-slate-500">
-          The fifty most recent, newest first, in base units. Append-only —
-          a mistake here is corrected by another movement, never by editing
-          this one.
+          The fifty most recent, newest first, in base units. Append-only — a
+          mistake here is corrected by another movement, never by editing this
+          one.
         </p>
       </section>
 

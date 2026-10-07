@@ -3705,6 +3705,16 @@ a key `redactCost` removed; null is a figure that does not exist. Only the first
 now. And the column became **Price**: the default selling unit's price on the default list,
 falling back to the base price *per counted-in unit*, never multiplied up in the browser (§17).
 
+**Cost in the same unit as the price** (same day, owner: "for a wholesale store" cost per piece
+beside a price per carton is no help). `ProductView.unitCosts` carries each unit's cost on the
+last delivery, from the lot's exact total — `totalCost × factor ÷ quantityReceived`, rounded once.
+Not `costPrice × factor`: `costPrice` is a rounded per-piece snapshot (§2), and multiplying it by
+30 multiplies its rounding error by 30. It is a cost field like `costPrice` — listed in
+`PRODUCT_COST_FIELDS`, and the lot query runs only for a role that may see cost. The products
+list and the product page both read the unit from `lib/shelfPrice.ts`, so a carton price always
+has a carton cost beside it. (Margins, §12, still measures against the average of stock on hand — a
+different question, and the report says which it uses.)
+
 ### The till moved under Sales, and learned a date (2026-10-07)
 
 **One section, two tabs.** Owner: the till "could be with the sale, since sale is just showing the

@@ -555,7 +555,12 @@ working, since `start:prod` needs a build first and will not pick up changes.
   sorting one page misleads — and an oldest-first switch for those is not built: `order=asc` is
   the sync mode, which ignores `until` and holds back the last second. The products list's
   **Price** is the default selling unit on the default list ("₦12,500 / carton"), falling back
-  to the base price per counted-in unit, never multiplied in the browser.
+  to the base price per counted-in unit, never multiplied in the browser. **Cost sits in the same
+  unit** (2026-10-07, owner: a wholesaler reads cartons): `ProductView.unitCosts`, each unit's cost
+  on the last delivery from the lot's exact total (`totalCost × factor ÷ quantityReceived`, rounded
+  once) — never `costPrice × factor`, which multiplies a rounded snapshot. A cost field like any
+  other: in `PRODUCT_COST_FIELDS`, computed only for `SEES_COST`. `lib/shelfPrice.ts` picks the
+  unit for the list and the product page alike.
 - **Money is displayed, never computed.** The one exception is the till's running total, which is
   exact only because prices are tax-inclusive — see `lib/money.ts`.
 - **Role checks in the UI are navigation, not security.** The server enforces every one of them.
