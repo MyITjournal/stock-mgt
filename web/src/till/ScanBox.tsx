@@ -30,6 +30,7 @@ export function ScanBox({
   disabled,
   listId,
   activeId,
+  focusKey,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -40,19 +41,27 @@ export function ScanBox({
   /** The suggestions list, for screen readers. */
   listId?: string;
   activeId?: string;
+  /**
+   * Changes whenever the till wants the cursor back here — an item picked, a
+   * line set with Enter. Picking a suggestion sends no request, so waiting for
+   * `busy` to fall never brought it back (2026-10-07).
+   */
+  focusKey?: number;
 }) {
   const ref = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!busy && !disabled) ref.current?.focus();
-  }, [busy, disabled]);
+  }, [busy, disabled, focusKey]);
 
   useEffect(() => {
     if (disabled) return;
 
     const returnFocus = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('input, select, textarea, button, a, [role="dialog"]')) {
+      if (
+        target?.closest('input, select, textarea, button, a, [role="dialog"]')
+      ) {
         return;
       }
       ref.current?.focus();

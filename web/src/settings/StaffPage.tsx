@@ -97,7 +97,7 @@ export function StaffPage() {
       actions={
         isOwner ? (
           <Button onClick={() => setAdding(true)} disabled={full}>
-            Add somebody
+            Add a staff
           </Button>
         ) : undefined
       }
@@ -348,7 +348,7 @@ function AddStaffDialog({
   };
 
   return (
-    <Shell title="Add somebody" labelledBy="add-staff" onClose={onClose}>
+    <Shell title="Add a staff" labelledBy="add-staff" onClose={onClose}>
       <form onSubmit={submit}>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -477,7 +477,7 @@ function AddStaffDialog({
           onClose={onClose}
           busy={create.isPending}
           ready={Boolean(ready)}
-          confirm="Add them"
+          confirm="Add staff"
         />
       </form>
     </Shell>

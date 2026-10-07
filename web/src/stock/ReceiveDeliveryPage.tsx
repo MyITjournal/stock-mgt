@@ -7,7 +7,13 @@ import { Field, Input, MoneyInput, Select } from '../components/Field';
 import { Money } from '../components/Money';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
-import { useSeesCost } from '../auth/useAuth';
+import { useAuth, useSeesCost } from '../auth/useAuth';
+import {
+  clearDraft,
+  keptAt,
+  useKeepDraft,
+  useRestoredDraft,
+} from '../lib/draft';
 import type { components } from '../api/schema';
 import { decimalDraft, toWholeBaseUnits } from '../lib/decimalQuantity';
 
@@ -29,6 +35,23 @@ interface DraftLine {
   totalCost: number | null;
   lotCode: string;
   expiryDate: string;
+}
+
+/** Everything on the form, as kept in the browser until it is saved. */
+interface DeliveryDraft {
+  receiptId: string;
+  supplierId: string;
+  locationId: string;
+  invoiceNumber: string;
+  receivedAt: string;
+  note: string;
+  lines: DraftLine[];
+  amountDue: number | null;
+  paying: boolean;
+  paidAmount: number | null;
+  method: Method;
+  bankAccountId: string;
+  reference: string;
 }
 
 interface ReadLine {
@@ -145,23 +168,41 @@ export function ReceiveDeliveryPage() {
   // are decisions rather than transcription.
   const settlesDeliveries = useSeesCost();
 
-  const [supplierId, setSupplierId] = useState('');
-  const [locationId, setLocationId] = useState('');
-  const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [receivedAt, setReceivedAt] = useState('');
-  const [note, setNote] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
-  const [amountDue, setAmountDue] = useState<number | null>(null);
-  const [paying, setPaying] = useState(false);
-  const [paidAmount, setPaidAmount] = useState<number | null>(null);
-  const [method, setMethod] = useState<Method>('cash');
-  const [bankAccountId, setBankAccountId] = useState('');
-  const [reference, setReference] = useState('');
+  // An invoice being typed in is kept in this browser until it is saved, so a
+  // failed save or a refresh brings it back rather than losing it (2026-10-07).
+  const { user } = useAuth();
+  const draftKey = user ? `delivery.${user.organizationId}` : null;
+  const draft = useRestoredDraft<DeliveryDraft>(draftKey);
+  const kept = draft.restored?.value;
+
+  const [supplierId, setSupplierId] = useState(kept?.supplierId ?? '');
+  const [locationId, setLocationId] = useState(kept?.locationId ?? '');
+  const [invoiceNumber, setInvoiceNumber] = useState(kept?.invoiceNumber ?? '');
+  const [receivedAt, setReceivedAt] = useState(kept?.receivedAt ?? '');
+  const [note, setNote] = useState(kept?.note ?? '');
+  const [lines, setLines] = useState<DraftLine[]>(
+    kept?.lines.length ? kept.lines : [emptyLine()],
+  );
+  const [amountDue, setAmountDue] = useState<number | null>(
+    kept?.amountDue ?? null,
+  );
+  const [paying, setPaying] = useState(kept?.paying ?? false);
+  const [paidAmount, setPaidAmount] = useState<number | null>(
+    kept?.paidAmount ?? null,
+  );
+  const [method, setMethod] = useState<Method>(kept?.method ?? 'cash');
+  const [bankAccountId, setBankAccountId] = useState(kept?.bankAccountId ?? '');
+  const [reference, setReference] = useState(kept?.reference ?? '');
   const [error, setError] = useState<string | null>(null);
 
   // The receipt id is stable across every attempt; each attempt carries its own
   // Idempotency-Key, which `api.post` mints (§8).
-  const receiptId = useMemo(() => crypto.randomUUID(), []);
+  // Restored with the draft, so a retry after a lost reply is the same
+  // delivery and can never be recorded twice.
+  const receiptId = useMemo(
+    () => kept?.receiptId ?? crypto.randomUUID(),
+    [kept?.receiptId],
+  );
 
   const { data: products = [] } = useQuery({
     queryKey: ['products', ''],
@@ -255,6 +296,7 @@ export function ReceiveDeliveryPage() {
         }),
       }),
     onSuccess: (receipt) => {
+      if (draftKey) clearDraft(draftKey);
       afterWrite(queryClient);
       navigate(`/stock/receipts/${receipt.id}`);
     },
@@ -265,6 +307,35 @@ export function ReceiveDeliveryPage() {
           : 'Could not record that delivery.',
       ),
   });
+
+  useKeepDraft<DeliveryDraft>(
+    draftKey,
+    {
+      receiptId,
+      supplierId,
+      locationId,
+      invoiceNumber,
+      receivedAt,
+      note,
+      lines,
+      amountDue,
+      paying,
+      paidAmount,
+      method,
+      bankAccountId,
+      reference,
+    },
+    !record.isSuccess &&
+      (Boolean(supplierId) ||
+        Boolean(invoiceNumber.trim()) ||
+        lines.some((line) => line.productId)),
+  );
+
+  /** Leaving on purpose throws the kept copy away; a failed save does not. */
+  const cancel = () => {
+    if (draftKey) clearDraft(draftKey);
+    navigate('/stock/receipts');
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -277,12 +348,24 @@ export function ReceiveDeliveryPage() {
       title="Record a delivery"
       description="What arrived, counted as it arrived, priced off the vendor's invoice."
       actions={
-        <Button variant="secondary" onClick={() => navigate('/stock/receipts')}>
+        <Button variant="secondary" onClick={cancel}>
           Cancel
         </Button>
       }
     >
       <form onSubmit={submit} className="space-y-6">
+        {draft.noticeOpen && draft.restored && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <span>
+              The delivery you were entering at {keptAt(draft.restored.savedAt)}{' '}
+              was not saved, so it has been brought back. Check it and press
+              Record again.
+            </span>
+            <Button type="button" variant="secondary" onClick={draft.dismiss}>
+              OK
+            </Button>
+          </div>
+        )}
         <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-4">
           <Field label="Vendor" htmlFor="receive-supplier">
             <Select
@@ -363,7 +446,7 @@ export function ReceiveDeliveryPage() {
               variant="secondary"
               onClick={() => setLines([...lines, emptyLine()])}
             >
-              Add a line
+              Add a product
             </Button>
           </div>
 
@@ -666,7 +749,7 @@ export function ReceiveDeliveryPage() {
           <Button
             type="button"
             variant="secondary"
-            onClick={() => navigate('/stock/receipts')}
+            onClick={cancel}
             disabled={record.isPending}
           >
             Cancel

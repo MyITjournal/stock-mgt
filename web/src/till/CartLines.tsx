@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react';
 import { Money } from '../components/Money';
 import { MoneyInput, Select } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
@@ -20,6 +21,7 @@ export function CartLines({
   onPriceChange,
   onResetPrice,
   onRemove,
+  onDone,
   busy,
 }: {
   lines: CartLine[];
@@ -28,8 +30,30 @@ export function CartLines({
   onPriceChange: (key: string, price: number | null) => void;
   onResetPrice: (key: string) => void;
   onRemove: (key: string) => void;
+  /**
+   * A line is set: give the cursor back to the item search. Called on Enter in
+   * a quantity or price box, and after + or − on a computer — not on a touch
+   * screen, where focusing the search would pop the keyboard up on every tap.
+   */
+  onDone?: () => void;
   busy: boolean;
 }) {
+  const finePointer =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(pointer: fine)').matches;
+  const enterIsDone = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onDone?.();
+    }
+  };
+  const step = (line: CartLine, by: number) => {
+    const next = line.quantity + by;
+    if (next < 1) return;
+    onQuantityChange(line.key, next);
+    if (finePointer) onDone?.();
+  };
+
   if (lines.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white p-12 text-center">
@@ -96,14 +120,35 @@ export function CartLines({
                 </Select>
               </td>
 
-              <td className="px-4 py-3">
-                <QuantityInput
-                  label={`Quantity of ${line.productName}`}
-                  value={line.quantity}
-                  disabled={busy}
-                  onChange={(next) => onQuantityChange(line.key, next)}
-                  className="w-20"
-                />
+              <td className="px-4 py-3" onKeyDown={enterIsDone}>
+                {/* Tap to change by one, or type the number. */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => step(line, -1)}
+                    disabled={busy || line.quantity <= 1}
+                    aria-label={`One fewer ${line.unitName} of ${line.productName}`}
+                    className="h-9 w-9 shrink-0 rounded-md border border-slate-300 bg-white text-lg leading-none text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    −
+                  </button>
+                  <QuantityInput
+                    label={`Quantity of ${line.productName}`}
+                    value={line.quantity}
+                    disabled={busy}
+                    onChange={(next) => onQuantityChange(line.key, next)}
+                    className="w-14 text-center"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => step(line, 1)}
+                    disabled={busy}
+                    aria-label={`One more ${line.unitName} of ${line.productName}`}
+                    className="h-9 w-9 shrink-0 rounded-md border border-slate-300 bg-white text-lg leading-none text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    +
+                  </button>
+                </div>
               </td>
 
               <td className="px-4 py-3">
