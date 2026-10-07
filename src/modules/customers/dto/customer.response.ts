@@ -52,3 +52,15 @@ export class CustomerView {
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   deletedAt!: Date | null;
 }
+
+/** What a merge did. */
+export class CustomerMergeView {
+  @ApiProperty({ type: () => CustomerView, description: 'The customer kept.' })
+  customer!: CustomerView;
+
+  @ApiProperty({ description: 'Invoices moved onto the kept customer.' })
+  movedSales!: number;
+
+  @ApiProperty({ description: 'Payments moved onto the kept customer.' })
+  movedPayments!: number;
+}

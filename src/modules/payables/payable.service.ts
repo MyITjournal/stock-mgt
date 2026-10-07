@@ -117,6 +117,22 @@ export class PayableService {
    * The mirror of a customer statement, and what somebody reads out when a
    * vendor rings to chase.
    */
+  /**
+   * Money paid to vendors in a window (2026-10-07, for the home screen's
+   * "Bills paid this month"): live payments only — a voided one never moved —
+   * by when the money moved (`occurredAt`), like every report.
+   */
+  async paidBetween(window: { from: Date; to: Date }): Promise<number> {
+    const paid = await this.prisma.supplierPayment.aggregate({
+      where: {
+        voidedAt: null,
+        occurredAt: { gte: window.from, lt: window.to },
+      },
+      _sum: { amount: true },
+    });
+    return paid._sum.amount ?? 0;
+  }
+
   async statement(supplierId: string): Promise<SupplierStatementView> {
     const [owing, payments, rebates] = await Promise.all([
       this.outstanding({ supplierId }),

@@ -1070,6 +1070,23 @@ customer for each one buries the handful of real, named customers the owner actu
 sale with no customer prices on the organization's default tier — which is what the seeded
 "Retail" tier is for. `Customer.priceTierId` is how a named customer gets a different price list.
 
+### The same customer twice: suggest, warn, merge (2026-10-07)
+
+Found in real use: two customers entered twice, one already with two invoices, so one shop's debt
+read as two. **Prevention** is in the form: as a name or phone is typed, existing customers that
+match are offered (up to five), and picking one at the till sells to them with nothing added. A
+phone already on file is called out and the button reads *Add anyway* — **a warning, never a
+refusal**, because two different people may share a name, and a refusal at a busy counter is how
+a sale goes unrecorded.
+
+**Cure** is `POST /customers/:id/merge` (owner/manager): every sale and payment of the duplicate
+moves to the customer kept, in one transaction. Those are the only two tables with a
+`customerId`; receivables, statements, credit and the owes-already gate are all derived from them,
+so nothing else moves. Contact details the kept customer lacks are copied over, and the duplicate
+is soft-deleted with `mergedIntoId` so what happened stays readable. **The trap kept for later**:
+sales sync on `createdAt` (§8), so a device that had already synced a moved invoice would not learn
+its new customer. No device syncs today; the mobile app must re-read merged customers' sales.
+
 ### Returns, and why there is no "void"
 
 A return is one row per returned line, grouped by a `returnGroupId` — the same idiom that pairs

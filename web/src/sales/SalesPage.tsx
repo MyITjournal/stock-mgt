@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
@@ -7,6 +7,7 @@ import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
+import { PrintButton } from '../components/PrintButton';
 
 type SaleListView = components['schemas']['SaleListView'];
 type CustomerView = components['schemas']['CustomerView'];
@@ -27,6 +28,7 @@ const PAGE = 25;
  * reads cannot shift the list under them and show the same sale twice.
  */
 export function SalesPage() {
+  const navigate = useNavigate();
   const [customerId, setCustomerId] = useState('');
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
@@ -39,7 +41,8 @@ export function SalesPage() {
   if (since) query.set('since', new Date(since).toISOString());
   // The whole of the end day, not midnight at the start of it — "up to the
   // 25th" means including the 25th to everyone except a computer.
-  if (until) query.set('until', new Date(`${until}T23:59:59.999`).toISOString());
+  if (until)
+    query.set('until', new Date(`${until}T23:59:59.999`).toISOString());
   if (cursor) query.set('cursor', cursor);
 
   const { data, isPending, error } = useQuery({
@@ -115,7 +118,10 @@ export function SalesPage() {
       </div>
 
       {error && (
-        <p className="rounded-md bg-red-50 p-3 text-sm text-red-700" role="alert">
+        <p
+          className="rounded-md bg-red-50 p-3 text-sm text-red-700"
+          role="alert"
+        >
           {error.message}
         </p>
       )}
@@ -129,12 +135,16 @@ export function SalesPage() {
               <th className="px-4 py-2 font-medium">Customer</th>
               <th className="px-4 py-2 text-right font-medium">Total</th>
               <th className="px-4 py-2 text-right font-medium">Owing</th>
+              <th className="px-4 py-2" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {isPending && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td
+                  colSpan={6}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   Loading…
                 </td>
               </tr>
@@ -142,14 +152,24 @@ export function SalesPage() {
 
             {data?.sales.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td
+                  colSpan={6}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
                   No sales match that.
                 </td>
               </tr>
             )}
 
             {data?.sales.map((sale) => (
-              <tr key={sale.id} className="hover:bg-slate-50">
+              // The whole row opens the sale (2026-10-07) — the invoice
+              // number alone was too small a target — and Print reprints the
+              // invoice without leaving the list.
+              <tr
+                key={sale.id}
+                className="cursor-pointer hover:bg-slate-50"
+                onClick={() => navigate(`/sales/${sale.id}`)}
+              >
                 <td className="px-4 py-3">
                   <Link
                     to={`/sales/${sale.id}`}
@@ -177,6 +197,16 @@ export function SalesPage() {
                   ) : (
                     <Money value={sale.balance} signed />
                   )}
+                </td>
+                <td
+                  className="px-4 py-2 text-right"
+                  // Printing is its own act, not a click on the row.
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <PrintButton
+                    path={`/sales/${sale.id}/invoice.pdf`}
+                    label="Print"
+                  />
                 </td>
               </tr>
             ))}

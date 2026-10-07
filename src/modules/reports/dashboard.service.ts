@@ -58,6 +58,7 @@ export class DashboardService {
       owedToVendors,
       monthPurchases,
       monthTargets,
+      paidToVendors,
     ] = await Promise.all([
       this.reports.profit(today),
       this.reports.profit(month),
@@ -75,6 +76,7 @@ export class DashboardService {
       // No period: the target report defaults to this month in the shop's
       // timezone, which is the month every other figure here is.
       this.targets.report(),
+      this.payables.paidBetween(month),
     ]);
 
     return {
@@ -168,6 +170,8 @@ export class DashboardService {
           oldestDays: owedToVendors.oldestDays ?? 0,
           /** Past the date the business said it would pay, where it said one. */
           overdue: owedToVendors.overdue,
+          /** Paid to vendors this month — the other half of what is owed. */
+          paidThisMonth: paidToVendors,
           topVendors: owedToVendors.bySupplier.slice(0, GLANCE),
         },
         purchases: {

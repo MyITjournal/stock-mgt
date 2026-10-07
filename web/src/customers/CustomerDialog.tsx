@@ -25,16 +25,32 @@ type PriceTierView = components['schemas']['PriceTierView'];
  * what kind of customer this is has no place at a busy counter. `onCreated`
  * hands the new row back so the sale is put in their name without picking
  * them from the list afterwards.
+ *
+ * **It looks for the customer first** (2026-10-07): the owner found the same
+ * shop entered twice, invoices under each. As a name or phone is typed, up to
+ * five existing customers that match are offered — at the till, tapping one
+ * puts the sale in their name; on the Customers screen it opens them. A phone
+ * already on file is said plainly and the button becomes *Add anyway*: two
+ * people may share a name, so this warns and never refuses.
  */
 export function CustomerDialog({
   onClose,
   onCreated,
   brief = false,
+  onPickExisting,
+  pickLabel = 'Open',
 }: {
   onClose: () => void;
   onCreated?: (customer: CustomerView) => void;
   /** Name and phone only — the till's version. */
   brief?: boolean;
+  /**
+   * An existing customer was picked from the suggestions instead of adding
+   * one. The till uses them for the sale; the Customers screen opens them.
+   */
+  onPickExisting: (customer: CustomerView) => void;
+  /** What picking a suggestion does, in the button's words. */
+  pickLabel?: string;
 }) {
   const queryClient = useQueryClient();
   const [firstName, setFirstName] = useState('');
@@ -48,6 +64,36 @@ export function CustomerDialog({
     queryKey: ['price-tiers'],
     queryFn: () => api.get<PriceTierView[]>('/price-tiers'),
   });
+
+  // Everyone already on file — the list the till and Customers screen hold.
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers'],
+    queryFn: () => api.get<CustomerView[]>('/customers'),
+  });
+  const nameOf = (customer: CustomerView) =>
+    [customer.firstName, customer.lastName].filter(Boolean).join(' ');
+  const digits = (text: string | null | undefined) =>
+    (text ?? '').replace(/\D/g, '').slice(-10);
+  const typedName = `${firstName} ${lastName}`.trim().toLowerCase();
+  const typedPhone = digits(phone);
+  // The same phone is the strongest sign it is somebody already here; the
+  // last ten digits, so +234 and 0 prefixes match.
+  const phoneOwner =
+    typedPhone.length >= 7
+      ? customers.find((customer) => digits(customer.phone) === typedPhone)
+      : undefined;
+  const words = typedName.split(/\s+/).filter(Boolean);
+  const nameMatches =
+    typedName.length >= 2
+      ? customers.filter((customer) => {
+          const name = nameOf(customer).toLowerCase();
+          return words.every((word) => name.includes(word));
+        })
+      : [];
+  const suggestions = [
+    ...(phoneOwner ? [phoneOwner] : []),
+    ...nameMatches.filter((customer) => customer.id !== phoneOwner?.id),
+  ].slice(0, 5);
 
   const create = useMutation({
     mutationFn: () =>
@@ -138,6 +184,43 @@ export function CustomerDialog({
             />
           </Field>
 
+          {suggestions.length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm font-medium text-amber-900">
+                {phoneOwner
+                  ? `${phone.trim()} is already ${nameOf(phoneOwner)}'s number.`
+                  : 'Already a customer?'}
+              </p>
+              <ul className="mt-2 space-y-1">
+                {suggestions.map((customer) => (
+                  <li
+                    key={customer.id}
+                    className="flex items-center justify-between gap-2 text-sm"
+                  >
+                    <span>
+                      <span className="text-slate-900">{nameOf(customer)}</span>
+                      {customer.phone && (
+                        <span className="ml-2 text-xs text-slate-500">
+                          {customer.phone}
+                        </span>
+                      )}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        onPickExisting(customer);
+                        onClose();
+                      }}
+                    >
+                      {pickLabel}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {!brief && (
             <Field label="Email" htmlFor="new-customer-email">
               <Input
@@ -195,9 +278,11 @@ export function CustomerDialog({
           >
             {create.isPending
               ? 'Saving…'
-              : brief
-                ? 'Add and use for this sale'
-                : 'Add customer'}
+              : phoneOwner
+                ? 'Add anyway'
+                : brief
+                  ? 'Add and use for this sale'
+                  : 'Add customer'}
           </Button>
         </div>
       </form>

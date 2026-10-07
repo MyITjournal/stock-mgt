@@ -372,6 +372,26 @@ export interface paths {
         patch: operations["CustomerController_update"];
         trace?: never;
     };
+    "/api/v1/customers/{id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge a duplicate customer into another
+         * @description The same customer entered twice: every invoice and payment of this one moves to `intoCustomerId`, a phone, email or surname the kept customer lacks is copied over, and this one is removed, remembering where it went.
+         */
+        post: operations["CustomerController_merge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/categories": {
         parameters: {
             query?: never;
@@ -2459,6 +2479,21 @@ export interface components {
              * @description Which price list this customer buys on. Omitted, they pay the organization’s default tier.
              */
             priceTierId?: string;
+        };
+        MergeCustomerDto: {
+            /**
+             * Format: uuid
+             * @description The customer to keep. Everything of this one moves there.
+             */
+            intoCustomerId: string;
+        };
+        CustomerMergeView: {
+            /** @description The customer kept. */
+            customer: components["schemas"]["CustomerView"];
+            /** @description Invoices moved onto the kept customer. */
+            movedSales: number;
+            /** @description Payments moved onto the kept customer. */
+            movedPayments: number;
         };
         UpdateCustomerDto: {
             /**
@@ -5920,6 +5955,8 @@ export interface components {
             oldestDays: number;
             /** @description Past the date the business said it would pay, counting only bills that were given one. */
             overdue: number;
+            /** @description Paid to vendors this month, voided payments left out — beside what is still owed, as collections sit beside receivables. */
+            paidThisMonth: number;
             topVendors: components["schemas"]["OwedVendorRow"][];
         };
         PurchaseGroupRow: {
@@ -7285,6 +7322,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CustomerView"];
+                };
+            };
+        };
+    };
+    CustomerController_merge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeCustomerDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerMergeView"];
                 };
             };
         };

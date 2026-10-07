@@ -22,6 +22,11 @@ model Customer {
   /// organization's default tier, which is what a walk-in gets.
   priceTierId String?
 
+  /// Set when this row was a duplicate merged into another customer
+  /// (2026-10-07): its invoices and payments moved there and the row was
+  /// removed (`deletedAt`). Kept so what happened can still be read.
+  mergedIntoId String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?

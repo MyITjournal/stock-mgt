@@ -854,6 +854,23 @@ customer is chosen for the sale at once. **No price list at the counter, on purp
 price the item, not the buyer — the wholesale price is the carton's or the 1/5 carton's own price —
 so asking what kind of customer somebody is has no place in a queue. The cart keeps its prices.
 
+**Duplicate customers are headed off, and merged when they happen** (2026-10-07, owner found the
+same shop twice with invoices under each). `CustomerDialog` offers up to five **existing matches as
+a name or phone is typed** (every typed word in the name; a phone matches on its last ten digits)
+— *Use* at the till puts the sale in their name, *Open* on Customers opens them — and a phone
+already on file turns the button into **Add anyway**: it warns, never refuses, since two people
+can share a name. `POST /customers/:id/merge` (owner/manager) moves every **sale and payment** of
+the duplicate onto `intoCustomerId` — the only two tables that point at a customer, and balances
+are derived from them — copies a phone, email or surname the kept one lacks, and soft-deletes
+the duplicate with `mergedIntoId`. ⚠ Sales sync on `createdAt`, so a device that already synced a
+moved invoice would keep the old name; no such device exists yet, and the mobile app must handle
+it. *Same as another customer?* on the customer page opens it.
+
+**Sales → History**: the whole row opens the sale, and each row has **Print** (the invoice PDF,
+`PrintButton`), so a reprint needs no second screen. **Home** pairs what moved with what is owed:
+*Paid this month* (customers, `collections.month`) · *Unpaid invoices* · *Unpaid bills* · *Bills
+paid this month* (`purchasing.payables.paidThisMonth`, live supplier payments by `occurredAt`).
+
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`
 field there, never folded into `description`, so older printers keep working). Not on PDFs. Blank
