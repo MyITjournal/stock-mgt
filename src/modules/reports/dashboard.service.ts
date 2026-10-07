@@ -140,6 +140,7 @@ export class DashboardService {
         // The rest of the margin, so the two always make 100% of revenue.
         cogsShareBps:
           monthProfit.revenue === 0 ? 0 : 10_000 - monthProfit.marginBps,
+        expensesShareBps: marginBps(monthProfit.expenses, monthProfit.revenue),
         operatingMarginBps: marginBps(
           monthProfit.operatingProfit,
           monthProfit.revenue,

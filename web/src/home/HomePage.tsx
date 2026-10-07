@@ -79,23 +79,20 @@ export function HomePage() {
           value={<Money value={collections.today} />}
           note="Money actually received"
         />
-        {/* Tax-exclusive, as profit is. Cost of goods sold has its own tile. */}
+        {/*
+          Tax-exclusive, as profit is, with what those goods cost beside it.
+          "Uncollected this month" sat here until 2026-10-07; the owner read it
+          as the same figure as Unpaid invoices below and it was removed.
+        */}
         <Stat
           label="Revenue this month"
           value={<Money value={sales.month} />}
           note={<Change bps={sales.changeBps} />}
         />
         <Stat
-          label="Uncollected this month"
-          value={<Money value={collections.uncollectedThisMonth} />}
-          note={
-            <ShareOfSales
-              bps={collections.uncollectedShareBps}
-              sold={sales.monthGross}
-              tail="not yet paid for"
-            />
-          }
-          tone={collections.uncollectedThisMonth > 0 ? 'warn' : undefined}
+          label="Cost of goods sold"
+          value={<Money value={profit.cogs} />}
+          note={`${percent(profit.cogsShareBps)} of revenue`}
         />
       </section>
 
@@ -144,29 +141,24 @@ export function HomePage() {
       </section>
 
       {/*
-        Revenue − cost of goods sold = gross profit, read left to right, then
+        Gross profit − expenses = operating profit, read left to right, then
         what the month's stock came to (2026-10-07, owner).
       */}
       <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          label="Cost of goods sold"
-          value={<Money value={profit.cogs} />}
-          note={`${percent(profit.cogsShareBps)} of revenue`}
-        />
         <Stat
           label="Gross profit"
           value={<Money value={profit.grossProfit} />}
           note={`${percent(profit.marginBps)} of revenue`}
         />
         <Stat
+          label="Expenses"
+          value={<Money value={profit.expenses} />}
+          note={`${percent(profit.expensesShareBps)} of revenue, salaries included`}
+        />
+        <Stat
           label="Operating profit"
           value={<Money value={profit.operatingProfit} />}
-          note={
-            <>
-              {percent(profit.operatingMarginBps)} of revenue, after{' '}
-              <Money value={profit.expenses} /> expenses
-            </>
-          }
+          note={`${percent(profit.operatingMarginBps)} of revenue`}
           tone={profit.operatingProfit < 0 ? 'bad' : undefined}
         />
         {/*

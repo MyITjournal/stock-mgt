@@ -1480,6 +1480,11 @@ async function main() {
     JSON.stringify(dash.stock),
   );
   eq(
+    'expenses carry their share of revenue',
+    dash.profit.expensesShareBps,
+    Math.round((dash.profit.expenses / dash.profit.revenue) * 10_000),
+  );
+  eq(
     'operating profit carries its share of revenue',
     dash.profit.operatingMarginBps,
     Math.round((dash.profit.operatingProfit / dash.profit.revenue) * 10_000),

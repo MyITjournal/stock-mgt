@@ -2042,7 +2042,14 @@ Two choices worth knowing:
 Beside them, `profit.operatingMarginBps` (operating profit over revenue), and the month's sales
 tile is now **Revenue this month**. **Cost of goods sold has its own tile** (owner: "Revenue alone
 is okay. COGS can have its own"), with `cogsShareBps` — exactly `10000 − marginBps`, so the two
-make 100% of revenue — and the row reads revenue − COGS = gross profit, left to right.
+make 100% of revenue — set beside Revenue this month.
+
+**Uncollected this month was then taken off Home** (owner: "the same as unpaid invoices"). They
+are not quite the same — uncollected is this month's sales less this month's payments, unpaid is
+everything still owed from any month — but on a young shop they read alike, and two tiles that
+look identical make a person doubt both. `uncollectedThisMonth` and `uncollectedShareBps` are
+still sent; nothing reads them on screen. **Expenses got a tile** in its place in the profit row
+(`expensesShareBps`, salaries included), so it reads gross profit − expenses = operating profit.
 
 **Goods available for sale** (same day, owner: "the value of inventory already handled for a
 month") ends that row: opening stock + delivered this month, at cost, as `dashboard.stock`. It

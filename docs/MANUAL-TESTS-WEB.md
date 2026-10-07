@@ -1223,12 +1223,12 @@ duplicate is gone from Customers. As a cashier the button is not there.
 **316. Home, as an owner.** The second row reads Paid this month · Unpaid invoices · Unpaid bills ·
 Bills paid this month.
 
-**316a. [gate] Home: the percentages.** *Revenue this month* stands alone; the next row reads Cost
-of goods sold · Gross profit · Operating profit · Goods available for sale. Cost of goods sold and
+**316a. [gate] Home: the percentages.** The first row ends *Revenue this month* · *Cost of goods
+sold*; there is no *Uncollected this month*. The profit row reads Gross profit · Expenses ·
+Operating profit · Goods available for sale. Cost of goods sold and
 gross profit's percentages add up to 100%. Goods available for sale says "Opening ₦X + delivered
-₦Y". Reports → Stock is headed **Inventory valuation**. *Paid this month* and *Uncollected this month* each say "N% of ₦X sold", with the same ₦X, and
-the two percentages add up to 100%. Gross and operating profit each say "N% of revenue". On a new
-shop with no sales, both say "Nothing sold this month yet", never 0%.
+₦Y". Reports → Stock is headed **Inventory valuation**. *Paid this month* says "N% of ₦X sold". Gross profit, expenses and operating profit each say "N%
+of revenue". On a new shop with no sales, Paid says "Nothing sold this month yet", never 0%.
 
 ---
 

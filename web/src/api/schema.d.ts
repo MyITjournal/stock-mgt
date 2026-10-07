@@ -5887,6 +5887,8 @@ export interface components {
             marginBps: number;
             /** @description Cost of goods sold as a share of revenue, in basis points — exactly 10000 − marginBps. Zero when nothing was sold. */
             cogsShareBps: number;
+            /** @description Expenses, salaries included, as a share of revenue, in basis points. Zero when nothing was sold. */
+            expensesShareBps: number;
             /** @description Operating profit as a share of revenue, in basis points. Zero when nothing was sold. */
             operatingMarginBps: number;
             /** @description How much of the month’s cost rests on a guess, because goods sold before their delivery was recorded. */

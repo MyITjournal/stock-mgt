@@ -151,6 +151,12 @@ class ProfitSummary {
 
   @ApiProperty({
     description:
+      'Expenses, salaries included, as a share of revenue, in basis points. Zero when nothing was sold.',
+  })
+  expensesShareBps!: number;
+
+  @ApiProperty({
+    description:
       'Operating profit as a share of revenue, in basis points. Zero when nothing was sold.',
   })
   operatingMarginBps!: number;
