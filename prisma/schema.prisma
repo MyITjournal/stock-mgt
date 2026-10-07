@@ -1772,6 +1772,11 @@ model GoodsReceiptCorrectionLine {
   totalCostBefore Int
   totalCostAfter  Int
 
+  /// Set only when the line was the wrong product (2026-10-07): which it was
+  /// recorded as, and which it really was. Null when the product was right.
+  productIdBefore String?
+  productIdAfter  String?
+
   organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   correction   GoodsReceiptCorrection @relation(fields: [correctionId], references: [id], onDelete: Cascade)
   receiptLine  GoodsReceiptLine       @relation(fields: [receiptLineId], references: [id], onDelete: Cascade)

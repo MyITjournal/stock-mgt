@@ -3134,6 +3134,75 @@ async function main() {
   eq('a cashier sees the same price', soapAsCashier.tillUnit?.price, 1_000);
   check('and a cashier is not sent it at all', !('unitCosts' in soapAsCashier) && !('costPrice' in soapAsCashier));
 
+  step(51, 'A delivery line entered as the wrong product, and one that never came');
+
+  const lotionRight = (
+    await api('POST', '/products', {
+      token: t,
+      body: {
+        name: `Deep Impact Lotion ${shopSuffix}`,
+        basePrice: 1_000,
+        units: [
+          { name: 'piece', factor: 1, isDefaultSelling: true, isSellable: true },
+          { name: 'carton', factor: 12, isSellable: true },
+        ],
+      },
+    })
+  ).data;
+  const soapBefore = (await onHand(t, soap.id, main.id)).quantity;
+  const mixUp = (
+    await api('POST', '/goods-receipts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        locationId: main.id,
+        invoiceNumber: `MIXUP-${shopSuffix}`,
+        lines: [
+          // Entered as soap; it was the lotion.
+          { productId: soap.id, unitId: soapCarton.id, quantityReceived: 1, quantityPaidFor: 1, totalCost: 9_000 },
+          // On the paperwork, never arrived.
+          { productId: soap.id, unitId: soapCarton.id, quantityReceived: 1, quantityPaidFor: 1, totalCost: 9_000 },
+        ],
+      },
+    })
+  ).data;
+  const [wrongLine, missingLine] = mixUp.lines;
+  const mixFix = {
+    reason: 'Entered soap instead of lotion; the second carton never came.',
+    lines: [
+      { lineId: wrongLine.id, productId: lotionRight.id, received: 12, paidFor: 12, totalCost: 9_000 },
+      { lineId: missingLine.id, received: 0, paidFor: 0, totalCost: 0 },
+    ],
+  };
+  const mixPreview = (
+    await api('POST', `/goods-receipts/${mixUp.id}/corrections/preview`, { token: t, body: mixFix })
+  ).data;
+  const swapRow = mixPreview.lines.find((row) => row.lineId === wrongLine.id);
+  eq(
+    'the preview says what comes out and what goes in',
+    `${swapRow?.removed} out, ${swapRow?.stockDelta} in, ${swapRow?.addedProductName === lotionRight.name}`,
+    '12 out, 12 in, true',
+  );
+  eq('and only the missing carton moves the value', mixPreview.valueDelta, -9_000);
+
+  await api('POST', `/goods-receipts/${mixUp.id}/corrections`, { token: t, key: randomUUID(), body: mixFix });
+  const fixedReceipt = (await api('GET', `/goods-receipts/${mixUp.id}`, { token: t })).data;
+  eq(
+    'the line now names the product that came',
+    fixedReceipt.lines.find((line) => line.id === wrongLine.id).product.id,
+    lotionRight.id,
+  );
+  eq('the wrong product came back out — both cartons of it', (await onHand(t, soap.id, main.id)).quantity, soapBefore);
+  eq('and the right one went in', (await onHand(t, lotionRight.id, main.id)).quantity, 12);
+  eq(
+    'the line that never came reads nothing',
+    `${fixedReceipt.lines.find((line) => line.id === missingLine.id).quantityReceived}`,
+    '0',
+  );
+  const lotionLots = (await onHand(t, lotionRight.id, main.id)).batches;
+  check('the right product has a lot of its own, not an opening one', lotionLots.length === 1 && lotionLots[0].isOpening === false);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

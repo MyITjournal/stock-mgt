@@ -19,6 +19,21 @@
  *
  * A line whose figures did not change is left out, and a correction that
  * changes nothing is refused rather than recorded as an empty event.
+ *
+ * ## The wrong product (2026-10-07)
+ *
+ * A line entered as Deep Impact **roll-on** when the lotion came. The person
+ * names the right product and its figures; the recorded product's stock comes
+ * back out of the line's own lot, the right product's goes in as a new lot at
+ * the same cost, and the line names the right product — so the purchases
+ * report and vendor targets count what really came. The value only moves the
+ * bill if it changed too.
+ *
+ * ## Nothing arrived
+ *
+ * A line may be corrected to zero — an item that was on the paperwork and
+ * never came. Its stock comes out and its value goes to zero; if the vendor
+ * still charged for it, that is the bill's amount to change, not the goods.
  */
 
 export interface RecordedLine {
@@ -34,6 +49,8 @@ export interface RecordedLine {
 
 export interface TrueFigures {
   lineId: string;
+  /** The product that really arrived, when the line named the wrong one. */
+  productId?: string;
   /** In base units. */
   received: number;
   /** In base units. */
@@ -44,10 +61,16 @@ export interface TrueFigures {
 
 export interface LineChange {
   line: RecordedLine;
+  /** The right product, when the line named the wrong one; else null. */
+  newProductId: string | null;
   received: number;
   paidFor: number;
   totalCost: number;
-  /** Positive: more came than was entered. Negative: fewer. */
+  /**
+   * Positive: more came than was entered. Negative: fewer. For a wrong
+   * product, what goes in of the right one — the recorded product's whole
+   * `line.quantityReceived` comes out.
+   */
   stockDelta: number;
 }
 
@@ -85,7 +108,24 @@ export function planCorrection(
       );
       continue;
     }
+    const newProductId =
+      truth.productId && truth.productId !== line.productId
+        ? truth.productId
+        : null;
+    if (newProductId && truth.received === 0) {
+      problems.push(
+        'Choose the product that did arrive, with how many came of it.',
+      );
+      continue;
+    }
+    if (truth.received === 0 && truth.totalCost !== 0) {
+      problems.push(
+        'Nothing arrived on a line, so its value is 0. If the vendor still charged for it, change the bill instead.',
+      );
+      continue;
+    }
     const unchanged =
+      !newProductId &&
       truth.received === line.quantityReceived &&
       truth.paidFor === line.quantityPaidFor &&
       truth.totalCost === line.totalCost;
@@ -93,10 +133,13 @@ export function planCorrection(
 
     changes.push({
       line,
+      newProductId,
       received: truth.received,
       paidFor: truth.paidFor,
       totalCost: truth.totalCost,
-      stockDelta: truth.received - line.quantityReceived,
+      stockDelta: newProductId
+        ? truth.received
+        : truth.received - line.quantityReceived,
     });
   }
 

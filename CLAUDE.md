@@ -930,7 +930,15 @@ what was paid or credited; and a `GoodsReceiptCorrection` keeps what the figures
 when and why. **`/corrections/preview` runs the real correction and rolls it back**, so the
 preview meets every check the save does and the browser computes no money. A line is shown in the
 biggest of the product's own units both figures are whole in (`displayUnit`), so 6½ cartons reads
-as pieces and 7 reads as cartons again. A corrected line keeps at least one piece received.
+as pieces and 7 reads as cartons again. **A line can be the wrong product, or nothing at all**
+(2026-10-07): *Wrong product?* on a line takes the right one (`productId` on the line's true
+figures) — the recorded product's whole `quantityReceived` comes back out of the line's own lot
+(409 if already sold; the usual override), the right product goes in as **a new lot** at the
+line's figures dated the delivery's day, the line names it so purchases and vendor targets follow,
+and the bill moves only if the value did. The old lot is left empty, never deleted. A line may go
+to **0** when it never came — value 0 too (a vendor who still charged is the bill's amount to
+change). `GoodsReceiptCorrectionLine.productIdBefore/After` keep the swap; a count's surplus no
+longer borrows the cost of a lot that received nothing.
 
 **When a demo org looks wrong, add the movement that fixes it.** The slice walkthroughs force sales
 past the ledger to test the override, which leaves stock negative. Put it right with a **goods
