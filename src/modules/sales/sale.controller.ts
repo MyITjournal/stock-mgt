@@ -35,6 +35,14 @@ const SELLERS = [
   OrgRole.storekeeper,
 ];
 
+/**
+ * **Taking goods back is not** (owner, 2026-10-07): a return pays money out of
+ * the till and puts goods back on the shelf, so a made-up return is a way to
+ * walk off with either. Owner or manager only — the same people who may force
+ * a sale through a shortfall.
+ */
+const TAKES_BACK = [OrgRole.owner, OrgRole.manager];
+
 @ApiTags('sales')
 @ApiBearerAuth('JWT')
 @Controller('sales')
@@ -148,7 +156,7 @@ export class SaleController {
   }
 
   @Post(':id/returns')
-  @Roles(...SELLERS)
+  @Roles(...TAKES_BACK)
   @Idempotent(
     'A retry with the same key returns the original outcome instead of restocking the goods twice.',
   )

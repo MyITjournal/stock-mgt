@@ -3364,6 +3364,47 @@ async function main() {
   await api('DELETE', `/customers/${twinA.id}`, { token: t, expect: 409 });
   check('one with invoices stays (409) — merging is how a duplicate goes', true);
 
+  step(55, 'Staff take deliveries, but do not adjust or move stock');
+  await api('POST', '/stock/adjustments', {
+    token: bolaToken,
+    key: randomUUID(),
+    body: { productId: product.id, locationId: main.id, unitId: carton.id, quantity: -1, reason: 'damage' },
+    expect: 403,
+  });
+  check('a cashier cannot write stock off (403)', true);
+  await api('POST', '/stock/transfers', {
+    token: bolaToken,
+    key: randomUUID(),
+    body: { productId: product.id, fromLocationId: main.id, toLocationId: van.id, unitId: carton.id, quantity: 1 },
+    expect: 403,
+  });
+  check('a cashier cannot move stock between places (403)', true);
+  const staffDelivery = (
+    await api('POST', '/goods-receipts', {
+      token: bolaToken,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        locationId: main.id,
+        lines: [
+          { productId: product.id, unitId: carton.id, quantityReceived: 1, quantityPaidFor: 1, totalCost: 1_200_000 },
+        ],
+      },
+    })
+  ).data;
+  check('a cashier can still take a delivery', !!staffDelivery?.id);
+  await api('PATCH', `/products/${product.id}`, { token: bolaToken, body: { name: 'Renamed by staff' }, expect: 403 });
+  check('a cashier cannot edit a product or its prices (403)', true);
+  await api('PATCH', '/organization', { token: bolaToken, body: { phone: '0800' }, expect: 403 });
+  check('a cashier cannot change the business settings (403)', true);
+  await api('POST', `/sales/${cash.id}/returns`, {
+    token: bolaToken,
+    key: randomUUID(),
+    body: { lines: [{ saleLineId: cash.lines[0].id, unitId: carton.id, quantity: 1 }] },
+    expect: 403,
+  });
+  check('a cashier cannot take goods back — money and stock both move (403)', true);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

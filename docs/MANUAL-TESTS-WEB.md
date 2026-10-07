@@ -414,8 +414,8 @@ you cannot see.
 products are in it and to move them first. Move the product to another category, try again, and
 it goes.
 
-**117. [gate] Signed in as a sales_rep or storekeeper**, the page shows the lists with no Remove
-buttons.
+**117. [gate] Signed in as a sales_rep or storekeeper**, there is no *Categories & tiers* tab, and
+typing `/stock/setup` lands on Products (2026-10-07 — see AZ).
 
 ---
 
@@ -1234,3 +1234,31 @@ Bills paid this month.
 **318. [gate] A customer added by mistake, with no invoices: open them → Remove → Yes, remove.**
 They leave the Customers list. A customer with invoices: Remove explains they stay and to use
 *Same as another customer?* instead. As a cashier there is no Remove.
+
+---
+
+## AZ. What staff can and cannot touch
+
+Sign in as a `sales_rep` (and again as a `storekeeper`). The owner's rule, 2026-10-07: staff
+sell, take deliveries and count; prices, stock corrections, returns, products and settings are the
+owner's and the manager's.
+
+**319. [gate] Stock → Products.** Prices are shown; there is no *Add product*, no *Import*, and no
+Edit or Retire on any row. Open a product: no Edit button.
+
+**320. [gate] Stock tabs.** Products, On hand, Deliveries, Movements and Counts are there; *Places
+& vendors* and *Categories & tiers* are not. Typing `/stock/places` lands on Products.
+
+**321. [gate] Stock → On hand → open a product's lots.** No Adjust, no Move, no Opening stock, no
+Correct cost.
+
+**322. [gate] Stock → Deliveries → Record a delivery.** It works — receiving goods is staff's job.
+*Correct this delivery* is not offered on a recorded one.
+
+**323. [gate] Settings.** Only *Your password* is there, and it works. Typing `/settings/staff`
+lands on *Your password*.
+
+**324. [gate] Customers → Add customer.** Name, phone and the rest — no *Price list* box.
+
+**325. [gate] Sales → History → open a sale.** Print and the PDF are there; *Take goods back* is
+not. As the owner it is.

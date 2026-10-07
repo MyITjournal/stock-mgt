@@ -444,6 +444,17 @@ credentials`, and the login rate limit still counts each attempt. The Staff page
 davidyo*, the full name on hover. **A customer can be removed** (owner/manager, `DELETE
 /customers/:id`) only with **no invoices and no payments** — 409 otherwise, pointing at merging.
 
+**Staff sell, take deliveries and count — nothing else** (§9, 2026-10-07, owner). `sales_rep` and
+`storekeeper` may no longer **adjust or move stock** (`POST /stock/adjustments` and `/transfers`
+are `INVENTORY_EDITORS` now; goods receipts stay open to them) or **take goods back**
+(`POST /sales/:id/returns` is `TAKES_BACK`, owner/manager — a return pays money out and puts
+goods on the shelf, so a made-up one walks off with either; "people are desperate"). Everything else — products,
+prices, categories, price lists, places, vendors, opening stock, corrections, settings — was
+already refused by the server; the screens just offered it. Now they hide it: no Add/Edit/Retire
+on products, no *Places & vendors* or *Categories & tiers* tabs, no Adjust/Move on stock, no price
+list on the customer form, and **Settings shows staff only *Your password***. A typed link into a
+hidden tab lands on a page that works, and *Take goods back* is hidden on a sale.
+
 ⚠ **A shop owner with no email still cannot recover their own password.** The sign-up form offers
 an optional email for exactly that: nothing is sent to it today, and the day a provider is
 configured whoever filled it in can self-reset while whoever skipped it needs the CLI. The form

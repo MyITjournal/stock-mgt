@@ -8,7 +8,7 @@ import { PdfButton } from '../components/PdfButton';
 import { PrintButton } from '../components/PrintButton';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
-import { useSeesCost } from '../auth/useAuth';
+import { useIsManager, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ReturnDialog, type ReturnLineInput } from './ReturnDialog';
 
@@ -28,6 +28,8 @@ export function SaleDetailPage() {
   const { id = '' } = useParams();
   const queryClient = useQueryClient();
   const seesCost = useSeesCost();
+  // Returns are owner or manager only (2026-10-07) — money and goods both move.
+  const canTakeBack = useIsManager();
   const [returning, setReturning] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
 
@@ -98,7 +100,9 @@ export function SaleDetailPage() {
             path={`/sales/${sale.id}/invoice.pdf`}
             label="Invoice PDF"
           />
-          <Button onClick={() => setReturning(true)}>Take goods back</Button>
+          {canTakeBack && (
+            <Button onClick={() => setReturning(true)}>Take goods back</Button>
+          )}
         </>
       }
     >

@@ -1,10 +1,13 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useIsManager } from '../auth/useAuth';
+
+const PASSWORD = '/settings/password';
 
 const TABS = [
-  { to: '/settings', label: 'Business', end: true },
-  { to: '/settings/hours', label: 'Opening hours' },
-  { to: '/settings/staff', label: 'Staff' },
-  { to: '/settings/password', label: 'Your password' },
+  { to: '/settings', label: 'Business', end: true, managers: true },
+  { to: '/settings/hours', label: 'Opening hours', managers: true },
+  { to: '/settings/staff', label: 'Staff', managers: true },
+  { to: PASSWORD, label: 'Your password', managers: false },
 ];
 
 /**
@@ -19,15 +22,24 @@ const TABS = [
  * password. On the hosted instance it is also the *only* way anybody changes
  * one, since self-serve reset is off (DECISIONS.md §20).
  *
- * Reading is open to every member — a rep issuing an invoice needs the details
- * that go on it — but writing is owner or manager, and staff writes are owner
- * only. The server enforces all of it (DECISIONS.md §9).
+ * **Staff see only their own password** (owner, 2026-10-07: "the settings
+ * should largely be kept hidden"). The business details, opening hours and the
+ * staff list are an owner's or manager's; anyone else who opens Settings — or
+ * a link into it — lands on *Your password*. Navigation, not security: the
+ * server enforces every write (DECISIONS.md §9).
  */
 export function SettingsLayout() {
+  const isManager = useIsManager();
+  const { pathname } = useLocation();
+  if (!isManager && pathname !== PASSWORD) {
+    return <Navigate to={PASSWORD} replace />;
+  }
+  const tabs = TABS.filter((tab) => isManager || !tab.managers);
+
   return (
     <>
       <nav className="mb-6 flex gap-1 border-b border-slate-200">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}
