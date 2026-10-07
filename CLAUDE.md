@@ -710,6 +710,11 @@ And three from 7.6a, in `web/src/reports/`:
   screen shows collected *and* sold, because on a credit route they diverge — but the difference
   is not shown, both because money is displayed rather than computed and because that subtraction
   would be wrong: collections include payments on invoices from months ago.
+- **"Decisions somebody made" shows one line per item** (2026-10-07, owner). `auditLines` in
+  `reports/auditLines.ts` adds up movements sharing product, place, reason and person — an
+  opening stock entered as cartons plus loose pieces — keeping the latest time and an "N entries
+  added up" note. **Forced movements are never merged**, each keeping its own reason; the
+  *Movements* count still counts every movement. Counts, not money, so the screen may sum them.
 - **Margins are a projection, at the average cost of the stock on hand** (§12, 2026-10-07).
   *Reports → Margins* (`GET /reports/margins`, `SEES_COST`) puts each product's price on a chosen
   list — **one row per product, in the biggest unit the till sells** (owner, 2026-10-07: a 1/2
