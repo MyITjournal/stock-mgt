@@ -79,15 +79,32 @@ export function HomePage() {
           value={<Money value={collections.today} />}
           note="Money actually received"
         />
+        {/*
+          Revenue, with what those goods cost beneath it (2026-10-07, owner:
+          "Revenue (COGS)"). Tax-exclusive, as profit is.
+        */}
         <Stat
-          label="Sold this month"
+          label="Revenue this month"
           value={<Money value={sales.month} />}
-          note={<Change bps={sales.changeBps} />}
+          note={
+            <>
+              <span className="block">
+                Cost of goods sold <Money value={profit.cogs} />
+              </span>
+              <Change bps={sales.changeBps} />
+            </>
+          }
         />
         <Stat
           label="Uncollected this month"
           value={<Money value={collections.uncollectedThisMonth} />}
-          note="Sold but not yet paid for"
+          note={
+            <ShareOfSales
+              bps={collections.uncollectedShareBps}
+              sold={sales.monthGross}
+              tail="not yet paid for"
+            />
+          }
           tone={collections.uncollectedThisMonth > 0 ? 'warn' : undefined}
         />
       </section>
@@ -101,7 +118,18 @@ export function HomePage() {
         <Stat
           label="Paid this month"
           value={<Money value={collections.month} />}
-          note="Received from customers"
+          note={
+            <ShareOfSales
+              bps={collections.paidShareBps}
+              sold={sales.monthGross}
+              tail={
+                collections.paidShareBps !== null &&
+                collections.paidShareBps > 10_000
+                  ? 'older invoices paid too'
+                  : 'received from customers'
+              }
+            />
+          }
         />
         <Stat
           label="Unpaid invoices"
@@ -129,14 +157,15 @@ export function HomePage() {
         <Stat
           label="Gross profit"
           value={<Money value={profit.grossProfit} />}
-          note={`${(profit.marginBps / 100).toFixed(1)}% margin`}
+          note={`${percent(profit.marginBps)} of revenue`}
         />
         <Stat
           label="Operating profit"
           value={<Money value={profit.operatingProfit} />}
           note={
             <>
-              after <Money value={profit.expenses} /> expenses
+              {percent(profit.operatingMarginBps)} of revenue, after{' '}
+              <Money value={profit.expenses} /> expenses
             </>
           }
           tone={profit.operatingProfit < 0 ? 'bad' : undefined}
@@ -367,6 +396,34 @@ function Panel({
       <h2 className="mb-3 text-sm font-semibold text-slate-900">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/** Basis points as a percentage, one decimal: 9350 → "93.5%". */
+function percent(bps: number): string {
+  return `${(bps / 100).toFixed(1)}%`;
+}
+
+/**
+ * "93.5% of ₦1,075,000 sold" — the share the server worked out, against the
+ * month's sales **with VAT**, which is what paid and uncollected add up to
+ * (2026-10-07). Null means nothing was sold, so there is no share to give.
+ */
+function ShareOfSales({
+  bps,
+  sold,
+  tail,
+}: {
+  bps: number | null;
+  sold: number;
+  tail: string;
+}) {
+  if (bps === null) return <>Nothing sold this month yet</>;
+  return (
+    <>
+      <span className="font-medium text-slate-700">{percent(bps)}</span> of{' '}
+      <Money value={sold} /> sold · {tail}
+    </>
   );
 }
 

@@ -1223,6 +1223,11 @@ duplicate is gone from Customers. As a cashier the button is not there.
 **316. Home, as an owner.** The second row reads Paid this month · Unpaid invoices · Unpaid bills ·
 Bills paid this month.
 
+**316a. [gate] Home: the percentages.** *Revenue this month* shows cost of goods sold beneath it.
+*Paid this month* and *Uncollected this month* each say "N% of ₦X sold", with the same ₦X, and
+the two percentages add up to 100%. Gross and operating profit each say "N% of revenue". On a new
+shop with no sales, both say "Nothing sold this month yet", never 0%.
+
 ---
 
 ## AY. Staff sign in with their name; removing a customer

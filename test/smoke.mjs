@@ -1457,6 +1457,21 @@ async function main() {
     'sales and collections are different numbers, which is the point',
     dash.collections.month !== dash.sales.monthGross,
   );
+  eq(
+    'paid is its share of the month’s sales with VAT',
+    dash.collections.paidShareBps,
+    Math.round((dash.collections.month / dash.sales.monthGross) * 10_000),
+  );
+  eq(
+    'and paid and uncollected make exactly 100% between them',
+    dash.collections.paidShareBps + dash.collections.uncollectedShareBps,
+    10_000,
+  );
+  eq(
+    'operating profit carries its share of revenue',
+    dash.profit.operatingMarginBps,
+    Math.round((dash.profit.operatingProfit / dash.profit.revenue) * 10_000),
+  );
 
   eq(
     'receivables agree with the receivables endpoint',
@@ -2440,6 +2455,7 @@ async function main() {
   const theirDash = (await api('GET', '/reports/dashboard', { token: other.token })).data;
   eq('the dashboard shows a new business nothing sold', theirDash.sales.monthGross, 0);
   eq('nothing collected', theirDash.collections.month, 0);
+  eq('and no share of sales to give — null, not 0%', theirDash.collections.paidShareBps, null);
   eq('and no stock to value', theirDash.attention.outOfStockCount, 0);
   eq(
     'and its stock valuation is empty rather than inherited',

@@ -889,6 +889,12 @@ it. *Same as another customer?* on the customer page opens it.
 `PrintButton`), so a reprint needs no second screen. **Home** pairs what moved with what is owed:
 *Paid this month* (customers, `collections.month`) · *Unpaid invoices* · *Unpaid bills* · *Bills
 paid this month* (`purchasing.payables.paidThisMonth`, live supplier payments by `occurredAt`).
+**Paid and uncollected each say their share of the month's sales** (§12, 2026-10-07) —
+`paidShareBps` / `uncollectedShareBps`, against sales **with VAT** (`monthGross`), because that is
+what the two add up to; uncollected is `10000 − paid` so they make exactly 100%; paid may pass 100%
+(older invoices); no sales is null, never 0%. The month's sales tile is **Revenue this month** with
+**cost of goods sold** beneath it, and operating profit shows `operatingMarginBps`. A wider pass
+to standard accounting terms is planned **after the remaining bugs** — not before.
 
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`

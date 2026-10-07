@@ -88,6 +88,22 @@ class CollectionsSummary {
       'Sold this month and not yet collected. Deliberately separate from sales: on a credit route the two diverge, and the gap is the cash position.',
   })
   uncollectedThisMonth!: number;
+
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description:
+      'Collected this month as a share of this month’s sales including VAT, in basis points. Null when nothing was sold; may exceed 10000, because collections include payments for older invoices.',
+  })
+  paidShareBps!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description:
+      'Uncollected as a share of the same figure: exactly 10000 − paidShareBps, so the two never disagree by a rounding. Negative when older invoices were paid this month.',
+  })
+  uncollectedShareBps!: number | null;
 }
 
 class ReceivablesSummary {
@@ -126,6 +142,12 @@ class ProfitSummary {
 
   @ApiProperty()
   marginBps!: number;
+
+  @ApiProperty({
+    description:
+      'Operating profit as a share of revenue, in basis points. Zero when nothing was sold.',
+  })
+  operatingMarginBps!: number;
 
   @ApiProperty({
     description:
