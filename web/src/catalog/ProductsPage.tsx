@@ -20,7 +20,6 @@ import { costIn, shelfPrice, type PerUnit } from '../lib/shelfPrice';
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
 type StockLevelRow = components['schemas']['StockLevelRow'];
-type PriceTierView = components['schemas']['PriceTierView'];
 
 /**
  * What the business sells.
@@ -57,11 +56,6 @@ export function ProductsPage() {
     queryFn: () => api.get<CategoryView[]>('/categories'),
   });
 
-  const { data: tiers = [] } = useQuery({
-    queryKey: ['price-tiers'],
-    queryFn: () => api.get<PriceTierView[]>('/price-tiers'),
-  });
-  const defaultTierId = tiers.find((tier) => tier.isDefault)?.id;
   const { sort, toggle } = useSort();
 
   // One request for the whole shop, summed per product across locations —
@@ -85,9 +79,8 @@ export function ProductsPage() {
     name: (product) => `${product.name} ${product.size ?? ''}`,
     onHand: (product) =>
       product.trackStock ? (onHand.get(product.id) ?? 0) : null,
-    price: (product) => shelfPrice(product, defaultTierId)?.amount,
-    cost: (product) =>
-      costIn(product, shelfPrice(product, defaultTierId)?.unitId)?.amount,
+    price: (product) => shelfPrice(product)?.amount,
+    cost: (product) => costIn(product)?.amount,
   };
   const shown = sort
     ? sortRows(products, sortValue[sort.key], sort.direction)
@@ -237,22 +230,13 @@ export function ProductsPage() {
                   />
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <PerUnitAmount
-                    value={shelfPrice(product, defaultTierId)}
-                    none="no price"
-                  />
+                  <PerUnitAmount value={shelfPrice(product)} none="no price" />
                 </td>
                 {seesCost && (
                   <td className="px-4 py-3 text-right">
                     {/* The last delivery's cost of one of the unit the price
                         is in — a carton beside a carton. */}
-                    <PerUnitAmount
-                      value={costIn(
-                        product,
-                        shelfPrice(product, defaultTierId)?.unitId,
-                      )}
-                      none="none yet"
-                    />
+                    <PerUnitAmount value={costIn(product)} none="none yet" />
                   </td>
                 )}
                 <td className="px-4 py-3 text-right">

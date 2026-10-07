@@ -2564,6 +2564,14 @@ export interface components {
              */
             cost: number;
         };
+        ProductTillUnitView: {
+            /** Format: uuid */
+            unitId: string;
+            /** @example carton */
+            unitName: string;
+            /** @description What the till would charge for one on the default price list. Null: no price, and the till refuses it. */
+            price: number | null;
+        };
         ProductUnitView: {
             /** Format: uuid */
             id: string;
@@ -2658,6 +2666,8 @@ export interface components {
             costPrice?: number | null;
             /** @description What one of each unit cost on the last delivery — a carton as a carton — from the lot’s exact total, rounded once (§2). Empty before any delivery. **Absent** for a role that may not see cost. */
             unitCosts?: components["schemas"]["ProductUnitCostView"][];
+            /** @description The unit the till picks first — the default selling unit, else the smallest sold — and its price on the default list, worked out exactly as the till does. Null when nothing is sold at the till. */
+            tillUnit: components["schemas"]["ProductTillUnitView"] | null;
             /**
              * @description VAT rate in basis points.
              * @example 750

@@ -55,12 +55,6 @@ export function ProductDetailPage() {
     queryFn: () => api.get<ProductView>(`/products/${id}`),
   });
 
-  const { data: tiers = [] } = useQuery({
-    queryKey: ['price-tiers'],
-    queryFn: () =>
-      api.get<components['schemas']['PriceTierView'][]>('/price-tiers'),
-  });
-
   const { data: levels = [] } = useQuery({
     queryKey: ['stock-levels', `productId=${id}`],
     queryFn: () =>
@@ -101,8 +95,8 @@ export function ProductDetailPage() {
 
   const onHand = levels.reduce((sum, row) => sum + row.quantity, 0);
   const baseUnit = product.units.find((unit) => unit.factor === 1);
-  const price = shelfPrice(product, tiers.find((tier) => tier.isDefault)?.id);
-  const cost = costIn(product, price?.unitId);
+  const price = shelfPrice(product);
+  const cost = costIn(product);
   const movements = ledger?.movements ?? [];
 
   const movementColumns: readonly Column<SyncedMovementView>[] = [
@@ -183,7 +177,7 @@ export function ProductDetailPage() {
             )
           }
           note={
-            price ? `per ${price.unitName}, default price list` : 'No price set'
+            price ? `per ${price.unitName}, as the till sells it` : 'No price set'
           }
         />
         {seesCost && (

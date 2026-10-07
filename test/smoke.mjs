@@ -3059,7 +3059,14 @@ async function main() {
     soapAsOwner.unitCosts?.find((u) => u.unitId === soapCarton.id)?.cost,
     8_308,
   );
+  // The unit the till picks first, priced as the till prices it — for everybody.
+  eq(
+    'a product names the unit the till picks first, at the till’s price',
+    `${soapAsOwner.tillUnit?.unitName} ${soapAsOwner.tillUnit?.price}`,
+    'piece 1000',
+  );
   const soapAsCashier = (await api('GET', `/products/${soap.id}`, { token: bolaToken })).data;
+  eq('a cashier sees the same price', soapAsCashier.tillUnit?.price, 1_000);
   check('and a cashier is not sent it at all', !('unitCosts' in soapAsCashier) && !('costPrice' in soapAsCashier));
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.

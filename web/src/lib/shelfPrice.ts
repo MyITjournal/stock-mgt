@@ -10,58 +10,37 @@ export interface PerUnit {
 }
 
 /**
- * The price a customer is told: the default selling unit's price on the
- * default price list — "₦12,500 / carton". Only when that unit has none does
- * the base price show, per counted-in unit; it is never multiplied up here,
- * because the browser never works out a price (§17). Null: no price at all.
+ * The price of the unit **the till picks first**, as the till would charge it
+ * on the default price list — "₦12,500 / carton" (2026-10-07, owner: "use the
+ * till picks first unit for both the cost and sales price").
  *
- * "Base price" used to be the column, and a catalog priced by its units —
- * which an import makes — showed a dash on every row (2026-10-07).
+ * The server works out both the unit and the price (`tillUnit`), with the very
+ * rule and pricing the till uses, so the products list can never name a
+ * different unit or price from the one a cashier is handed. Nothing is chosen
+ * or multiplied here. Null: the till sells no unit of it, or has no price.
  */
-export function shelfPrice(
-  product: ProductView,
-  defaultTierId: string | undefined,
-): PerUnit | null {
-  const unit =
-    product.units.find((row) => row.isDefaultSelling) ??
-    product.units.find((row) => row.isSellable);
-  const listed =
-    unit && defaultTierId
-      ? product.prices.find(
-          (row) => row.tierId === defaultTierId && row.unitId === unit.id,
-        )
-      : undefined;
-  if (unit && listed) {
-    return { unitId: unit.id, unitName: unit.name, amount: listed.price };
-  }
-  const base = product.units.find((row) => row.isBase);
-  return product.basePrice !== null && base
-    ? { unitId: base.id, unitName: base.name, amount: product.basePrice }
+export function shelfPrice(product: ProductView): PerUnit | null {
+  const till = product.tillUnit;
+  return till && till.price !== null
+    ? { unitId: till.unitId, unitName: till.unitName, amount: till.price }
     : null;
 }
 
 /**
- * What one of a unit cost on the last delivery, **in the same unit the price
- * is shown in** — a carton beside a carton (2026-10-07, owner: a wholesaler
- * does not think in pieces). The server works it out from the lot's exact
- * total (`unitCosts`); nothing is multiplied here.
+ * What one of the till's first unit cost on the last delivery — a carton
+ * beside a carton. From `unitCosts`, which the server works out from the lot's
+ * exact total; nothing is multiplied here.
  *
  * `undefined` when the role may not see cost (the key was removed), `null`
- * when nothing has been delivered yet.
+ * when nothing has been delivered yet or the till sells no unit of it.
  */
-export function costIn(
-  product: ProductView,
-  unitId: string | undefined,
-): PerUnit | null | undefined {
+export function costIn(product: ProductView): PerUnit | null | undefined {
   if (product.unitCosts === undefined) return undefined;
-  const unit =
-    product.units.find((row) => row.id === unitId) ??
-    product.units.find((row) => row.isDefaultSelling) ??
-    product.units.find((row) => row.isBase);
-  const cost = unit
-    ? product.unitCosts.find((row) => row.unitId === unit.id)
+  const till = product.tillUnit;
+  const cost = till
+    ? product.unitCosts.find((row) => row.unitId === till.unitId)
     : undefined;
-  return unit && cost
-    ? { unitId: unit.id, unitName: unit.name, amount: cost.cost }
+  return till && cost
+    ? { unitId: till.unitId, unitName: till.unitName, amount: cost.cost }
     : null;
 }

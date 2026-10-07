@@ -553,14 +553,17 @@ working, since `start:prod` needs a build first and will not pick up changes.
   also gained a search box), Margins and the report tables (`DataTable` columns opt in with
   `sortValue`); Stock on hand is cards, so it has a *Sort by* box. **Never on a paged feed** —
   sorting one page misleads — and an oldest-first switch for those is not built: `order=asc` is
-  the sync mode, which ignores `until` and holds back the last second. The products list's
-  **Price** is the default selling unit on the default list ("₦12,500 / carton"), falling back
-  to the base price per counted-in unit, never multiplied in the browser. **Cost sits in the same
-  unit** (2026-10-07, owner: a wholesaler reads cartons): `ProductView.unitCosts`, each unit's cost
-  on the last delivery from the lot's exact total (`totalCost × factor ÷ quantityReceived`, rounded
-  once) — never `costPrice × factor`, which multiplies a rounded snapshot. A cost field like any
-  other: in `PRODUCT_COST_FIELDS`, computed only for `SEES_COST`. `lib/shelfPrice.ts` picks the
-  unit for the list and the product page alike.
+  the sync mode, which ignores `until` and holds back the last second.
+- **A product's price and cost are for the unit the till picks first** (2026-10-07, owner).
+  `ProductView.tillUnit` is that unit — `tillFirstUnit` in `catalog/selling-units.ts`, the same
+  rule the till's search uses: the default selling unit, else the smallest sold — with the price
+  `resolveUnitPrice` gives it on the default list (read off the product's own price rows, no extra
+  query). The products list and product page show it ("₦12,500 / carton") and **cost in that same
+  unit** from `ProductView.unitCosts`: each unit's cost on the last delivery, from the lot's exact
+  total (`totalCost × factor ÷ quantityReceived`, rounded once) — never `costPrice × factor`,
+  which multiplies a rounded snapshot. `unitCosts` is a cost field (`PRODUCT_COST_FIELDS`,
+  computed only for `SEES_COST`); `tillUnit` is not. The browser chooses no unit and multiplies
+  nothing (`lib/shelfPrice.ts`).
 - **Money is displayed, never computed.** The one exception is the till's running total, which is
   exact only because prices are tax-inclusive — see `lib/money.ts`.
 - **Role checks in the UI are navigation, not security.** The server enforces every one of them.

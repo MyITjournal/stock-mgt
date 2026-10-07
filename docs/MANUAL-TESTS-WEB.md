@@ -1115,3 +1115,7 @@ History lists (sales, payments, deliveries, movements) do not offer sorting.
 **293. [gate] Stock → Products on a shop that sells by the carton.** Cost is in the same unit as
 Price — "₦12,500 / carton" beside "₦9,664 / carton" — not per piece. Open the product: *Price* and
 *Last cost* name the same unit. A product never delivered reads **none yet**.
+
+**294. [gate] Pick a product at the till and note the unit it lands on.** Its row on Stock → Products
+shows Price and Cost in that same unit, at the price the till charged. A product whose till unit
+has no price reads **no price** — the till refuses it too.

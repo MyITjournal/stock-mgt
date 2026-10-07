@@ -3,6 +3,7 @@ import { BusinessType } from '@prisma/client';
 import {
   chooseDefaultSellingUnit,
   defaultIsSellable,
+  tillFirstUnit,
   type SettledUnit,
 } from './selling-units';
 
@@ -111,5 +112,38 @@ describe('chooseDefaultSellingUnit', () => {
       { name: 'carton', factor: 12 },
     ]);
     expect(chooseDefaultSellingUnit(units, undefined, retail)).toBe('id-piece');
+  });
+});
+
+describe('tillFirstUnit', () => {
+  const unit = (name: string, factor: number, extra = {}) => ({
+    name,
+    factor,
+    isSellable: true,
+    isDefaultSelling: false,
+    ...extra,
+  });
+
+  it('is the default selling unit when there is one', () => {
+    expect(
+      tillFirstUnit([
+        unit('piece', 1),
+        unit('carton', 24, { isDefaultSelling: true }),
+      ])?.name,
+    ).toBe('carton');
+  });
+
+  it('is otherwise the smallest unit sold, whatever order they come in', () => {
+    expect(
+      tillFirstUnit([
+        unit('carton', 24),
+        unit('piece', 1, { isSellable: false }),
+        unit('pack', 6),
+      ])?.name,
+    ).toBe('pack');
+  });
+
+  it('is nothing when the till sells none', () => {
+    expect(tillFirstUnit([unit('piece', 1, { isSellable: false })])).toBeNull();
   });
 });
