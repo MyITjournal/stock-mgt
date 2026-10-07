@@ -1468,6 +1468,18 @@ async function main() {
     10_000,
   );
   eq(
+    'cost of goods sold and gross margin make 100% of revenue',
+    dash.profit.cogsShareBps + dash.profit.marginBps,
+    10_000,
+  );
+  const monthStock = (await api('GET', '/reports/stock-summary?period=month', { token: t })).data;
+  eq('goods available for sale agrees with the stock report', dash.stock?.available, monthStock.availableValue);
+  check(
+    'and is opening + delivered, to the kobo of rounding',
+    Math.abs(dash.stock.opening + dash.stock.delivered - dash.stock.available) <= 1,
+    JSON.stringify(dash.stock),
+  );
+  eq(
     'operating profit carries its share of revenue',
     dash.profit.operatingMarginBps,
     Math.round((dash.profit.operatingProfit / dash.profit.revenue) * 10_000),
@@ -3420,6 +3432,16 @@ async function main() {
     expect: 403,
   });
   check('a cashier cannot take goods back — money and stock both move (403)', true);
+
+  step(56, 'Staff are signed in on one device at a time');
+  const firstDevice = (await signInAsBola([200, 201])).data;
+  const firstRefresh = firstDevice.refreshToken ?? firstDevice.tokens?.refreshToken;
+  const secondDevice = (await signInAsBola([200, 201])).data;
+  const secondRefresh = secondDevice.refreshToken ?? secondDevice.tokens?.refreshToken;
+  await api('POST', '/auth/refresh', { body: { refreshToken: firstRefresh }, expect: 401 });
+  check('signing in again ends the session on the first device (401 on renewal)', true);
+  await api('POST', '/auth/refresh', { body: { refreshToken: secondRefresh } });
+  check('and the newest one carries on', true);
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

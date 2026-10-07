@@ -79,21 +79,11 @@ export function HomePage() {
           value={<Money value={collections.today} />}
           note="Money actually received"
         />
-        {/*
-          Revenue, with what those goods cost beneath it (2026-10-07, owner:
-          "Revenue (COGS)"). Tax-exclusive, as profit is.
-        */}
+        {/* Tax-exclusive, as profit is. Cost of goods sold has its own tile. */}
         <Stat
           label="Revenue this month"
           value={<Money value={sales.month} />}
-          note={
-            <>
-              <span className="block">
-                Cost of goods sold <Money value={profit.cogs} />
-              </span>
-              <Change bps={sales.changeBps} />
-            </>
-          }
+          note={<Change bps={sales.changeBps} />}
         />
         <Stat
           label="Uncollected this month"
@@ -153,7 +143,16 @@ export function HomePage() {
         />
       </section>
 
+      {/*
+        Revenue − cost of goods sold = gross profit, read left to right, then
+        what the month's stock came to (2026-10-07, owner).
+      */}
       <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Cost of goods sold"
+          value={<Money value={profit.cogs} />}
+          note={`${percent(profit.cogsShareBps)} of revenue`}
+        />
         <Stat
           label="Gross profit"
           value={<Money value={profit.grossProfit} />}
@@ -170,6 +169,23 @@ export function HomePage() {
           }
           tone={profit.operatingProfit < 0 ? 'bad' : undefined}
         />
+        {/*
+          Goods available for sale: all the stock the shop handled this month,
+          at cost — what it started with plus what came in. Not what is left;
+          that is the inventory valuation on Reports → Stock.
+        */}
+        {data.stock && (
+          <Stat
+            label="Goods available for sale"
+            value={<Money value={data.stock.available} />}
+            note={
+              <>
+                Opening <Money value={data.stock.opening} /> + delivered{' '}
+                <Money value={data.stock.delivered} />
+              </>
+            }
+          />
+        )}
       </section>
 
       {profit.estimatedLines > 0 && (

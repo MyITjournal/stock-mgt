@@ -145,6 +145,12 @@ class ProfitSummary {
 
   @ApiProperty({
     description:
+      'Cost of goods sold as a share of revenue, in basis points — exactly 10000 − marginBps. Zero when nothing was sold.',
+  })
+  cogsShareBps!: number;
+
+  @ApiProperty({
+    description:
       'Operating profit as a share of revenue, in basis points. Zero when nothing was sold.',
   })
   operatingMarginBps!: number;
@@ -483,6 +489,24 @@ class TrendSummary {
   days!: TrendDay[];
 }
 
+/** What stock the shop handled this month, at cost (2026-10-07). */
+class StockHandledSummary {
+  @ApiProperty({
+    description:
+      'Stock at the start of the month, and opening stock entered in it, at cost.',
+  })
+  opening!: number;
+
+  @ApiProperty({ description: 'Delivered this month, at invoice value.' })
+  delivered!: number;
+
+  @ApiProperty({
+    description:
+      'Goods available for sale: opening + delivered, summed exactly and rounded once.',
+  })
+  available!: number;
+}
+
 export class DashboardView {
   @ApiProperty({ type: String, format: 'date-time' })
   generatedAt!: Date;
@@ -516,4 +540,11 @@ export class DashboardView {
 
   @ApiProperty({ type: () => TrendSummary })
   trend!: TrendSummary;
+
+  @ApiPropertyOptional({
+    type: () => StockHandledSummary,
+    description:
+      'The month’s goods available for sale, at cost. Absent for a role that may not see cost — which this endpoint already refuses.',
+  })
+  stock?: StockHandledSummary;
 }

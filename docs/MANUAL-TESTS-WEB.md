@@ -1223,8 +1223,10 @@ duplicate is gone from Customers. As a cashier the button is not there.
 **316. Home, as an owner.** The second row reads Paid this month · Unpaid invoices · Unpaid bills ·
 Bills paid this month.
 
-**316a. [gate] Home: the percentages.** *Revenue this month* shows cost of goods sold beneath it.
-*Paid this month* and *Uncollected this month* each say "N% of ₦X sold", with the same ₦X, and
+**316a. [gate] Home: the percentages.** *Revenue this month* stands alone; the next row reads Cost
+of goods sold · Gross profit · Operating profit · Goods available for sale. Cost of goods sold and
+gross profit's percentages add up to 100%. Goods available for sale says "Opening ₦X + delivered
+₦Y". Reports → Stock is headed **Inventory valuation**. *Paid this month* and *Uncollected this month* each say "N% of ₦X sold", with the same ₦X, and
 the two percentages add up to 100%. Gross and operating profit each say "N% of revenue". On a new
 shop with no sales, both say "Nothing sold this month yet", never 0%.
 
@@ -1267,3 +1269,7 @@ lands on *Your password*.
 
 **325. [gate] Sales → History → open a sale.** Print and the PDF are there; *Take goods back* is
 not. As the owner it is.
+
+**326. [gate] Sign in as a cashier on one browser, then as the same cashier on another** (a phone,
+or a private window). Within 15 minutes the first is back at the sign-in screen. Do the same as
+the owner: both stay signed in.

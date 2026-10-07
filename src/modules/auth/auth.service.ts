@@ -23,7 +23,12 @@ import { defaultPackagingTypeRows } from '../catalog/packaging-type.service';
 import { defaultLocationRow } from '../inventory/location.service';
 import { defaultExpenseCategoryRows } from '../expenses/expense-category.service';
 import { assertMailAvailable, assertSelfServeSignup } from './self-serve';
-import { TokenContext, TokenPair, TokenService } from './token.service';
+import {
+  signsInOnOneDevice,
+  TokenContext,
+  TokenPair,
+  TokenService,
+} from './token.service';
 import {
   HOURS_INCLUDE,
   WorkingHoursService,
@@ -536,6 +541,9 @@ export class AuthService {
     }
 
     this.hours.assertWithinHours(membership);
+    if (signsInOnOneDevice(membership.role)) {
+      await this.tokens.revokeAllForUser(membership.userId);
+    }
 
     return this.tokens.issuePair(
       {
@@ -748,6 +756,10 @@ export class AuthService {
     // minute to seven must not be cut off mid-transaction, and a rule that
     // interrupts work is a rule people find ways around.
     this.hours.assertWithinHours(active);
+    // Staff: this sign-in ends any other (see `signsInOnOneDevice`).
+    if (signsInOnOneDevice(active.role)) {
+      await this.tokens.revokeAllForUser(active.userId);
+    }
 
     return this.tokens.issuePair(
       {
