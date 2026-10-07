@@ -1,4 +1,5 @@
 import {
+  correctedOpeningTotal,
   costPriceAfterOpening,
   planOpeningStock,
   type OpeningProduct,
@@ -59,6 +60,44 @@ describe('planOpeningStock', () => {
       new Set(),
     );
     expect(plan.lines.map((line) => line.quantity)).toEqual([2240, 30]);
+  });
+
+  it('takes a decimal in the chosen unit as one line, when it is whole rolls', () => {
+    // 14.25 cartons of 160 sachets is 2,280 sachets — one line, not two.
+    const plan = planOpeningStock(
+      [
+        {
+          productId: 'peak',
+          unitId: 'carton',
+          quantity: 14.25,
+          unitCost: 1_400_000,
+        },
+      ],
+      catalog,
+      new Set(),
+    );
+    expect(plan.lines).toEqual([
+      { productId: 'peak', quantity: 2_280, totalCost: 19_950_000 },
+    ]);
+  });
+
+  it('rounds the total once when a decimal does not divide the cost evenly', () => {
+    const plan = planOpeningStock(
+      [{ productId: 'peak', unitId: 'roll', quantity: 2.5, unitCost: 90_001 }],
+      catalog,
+      new Set(),
+    );
+    expect(plan.lines[0]).toMatchObject({ quantity: 25, totalCost: 225_003 });
+  });
+
+  it('refuses a decimal that is not a whole number of the counted-in unit', () => {
+    const plan = planOpeningStock(
+      [{ productId: 'peak', unitId: 'roll', quantity: 2.25, unitCost: 90_000 }],
+      catalog,
+      new Set(),
+    );
+    expect(plan.lines).toEqual([]);
+    expect(plan.problems[0]).toMatch(/2\.25 roll is not a whole number/);
   });
 
   it('keeps the expiry when one is given', () => {
@@ -136,5 +175,38 @@ describe('costPriceAfterOpening', () => {
       { productId: 'peak', quantity: 30, totalCost: 270_000 },
     ]);
     expect(prices.get('peak')).toBe(Math.round(19_870_000 / 2270));
+  });
+});
+
+describe('correctedOpeningTotal', () => {
+  it('values the lot at the cost of one of the chosen unit, rounded once', () => {
+    // The owner's case: 3 pieces, entered at a pack's cost; really ₦12,433.36
+    // per 1/2 pack of 3.
+    expect(
+      correctedOpeningTotal({
+        quantityReceived: 3,
+        unitFactor: 3,
+        unitCost: 1_243_336,
+      }),
+    ).toBe(1_243_336);
+    // The same lot priced per piece.
+    expect(
+      correctedOpeningTotal({
+        quantityReceived: 3,
+        unitFactor: 1,
+        unitCost: 414_445,
+      }),
+    ).toBe(1_243_335);
+  });
+
+  it('takes a unit bigger than the lot, rounding the total once', () => {
+    // 25 sachets at ₦1,000.01 a roll of 10 is ₦2,500.025 → ₦2,500.03.
+    expect(
+      correctedOpeningTotal({
+        quantityReceived: 25,
+        unitFactor: 10,
+        unitCost: 100_001,
+      }),
+    ).toBe(250_003);
   });
 });

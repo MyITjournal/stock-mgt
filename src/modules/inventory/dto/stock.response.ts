@@ -69,6 +69,12 @@ class StockLevelBatch {
       'The exact invoice total divided by what arrived — output, never input. **Absent entirely** for a role that may not see cost: this is a buying price. Null only when the lot recorded no quantity to divide by.',
   })
   unitCost?: number | null;
+
+  @ApiProperty({
+    description:
+      'True for an opening-stock lot, whose cost an owner or manager may correct (POST /stock/opening/lots/:batchId/cost). A delivery is corrected through its receipt instead.',
+  })
+  isOpening!: boolean;
 }
 
 /**

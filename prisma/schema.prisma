@@ -845,6 +845,7 @@ model Organization {
   vendorMoneyTargets          VendorMoneyTarget[]
   goodsReceiptCorrections     GoodsReceiptCorrection[]
   goodsReceiptCorrectionLines GoodsReceiptCorrectionLine[]
+  lotCostCorrections          LotCostCorrection[]
 
   @@map("organizations")
 }
@@ -960,6 +961,7 @@ model User {
   voidedPayments         Payment[]                @relation("PaymentVoidedBy")
   supplierBills          SupplierBill[]           @relation("SupplierBillRecordedBy")
   receiptCorrections     GoodsReceiptCorrection[] @relation("GoodsReceiptCorrectionRecordedBy")
+  lotCostCorrections     LotCostCorrection[]      @relation("LotCostCorrectionRecordedBy")
   supplierPayments       SupplierPayment[]        @relation("SupplierPaymentRecordedBy")
   voidedSupplierPayments SupplierPayment[]        @relation("SupplierPaymentVoidedBy")
   stocktakesStarted      Stocktake[]              @relation("StocktakeStartedBy")
@@ -1109,12 +1111,13 @@ model StockBatch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
-  supplier     Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  movements    StockMovement[]
-  balances     StockBalance[]
-  receiptLine  GoodsReceiptLine?
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product         Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplier        Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  movements       StockMovement[]
+  balances        StockBalance[]
+  receiptLine     GoodsReceiptLine?
+  costCorrections LotCostCorrection[]
 
   @@index([organizationId])
   @@index([productId])
@@ -1777,4 +1780,38 @@ model GoodsReceiptCorrectionLine {
   @@index([correctionId])
   @@index([receiptLineId])
   @@map("goods_receipt_correction_lines")
+}
+
+/// A correction to what an **opening stock** lot is worth (2026-10-07).
+///
+/// The owner entered three pieces of opening stock at a pack's cost, and the
+/// average cost of everything on the shelf came out a fifth too high. Only the
+/// lot's value changes — its quantity and its movements stay, because the
+/// ledger is append-only and a wrong count is what a stocktake is for. Sales
+/// already made keep the cost they recorded. Deliveries are corrected through
+/// their own receipt (`GoodsReceiptCorrection`); this is for lots with none.
+///
+/// Kept so the stock value can always say what it used to be, who changed it,
+/// and why.
+model LotCostCorrection {
+  id             String @id @default(uuid())
+  organizationId String
+  batchId        String
+
+  /// The lot's exact total before and after, in minor units.
+  totalCostBefore Int
+  totalCostAfter  Int
+
+  reason String
+
+  recordedByUserId String?
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  recordedBy   User?        @relation("LotCostCorrectionRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([batchId])
+  @@map("lot_cost_corrections")
 }

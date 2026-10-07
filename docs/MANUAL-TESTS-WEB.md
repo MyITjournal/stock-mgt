@@ -1119,3 +1119,29 @@ Price — "₦12,500 / carton" beside "₦9,664 / carton" — not per piece. Ope
 **294. [gate] Pick a product at the till and note the unit it lands on.** Its row on Stock → Products
 shows Price and Cost in that same unit, at the price the till charged. A product whose till unit
 has no price reads **no price** — the till refuses it too.
+
+---
+
+## AS. Margins in one row, and opening stock in one line
+
+**295. [gate] Reports → Margins.** One row per product, in its biggest unit sold (the carton) —
+not a row each for 1/2 pack, pack and carton.
+
+**296. [gate] Stock on hand → Opening stock.** Type **6.25** against carton for a product with 12
+in a carton: accepted, one line. Type **6.1**: the line says it is not a whole number of pieces
+and Save stays off. The cost box says **per carton** beside it, all the time.
+
+**297. Type a cost, then change that line's unit.** The cost empties and asks again.
+
+---
+
+## AT. Correcting an opening lot's cost
+
+**298. [gate] Stock on hand → expand a product with opening stock, as an owner.** The *Opening*
+lot has **Correct cost**; a delivered lot does not. A cashier sees no such link.
+
+**299. [gate] Correct cost: pick 1/2 pack, type 12,433.36.** The blue line shows what the lot was
+worth and what it will be. Save stays off until there is a reason. Save: *Cost each* on the lot
+changes, the quantity does not, and Reports → Margins moves to match.
+
+**300. Change the unit after typing a cost.** The cost empties and asks again.

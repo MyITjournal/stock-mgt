@@ -888,6 +888,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/stock/opening/lots/{batchId}/cost/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * What an opening lot would be worth at a corrected cost
+         * @description Nothing is written. The cost is for one of the chosen unit; the lot keeps its quantity.
+         */
+        post: operations["StockController_previewLotCost"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stock/opening/lots/{batchId}/cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct what an opening stock lot cost
+         * @description Only the value changes: the quantity and movements stay, sales already made keep their cost, and the correction is kept with its reason. A 409 for a lot that came on a delivery (correct the delivery) or is not opening stock.
+         */
+        post: operations["StockController_correctLotCost"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/stock/levels": {
         parameters: {
             query?: never;
@@ -3654,7 +3694,10 @@ export interface components {
              * @description Which of the product’s units the quantity is counted in.
              */
             unitId: string;
-            /** @example 14 */
+            /**
+             * @description How many, in the chosen unit. Up to three decimal places, and it must come to whole counted-in units.
+             * @example 6.25
+             */
             quantity: number;
             /**
              * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
@@ -3683,6 +3726,48 @@ export interface components {
             /** @description What it is all worth, in kobo — the sum of every line’s total. */
             totalValue: number;
         };
+        LotCostPreviewDto: {
+            /**
+             * Format: uuid
+             * @description Which of the product’s units `unitCost` is for.
+             */
+            unitId: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 1243336
+             */
+            unitCost: number;
+        };
+        LotCostCorrectionView: {
+            /** Format: uuid */
+            batchId: string;
+            /** @example Rich Nourishing Lotion */
+            productName: string;
+            /** @description What the lot brought in, in counted-in units. */
+            quantity: number;
+            /** @example piece */
+            baseUnitName: string;
+            /** @description The lot’s total before, in minor units. */
+            totalCostBefore: number;
+            /** @description The lot’s total after, rounded once. */
+            totalCostAfter: number;
+            /** @description False for a preview: nothing was written. */
+            saved: boolean;
+        };
+        CorrectLotCostDto: {
+            /**
+             * Format: uuid
+             * @description Which of the product’s units `unitCost` is for.
+             */
+            unitId: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 1243336
+             */
+            unitCost: number;
+            /** @example Entered at a pack’s cost; it was half a pack. */
+            reason: string;
+        };
         StockProductRef: {
             /** Format: uuid */
             id: string;
@@ -3708,6 +3793,8 @@ export interface components {
             expiryDate: string | null;
             /** @description The exact invoice total divided by what arrived — output, never input. **Absent entirely** for a role that may not see cost: this is a buying price. Null only when the lot recorded no quantity to divide by. */
             unitCost?: number | null;
+            /** @description True for an opening-stock lot, whose cost an owner or manager may correct (POST /stock/opening/lots/:batchId/cost). A delivery is corrected through its receipt instead. */
+            isOpening: boolean;
         };
         StockLevelRow: {
             product: components["schemas"]["StockProductRef"];
@@ -5654,7 +5741,7 @@ export interface components {
             tier: components["schemas"]["MarginTier"] | null;
             /** @description Whether margins were measured without VAT. Off, the whole price is the shop’s. */
             chargesVat: boolean;
-            /** @description One per product and selling unit: thinnest margin first, then rows with no cost, then rows with no price. */
+            /** @description One per product, in the biggest unit the till sells: thinnest margin first, then rows with no cost, then rows with no price. */
             rows: components["schemas"]["MarginRow"][];
         };
         PeriodView: {
@@ -8144,6 +8231,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpeningStockResultView"];
+                };
+            };
+        };
+    };
+    StockController_previewLotCost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LotCostPreviewDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LotCostCorrectionView"];
+                };
+            };
+        };
+    };
+    StockController_correctLotCost: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original result rather than correcting twice. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                batchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectLotCostDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LotCostCorrectionView"];
                 };
             };
         };

@@ -32,6 +32,7 @@ export interface OpeningProduct {
 export interface OpeningLineInput {
   productId: string;
   unitId: string;
+  /** In `unitId`; may be a decimal that comes to whole base units. */
   quantity: number;
   unitCost: number;
   expiryDate?: string;
@@ -41,7 +42,12 @@ export interface PlannedOpeningLine {
   productId: string;
   /** In base units. */
   quantity: number;
-  /** Exact: the unit cost times the quantity, both whole numbers. */
+  /**
+   * The unit cost times the quantity, **rounded once**, here: exact whenever
+   * the quantity is whole, and within half a kobo of the true total when it is
+   * a decimal like 6.25 — the lot keeps this total and nothing is rounded again
+   * (§2).
+   */
   totalCost: number;
   expiryDate?: Date;
 }
@@ -81,7 +87,18 @@ export function planOpeningStock(
       continue;
     }
 
-    const totalCost = input.unitCost * input.quantity;
+    // A decimal in the chosen unit must land on whole counted-in units:
+    // 6.25 cartons of 12 is 75 pieces, 6.1 is not a number of pieces at all.
+    const exactBase = input.quantity * unit.factor;
+    const baseQuantity = Math.round(exactBase);
+    if (baseQuantity < 1 || Math.abs(exactBase - baseQuantity) > 1e-6) {
+      problems.push(
+        `${product.name}: ${input.quantity} ${unit.name} is not a whole number of the units it is counted in. Use a smaller unit, or a quantity that divides evenly.`,
+      );
+      continue;
+    }
+
+    const totalCost = Math.round(input.unitCost * input.quantity);
     if (!Number.isSafeInteger(totalCost) || totalCost > MAX_MINOR_UNITS) {
       problems.push(`${product.name}: that cost is too large to record.`);
       continue;
@@ -89,7 +106,7 @@ export function planOpeningStock(
 
     lines.push({
       productId: product.id,
-      quantity: input.quantity * unit.factor,
+      quantity: baseQuantity,
       totalCost,
       ...(input.expiryDate && { expiryDate: new Date(input.expiryDate) }),
     });
@@ -122,5 +139,21 @@ export function costPriceAfterOpening(
       productId,
       Math.round(cost / quantity),
     ]),
+  );
+}
+
+/**
+ * What an opening lot is worth once its cost is put right (2026-10-07): the
+ * cost of one of the chosen unit, times how many of that unit the lot held —
+ * `unitCost × quantityReceived ÷ factor` — **rounded once**, here, like any
+ * lot total (§2). 3 pieces at ₦12,433.36 per 1/2 pack of 3 is ₦12,433.36.
+ */
+export function correctedOpeningTotal(input: {
+  quantityReceived: number;
+  unitFactor: number;
+  unitCost: number;
+}): number {
+  return Math.round(
+    (input.unitCost * input.quantityReceived) / input.unitFactor,
   );
 }
