@@ -1486,6 +1486,42 @@ rather than attached to a second business. Quietly adding somebody to an organiz
 consent problem and a way to test whether an address exists. Doing it properly needs an invite the
 person accepts, which needs email, which is what this whole decision works around.
 
+### What staff may touch (2026-10-07)
+
+The owner, after adding their first staff member: "the stock and settings give the staff too much
+control." The rule now is that **staff sell, take deliveries and count; anything that changes what
+goods are worth or what the shop is belongs to an owner or manager.** Staff here means `sales_rep`
+and `storekeeper`; the accountant is unchanged.
+
+| Act | Staff | Why |
+|---|---|---|
+| Ring up a sale, take a payment | yes | the counter's job |
+| Record a delivery | yes | goods arrive whoever is on shift |
+| Count stock | yes | counting changes nothing until posted |
+| See products, prices and stock | yes | they sell from them |
+| **Adjust (write off) or move stock** | **no — was yes** | a decision, and the easiest way to hide a loss |
+| **Take goods back** | **no — was yes** | a return pays money out and restocks; a made-up one takes either |
+| Add, edit or retire a product; prices; categories; price lists | no | already owner/manager on the server |
+| Places, vendors, opening stock, correcting a delivery or a lot's cost | no | already owner/manager |
+| Business details, opening hours, staff | no | their own password only |
+
+**The server changes were the two bold rows**: `POST /stock/adjustments` and
+`POST /stock/transfers` moved from `STOCK_RECORDERS` to `INVENTORY_EDITORS` (goods receipts
+stayed), and `POST /sales/:id/returns` from `SELLERS` to `TAKES_BACK` (owner, manager).
+Everything else was already refused with a 403 — **the gap was the screens**, which offered Edit,
+Retire, Add product, the set-up tabs, a price list on the customer form and three settings pages to
+people the server would then turn away. Those are hidden now, and a typed link into a hidden tab
+lands on a page that works (`StockLayout` → Products, `SettingsLayout` → *Your password*), per
+§19's rule that hiding a nav item does not decide where somebody lands. Smoke step 55 checks the
+server half.
+
+**Returns were closed on the owner's word**, asked separately: "this age calls for extreme
+carefulness because people are desperate." A return is the one counter act that pays money *out*
+of the till without a sale to show for it, so a cashier recording one that never happened pockets
+the refund — or, restocked, gets goods back on the shelf to take later. The cost is that a crushed
+carton waits for an owner or manager; that was judged the right price. A negative payment was
+already closed the same way (§9, 2026-09-25).
+
 ### Working hours are the shop's, and a person's only when they differ
 
 Decided with the owner on 2026-09-18: staff should only be able to use the app during business
