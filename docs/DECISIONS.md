@@ -1070,6 +1070,23 @@ customer for each one buries the handful of real, named customers the owner actu
 sale with no customer prices on the organization's default tier — which is what the seeded
 "Retail" tier is for. `Customer.priceTierId` is how a named customer gets a different price list.
 
+### The same customer twice: suggest, warn, merge (2026-10-07)
+
+Found in real use: two customers entered twice, one already with two invoices, so one shop's debt
+read as two. **Prevention** is in the form: as a name or phone is typed, existing customers that
+match are offered (up to five), and picking one at the till sells to them with nothing added. A
+phone already on file is called out and the button reads *Add anyway* — **a warning, never a
+refusal**, because two different people may share a name, and a refusal at a busy counter is how
+a sale goes unrecorded.
+
+**Cure** is `POST /customers/:id/merge` (owner/manager): every sale and payment of the duplicate
+moves to the customer kept, in one transaction. Those are the only two tables with a
+`customerId`; receivables, statements, credit and the owes-already gate are all derived from them,
+so nothing else moves. Contact details the kept customer lacks are copied over, and the duplicate
+is soft-deleted with `mergedIntoId` so what happened stays readable. **The trap kept for later**:
+sales sync on `createdAt` (§8), so a device that had already synced a moved invoice would not learn
+its new customer. No device syncs today; the mobile app must re-read merged customers' sales.
+
 ### Returns, and why there is no "void"
 
 A return is one row per returned line, grouped by a `returnGroupId` — the same idiom that pairs
@@ -2160,6 +2177,13 @@ report still answers what was actually made.
 - **Services are left out** (`trackStock` off: no cost of goods, so always 100%), and so are units
   not sold at the till. Closed to `sales_rep` and cashiers (`SEES_COST`). The pure core is
   `reports/margins.ts`; nothing on the screen is computed.
+- **A projection of the stock on hand** (same day, owner: "can we project the estimated profit
+  with the current info?"): on hand × (price without VAT ÷ factor − exact cost per counted-in
+  unit), per product and for the whole list, each part an exact fraction and every figure rounded
+  once. **At the carton price** — asked, and chosen because the carton is usually the cheapest per
+  piece, so smaller sales only add to it; the till's first unit would be the optimistic number for
+  a wholesaler. Before expenses and salaries; a product with stock and no price is left out and
+  counted (`unpriced`), never valued at zero. Follows the category filter and the chosen list.
 
 ---
 
@@ -4316,6 +4340,17 @@ Staff usernames are qualified because an owner names their own people and two sh
 an `amina`; nobody types those by choice, they are handed over. **An owner picks their own at
 sign-up and types it from memory every morning**, so it is globally unique instead, and they are
 told at sign-up if the one they wanted is taken — the ordinary bargain everywhere else.
+
+**Staff type just their name** (2026-10-07). The qualified form was right for storage and wrong
+for a person: an owner added "Davidyo", and neither he nor the owner could sign in with it,
+because the account was `davidyo@<shop>-<6 hex>` and the screen said only "do not match". Now a
+plain name that is not itself a username is tried against every staff account named `name@…`
+(`getStaffCredentialsByName`, the same allow-listed `select`, ten at most), and **the password
+chooses**. Exactly one fits: signed in. Two fit — the same name *and* password at two shops —
+and they are asked for the full username; that message can only appear to someone who already
+knows a working password, so it reveals nothing a stranger could use. No fit is the usual
+`Invalid credentials`; the rate limit counts every attempt as before. Usernames are still stored
+qualified, so two shops can still each have a David.
 
 ### What this does not fix, and the form says so
 

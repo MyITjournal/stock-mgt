@@ -1,10 +1,14 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Page } from '../components/Layout';
 import { Money } from '../components/Money';
 import { PdfButton } from '../components/PdfButton';
 import { api } from '../api/client';
-import { useSeesCost } from '../auth/useAuth';
+import { useIsManager, useSeesCost } from '../auth/useAuth';
+import { Button } from '../components/Button';
+import { MergeCustomerDialog } from './MergeCustomerDialog';
+import { RemoveCustomerButton } from './RemoveCustomerButton';
 import { dueStatus } from '../lib/due';
 import type { components } from '../api/schema';
 
@@ -27,6 +31,9 @@ type StatementView = components['schemas']['StatementView'];
 export function CustomerDetailPage() {
   const { id = '' } = useParams();
   const seesCost = useSeesCost();
+  // Owners and managers may fold a duplicate into the customer who stays.
+  const canMerge = useIsManager();
+  const [merging, setMerging] = useState(false);
 
   const { data: customer } = useQuery({
     queryKey: ['customer', id],
@@ -49,12 +56,22 @@ export function CustomerDetailPage() {
       title={name}
       description={customer?.phone ?? undefined}
       actions={
-        seesCost ? (
-          <PdfButton
-            path={`/customers/${id}/statement.pdf`}
-            label="Statement PDF"
-          />
-        ) : undefined
+        <>
+          {canMerge && customer && (
+            <Button variant="secondary" onClick={() => setMerging(true)}>
+              Same as another customer?
+            </Button>
+          )}
+          {canMerge && customer && (
+            <RemoveCustomerButton customerId={customer.id} />
+          )}
+          {seesCost && (
+            <PdfButton
+              path={`/customers/${id}/statement.pdf`}
+              label="Statement PDF"
+            />
+          )}
+        </>
       }
     >
       {!seesCost && (
@@ -173,6 +190,12 @@ export function CustomerDetailPage() {
             </div>
           </aside>
         </div>
+      )}
+      {merging && customer && (
+        <MergeCustomerDialog
+          duplicate={customer}
+          onClose={() => setMerging(false)}
+        />
       )}
     </Page>
   );

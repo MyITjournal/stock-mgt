@@ -3102,6 +3102,14 @@ async function main() {
     Math.round(((netCarton - 8_308) / netCarton) * 10_000),
   );
   eq('the deal is said the way a vendor says it', JSON.stringify(cartonRow.lastDelivery?.deal), '{"received":13,"paidFor":12}');
+  // All 156 soaps sold at the carton price: 13 cartons, less the ₦1,080 they cost.
+  eq('the stock on hand is projected at the carton price', cartonRow.projectedProfit, 13 * netCarton - 108_000);
+  const plan = margins.projection;
+  check(
+    'and the shop’s projection adds up: revenue − cost = profit',
+    Math.abs(plan.revenue - plan.cost - plan.profit) <= 1,
+    JSON.stringify(plan),
+  );
   check(
     'one row per product, in the biggest unit the till sells',
     margins.rows.filter((r) => r.productId === soap.id).map((r) => r.unitName).join() === 'carton',
@@ -3268,6 +3276,93 @@ async function main() {
     'quantities only for a cashier — no values at all',
     !('totalValue' in cashierSummary) && cashierSummary.rows.every((row) => !('value' in row)),
   );
+
+  step(53, 'Merging a customer entered twice, and bills paid on the home screen');
+
+  const twinA = (
+    await api('POST', '/customers', { token: t, body: { id: randomUUID(), firstName: 'Twin', lastName: `Shop ${shopSuffix}` } })
+  ).data;
+  const twinB = (
+    await api('POST', '/customers', { token: t, body: { id: randomUUID(), firstName: 'Twin', lastName: `Shop ${shopSuffix}`, phone: '08055555555' } })
+  ).data;
+  for (const who of [twinA, twinB]) {
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: { customerId: who.id, lines: [{ productId: soap.id, quantity: 1 }], payment: { amount: 0, method: 'cash' } },
+    });
+  }
+  await api('POST', `/customers/${twinB.id}/merge`, {
+    token: bolaToken,
+    key: randomUUID(),
+    body: { intoCustomerId: twinA.id },
+    expect: 403,
+  });
+  check('a cashier cannot merge customers (403)', true);
+  const merged = (
+    await api('POST', `/customers/${twinB.id}/merge`, { token: t, key: randomUUID(), body: { intoCustomerId: twinA.id } })
+  ).data;
+  eq('the duplicate’s invoice moved to the customer kept', merged.movedSales, 1);
+  eq('and the phone the kept one lacked came with it', merged.customer.phone, '08055555555');
+  eq(
+    'the kept customer now holds both invoices',
+    (await api('GET', `/receivables?customerId=${twinA.id}`, { token: t })).data.invoices.length,
+    2,
+  );
+  await api('GET', `/customers/${twinB.id}`, { token: t, expect: 404 });
+  check('and the duplicate is gone from the list', !(await api('GET', '/customers', { token: t })).data.some((c) => c.id === twinB.id));
+
+  // Bills paid this month, beside what is still owed.
+  const paidBefore = (await api('GET', '/reports/dashboard', { token: t })).data.purchasing.payables.paidThisMonth;
+  const mixBill = (await api('GET', `/supplier-bills?supplierId=${supplier.id}`, { token: t })).data.find(
+    (bill) => bill.goodsReceiptId === mixUp.id,
+  );
+  await api('POST', '/supplier-payments', {
+    token: t,
+    key: randomUUID(),
+    body: { billId: mixBill.id, amount: 1_000, method: 'cash' },
+  });
+  eq(
+    'the home screen’s bills paid this month moves by exactly the payment',
+    (await api('GET', '/reports/dashboard', { token: t })).data.purchasing.payables.paidThisMonth - paidBefore,
+    1_000,
+  );
+
+  step(54, 'Staff sign in with just their name; a customer with no history can be removed');
+
+  // Open all day, so a run after 7pm is not refused by working hours (§9).
+  await api('PATCH', '/organization', { token: selfToken, body: { opensAt: 0, closesAt: 1440 } });
+  const daveName = `dave${shopSuffix}`.toLowerCase();
+  const dave = (
+    await api('POST', '/staff', {
+      token: selfToken,
+      key: randomUUID(),
+      body: { firstName: 'Dave', username: daveName, password: 'dave-password-123', role: 'sales_rep' },
+    })
+  ).data;
+  check('the stored username carries the shop', dave.user.username.startsWith(`${daveName}@`), dave.user.username);
+  // Sign-in allows five attempts a minute per address, and the staff steps
+  // above have just spent them — the limiter working, not a failure. Wait it
+  // out rather than loosen it.
+  console.log('      waiting a minute for the sign-in limit to reset…');
+  await new Promise((resolve) => setTimeout(resolve, 61_000));
+  const plainLogin = (
+    await api('POST', '/auth/login', { body: { username: daveName, password: 'dave-password-123' } })
+  ).data;
+  check('and he signs in with just his name', !!(plainLogin.accessToken ?? plainLogin.tokens?.accessToken));
+  await api('POST', '/auth/login', { body: { username: daveName, password: 'not-his-password' }, expect: 401 });
+  check('with the wrong password it is the usual refusal (401)', true);
+
+  // Removing: only a customer with no invoices or payments.
+  const mistake = (
+    await api('POST', '/customers', { token: t, body: { id: randomUUID(), firstName: `Typo ${shopSuffix}` } })
+  ).data;
+  await api('DELETE', `/customers/${mistake.id}`, { token: bolaToken, expect: 403 });
+  check('a cashier cannot remove a customer (403)', true);
+  await api('DELETE', `/customers/${mistake.id}`, { token: t, expect: 204 });
+  check('one added by mistake is removed', !(await api('GET', '/customers', { token: t })).data.some((c) => c.id === mistake.id));
+  await api('DELETE', `/customers/${twinA.id}`, { token: t, expect: 409 });
+  check('one with invoices stays (409) — merging is how a duplicate goes', true);
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

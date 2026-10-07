@@ -362,7 +362,11 @@ export interface paths {
         get: operations["CustomerController_findOne"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Remove a customer with no invoices or payments
+         * @description For one added by mistake. A customer with history is a 409: their invoices are what the business is owed, and a duplicate is merged instead, which moves that history to the customer kept.
+         */
+        delete: operations["CustomerController_remove"];
         options?: never;
         head?: never;
         /**
@@ -370,6 +374,26 @@ export interface paths {
          * @description Chiefly how a customer is moved onto another price list, which is what decides the prices on their next sale.
          */
         patch: operations["CustomerController_update"];
+        trace?: never;
+    };
+    "/api/v1/customers/{id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge a duplicate customer into another
+         * @description The same customer entered twice: every invoice and payment of this one moves to `intoCustomerId`, a phone, email or surname the kept customer lacks is copied over, and this one is removed, remembering where it went.
+         */
+        post: operations["CustomerController_merge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/categories": {
@@ -2459,6 +2483,21 @@ export interface components {
              * @description Which price list this customer buys on. Omitted, they pay the organization’s default tier.
              */
             priceTierId?: string;
+        };
+        MergeCustomerDto: {
+            /**
+             * Format: uuid
+             * @description The customer to keep. Everything of this one moves there.
+             */
+            intoCustomerId: string;
+        };
+        CustomerMergeView: {
+            /** @description The customer kept. */
+            customer: components["schemas"]["CustomerView"];
+            /** @description Invoices moved onto the kept customer. */
+            movedSales: number;
+            /** @description Payments moved onto the kept customer. */
+            movedPayments: number;
         };
         UpdateCustomerDto: {
             /**
@@ -5763,8 +5802,22 @@ export interface components {
             margin: number | null;
             /** @description `margin` as a share of the price without VAT, in basis points. 740 is 7.4%. */
             marginBps: number | null;
+            /** @description What the stock on hand would make sold at this price: on hand × (price without VAT − cost), per counted-in unit, rounded once. Null with nothing on hand, or no price or cost. */
+            projectedProfit: number | null;
             /** @description The newest delivery, shown beside the average so a new deal is visible at once. Not what the margin is measured against. */
             lastDelivery: components["schemas"]["LastDelivery"] | null;
+        };
+        MarginsProjection: {
+            /** @description What it would sell for, without VAT. */
+            revenue: number;
+            /** @description What it cost — the stock value of the products counted. */
+            cost: number;
+            /** @description `revenue − cost`, rounded once from the exact figures. */
+            profit: number;
+            /** @description Profit as a share of revenue, in basis points. */
+            marginBps: number;
+            /** @description Products with stock on hand but no price on this list — left out, and counted so a screen says so. */
+            unpriced: number;
         };
         MarginsView: {
             /** @description The price list the prices were read from. */
@@ -5773,6 +5826,8 @@ export interface components {
             chargesVat: boolean;
             /** @description One per product, in the biggest unit the till sells: thinnest margin first, then rows with no cost, then rows with no price. */
             rows: components["schemas"]["MarginRow"][];
+            /** @description If everything on hand sold at today’s carton price on this list: a projection to plan by, never a record. Follows the category filter. */
+            projection: components["schemas"]["MarginsProjection"];
         };
         PeriodView: {
             /** @example month */
@@ -5904,6 +5959,8 @@ export interface components {
             oldestDays: number;
             /** @description Past the date the business said it would pay, counting only bills that were given one. */
             overdue: number;
+            /** @description Paid to vendors this month, voided payments left out — beside what is still owed, as collections sit beside receivables. */
+            paidThisMonth: number;
             topVendors: components["schemas"]["OwedVendorRow"][];
         };
         PurchaseGroupRow: {
@@ -7248,6 +7305,25 @@ export interface operations {
             };
         };
     };
+    CustomerController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CustomerController_update: {
         parameters: {
             query?: never;
@@ -7269,6 +7345,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CustomerView"];
+                };
+            };
+        };
+    };
+    CustomerController_merge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeCustomerDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerMergeView"];
                 };
             };
         };

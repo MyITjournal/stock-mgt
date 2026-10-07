@@ -113,6 +113,27 @@ export class UserModelAction {
     return user;
   }
 
+  /**
+   * Staff whose sign-in name is `name@<any shop>` — for a cashier who types
+   * just "davidyo" (2026-10-07). Several shops may each have one; the caller
+   * tells them apart by the password. Same allow-listed `select` as
+   * `getCredentials`, and a handful at most.
+   */
+  async getStaffCredentialsByName(name: string): Promise<UserCredentials[]> {
+    return this.prisma.user.findMany({
+      where: { username: { startsWith: `${name}@` }, deletedAt: null },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        password: true,
+        isVerified: true,
+        deletedAt: true,
+      },
+      take: 10,
+    });
+  }
+
   async create(options: {
     transactionOptions?: unknown;
     createPayload: Partial<User>;

@@ -72,10 +72,8 @@ export function StaffPage() {
   });
 
   const change = useMutation({
-    mutationFn: (input: {
-      userId: string;
-      body: Record<string, unknown>;
-    }) => api.patch<StaffMemberView>(`/staff/${input.userId}`, input.body),
+    mutationFn: (input: { userId: string; body: Record<string, unknown> }) =>
+      api.patch<StaffMemberView>(`/staff/${input.userId}`, input.body),
     onSuccess: () => {
       afterWrite(queryClient);
       setError(null);
@@ -168,9 +166,18 @@ export function StaffPage() {
                   <p className="mt-0.5 text-xs text-slate-500">
                     {/* Absent rather than null for a reader who may not see
                         it: a manager gets names and roles only. */}
-                    {member.user.username ??
-                      member.user.email ??
-                      'signs in with a username'}
+                    {/* The name they type: just the part before the @
+                        (2026-10-07) — the shop's code is added for them. */}
+                    {member.user.username ? (
+                      <span title={member.user.username}>
+                        Signs in as{' '}
+                        <strong className="font-medium text-slate-700">
+                          {member.user.username.split('@')[0]}
+                        </strong>
+                      </span>
+                    ) : (
+                      (member.user.email ?? 'signs in with a username')
+                    )}
                   </p>
 
                   {member.ignoresWorkingHours !== undefined && (
@@ -398,8 +405,8 @@ function AddStaffDialog({
               htmlFor="staff-username"
               hint={
                 slug
-                  ? `Stored as ${username.trim() || 'name'}@${slug}, so another shop can still have one.`
-                  : 'Stored qualified by your shop.'
+                  ? `They sign in with just "${username.trim().toLowerCase() || 'name'}". It is stored as ${username.trim().toLowerCase() || 'name'}@${slug}, so another shop can still have one.`
+                  : 'They sign in with just this name.'
               }
             >
               <Input
@@ -546,8 +553,8 @@ function ResetPasswordDialog({
 
         <p className="mt-3 rounded-md bg-amber-50 p-3 text-xs text-amber-900">
           This signs them out everywhere immediately. Without that, their phone
-          would keep renewing its session for up to a week on the old password
-          — and you would believe you had locked them out.
+          would keep renewing its session for up to a week on the old password —
+          and you would believe you had locked them out.
         </p>
 
         {error && (
@@ -614,7 +621,12 @@ export function Actions({
 }) {
   return (
     <div className="mt-6 flex justify-end gap-2">
-      <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={onClose}
+        disabled={busy}
+      >
         Cancel
       </Button>
       <Button type="submit" disabled={busy || !ready}>

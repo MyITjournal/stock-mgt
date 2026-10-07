@@ -1196,3 +1196,41 @@ it. As a cashier there is no Value switch. Download: the *In and out* tab has va
 **310. [gate] Stock → Products, for products that came in only as opening stock.** Cost shows a
 figure per carton (or whichever unit the price is in), not "none yet", and it is the same as that
 product's Cost on Reports → Margins. The product page's *Cost* says "average of the stock on hand".
+
+**311. [gate] Reports → Margins.** A box above the table: "If everything on hand sold at today's
+carton prices" — it would sell for, it cost, estimated profit and its percentage. Each row has
+**If it all sells**; a product with nothing on hand shows a dash. Pick a category: the box
+follows it. Download: the sheet has an *If it all sells* column.
+
+---
+
+## AX. Reprint from history, duplicate customers, paid on Home
+
+**312. [gate] Sales → History.** Clicking anywhere on a row opens the sale. Each row has **Print**,
+which prints that invoice without opening it (on a phone it opens the PDF to print or share).
+
+**313. [gate] Customers → Add a customer: type part of an existing customer's name.** "Already a
+customer?" lists matches with their phones; **Open** goes to that customer. Type a phone already on
+file: it names whose it is and the button reads **Add anyway**.
+
+**314. [gate] At the till, + New customer, type an existing name; tap Use.** The sale is in that
+customer's name and no new customer was added.
+
+**315. [gate] Open one of a duplicated pair → Same as another customer? → pick the one to keep →
+Merge them.** You land on the kept customer, with both customers' invoices and payments; the
+duplicate is gone from Customers. As a cashier the button is not there.
+
+**316. Home, as an owner.** The second row reads Paid this month · Unpaid invoices · Unpaid bills ·
+Bills paid this month.
+
+---
+
+## AY. Staff sign in with their name; removing a customer
+
+**317. [gate] Settings → Staff → add someone with a username, e.g. "davidyo".** The list says
+**Signs in as davidyo**. On the sign-in screen, *davidyo* and the password you set sign them in
+(inside working hours). A wrong password is still refused.
+
+**318. [gate] A customer added by mistake, with no invoices: open them → Remove → Yes, remove.**
+They leave the Customers list. A customer with invoices: Remove explains they stay and to use
+*Same as another customer?* instead. As a cashier there is no Remove.

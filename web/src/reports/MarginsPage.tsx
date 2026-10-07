@@ -127,6 +127,25 @@ export function MarginsPage() {
         ),
     },
     {
+      // What the stock on hand would make sold at this carton price — the
+      // server's figure, rounded once (2026-10-07).
+      header: 'If it all sells',
+      numeric: true,
+      sortValue: (row) => row.projectedProfit,
+      cell: (row) =>
+        row.projectedProfit === null ? (
+          <span className="text-slate-300">—</span>
+        ) : (
+          <span
+            className={
+              row.projectedProfit < 0 ? 'font-medium text-red-700' : ''
+            }
+          >
+            <Money value={row.projectedProfit} />
+          </span>
+        ),
+    },
+    {
       header: 'Last delivery',
       sortValue: (row) => row.lastDelivery?.cost,
       numeric: true,
@@ -195,6 +214,57 @@ export function MarginsPage() {
           </Select>
         </Field>
       </div>
+
+      {/*
+        The projection (2026-10-07, owner): everything on hand sold at today's
+        carton price on this list. The carton is usually the lowest price per
+        piece, so this errs on the safe side. All three figures are the
+        server's, each rounded once — nothing is added up here.
+      */}
+      {data && (
+        <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
+          <div className="text-xs uppercase tracking-wide text-slate-500">
+            If everything on hand sold at today’s carton prices
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span>
+              <span className="block text-xs text-slate-500">
+                {data.chargesVat
+                  ? 'It would sell for, without VAT'
+                  : 'It would sell for'}
+              </span>
+              <Money value={data.projection.revenue} />
+            </span>
+            <span className="text-slate-400">−</span>
+            <span>
+              <span className="block text-xs text-slate-500">It cost</span>
+              <Money value={data.projection.cost} />
+            </span>
+            <span className="text-slate-400">=</span>
+            <span>
+              <span className="block text-xs text-slate-500">
+                Estimated profit
+              </span>
+              <span
+                className={`text-lg font-semibold ${
+                  data.projection.profit < 0 ? 'text-red-700' : 'text-slate-900'
+                }`}
+              >
+                <Money value={data.projection.profit} />
+              </span>{' '}
+              <span className="text-xs text-slate-500">
+                {percent(data.projection.marginBps)}
+              </span>
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Before expenses and salaries. Smaller units usually sell for more
+            per piece, so this errs on the safe side.
+            {data.projection.unpriced > 0 &&
+              ` ${data.projection.unpriced} ${data.projection.unpriced === 1 ? 'product with stock has' : 'products with stock have'} no price on this list and ${data.projection.unpriced === 1 ? 'is' : 'are'} left out.`}
+          </p>
+        </div>
+      )}
 
       <p className="mb-4 text-xs text-slate-500">
         One row per product, in the biggest unit you sell it in. Cost is the

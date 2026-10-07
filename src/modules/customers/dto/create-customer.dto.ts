@@ -56,3 +56,13 @@ export class CreateCustomerDto {
 }
 
 export class UpdateCustomerDto extends PartialType(CreateCustomerDto) {}
+
+/** Which customer a duplicate is merged into — the one that stays. */
+export class MergeCustomerDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The customer to keep. Everything of this one moves there.',
+  })
+  @IsUUID()
+  intoCustomerId!: string;
+}

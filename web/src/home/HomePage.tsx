@@ -92,7 +92,17 @@ export function HomePage() {
         />
       </section>
 
+      {/*
+        What came in and went out beside what is still owed (2026-10-07,
+        owner: "add total paid, not just the unpaid"): each pair is the
+        server's two figures, side by side, never one taken from the other.
+      */}
       <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Paid this month"
+          value={<Money value={collections.month} />}
+          note="Received from customers"
+        />
         <Stat
           label="Unpaid invoices"
           value={<Money value={receivables.total} />}
@@ -108,6 +118,14 @@ export function HomePage() {
           } across ${purchasing.payables.suppliers}`}
           tone={purchasing.payables.overdue > 0 ? 'warn' : undefined}
         />
+        <Stat
+          label="Bills paid this month"
+          value={<Money value={purchasing.payables.paidThisMonth} />}
+          note="Paid to vendors"
+        />
+      </section>
+
+      <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Gross profit"
           value={<Money value={profit.grossProfit} />}

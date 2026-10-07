@@ -434,7 +434,15 @@ the CLI takes `--type`. It is **not** the subscription plan — that stays `maxU
 **An owner's username is plain; a staff username stays qualified by the shop slug.** Staff
 usernames are qualified because an owner names their own people and two shops both have an `amina`
 — nobody types those by choice, they are handed over. An owner picks their own and types it every
-morning, so it is globally unique and they are told at sign-up if it is taken.
+morning, so it is globally unique and they are told at sign-up if it is taken. **But staff sign in
+with just their name** (2026-10-07): an owner added "Davidyo", who could not sign in — nobody types
+`davidyo@shop-a1b2c3`. `AuthService.signInCandidate` tries a plain name as a username first (an
+owner's), and if there is none, against **every staff member of that name** (`username` starting
+`name@`), letting the **password** pick: one fits, they are in; the same name and password at two
+shops gets "sign in with your full username". Every other failure is the same `Invalid
+credentials`, and the login rate limit still counts each attempt. The Staff page shows *Signs in as
+davidyo*, the full name on hover. **A customer can be removed** (owner/manager, `DELETE
+/customers/:id`) only with **no invoices and no payments** — 409 otherwise, pointing at merging.
 
 ⚠ **A shop owner with no email still cannot recover their own password.** The sign-up form offers
 an optional email for exactly that: nothing is sent to it today, and the day a provider is
@@ -739,6 +747,12 @@ And three from 7.6a, in `web/src/reports/`:
   the last delivery and its free-goods deal ("13 for 12") alongside. Nothing on hand falls back
   to the last delivery, **flagged**; no cost at all is null, never zero. Margin is on the price
   without VAT, as profit's is. Services and unsold units are left out.
+  **It projects the stock on hand** (2026-10-07, owner): if everything on hand sold at today's
+  **carton** price on the chosen list (owner's choice — usually the lowest per piece, so it errs
+  safe), what it sells for, what it cost and the estimated profit — `projection` on the view and
+  `projectedProfit` per row, exact parts summed and rounded once (`projectSale`,
+  `projectionTotals`). Before expenses and salaries; products with stock and no price are counted
+  as `unpriced` and left out, and the screen says so.
 
 And three from 7.6b, in `web/src/settings/`:
 
@@ -847,6 +861,23 @@ counter lets only the latest customer choice land.
 customer is chosen for the sale at once. **No price list at the counter, on purpose**: shops here
 price the item, not the buyer — the wholesale price is the carton's or the 1/5 carton's own price —
 so asking what kind of customer somebody is has no place in a queue. The cart keeps its prices.
+
+**Duplicate customers are headed off, and merged when they happen** (2026-10-07, owner found the
+same shop twice with invoices under each). `CustomerDialog` offers up to five **existing matches as
+a name or phone is typed** (every typed word in the name; a phone matches on its last ten digits)
+— *Use* at the till puts the sale in their name, *Open* on Customers opens them — and a phone
+already on file turns the button into **Add anyway**: it warns, never refuses, since two people
+can share a name. `POST /customers/:id/merge` (owner/manager) moves every **sale and payment** of
+the duplicate onto `intoCustomerId` — the only two tables that point at a customer, and balances
+are derived from them — copies a phone, email or surname the kept one lacks, and soft-deletes
+the duplicate with `mergedIntoId`. ⚠ Sales sync on `createdAt`, so a device that already synced a
+moved invoice would keep the old name; no such device exists yet, and the mobile app must handle
+it. *Same as another customer?* on the customer page opens it.
+
+**Sales → History**: the whole row opens the sale, and each row has **Print** (the invoice PDF,
+`PrintButton`), so a reprint needs no second screen. **Home** pairs what moved with what is owed:
+*Paid this month* (customers, `collections.month`) · *Unpaid invoices* · *Unpaid bills* · *Bills
+paid this month* (`purchasing.payables.paidThisMonth`, live supplier payments by `occurredAt`).
 
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`

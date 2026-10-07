@@ -312,6 +312,12 @@ class PayablesSummary {
   })
   overdue!: number;
 
+  @ApiProperty({
+    description:
+      'Paid to vendors this month, voided payments left out — beside what is still owed, as collections sit beside receivables.',
+  })
+  paidThisMonth!: number;
+
   @ApiProperty({ type: () => [OwedVendorRow] })
   topVendors!: OwedVendorRow[];
 }
