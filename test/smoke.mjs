@@ -2751,6 +2751,24 @@ async function main() {
     14 * 160 + 25,
   );
 
+  // Opening stock only, no delivery yet: the products list still has a cost —
+  // the average on hand, the same figure the margins report uses.
+  const peakNow = (await api('GET', `/products/${peakImported.id}`, { token: selfToken })).data;
+  const peakCarton = peakNow.units.find((u) => u.name === 'carton');
+  const listCost = peakNow.unitCosts?.find((u) => u.unitId === peakCarton.id)?.cost;
+  eq(
+    'a product with only opening stock has a cost, per carton: (₦196,000 + ₦2,500) over 2,265 sachets, × 160',
+    listCost,
+    Math.round((19_850_000 / 2265) * 160),
+  );
+  eq(
+    'the same cost the margins report gives it',
+    (await api('GET', '/reports/margins', { token: selfToken })).data.rows.find(
+      (row) => row.productId === peakImported.id,
+    )?.cost,
+    listCost,
+  );
+
   step(46, 'Correcting a delivery: 7 cartons recorded, 6½ arrived');
 
   // The owner's own mistake: 7 cartons entered, 6½ actually came, 6 of them
@@ -3120,7 +3138,7 @@ async function main() {
   // The products list shows cost in the unit it is sold in.
   const soapAsOwner = (await api('GET', `/products/${soap.id}`, { token: t })).data;
   eq(
-    'a product carries what one carton cost on the last delivery — from the lot, not piece × 12',
+    'a product carries what one carton costs — from the lot, not piece × 12',
     soapAsOwner.unitCosts?.find((u) => u.unitId === soapCarton.id)?.cost,
     8_308,
   );

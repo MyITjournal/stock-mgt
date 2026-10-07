@@ -177,12 +177,14 @@ export function ProductDetailPage() {
             )
           }
           note={
-            price ? `per ${price.unitName}, as the till sells it` : 'No price set'
+            price
+              ? `per ${price.unitName}, as the till sells it`
+              : 'No price set'
           }
         />
         {seesCost && (
           <Stat
-            label="Last cost"
+            label="Cost"
             value={
               cost ? (
                 <Money value={cost.amount} />
@@ -192,7 +194,7 @@ export function ProductDetailPage() {
             }
             note={
               cost
-                ? `per ${cost.unitName}, from the most recent delivery`
+                ? `per ${cost.unitName}, average of the stock on hand`
                 : 'Record a delivery to set it'
             }
           />

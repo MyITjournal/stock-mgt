@@ -559,9 +559,11 @@ working, since `start:prod` needs a build first and will not pick up changes.
   rule the till's search uses: the default selling unit, else the smallest sold — with the price
   `resolveUnitPrice` gives it on the default list (read off the product's own price rows, no extra
   query). The products list and product page show it ("₦12,500 / carton") and **cost in that same
-  unit** from `ProductView.unitCosts`: each unit's cost on the last delivery, from the lot's exact
-  total (`totalCost × factor ÷ quantityReceived`, rounded once) — never `costPrice × factor`,
-  which multiplies a rounded snapshot. `unitCosts` is a cost field (`PRODUCT_COST_FIELDS`,
+  unit** from `ProductView.unitCosts`: **the average cost of the stock on hand, opening stock
+  included — the margins report's basis** — else the latest lot that received anything, from lot
+  totals, rounded once per unit — never `costPrice × factor`, which multiplies a rounded
+  snapshot. (It read the last *delivery* until 2026-10-07, so products with only opening stock
+  said "none yet" while the reports valued them.) `unitCosts` is a cost field (`PRODUCT_COST_FIELDS`,
   computed only for `SEES_COST`); `tillUnit` is not. The browser chooses no unit and multiplies
   nothing (`lib/shelfPrice.ts`).
 - **Money is displayed, never computed.** The one exception is the till's running total, which is
