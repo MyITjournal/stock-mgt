@@ -104,6 +104,11 @@ export class UsersService {
     return this.userModelAction.getCredentials(identifier);
   }
 
+  /** Staff signing in with just their name — see `getStaffCredentialsByName`. */
+  findStaffCredentialsByName(name: string) {
+    return this.userModelAction.getStaffCredentialsByName(name);
+  }
+
   async update(id: string, dto: UpdateUserDto): Promise<User> {
     await this.findOne(id);
 

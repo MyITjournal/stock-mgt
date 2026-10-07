@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -49,6 +52,18 @@ export class CustomerController {
   @ApiCreatedResponse({ type: CustomerView })
   create(@Body() dto: CreateCustomerDto) {
     return this.svc.create(dto);
+  }
+
+  @Delete(':id')
+  @Roles(OrgRole.owner, OrgRole.manager)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Remove a customer with no invoices or payments',
+    description:
+      'For one added by mistake. A customer with history is a 409: their invoices are what the business is owed, and a duplicate is merged instead, which moves that history to the customer kept.',
+  })
+  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.svc.remove(id);
   }
 
   @Post(':id/merge')

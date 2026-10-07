@@ -1222,3 +1222,15 @@ duplicate is gone from Customers. As a cashier the button is not there.
 
 **316. Home, as an owner.** The second row reads Paid this month · Unpaid invoices · Unpaid bills ·
 Bills paid this month.
+
+---
+
+## AY. Staff sign in with their name; removing a customer
+
+**317. [gate] Settings → Staff → add someone with a username, e.g. "davidyo".** The list says
+**Signs in as davidyo**. On the sign-in screen, *davidyo* and the password you set sign them in
+(inside working hours). A wrong password is still refused.
+
+**318. [gate] A customer added by mistake, with no invoices: open them → Remove → Yes, remove.**
+They leave the Customers list. A customer with invoices: Remove explains they stay and to use
+*Same as another customer?* instead. As a cashier there is no Remove.

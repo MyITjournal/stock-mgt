@@ -434,7 +434,15 @@ the CLI takes `--type`. It is **not** the subscription plan — that stays `maxU
 **An owner's username is plain; a staff username stays qualified by the shop slug.** Staff
 usernames are qualified because an owner names their own people and two shops both have an `amina`
 — nobody types those by choice, they are handed over. An owner picks their own and types it every
-morning, so it is globally unique and they are told at sign-up if it is taken.
+morning, so it is globally unique and they are told at sign-up if it is taken. **But staff sign in
+with just their name** (2026-10-07): an owner added "Davidyo", who could not sign in — nobody types
+`davidyo@shop-a1b2c3`. `AuthService.signInCandidate` tries a plain name as a username first (an
+owner's), and if there is none, against **every staff member of that name** (`username` starting
+`name@`), letting the **password** pick: one fits, they are in; the same name and password at two
+shops gets "sign in with your full username". Every other failure is the same `Invalid
+credentials`, and the login rate limit still counts each attempt. The Staff page shows *Signs in as
+davidyo*, the full name on hover. **A customer can be removed** (owner/manager, `DELETE
+/customers/:id`) only with **no invoices and no payments** — 409 otherwise, pointing at merging.
 
 ⚠ **A shop owner with no email still cannot recover their own password.** The sign-up form offers
 an optional email for exactly that: nothing is sent to it today, and the day a provider is

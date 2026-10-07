@@ -444,16 +444,7 @@ export class AuthService {
       : { username: dto.username!.toLowerCase() };
 
     // The one read that asks for the password hash, and it asks explicitly.
-    const user = await this.users.findCredentials(identifier);
-    if (!user?.password) {
-      // Deliberately the same message either way, so this cannot be used to
-      // find out which usernames or addresses exist.
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    if (!(await argon2.verify(user.password, dto.password))) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+    const user = await this.signInCandidate(identifier, dto.password);
 
     if (!user.isVerified) {
       throw new ForbiddenException({
@@ -464,6 +455,53 @@ export class AuthService {
 
     if (context.ip) await this.users.updateLastLoginIp(user.id, context.ip);
     return this.issueForUser(user.id, context);
+  }
+
+  /**
+   * Who is signing in, password checked.
+   *
+   * A staff username is stored qualified by the shop — `davidyo@adebayo-
+   * stores-a1b2c3` — so two shops may each have a David. Nobody types that:
+   * an owner added a member of staff who then could not sign in as "Davidyo"
+   * (2026-10-07). So a plain name that is not itself a username (owners'
+   * are plain) is tried against **every staff member of that name**, and the
+   * password decides which: exactly one fits, they are in; the same name and
+   * password at two shops is told to use the full name. Nothing here reveals
+   * whether a name exists — every failure is the same `Invalid credentials`,
+   * and the login rate limit still counts each attempt.
+   */
+  private async signInCandidate(
+    identifier: { email: string } | { username: string },
+    password: string,
+  ) {
+    const exact = await this.users.findCredentials(identifier);
+    const candidates =
+      exact || !('username' in identifier) || identifier.username.includes('@')
+        ? exact
+          ? [exact]
+          : []
+        : await this.users.findStaffCredentialsByName(identifier.username);
+
+    const fits: (typeof candidates)[number][] = [];
+    for (const candidate of candidates) {
+      if (
+        candidate.password &&
+        (await argon2.verify(candidate.password, password))
+      ) {
+        fits.push(candidate);
+      }
+    }
+    if (fits.length > 1) {
+      throw new UnauthorizedException(
+        'More than one shop has a member of staff by that name. Sign in with your full username — the one with @ and your shop’s name.',
+      );
+    }
+    if (fits.length === 0) {
+      // Deliberately the same message either way, so this cannot be used to
+      // find out which usernames or addresses exist.
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    return fits[0];
   }
 
   refresh(rawToken: string, context: TokenContext = {}): Promise<TokenPair> {
