@@ -1987,6 +1987,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/stock-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stock in and out, per product, for a period
+         * @description Opening + delivered − sold ± adjusted = at the end, in base units, summed from the ledger by when each movement happened. Opening stock entered during the period counts as opening; delivery corrections as delivered; customer returns come off sold. Quantities only.
+         */
+        get: operations["ReportController_stockSummaryView"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/stock-audit": {
         parameters: {
             query?: never;
@@ -6170,6 +6190,40 @@ export interface components {
             /** @description Bought before, but not in this window — the ones to ring. Most recent purchase first. */
             lapsed: components["schemas"]["CustomerReportRow"][];
         };
+        SummaryProductRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Rich Nourishing Lotion */
+            name: string;
+            /** @example 400ml */
+            size: string | null;
+        };
+        SummaryUnit: {
+            /** @example carton */
+            name: string;
+            /** @example 12 */
+            factor: number;
+        };
+        StockSummaryRow: {
+            product: components["schemas"]["SummaryProductRef"];
+            /** @description The product’s units, smallest first, so a screen can say "6 carton, 3 piece". */
+            units: components["schemas"]["SummaryUnit"][];
+            /** @description On hand when the period began, plus opening stock entered during it. */
+            opening: number;
+            /** @description Delivered, corrections to deliveries included. */
+            delivered: number;
+            /** @description Sold, less customer returns put back — goods gone. */
+            sold: number;
+            /** @description Everything else, signed: write-offs, counts, transfers, goods sent back. */
+            adjusted: number;
+            /** @description On hand when the period ended. */
+            closing: number;
+        };
+        StockSummaryView: {
+            period: components["schemas"]["PeriodView"];
+            /** @description One per product with stock or movement, by name. */
+            rows: components["schemas"]["StockSummaryRow"][];
+        };
         /** @enum {string} */
         AuditMovementType: "adjustment" | "damage";
         AuditUserRef: {
@@ -9922,6 +9976,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CustomerReportView"];
+                };
+            };
+        };
+    };
+    ReportController_stockSummaryView: {
+        parameters: {
+            query?: {
+                /** @description A named window, resolved in the organization’s timezone. Ignored when `from`/`to` are given. */
+                period?: "today" | "yesterday" | "month" | "last-month" | "last-7-days" | "last-30-days" | "year";
+                /** @description Start of a custom range, read as a local date. Needs `to` as well. */
+                from?: string;
+                /** @description End of a custom range, read as a local date and **inclusive** of that whole day. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockSummaryView"];
                 };
             };
         };
