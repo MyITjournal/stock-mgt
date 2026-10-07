@@ -270,6 +270,22 @@ export class ResolvedUnitPrice {
   tax!: UnitTaxSplit | null;
 }
 
+export class ProductTillUnitView {
+  @ApiProperty({ format: 'uuid' })
+  unitId!: string;
+
+  @ApiProperty({ example: 'carton' })
+  unitName!: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'What the till would charge for one on the default price list. Null: no price, and the till refuses it.',
+  })
+  price!: number | null;
+}
+
 export class ProductUnitCostView {
   @ApiProperty({ format: 'uuid' })
   unitId!: string;
@@ -326,6 +342,14 @@ export class ProductView {
       'What one of each unit cost on the last delivery — a carton as a carton — from the lot’s exact total, rounded once (§2). Empty before any delivery. **Absent** for a role that may not see cost.',
   })
   unitCosts?: ProductUnitCostView[];
+
+  @ApiProperty({
+    type: () => ProductTillUnitView,
+    nullable: true,
+    description:
+      'The unit the till picks first — the default selling unit, else the smallest sold — and its price on the default list, worked out exactly as the till does. Null when nothing is sold at the till.',
+  })
+  tillUnit!: ProductTillUnitView | null;
 
   @ApiProperty({ example: 750, description: 'VAT rate in basis points.' })
   taxRateBps!: number;
