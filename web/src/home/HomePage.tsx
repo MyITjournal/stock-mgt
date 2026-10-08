@@ -169,6 +169,32 @@ export function HomePage() {
       </section>
 
       {/*
+        Cash taken and not yet banked (2026-10-08) — the Money → Cash total,
+        amber once some of it is more than a day old. What is waiting for the
+        owner or a manager to confirm is a line under it, not hidden in it.
+      */}
+      <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Link to="/money/cash" className="block">
+          <Stat
+            label="Cash not yet banked"
+            value={<Money value={data.cash.notBanked} />}
+            note={
+              data.cash.waiting > 0 ? (
+                <>
+                  <Money value={data.cash.waiting} /> waiting for you to confirm
+                </>
+              ) : data.cash.overdue ? (
+                'Some of it is more than a day old'
+              ) : (
+                'Still with the people who took it'
+              )
+            }
+            tone={data.cash.overdue ? 'warn' : undefined}
+          />
+        </Link>
+      </section>
+
+      {/*
         Gross profit − expenses = operating profit, read left to right, then
         what the month's stock came to (2026-10-07, owner).
       */}

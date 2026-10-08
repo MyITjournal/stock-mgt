@@ -2031,6 +2031,49 @@ Added before there were rows worth backfilling. Without the column the question 
 hard, it is unanswerable from the data — and it is the first thing anyone asks the day two people
 are collecting money.
 
+**Money in records the store too (2026-10-08).** The form sent none, so every payment taken there
+landed in that row. It now sends the default store without asking when the shop has one, and
+shows a *Store* picker, starting at the default, when it has several. The row was renamed
+**"Recorded on Money in"**, which is what it now holds: older payments, and anything recorded
+without a store.
+
+### Cash banking: whose hands the cash is in (2026-10-08)
+
+Owner: who is holding the shop's cash, since when, and did it reach the bank. **Money → Cash**
+shows one row per person — **received in cash** (cash payments they recorded, voids left out),
+**paid out in cash** (cash refunds, cash expenses and cash supplier payments they recorded),
+**banked**, **waiting to confirm**, and **still holding** = received − paid out − banked − waiting
+— with **oldest unbanked**, first in first out: what left their hands is taken to be the oldest
+money. The arithmetic is `src/modules/cash/cash.ts`.
+
+**A `CashBanking` row is neither a payment nor an expense.** The money was counted when the
+customer paid; a banking only says it left somebody's hands and where it went — one of the shop's
+accounts, or **handed to the owner**. It touches no invoice, bill, collection or profit figure.
+"Handed to the owner" **ends the trail**: following the owner's own pocket is accounting.
+
+- **Staff record only their own** (*Sales → My cash*, since Money is closed to them); owner and
+  manager record for anyone. The accountant sees everybody on Money → Cash, records their own,
+  confirms nothing.
+- **Waiting until confirmed**, by the owner or a manager. **Nobody confirms their own.** A row is
+  confirmed as it is written when the person writing it could have confirmed it — the owner
+  always, a manager for somebody else — because a second click by the same person checks nothing.
+- **Waiting is out of their hands but not banked**, so it is its own column: an owner sees both
+  what people still hold and what is claimed and unchecked.
+- **Shortfalls stay as still holding.** No write-off. Banking more than is held is a 409
+  `MORE_THAN_HELD` with no override. **"Not received"** (owner/manager, reason required) voids a
+  banking and the amount goes back to still holding; the row is kept.
+- **Counting starts the day it shipped.** `Organization.cashCountedFrom` was set by the migration to
+  midnight, shop time, on 2026-10-08 for every shop then existing — counting from the first sale
+  would have shown everybody "still holding" months of cash banked with nothing recorded. Null
+  (every newer shop) means from the beginning. Bankings themselves are never bounded by it.
+- **Home: "Cash not yet banked"** is the screen's total, amber once some is more than a day old,
+  with "₦X waiting for you to confirm" under it. A person holding a negative (paid out more cash
+  than they took) never cancels a colleague's holding — the receivables rule.
+- `GET /bank-accounts` opened to the **storekeeper**, who sells and so holds cash.
+
+Rows with no `recordedByUserId` belong to nobody and are left out. Two bankings recorded at the
+same instant could together exceed what is held — no lock, on purpose, at a shop's volumes.
+
 ### Receivables is a sorted list, not 30/60/90 buckets
 
 Aging buckets are a convention borrowed from accounting packages, and this product is

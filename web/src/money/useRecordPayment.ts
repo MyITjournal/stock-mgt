@@ -29,6 +29,7 @@ export function useRecordPayment(onDone: () => void) {
           allocations: draft.allocations,
         }),
         ...(draft.occurredAt && { occurredAt: draft.occurredAt }),
+        ...(draft.locationId && { locationId: draft.locationId }),
       }),
     onSuccess: () => {
       afterWrite(queryClient);

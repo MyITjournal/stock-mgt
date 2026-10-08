@@ -3,6 +3,8 @@ import type { components } from '../api/schema';
 import {
   allPages,
   downloadSheet,
+  downloadWorkbook,
+  tab,
   stamp,
   type SheetColumn,
 } from '../lib/exportSheet';
@@ -189,4 +191,77 @@ export async function exportMoneyOut(supplierId: string): Promise<void> {
     return { items: page.payments, nextCursor: page.nextCursor };
   });
   await downloadSheet(stamp('money-out'), MONEY_OUT_COLUMNS, payments);
+}
+
+// ── Cash ──────────────────────────────────────────────────────────────────
+
+type CashView = components['schemas']['CashView'];
+type CashPersonView = components['schemas']['CashPersonView'];
+type CashBankingView = components['schemas']['CashBankingView'];
+type CashBankingListView = components['schemas']['CashBankingListView'];
+
+const fullName = (person: {
+  firstName: string | null;
+  lastName: string | null;
+}) => [person.firstName, person.lastName].filter(Boolean).join(' ');
+
+const CASH_PEOPLE_COLUMNS: readonly SheetColumn<CashPersonView>[] = [
+  { header: 'Person', value: (row) => fullName(row), width: 22 },
+  { header: 'Received in cash', kind: 'money', value: (row) => row.received },
+  { header: 'Paid out in cash', kind: 'money', value: (row) => row.paidOut },
+  { header: 'Banked', kind: 'money', value: (row) => row.banked },
+  { header: 'Waiting to confirm', kind: 'money', value: (row) => row.waiting },
+  { header: 'Still holding', kind: 'money', value: (row) => row.stillHolding },
+  {
+    header: 'Oldest unbanked',
+    kind: 'date',
+    value: (row) => row.oldestUnbankedAt,
+  },
+];
+
+const BANKING_STATUS: Record<string, string> = {
+  waiting: 'Waiting to confirm',
+  confirmed: 'Confirmed',
+  not_received: 'Not received',
+};
+
+const BANKING_COLUMNS: readonly SheetColumn<CashBankingView>[] = [
+  { header: 'Banked on', kind: 'date', value: (row) => row.occurredAt },
+  { header: 'Whose cash', value: (row) => fullName(row.heldBy), width: 22 },
+  {
+    header: 'Where it went',
+    value: (row) =>
+      row.bankAccount
+        ? `${row.bankAccount.bankName} — ${row.bankAccount.accountNumber}`
+        : 'Handed to the owner',
+    width: 28,
+  },
+  { header: 'Reference', value: (row) => row.reference, width: 18 },
+  { header: 'Amount', kind: 'money', value: (row) => row.amount },
+  { header: 'Status', value: (row) => BANKING_STATUS[row.status], width: 18 },
+  {
+    header: 'Confirmed by',
+    value: (row) => (row.confirmedBy ? fullName(row.confirmedBy) : ''),
+    width: 18,
+  },
+  { header: 'Why not received', value: (row) => row.voidedReason, width: 28 },
+];
+
+/** Money → Cash: one tab per person's figures, one for every banking. */
+export async function exportCash(): Promise<void> {
+  const [cash, bankings] = await Promise.all([
+    api.get<CashView>('/cash'),
+    allPages<CashBankingView>(async (cursor) => {
+      const query = new URLSearchParams({ order: 'desc', limit: '500' });
+      if (cursor) query.set('cursor', cursor);
+      const page = await api.get<CashBankingListView>(
+        `/cash/bankings?${query}`,
+      );
+      return { items: page.bankings, nextCursor: page.nextCursor };
+    }),
+  ]);
+  await downloadWorkbook(stamp('cash'), [
+    tab('People', CASH_PEOPLE_COLUMNS, cash.people),
+    tab('Banking', BANKING_COLUMNS, bankings),
+  ]);
 }

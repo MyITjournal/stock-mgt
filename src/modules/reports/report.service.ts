@@ -490,7 +490,7 @@ export class ReportService {
 
       const key = payment.location?.id ?? 'unassigned';
       const row = byLocation.get(key) ?? {
-        label: payment.location?.name ?? 'Not at a counter',
+        label: payment.location?.name ?? 'Recorded on Money in',
         total: 0,
         count: 0,
       };

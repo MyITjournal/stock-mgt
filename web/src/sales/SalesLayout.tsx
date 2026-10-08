@@ -3,6 +3,9 @@ import { NavLink, Outlet } from 'react-router-dom';
 const TABS = [
   { to: '/till', label: 'Till' },
   { to: '/sales', label: 'History' },
+  // Everybody's own cash, banked or not (2026-10-08). Here rather than under
+  // Money because a cashier works here and cannot open Money.
+  { to: '/my-cash', label: 'My cash' },
 ];
 
 /**
