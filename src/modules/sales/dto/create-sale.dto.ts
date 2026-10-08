@@ -178,6 +178,14 @@ export class CreateSaleDto {
    * recorded without one — and only an owner or manager may use it.
    */
   @ApiPropertyOptional({
+    description:
+      'Record it even though a sale like it is already recorded — **Record anyway**. Without it, a sale to the same customer on the same day with the same items (a walk-in: within ten minutes) is refused with a 409 `POSSIBLE_DUPLICATE` naming the sale it looks like. Anyone may send it: it is a warning, not a rule.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  allowDuplicate?: boolean;
+
+  @ApiPropertyOptional({
     example: 'Owner approved; paying both invoices on Friday.',
     description:
       'Overrides the refusal to sell on credit to a customer who already owes. Owner or manager only, and recorded on the sale.',

@@ -22,6 +22,8 @@ import { BankAccountsPage } from './money/BankAccountsPage';
 import { PayablesPage } from './money/PayablesPage';
 import { SupplierPaymentsPage } from './money/SupplierPaymentsPage';
 import { ExpensesPage, SalariesPage } from './money/ExpensesPage';
+import { CashPage } from './money/CashPage';
+import { MyCashPage } from './sales/MyCashPage';
 import { StockLayout } from './catalog/StockLayout';
 import { ProductsPage } from './catalog/ProductsPage';
 import { ImportProductsPage } from './catalog/ImportProductsPage';
@@ -45,6 +47,7 @@ import { StockReportPage } from './reports/StockReportPage';
 import { MoversPage } from './reports/MoversPage';
 import { MarginsPage } from './reports/MarginsPage';
 import { TargetsPage } from './reports/TargetsPage';
+import { GrowthPage } from './reports/GrowthPage';
 import { SettingsLayout } from './settings/SettingsLayout';
 import { BusinessPage } from './settings/BusinessPage';
 import { HoursPage } from './settings/HoursPage';
@@ -97,6 +100,7 @@ export default function App() {
                   <Route element={<SalesLayout />}>
                     <Route path="till" element={<TillPage />} />
                     <Route path="sales" element={<SalesPage />} />
+                    <Route path="my-cash" element={<MyCashPage />} />
                   </Route>
                   <Route path="sales/:id" element={<SaleDetailPage />} />
                   <Route path="customers" element={<CustomersPage />} />
@@ -109,6 +113,7 @@ export default function App() {
                     <Route path="payments" element={<PaymentsPage />} />
                     <Route path="payables" element={<PayablesPage />} />
                     <Route path="paid" element={<SupplierPaymentsPage />} />
+                    <Route path="cash" element={<CashPage />} />
                     <Route path="expenses" element={<ExpensesPage />} />
                     <Route path="salaries" element={<SalariesPage />} />
                     <Route path="accounts" element={<BankAccountsPage />} />
@@ -142,6 +147,7 @@ export default function App() {
                   <Route path="stock/counts/:id" element={<CountSheetPage />} />
                   <Route path="reports" element={<ReportsLayout />}>
                     <Route index element={<ProfitPage />} />
+                    <Route path="growth" element={<GrowthPage />} />
                     <Route path="sales" element={<SalesReportPage />} />
                     <Route path="purchases" element={<PurchasesPage />} />
                     <Route path="collections" element={<CollectionsPage />} />

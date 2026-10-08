@@ -7,7 +7,10 @@ import { DashboardService } from './dashboard.service';
 import { PurchaseTargetController } from './purchase-target.controller';
 import { MarginService } from './margin.service';
 import { StockSummaryService } from './stock-summary.service';
+import { GrowthService } from './growth.service';
 import { PurchaseTargetService } from './purchase-target.service';
+import { SessionsModule } from '../staff/sessions.module';
+import { CashModule } from '../cash/cash.module';
 
 /**
  * Reads, and only reads. Nothing in here writes a row.
@@ -26,7 +29,7 @@ import { PurchaseTargetService } from './purchase-target.service';
  * `GET /payables` returns when somebody clicks into it.
  */
 @Module({
-  imports: [PaymentsModule, PayablesModule],
+  imports: [PaymentsModule, PayablesModule, SessionsModule, CashModule],
   controllers: [ReportController, PurchaseTargetController],
   providers: [
     ReportService,
@@ -34,6 +37,7 @@ import { PurchaseTargetService } from './purchase-target.service';
     PurchaseTargetService,
     MarginService,
     StockSummaryService,
+    GrowthService,
   ],
   exports: [ReportService],
 })

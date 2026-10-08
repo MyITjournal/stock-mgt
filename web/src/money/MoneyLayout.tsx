@@ -5,6 +5,7 @@ const TABS = [
   { to: '/money/payments', label: 'Money in' },
   { to: '/money/payables', label: 'Bills' },
   { to: '/money/paid', label: 'Money out' },
+  { to: '/money/cash', label: 'Cash' },
   { to: '/money/expenses', label: 'Expenses' },
   { to: '/money/salaries', label: 'Salaries' },
   { to: '/money/accounts', label: 'Bank accounts' },

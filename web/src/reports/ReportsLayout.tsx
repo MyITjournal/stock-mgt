@@ -7,6 +7,7 @@ type OrganizationView = components['schemas']['OrganizationView'];
 
 const TABS = [
   { to: '/reports', label: 'Profit', end: true },
+  { to: '/reports/growth', label: 'Growth' },
   { to: '/reports/sales', label: 'Sales' },
   { to: '/reports/purchases', label: 'Purchases' },
   { to: '/reports/collections', label: 'Money in' },

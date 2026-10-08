@@ -81,6 +81,14 @@ let seenHash = null;
 
 /** Every call goes through here, so an unexpected status is never swallowed. */
 async function api(method, path, { body, token, key, expect = [200, 201] } = {}) {
+  // The script records the same sale again and again on purpose — one carton to
+  // the same customer, step after step. Left on, the duplicate warning
+  // (2026-10-08) would answer those with a 409 of its own, and a step expecting
+  // a *different* 409 (credit, stock) would pass for the wrong reason. So a sale
+  // here skips it unless the step says otherwise; step 59 turns it on.
+  if (method === 'POST' && path === '/sales' && body && body.allowDuplicate === undefined) {
+    body = { ...body, allowDuplicate: true };
+  }
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
@@ -1983,7 +1991,9 @@ async function main() {
     });
 
   const openNow = (await signInAsBola([200, 201])).data;
-  const bolaToken = openNow.accessToken ?? openNow.tokens?.accessToken;
+  // `let`: a cashier signing in again ends her earlier session at once
+  // (2026-10-08), so each later sign-in hands over the token to carry on with.
+  let bolaToken = openNow.accessToken ?? openNow.tokens?.accessToken;
   check('a cashier can sign in during opening hours', !!bolaToken);
 
   // Close the shop by moving the window into the past hour.
@@ -2016,8 +2026,9 @@ async function main() {
     token: t,
     body: { ignoresWorkingHours: true },
   });
-  await signInAsBola([200, 201]);
-  check('an exempt member of staff can sign in at any hour', true);
+  const exemptNow = (await signInAsBola([200, 201])).data;
+  bolaToken = exemptNow.accessToken ?? exemptNow.tokens?.accessToken;
+  check('an exempt member of staff can sign in at any hour', !!bolaToken);
 
   // Her own hours are checked through the record rather than another sign-in:
   // login is throttled at five a minute per address, and this step has already
@@ -3447,6 +3458,300 @@ async function main() {
   check('signing in again ends the session on the first device (401 on renewal)', true);
   await api('POST', '/auth/refresh', { body: { refreshToken: secondRefresh } });
   check('and the newest one carries on', true);
+  await api('GET', '/products', {
+    token: firstDevice.accessToken ?? firstDevice.tokens?.accessToken,
+    expect: 401,
+  });
+  check('and the first device is out at once, not in fifteen minutes', true);
+  const secondToken = secondDevice.accessToken ?? secondDevice.tokens?.accessToken;
+
+  step(57, 'Who is signed in, and signing somebody out');
+  const sessions = (await api('GET', '/staff/sessions', { token: t })).data;
+  const bolaSessions = sessions.members.find((m) => m.userId === bola.user.id);
+  check(
+    'the owner sees the cashier signed in now, and on what',
+    bolaSessions?.sessions.some((s) => s.activeNow && typeof s.device === 'string'),
+    JSON.stringify(bolaSessions),
+  );
+  check(
+    'and no address is handed out',
+    !JSON.stringify(sessions).includes('"ip"'),
+  );
+  const dashNow = (await api('GET', '/reports/dashboard', { token: t })).data;
+  eq('Home counts the same people as the staff screen', dashNow.signedIn.people, sessions.activePeople);
+  await api('GET', '/staff/sessions', { token: secondToken, expect: 403 });
+  check('a cashier cannot see who is signed in (403)', true);
+  await api('POST', `/staff/${bola.user.id}/sign-out`, { token: secondToken, expect: 403 });
+  check('nor sign anybody out (403)', true);
+  await api('POST', `/staff/${ownerMe.sub}/sign-out`, { token: t, expect: 400 });
+  check('the owner cannot sign themselves out this way (400)', true);
+
+  await api('POST', `/staff/${bola.user.id}/sign-out`, { token: t });
+  await api('GET', '/products', { token: secondToken, expect: 401 });
+  check('signed out by the owner, her very next request is refused', true);
+  const afterSignOut = (await api('GET', '/staff/sessions', { token: t })).data;
+  check(
+    'and she shows as not signed in',
+    !afterSignOut.members.find((m) => m.userId === bola.user.id)?.sessions.length,
+  );
+  const backIn = (await signInAsBola([200, 201])).data;
+  await api('GET', '/products', { token: backIn.accessToken ?? backIn.tokens?.accessToken });
+  check('and she can sign straight back in — not suspended', true);
+
+  step(58, 'Growth: this month against the same days of last month, and month by month');
+  const growthDash = (await api('GET', '/reports/dashboard', { token: t })).data;
+  const growthNow = growthDash.growth;
+  eq('this month’s revenue is the dashboard’s revenue', growthNow.current.revenue, growthDash.sales.month);
+  eq('and its gross profit is the profit block’s', growthNow.current.grossProfit, growthDash.profit.grossProfit);
+  check(
+    'last month’s side ends on the same day and time last month, not at the month’s end',
+    new Date(growthNow.previousTo) <= new Date(growthNow.currentFrom) &&
+      new Date(growthNow.previousFrom) < new Date(growthNow.previousTo),
+    `${growthNow.previousFrom} – ${growthNow.previousTo}`,
+  );
+  check('it counts sales and the customers who bought', growthNow.current.sales > 0 && growthNow.current.customers > 0);
+  check(
+    'and new customers are some of those customers',
+    growthNow.current.newCustomers <= growthNow.current.customers,
+  );
+  eq(
+    'the average sale is revenue per sale, rounded once',
+    growthNow.current.averageSale,
+    Math.round(growthNow.current.revenue / growthNow.current.sales),
+  );
+  if (growthNow.previous.revenue === 0) {
+    eq('with nothing last month, there is no change to give — null, not 0', growthNow.change.revenue, null);
+    eq('and the revenue tile says no comparison', growthDash.sales.changeBps, 0);
+  } else {
+    eq('the revenue tile’s change is the growth figure', growthDash.sales.changeBps, growthNow.change.revenue);
+  }
+
+  const growthReport = (await api('GET', '/reports/growth?months=6', { token: t })).data;
+  eq('six months, ending with this one', growthReport.months.length, 6);
+  const thisMonthRow = growthReport.months[5];
+  check('this month is marked as so far', thisMonthRow.partial && !growthReport.months[4].partial);
+  eq('and its revenue agrees with Home', thisMonthRow.figures.revenue, growthNow.current.revenue);
+  eq('its sales count too', thisMonthRow.figures.sales, growthNow.current.sales);
+  eq(
+    'and its change is against the same days of last month, as Home’s is',
+    thisMonthRow.change.revenue,
+    growthNow.change.revenue,
+  );
+  eq('twelve on request', (await api('GET', '/reports/growth?months=12', { token: t })).data.months.length, 12);
+  await api('GET', '/reports/growth?months=7', { token: t, expect: 400 });
+  check('and only six or twelve (400)', true);
+  await api('GET', '/reports/growth', {
+    token: backIn.accessToken ?? backIn.tokens?.accessToken,
+    expect: 403,
+  });
+  check('a cashier cannot see growth — it carries gross profit (403)', true);
+
+  step(59, 'A sale that looks already recorded: warned, never blocked');
+  const cashierNow = backIn.accessToken ?? backIn.tokens?.accessToken;
+  const twinBuyer = (
+    await api('POST', '/customers', {
+      token: t,
+      body: { id: randomUUID(), firstName: `Twin buyer ${shopSuffix}` },
+    })
+  ).data;
+  // A service, so no stock refusal can stand in for the one being tested.
+  const twinSale = {
+    customerId: twinBuyer.id,
+    lines: [{ productId: service.id, unitId: service.units[0].id, quantity: 1 }],
+    allowDuplicate: false,
+  };
+  const firstTwin = (
+    await api('POST', '/sales', { token: t, key: randomUUID(), body: { id: randomUUID(), ...twinSale } })
+  ).data;
+  check('the owner records a customer’s sale', !!firstTwin.id);
+
+  const secondTwinId = randomUUID();
+  const warned = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { id: secondTwinId, ...twinSale },
+      expect: 409,
+    })
+  ).data;
+  eq('the cashier entering it again is warned', warned.error, 'POSSIBLE_DUPLICATE');
+  eq('naming the sale it looks like', warned.duplicates[0].id, firstTwin.id);
+  check('and who recorded it', typeof warned.duplicates[0].recordedBy === 'string' && warned.duplicates[0].recordedBy.length > 0);
+  await api('GET', `/sales/${secondTwinId}`, { token: t, expect: 404 });
+  check('and nothing was written', true);
+
+  const moreOfIt = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { id: randomUUID(), ...twinSale, lines: [{ ...twinSale.lines[0], quantity: 2 }] },
+    })
+  ).data;
+  check('the same goods in a different amount are not a duplicate', !!moreOfIt.id);
+
+  const anyway = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { id: secondTwinId, ...twinSale, allowDuplicate: true },
+    })
+  ).data;
+  eq('the cashier can record it anyway — the same id, a fresh key', anyway.id, secondTwinId);
+
+  // A walk-in: nobody in particular, so only a sale minutes ago counts.
+  const walkInSale = {
+    lines: [{ productId: service.id, unitId: service.units[0].id, quantity: 7 }],
+    allowDuplicate: false,
+  };
+  await api('POST', '/sales', { token: t, key: randomUUID(), body: { id: randomUUID(), ...walkInSale } });
+  const walkInWarned = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { id: randomUUID(), ...walkInSale },
+      expect: 409,
+    })
+  ).data;
+  eq('a walk-in sale of the same items minutes later is warned too', walkInWarned.error, 'POSSIBLE_DUPLICATE');
+  check('and says nothing about a customer', !/same customer/.test(walkInWarned.message), walkInWarned.message);
+
+  step(60, 'Adding a product with its opening stock — the form’s two requests');
+  // What Add product sends when "Already on your shelves?" is filled in: the
+  // product, then its opening stock in the biggest unit, found by name.
+  const shelfProductId = randomUUID();
+  const shelfProduct = (
+    await api('POST', '/products', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        id: shelfProductId,
+        name: `Shelf Lotion ${shopSuffix}`,
+        units: [
+          { name: 'piece', factor: 1 },
+          { name: 'carton', factor: 12 },
+        ],
+      },
+    })
+  ).data;
+  const shelfCarton = shelfProduct.units.find((u) => u.name === 'carton');
+  const shelfOpened = (
+    await api('POST', '/stock/opening', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        locationId: main.id,
+        lines: [{ productId: shelfProduct.id, unitId: shelfCarton.id, quantity: 6.25, unitCost: 4_832_400 }],
+      },
+    })
+  ).data;
+  eq('6.25 cartons go in as one opening lot', shelfOpened.lines, 1);
+  eq('valued at cost per carton × cartons, rounded once', shelfOpened.totalValue, Math.round(6.25 * 4_832_400));
+  eq('and are on the shelf in pieces', await levelAt(t, shelfProduct.id, main.id), 75);
+  const shelfBill = (await api('GET', '/payables', { token: t })).data;
+  check(
+    'with no bill raised — it is an opening balance, not a delivery',
+    !JSON.stringify(shelfBill).includes(shelfProduct.id),
+  );
+  await api('POST', '/stock/opening', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      locationId: main.id,
+      lines: [{ productId: shelfProduct.id, unitId: shelfCarton.id, quantity: 1, unitCost: 4_832_400 }],
+    },
+    expect: [400, 409],
+  });
+  check('and a second press cannot enter it twice', true);
+
+  step(61, 'Cash banking: whose hands the cash is in, banked and confirmed');
+  // Bola's cash sales from step 59 are hers to bank. A new shop counts cash
+  // from the beginning, so they are all here.
+  const bolaCash = (await api('GET', '/cash', { token: cashierNow })).data;
+  eq('a cashier sees only her own cash', bolaCash.people.length, 1);
+  const bolaId = bolaCash.people[0].userId;
+  const heldAtFirst = bolaCash.people[0].stillHolding;
+  check('and she is holding the cash she took', heldAtFirst > 0, heldAtFirst);
+
+  await api('POST', '/cash/bankings', {
+    token: cashierNow,
+    key: randomUUID(),
+    body: { heldByUserId: ownerMe.sub, amount: 100, to: 'owner' },
+    expect: 403,
+  });
+  check('she cannot record somebody else’s cash as banked', true);
+
+  const tooMuch = (
+    await api('POST', '/cash/bankings', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { amount: heldAtFirst + 1, to: 'bank', bankAccountId: gtb.id },
+      expect: 409,
+    })
+  ).data;
+  eq('nor bank more than she holds', tooMuch.error, 'MORE_THAN_HELD');
+
+  const half = Math.floor(heldAtFirst / 2);
+  const bankingId = randomUUID();
+  const bankingKey = randomUUID();
+  const banking = (
+    await api('POST', '/cash/bankings', {
+      token: cashierNow,
+      key: bankingKey,
+      body: { id: bankingId, amount: half, to: 'bank', bankAccountId: gtb.id, reference: 'Teller 0042' },
+    })
+  ).data;
+  eq('her own banking waits to be confirmed', banking.status, 'waiting');
+  const replayed = (
+    await api('POST', '/cash/bankings', {
+      token: cashierNow,
+      key: bankingKey,
+      body: { id: bankingId, amount: half, to: 'bank', bankAccountId: gtb.id, reference: 'Teller 0042' },
+    })
+  ).data;
+  eq('a retry returns the same banking', replayed.id, bankingId);
+
+  await api('POST', `/cash/bankings/${bankingId}/confirm`, { token: cashierNow, expect: 403 });
+  check('she cannot confirm her own', true);
+
+  const ownerSees = (await api('GET', '/cash', { token: t })).data;
+  const bolaRow = ownerSees.people.find((p) => p.userId === bolaId);
+  eq('the owner sees it waiting — once, not twice', bolaRow.waiting, half);
+  eq('and out of her hands', bolaRow.stillHolding, heldAtFirst - half);
+
+  const confirmed = (await api('POST', `/cash/bankings/${bankingId}/confirm`, { token: t })).data;
+  eq('the owner confirms it', confirmed.status, 'confirmed');
+
+  const handed = (
+    await api('POST', '/cash/bankings', {
+      token: t,
+      key: randomUUID(),
+      body: { id: randomUUID(), heldByUserId: bolaId, amount: heldAtFirst - half, to: 'owner' },
+    })
+  ).data;
+  eq('the owner recording the rest for her confirms it as recorded', handed.status, 'confirmed');
+  const bolaSettled = (await api('GET', '/cash', { token: cashierNow })).data.people[0];
+  eq('she now holds nothing', bolaSettled.stillHolding, 0);
+  eq('and all of it is banked', bolaSettled.banked, heldAtFirst);
+
+  const refused = (
+    await api('POST', `/cash/bankings/${handed.id}/void`, {
+      token: t,
+      body: { reason: 'Never reached me — counted the drawer twice.' },
+    })
+  ).data;
+  eq('marked not received', refused.status, 'not_received');
+  const shortAgain = (await api('GET', '/cash', { token: cashierNow })).data.people[0];
+  eq('and it is back in what she holds — never written off', shortAgain.stillHolding, heldAtFirst - half);
+
+  const cashNow = (await api('GET', '/cash', { token: t })).data;
+  const homeCash = (await api('GET', '/reports/dashboard', { token: t })).data.cash;
+  eq('Home’s "Cash not yet banked" is the Cash screen’s total', homeCash.notBanked, cashNow.totals.notBanked);
+
+  const collectedToday = (await api('GET', '/reports/collections?period=today', { token: t })).data;
+  check(
+    'collections no longer say "Not at a counter"',
+    !collectedToday.byLocation.some((row) => row.label === 'Not at a counter'),
+  );
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

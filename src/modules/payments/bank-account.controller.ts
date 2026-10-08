@@ -36,12 +36,16 @@ import { BankAccountView } from './dto/bank-account.response';
  * Note these are the accounts customers pay *into*. They are meant to be seen:
  * an invoice prints them. That is why reading them is not restricted the way
  * cost-bearing reports are.
+ *
+ * The storekeeper joined on 2026-10-08: they sell at the counter, so they hold
+ * cash, and banking it means naming the account it went into.
  */
 const TAKES_MONEY = [
   OrgRole.owner,
   OrgRole.manager,
   OrgRole.accountant,
   OrgRole.sales_rep,
+  OrgRole.storekeeper,
 ];
 
 const SETS_UP_ACCOUNTS = [OrgRole.owner, OrgRole.manager];

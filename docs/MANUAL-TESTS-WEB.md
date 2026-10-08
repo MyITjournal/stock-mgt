@@ -1271,5 +1271,96 @@ lands on *Your password*.
 not. As the owner it is.
 
 **326. [gate] Sign in as a cashier on one browser, then as the same cashier on another** (a phone,
-or a private window). Within 15 minutes the first is back at the sign-in screen. Do the same as
-the owner: both stay signed in.
+or a private window). On its next tap the first is back at the sign-in screen. Do the same as the
+owner: both stay signed in.
+
+**327. [gate] Home, as the owner, with a cashier signed in elsewhere.** The line under the due
+payments reads "2 people signed in now, on 2 devices · See who". *See who* opens Settings → Staff.
+
+**328. [gate] Settings → Staff.** The cashier's card reads *Signed in · Chrome on Android · since
+… · active … ago* (whatever the browser is); somebody not signed in reads *Not signed in now ·
+last seen …*. No address is shown anywhere.
+
+**329. [gate] Press Sign out on the cashier.** A green note says they are signed out. On the
+cashier's device, the next tap lands on the sign-in screen; signing in again works. Your own card
+has no Sign out button, and a manager sees the list with no Sign out buttons.
+
+---
+
+## BA. Growth
+
+**330. [gate] Home, as the owner, early in a month.** The revenue tile's arrow is against the same
+days of last month — not a large drop just because the month has barely started. The *Growth*
+table below the tiles is headed with two day ranges ("1–8 Oct" and "1–8 Sep") and lists revenue,
+gross profit, gross margin, operating profit, collected, sales, average sale, customers who bought
+and new customers, each with ▲/▼. The margin's change is in **pts**. A figure with nothing last
+month shows "—", never 0%.
+
+**331. [gate] Reports → Growth.** Two bar charts — revenue by month, gross profit by month — and
+this month's columns are lighter, dashed and labelled "so far". Hovering a column shows its month
+and figure. The table lists the newest month first, with each figure's change beneath it, and its
+current-month revenue matches Home's. *Last 12 months* shows twelve; the choice survives a reload.
+Download gives a sheet with the same rows.
+
+**332. [gate] As a cashier**, there is no Reports item, and typing `/reports/growth` does not show
+the figures.
+
+---
+
+## BB. A sale that looks already recorded
+
+**333. [gate] As the owner, sell 2 cartons of something to a customer. Then, signed in as a
+cashier, put the same 2 cartons to the same customer and press the payment button.** *Already
+recorded?* opens, naming the invoice, who recorded it and when. Nothing has been recorded yet.
+
+**334. [gate] Press Open it.** The sale opens in a new tab; the till's cart is still there in the
+first.
+
+**335. [gate] Press Same sale — clear the cart.** The cart empties and nothing is recorded. Put it
+back, press the payment button, then **Record anyway**: the sale is recorded as usual.
+
+**336. [gate] Change the quantity to 3 cartons and record.** No warning — a different amount is a
+different sale.
+
+**337. [gate] Sales → History** has a **Recorded by** column, and the date carries the time.
+
+---
+
+## BC. Opening stock on Add product
+
+**338. [gate] Products → Add product: a lotion counted in pieces, with a carton of 12.** Below the
+barcodes, *Already on your shelves? (optional)* offers *How many* with **carton** chosen. Type
+6.25 and a cost of 48,324.00 — the box reads *Cost of one carton … per carton*. Add product.
+Stock on hand shows 75 pieces in an opening lot; Money → Bills shows nothing new.
+
+**339. [gate] Type 6.1 cartons.** It says it is not a whole number of pieces and Add product stays
+greyed. Switch the unit to piece: the cost box empties.
+
+**340. [gate] Leave the section empty.** The product is added with no stock, as before.
+
+**341. Editing a product** shows no such section.
+
+---
+
+## BD. Cash banking
+
+**342. [gate] Signed in as a cashier, sell something for cash, then Sales → My cash.** *Still
+holding* shows what was taken; *Received in cash* matches. Money is not in the top bar.
+
+**343. [gate] Record cash banked: half of it, into a bank account, with a slip number.** It shows
+as *Waiting to confirm*; *Still holding* drops by that much. Try more than is held: it says how much
+is held and records nothing.
+
+**344. [gate] As the owner, Money → Cash.** The cashier's row shows the waiting amount; the
+banking list below has **Confirm** and **Not received**. Confirm it: it moves to *Banked*.
+
+**345. [gate] Record cash banked for the cashier, the rest, Handed to the owner.** It is
+*Confirmed* at once and the cashier holds nothing. Mark it **Not received** with a reason: the
+amount is back in *Still holding*.
+
+**346. [gate] Home** has *Cash not yet banked* with the same total as Money → Cash; it turns amber
+when some of it is more than a day old.
+
+**347. Money → Money in → Record a payment**, in a shop with two stores, offers *Store* starting at
+the main store; with one store it does not ask. Reports → Collections no longer says *Not at a
+counter*.

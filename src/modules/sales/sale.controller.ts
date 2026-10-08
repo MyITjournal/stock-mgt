@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
@@ -25,7 +26,12 @@ import { DueService } from './due.service';
 import { DueInvoicesView } from './dto/due.response';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { CreateReturnDto } from './dto/create-return.dto';
-import { SaleListView, SaleReceiptView, SaleView } from './dto/sale.response';
+import {
+  PossibleDuplicateConflict,
+  SaleListView,
+  SaleReceiptView,
+  SaleView,
+} from './dto/sale.response';
 
 /** Selling is the sales rep's daily work, and the storekeeper counters too. */
 const SELLERS = [
@@ -151,6 +157,11 @@ export class SaleController {
       'Prices each line from the customer’s tier unless the seller names the price agreed, and takes the stock through the ledger — FEFO, so the batch that expires first leaves first. A sale the stock cannot cover is refused with a 409 naming the shortfall; an owner or manager may force it with a reason.',
   })
   @ApiCreatedResponse({ type: SaleView })
+  @ApiConflictResponse({
+    type: PossibleDuplicateConflict,
+    description:
+      'Not enough stock, a customer who still owes, or — with `error: POSSIBLE_DUPLICATE` — a sale that looks already recorded.',
+  })
   create(@Body() dto: CreateSaleDto) {
     return this.sales.create(dto);
   }

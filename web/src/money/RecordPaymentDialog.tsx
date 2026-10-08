@@ -13,6 +13,7 @@ import type { components } from '../api/schema';
 type CustomerView = components['schemas']['CustomerView'];
 type BankAccountView = components['schemas']['BankAccountView'];
 type ReceivablesView = components['schemas']['ReceivablesView'];
+type LocationView = components['schemas']['LocationView'];
 
 /** The one invoice a "Mark as paid" is for. */
 export interface InvoiceToSettle {
@@ -34,6 +35,11 @@ export interface PaymentDraft {
   allocations: { saleId: string; amount: number }[];
   /** When the money moved, for a payment recorded after the day. */
   occurredAt?: string;
+  /**
+   * The store that took it (2026-10-08). The default store when the shop has
+   * one and nobody picked; null only while the stores are still loading.
+   */
+  locationId: string | null;
 }
 
 /**
@@ -79,6 +85,8 @@ export function RecordPaymentDialog({
   const [amount, setAmount] = useState<number | null>(null);
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [bankAccountId, setBankAccountId] = useState('');
+  // Empty means the default store — the same one a sale at the till lands in.
+  const [pickedLocation, setPickedLocation] = useState('');
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
   const [manual, setManual] = useState(false);
@@ -93,6 +101,14 @@ export function RecordPaymentDialog({
     queryKey: ['bank-accounts'],
     queryFn: () => api.get<BankAccountView[]>('/bank-accounts'),
   });
+
+  const { data: locations = [] } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => api.get<LocationView[]>('/locations'),
+  });
+  const defaultLocation =
+    locations.find((location) => location.isDefault) ?? locations[0];
+  const locationId = pickedLocation || defaultLocation?.id || '';
 
   const { data: owed } = useQuery({
     queryKey: ['receivables', customerId],
@@ -152,6 +168,7 @@ export function RecordPaymentDialog({
               .map(([saleId, value]) => ({ saleId, amount: value as number }))
           : [],
       ...occurredAtFor(paidOn),
+      locationId: locationId || null,
     });
   };
 
@@ -236,6 +253,29 @@ export function RecordPaymentDialog({
               <option value="cheque">Cheque</option>
             </Select>
           </Field>
+
+          {/*
+            The store is recorded silently when there is only one, and asked
+            for — starting at the default — when there are several. Before
+            2026-10-08 nothing was sent, and every payment here landed under
+            "Not at a counter" on the collections report.
+          */}
+          {locations.length > 1 && (
+            <Field label="Store" htmlFor="payment-store">
+              <Select
+                id="payment-store"
+                value={locationId}
+                disabled={busy}
+                onChange={(event) => setPickedLocation(event.target.value)}
+              >
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
 
           {requiresAccount && (
             <Field

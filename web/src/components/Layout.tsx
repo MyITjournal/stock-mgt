@@ -21,7 +21,7 @@ const NAV: readonly NavItem[] = [
   { to: '/home', label: 'Home', costOnly: true },
   // The till and the history of sales are one section with two tabs
   // (`SalesLayout`). It opens on the till, which is what it is used for most.
-  { to: '/till', label: 'Sales', covers: ['/sales'] },
+  { to: '/till', label: 'Sales', covers: ['/sales', '/my-cash'] },
   { to: '/customers', label: 'Customers' },
   { to: '/money', label: 'Money', costOnly: true },
   { to: '/stock', label: 'Stock' },

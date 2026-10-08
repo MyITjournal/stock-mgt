@@ -25,7 +25,13 @@ import {
   ResetStaffPasswordDto,
   UpdateStaffDto,
 } from './dto/staff.dto';
-import { StaffMemberView, StaffPasswordResetView } from './dto/staff.response';
+import {
+  StaffMemberView,
+  StaffPasswordResetView,
+  StaffSignOutView,
+} from './dto/staff.response';
+import { SessionsService } from './sessions.service';
+import { SessionsSummaryView } from './dto/sessions.response';
 
 /**
  * Who works here.
@@ -41,7 +47,10 @@ import { StaffMemberView, StaffPasswordResetView } from './dto/staff.response';
 @ApiBearerAuth('JWT')
 @Controller('staff')
 export class StaffController {
-  constructor(private readonly staff: StaffService) {}
+  constructor(
+    private readonly staff: StaffService,
+    private readonly sessions: SessionsService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -52,6 +61,18 @@ export class StaffController {
   @ApiOkResponse({ type: [StaffMemberView] })
   list() {
     return this.staff.list();
+  }
+
+  @Get('sessions')
+  @Roles(OrgRole.owner, OrgRole.manager)
+  @ApiOperation({
+    summary: 'Who is signed in, and on what',
+    description:
+      'Each person’s live sessions in this shop — the device, when they signed in, when they were last active — and when each was last seen. “Active now” means used in the last thirty minutes. No addresses are returned.',
+  })
+  @ApiOkResponse({ type: SessionsSummaryView })
+  sessionSummary(): Promise<SessionsSummaryView> {
+    return this.sessions.summary();
   }
 
   @Post()
@@ -98,6 +119,21 @@ export class StaffController {
     @Body() dto: ResetStaffPasswordDto,
   ) {
     return this.staff.resetPassword(userId, dto);
+  }
+
+  @Post(':userId/sign-out')
+  @Roles(OrgRole.owner)
+  @ApiOperation({
+    summary: 'Sign somebody out of this shop',
+    description:
+      'Ends every session they have here **at once** — their next request is refused — without suspending them: they can sign in again. Sessions they have at another business are left alone. To sign yourself out everywhere, change your password.',
+  })
+  @ApiCreatedResponse({ type: StaffSignOutView })
+  signOut(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser('sub') actingUserId: string,
+  ): Promise<StaffSignOutView> {
+    return this.staff.signOut(userId, actingUserId);
   }
 
   @Delete(':userId')

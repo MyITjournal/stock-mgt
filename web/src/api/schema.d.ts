@@ -1702,6 +1702,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whose hands the cash is in
+         * @description Per person: received in cash, paid out in cash, banked (confirmed), waiting to be confirmed, and still holding — with when the oldest cash still held was taken. Owner, manager and accountant see everybody; anyone else sees only themselves.
+         */
+        get: operations["CashController_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash/bankings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cash banked, paged for delta sync
+         * @description Keyset paging over (updatedAt, id): confirming or marking a banking not received changes the row. Staff see only their own.
+         */
+        get: operations["CashController_findAll"];
+        put?: never;
+        /**
+         * Record cash banked, or handed to the owner
+         * @description Neither a payment nor an expense: it changes no invoice, bill or profit figure. Staff record only their own; an owner or manager records for anyone, and theirs is confirmed as it is recorded (the owner’s own too). Anyone else’s waits for the owner or a manager to confirm.
+         */
+        post: operations["CashController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash/bankings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One banking */
+        get: operations["CashController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash/bankings/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the money arrived
+         * @description Owner or manager. Nobody confirms their own banking.
+         */
+        post: operations["CashController_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash/bankings/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a banking not received
+         * @description Owner or manager, with a reason. The amount goes back to the person’s still holding; the row is kept.
+         */
+        post: operations["CashController_voidBanking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/expenses": {
         parameters: {
             query?: never;
@@ -1803,6 +1904,26 @@ export interface paths {
          * @description A projection to set prices by, not a record: the cost is the average of the stock on hand (the last delivery when none is), the margin is on the price without VAT, and the newest delivery is shown beside it so a new deal is visible at once. Thinnest margin first.
          */
         get: operations["ReportController_margins"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/growth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Month by month: is the business growing?
+         * @description Revenue, gross and operating profit, collected, sales, average sale and customers for the last 6 or 12 months, each against the month before. This month is partial, so it is compared with the same stretch of last month — never all of it.
+         */
+        get: operations["ReportController_growth"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2209,6 +2330,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who is signed in, and on what
+         * @description Each person’s live sessions in this shop — the device, when they signed in, when they were last active — and when each was last seen. “Active now” means used in the last thirty minutes. No addresses are returned.
+         */
+        get: operations["StaffController_sessionSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/staff/{userId}": {
         parameters: {
             query?: never;
@@ -2247,6 +2388,26 @@ export interface paths {
          * @description Staff without an email address cannot use the self-service reset, so somebody has to be able to do it for them.
          */
         post: operations["StaffController_resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{userId}/sign-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign somebody out of this shop
+         * @description Ends every session they have here **at once** — their next request is refused — without suspending them: they can sign in again. Sessions they have at another business are left alone. To sign yourself out everywhere, change your password.
+         */
+        post: operations["StaffController_signOut"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5511,11 +5672,35 @@ export interface components {
             force?: boolean;
             /** @example Sold from the van before the delivery was entered. */
             forcedReason?: string;
+            /** @description Record it even though a sale like it is already recorded — **Record anyway**. Without it, a sale to the same customer on the same day with the same items (a walk-in: within ten minutes) is refused with a 409 `POSSIBLE_DUPLICATE` naming the sale it looks like. Anyone may send it: it is a warning, not a rule. */
+            allowDuplicate?: boolean;
             /**
              * @description Overrides the refusal to sell on credit to a customer who already owes. Owner or manager only, and recorded on the sale.
              * @example Owner approved; paying both invoices on Friday.
              */
             creditOverrideReason?: string;
+        };
+        PossibleDuplicateSale: {
+            /** Format: uuid */
+            id: string;
+            /** @example INV-0123 */
+            number: string;
+            /** @description Minor units. */
+            total: number;
+            /** Format: date-time */
+            occurredAt: string;
+            /**
+             * @description Who recorded it, when known.
+             * @example Ade Bayo
+             */
+            recordedBy: string | null;
+        };
+        PossibleDuplicateConflict: {
+            /** @example POSSIBLE_DUPLICATE */
+            error: string;
+            message: string;
+            /** @description Newest first; at most three. */
+            duplicates: components["schemas"]["PossibleDuplicateSale"][];
         };
         ReturnLineDto: {
             /** Format: uuid */
@@ -5557,6 +5742,131 @@ export interface components {
              */
             occurredAt?: string;
             lines: components["schemas"]["ReturnLineDto"][];
+        };
+        CashPersonView: {
+            /** Format: uuid */
+            userId: string;
+            firstName: string | null;
+            lastName: string | null;
+            /** @description Cash payments they took, voided ones left out. */
+            received: number;
+            /** @description Cash refunds, cash expenses and cash supplier payments they recorded. */
+            paidOut: number;
+            /** @description Banking an owner or manager has confirmed. */
+            banked: number;
+            /** @description Banking recorded and not yet confirmed. */
+            waiting: number;
+            /** @description received − paidOut − banked − waiting. Negative when they paid out more cash than they took. */
+            stillHolding: number;
+            /**
+             * Format: date-time
+             * @description When the oldest cash they still hold was taken.
+             */
+            oldestUnbankedAt: string | null;
+            /** @description Some of what they hold is more than a day old. */
+            overdue: boolean;
+        };
+        CashTotalsView: {
+            received: number;
+            paidOut: number;
+            banked: number;
+            waiting: number;
+            /** @description What people hold, added up. A negative holding never cancels a colleague’s. */
+            notBanked: number;
+            /** Format: date-time */
+            oldestUnbankedAt: string | null;
+            overdue: boolean;
+        };
+        CashView: {
+            /**
+             * Format: date-time
+             * @description Where counting starts. Null means from the shop’s first payment.
+             */
+            countedFrom: string | null;
+            /** @description Everybody with cash to account for, most held first. Staff see only themselves. */
+            people: components["schemas"]["CashPersonView"][];
+            totals: components["schemas"]["CashTotalsView"];
+        };
+        CashBankingView: {
+            /** Format: uuid */
+            id: string;
+            /** @description Whose cash it was. */
+            heldBy: components["schemas"]["PersonRef"];
+            /** @description In minor units. Always positive. */
+            amount: number;
+            /** @description Null when it was handed to the owner. */
+            bankAccount: components["schemas"]["BankedInto"] | null;
+            reference: string | null;
+            note: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            recordedBy: components["schemas"]["PersonRef"] | null;
+            /** @enum {string} */
+            status: "waiting" | "confirmed" | "not_received";
+            /** Format: date-time */
+            confirmedAt: string | null;
+            confirmedBy: components["schemas"]["PersonRef"] | null;
+            /** Format: date-time */
+            voidedAt: string | null;
+            voidedReason: string | null;
+            voidedBy: components["schemas"]["PersonRef"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CashBankingListView: {
+            bankings: components["schemas"]["CashBankingView"][];
+            nextCursor: string | null;
+            /** Format: date-time */
+            syncedThrough: string;
+            hasMore: boolean;
+        };
+        CreateCashBankingDto: {
+            /**
+             * Format: uuid
+             * @description Optional client-supplied id, so an offline device can mint the row identity itself.
+             */
+            id?: string;
+            /**
+             * Format: uuid
+             * @description Whose cash this was. Omitted, the person recording it. Staff may only record their own; an owner or manager records for anyone.
+             */
+            heldByUserId?: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 4850000
+             */
+            amount: number;
+            /**
+             * @description `bank`: paid into one of your accounts, named in `bankAccountId`. `owner`: handed to the owner, where the trail ends.
+             * @enum {string}
+             */
+            to: "bank" | "owner";
+            /**
+             * Format: uuid
+             * @description Required when `to` is `bank`; refused when it is `owner`.
+             */
+            bankAccountId?: string;
+            /**
+             * @description The deposit slip or transfer reference.
+             * @example Teller 0042117
+             */
+            reference?: string;
+            /** @example Monday and Tuesday takings. */
+            note?: string;
+            /**
+             * Format: date-time
+             * @description When it was banked, by the device clock. Defaults to now; an offline device sends its own.
+             */
+            occurredAt?: string;
+        };
+        VoidCashBankingDto: {
+            /**
+             * @description Why this money did not arrive where the row says.
+             * @example Not on the GTBank statement for the 8th.
+             */
+            reason: string;
         };
         CategoryRef: {
             /** Format: uuid */
@@ -5829,6 +6139,53 @@ export interface components {
             /** @description If everything on hand sold at today’s carton price on this list: a projection to plan by, never a record. Follows the category filter. */
             projection: components["schemas"]["MarginsProjection"];
         };
+        GrowthFiguresView: {
+            /** @description Tax-exclusive, net of returns. */
+            revenue: number;
+            grossProfit: number;
+            /** @description Gross profit over revenue, in basis points. */
+            marginBps: number;
+            operatingProfit: number;
+            /** @description Received from customers, whatever invoice it settled. */
+            collected: number;
+            /** @description Invoices recorded. */
+            sales: number;
+            /** @description Revenue per sale, rounded once. */
+            averageSale: number;
+            /** @description Named customers who bought. */
+            customers: number;
+            /** @description Of those, buying for the first time ever. */
+            newCustomers: number;
+        };
+        GrowthChangeView: {
+            revenue: number | null;
+            grossProfit: number | null;
+            operatingProfit: number | null;
+            collected: number | null;
+            sales: number | null;
+            averageSale: number | null;
+            customers: number | null;
+            newCustomers: number | null;
+            /** @description The margin’s move in points, as basis points: 250 is from 10.0% to 12.5%. */
+            marginPoints: number;
+        };
+        GrowthMonthView: {
+            /** @example 2026-10 */
+            month: string;
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            /** @description This month, so far. Its change is against the same stretch of the month before, never all of it. */
+            partial: boolean;
+            figures: components["schemas"]["GrowthFiguresView"];
+            /** @description Against the month before it. */
+            change: components["schemas"]["GrowthChangeView"];
+        };
+        GrowthReportView: {
+            /** @description Oldest first, ending with this month. */
+            months: components["schemas"]["GrowthMonthView"][];
+        };
         PeriodView: {
             /** @example month */
             name: string;
@@ -5851,7 +6208,7 @@ export interface components {
             month: number;
             monthGross: number;
             lastMonth: number;
-            /** @description Change on last month in basis points; 2500 is up 25%. Zero when last month sold nothing, because no percentage exists. */
+            /** @description Change on the same stretch of last month — the same days and time of day, not all of it — in basis points; 2500 is up 25%. Zero when there is nothing to compare with; growth.change.revenue says null. */
             changeBps: number;
         };
         MethodTotal: {
@@ -6048,6 +6405,36 @@ export interface components {
         TrendSummary: {
             days: components["schemas"]["TrendDay"][];
         };
+        GrowthComparisonView: {
+            /** Format: date-time */
+            currentFrom: string;
+            /** Format: date-time */
+            currentTo: string;
+            /** Format: date-time */
+            previousFrom: string;
+            /**
+             * Format: date-time
+             * @description The same day of the month and time of day as now, last month — or the end of last month, if it had no such day.
+             */
+            previousTo: string;
+            current: components["schemas"]["GrowthFiguresView"];
+            previous: components["schemas"]["GrowthFiguresView"];
+            change: components["schemas"]["GrowthChangeView"];
+        };
+        CashTile: {
+            /** @description What people still hold, added up. */
+            notBanked: number;
+            /** @description Recorded as banked, not yet confirmed. */
+            waiting: number;
+            /** Format: date-time */
+            oldestUnbankedAt: string | null;
+            /** @description Some of it is more than a day old — amber. */
+            overdue: boolean;
+        };
+        SignedInSummary: {
+            people: number;
+            devices: number;
+        };
         StockHandledSummary: {
             /** @description Stock at the start of the month, and opening stock entered in it, at cost. */
             opening: number;
@@ -6070,6 +6457,12 @@ export interface components {
             movers: components["schemas"]["MoversSummary"];
             purchasing: components["schemas"]["PurchasingSummary"];
             trend: components["schemas"]["TrendSummary"];
+            /** @description This month so far beside the same stretch of last month, figure by figure. */
+            growth: components["schemas"]["GrowthComparisonView"];
+            /** @description Cash taken and not yet banked — the same totals as `GET /cash`. */
+            cash: components["schemas"]["CashTile"];
+            /** @description People and devices active in the last thirty minutes — the same count Settings → Staff shows. */
+            signedIn: components["schemas"]["SignedInSummary"];
             /** @description The month’s goods available for sale, at cost. Absent for a role that may not see cost — which this endpoint already refuses. */
             stock?: components["schemas"]["StockHandledSummary"];
         };
@@ -6751,6 +7144,37 @@ export interface components {
             createdAt: string;
             user: components["schemas"]["StaffUserView"];
         };
+        SessionView: {
+            /** @example Chrome on Android */
+            device: string;
+            /** Format: date-time */
+            signedInAt: string;
+            /**
+             * Format: date-time
+             * @description The last renewal. The app renews every fifteen minutes while it is used, so the person was last active at or up to fifteen minutes after this.
+             */
+            lastActiveAt: string;
+            /** @description Renewed within the last thirty minutes. */
+            activeNow: boolean;
+        };
+        MemberSessionsView: {
+            /** Format: uuid */
+            userId: string;
+            /** @description Live sessions in this shop, most recently active first. */
+            sessions: components["schemas"]["SessionView"][];
+            /**
+             * Format: date-time
+             * @description The last renewal on record; null when none is kept.
+             */
+            lastSeenAt: string | null;
+        };
+        SessionsSummaryView: {
+            members: components["schemas"]["MemberSessionsView"][];
+            /** @description People with a session active now. */
+            activePeople: number;
+            /** @description Sessions active now, across everybody. */
+            activeDevices: number;
+        };
         CreateStaffDto: {
             /** @example Amina */
             firstName: string;
@@ -6812,6 +7236,10 @@ export interface components {
         };
         StaffPasswordResetView: {
             /** @example Password updated. Tell them the new one. */
+            message: string;
+        };
+        StaffSignOutView: {
+            /** @example Signed out. They can sign in again. */
             message: string;
         };
     };
@@ -9533,6 +9961,15 @@ export interface operations {
                     "application/json": components["schemas"]["SaleView"];
                 };
             };
+            /** @description Not enough stock, a customer who still owes, or — with `error: POSSIBLE_DUPLICATE` — a sale that looks already recorded. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PossibleDuplicateConflict"];
+                };
+            };
         };
     };
     SaleController_dueInvoices: {
@@ -9620,6 +10057,153 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SaleView"];
+                };
+            };
+        };
+    };
+    CashController_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashView"];
+                };
+            };
+        };
+    };
+    CashController_findAll: {
+        parameters: {
+            query?: {
+                status?: "waiting" | "confirmed" | "not_received";
+                heldByUserId?: string;
+                /** @description ISO date-time. Syncing only: a position in the `updatedAt` walk that a cursor overrides. */
+                since?: string;
+                /** @description `asc` (the default) is the sync order. `desc` is for a person reading a list, newest first. `status` applies to `desc` only — a syncing client must hear that a row it holds was confirmed. */
+                order?: "asc" | "desc";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingListView"];
+                };
+            };
+        };
+    };
+    CashController_create: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original banking instead of recording it twice. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCashBankingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingView"];
+                };
+            };
+            /** @description `error: MORE_THAN_HELD` — more than the person holds. A shortfall is fine: bank what you have and the rest stays as still holding. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CashController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingView"];
+                };
+            };
+        };
+    };
+    CashController_confirm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingView"];
+                };
+            };
+        };
+    };
+    CashController_voidBanking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoidCashBankingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingView"];
                 };
             };
         };
@@ -9873,6 +10457,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarginsView"];
+                };
+            };
+        };
+    };
+    ReportController_growth: {
+        parameters: {
+            query?: {
+                /** @description How many months, ending with this one. Six when omitted. */
+                months?: 6 | 12;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthReportView"];
                 };
             };
         };
@@ -10463,6 +11069,25 @@ export interface operations {
             };
         };
     };
+    StaffController_sessionSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionsSummaryView"];
+                };
+            };
+        };
+    };
     StaffController_remove: {
         parameters: {
             query?: never;
@@ -10530,6 +11155,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StaffPasswordResetView"];
+                };
+            };
+        };
+    };
+    StaffController_signOut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffSignOutView"];
                 };
             };
         };

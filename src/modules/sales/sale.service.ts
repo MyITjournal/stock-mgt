@@ -1,4 +1,5 @@
 import { dueDateFor } from './due';
+import { duplicateWindow, sameItems } from './duplicates';
 import {
   BadRequestException,
   ConflictException,
@@ -156,6 +157,18 @@ export class SaleService {
         where: { id: organizationId },
         select: { chargesVat: true, timezone: true },
       });
+
+    // Already recorded by somebody? A warning, passed with `allowDuplicate`
+    // (2026-10-08) — checked before anything is written, so "Record anyway"
+    // starts from a clean slate.
+    if (!input.allowDuplicate) {
+      await this.assertNotAlreadyRecorded(
+        input,
+        saleId,
+        occurredAt,
+        timezone || 'Africa/Lagos',
+      );
+    }
 
     await this.prisma.$transaction(async (tx) => {
       const writer = tx as unknown as StockWriter;
@@ -486,6 +499,71 @@ export class SaleService {
    * goods returned after paying — is not in debt, and blocking their next
    * purchase over it would be nonsense.
    */
+  /**
+   * Refuses — once, and for anyone to pass — a sale that looks like one
+   * already recorded (2026-10-08): the same customer on the same day, or a
+   * walk-in within ten minutes, with the same items in the same amounts
+   * (`duplicates.ts`). The 409 names the sale it looks like and who recorded
+   * it, so whoever is at the till can open it and see.
+   */
+  private async assertNotAlreadyRecorded(
+    input: CreateSaleDto,
+    saleId: string,
+    occurredAt: Date,
+    timezone: string,
+  ) {
+    const window = duplicateWindow(input.customerId, occurredAt, timezone);
+    const candidates = await this.prisma.sale.findMany({
+      where: {
+        id: { not: saleId },
+        customerId: input.customerId ?? null,
+        occurredAt: { gte: window.from, lt: window.to },
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        number: true,
+        total: true,
+        occurredAt: true,
+        lines: { select: { productId: true, unitId: true, quantity: true } },
+        recordedBy: { select: { firstName: true, lastName: true } },
+      },
+    });
+
+    const twins = candidates
+      .filter((sale) => sameItems(input.lines, sale.lines))
+      .slice(0, 3)
+      .map((sale) => ({
+        id: sale.id,
+        number: sale.number,
+        total: sale.total,
+        occurredAt: sale.occurredAt,
+        recordedBy: sale.recordedBy
+          ? [sale.recordedBy.firstName, sale.recordedBy.lastName]
+              .filter(Boolean)
+              .join(' ')
+          : null,
+      }));
+    if (twins.length === 0) return;
+
+    const first = twins[0];
+    const at = first.occurredAt.toLocaleTimeString('en-NG', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    throw new ConflictException({
+      error: 'POSSIBLE_DUPLICATE',
+      message: `This looks already recorded: ${first.number}${
+        first.recordedBy ? `, by ${first.recordedBy}` : ''
+      } at ${at} — ${
+        input.customerId ? 'the same customer, ' : ''
+      }the same items. Record it again only if it is a second sale.`,
+      duplicates: twins,
+    });
+  }
+
   private async assertMayTakeCredit(
     tx: Pick<TenantPrisma, 'sale'>,
     customerId: string,

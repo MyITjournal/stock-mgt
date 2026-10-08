@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SalesGroupRow } from './report.response';
 import { DebtorGroup } from '../../payments/dto/receivable.response';
+import { GrowthComparisonView } from './growth.dto';
 
 /**
  * What `GET /reports/dashboard` returns.
@@ -60,7 +61,7 @@ class SalesSummary {
 
   @ApiProperty({
     description:
-      'Change on last month in basis points; 2500 is up 25%. Zero when last month sold nothing, because no percentage exists.',
+      'Change on the same stretch of last month — the same days and time of day, not all of it — in basis points; 2500 is up 25%. Zero when there is nothing to compare with; growth.change.revenue says null.',
   })
   changeBps!: number;
 }
@@ -495,6 +496,30 @@ class TrendSummary {
   days!: TrendDay[];
 }
 
+/** Who is signed in now (2026-10-08): used in the last thirty minutes. */
+/** "Cash not yet banked" on Home (2026-10-08). */
+class CashTile {
+  @ApiProperty({ description: 'What people still hold, added up.' })
+  notBanked!: number;
+
+  @ApiProperty({ description: 'Recorded as banked, not yet confirmed.' })
+  waiting!: number;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  oldestUnbankedAt!: Date | null;
+
+  @ApiProperty({ description: 'Some of it is more than a day old — amber.' })
+  overdue!: boolean;
+}
+
+class SignedInSummary {
+  @ApiProperty()
+  people!: number;
+
+  @ApiProperty()
+  devices!: number;
+}
+
 /** What stock the shop handled this month, at cost (2026-10-07). */
 class StockHandledSummary {
   @ApiProperty({
@@ -546,6 +571,27 @@ export class DashboardView {
 
   @ApiProperty({ type: () => TrendSummary })
   trend!: TrendSummary;
+
+  @ApiProperty({
+    type: () => GrowthComparisonView,
+    description:
+      'This month so far beside the same stretch of last month, figure by figure.',
+  })
+  growth!: GrowthComparisonView;
+
+  @ApiProperty({
+    type: () => CashTile,
+    description:
+      'Cash taken and not yet banked — the same totals as `GET /cash`.',
+  })
+  cash!: CashTile;
+
+  @ApiProperty({
+    type: () => SignedInSummary,
+    description:
+      'People and devices active in the last thirty minutes — the same count Settings → Staff shows.',
+  })
+  signedIn!: SignedInSummary;
 
   @ApiPropertyOptional({
     type: () => StockHandledSummary,

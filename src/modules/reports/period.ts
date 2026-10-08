@@ -206,6 +206,58 @@ export function resolvePeriod(
 }
 
 /**
+ * The same stretch of last month as this month has had so far (2026-10-08).
+ *
+ * At 10:40 on 8 October this is 1 September to 10:40 on 8 September — **not
+ * all of September**. Comparing eight days of October with thirty of September
+ * made every month look like a collapse until its last week; that was the bug
+ * this exists to fix. Same day of the month, same time of day, so a morning
+ * is set against a morning.
+ *
+ * A day last month did not have (the 31st, against a 30-day month) takes the
+ * whole of last month.
+ */
+export function sameSpanLastMonth(timezone: string, now: Date): Period {
+  const { year, month, day, hour, minute, second } = zonedFields(timezone, now);
+  const from = zonedStartOfDay(timezone, year, month - 1, 1);
+  const thisMonthStart = zonedStartOfDay(timezone, year, month, 1);
+  // Day 0 of this month is the last day of the one before it.
+  const daysInLastMonth = new Date(Date.UTC(year, month - 1, 0)).getUTCDate();
+
+  const to =
+    day > daysInLastMonth
+      ? thisMonthStart
+      : new Date(
+          zonedStartOfDay(timezone, year, month - 1, day).getTime() +
+            ((hour * 60 + minute) * 60 + second) * 1000 +
+            now.getMilliseconds(),
+        );
+
+  return {
+    from,
+    to: to < thisMonthStart ? to : thisMonthStart,
+    timezone,
+    name: 'custom',
+  };
+}
+
+/** One calendar month, in `timezone`: the month `count` months after `at`'s. */
+export function monthPeriod(timezone: string, at: Date, count: number): Period {
+  return {
+    from: addMonths(timezone, at, count),
+    to: addMonths(timezone, at, count + 1),
+    timezone,
+    name: 'custom',
+  };
+}
+
+/** `YYYY-MM` as read in `timezone` — the key a month is labelled by. */
+export function monthKey(timezone: string, at: Date): string {
+  const { year, month } = zonedFields(timezone, at);
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+/**
  * An explicit range. `from` and `to` are read as **local dates**, and `to` is
  * treated as inclusive of the whole day the caller named — asking for
  * `to=2026-08-30` means "up to the end of the 30th", which is what someone

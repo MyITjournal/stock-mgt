@@ -810,6 +810,13 @@ model Organization {
   /// within one business, which at counter volumes costs nothing.
   nextSaleNumber Int @default(1)
 
+  /// Where Money → Cash starts counting (2026-10-08). Shops that existed when
+  /// cash banking shipped start at midnight, shop time, on that day — counting
+  /// from their first sale would show every person "still holding" months of
+  /// cash that was banked long ago with nothing recorded. **Null means from
+  /// the beginning**, which is every shop created since.
+  cashCountedFrom DateTime?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -851,6 +858,7 @@ model Organization {
   goodsReceiptCorrections     GoodsReceiptCorrection[]
   goodsReceiptCorrectionLines GoodsReceiptCorrectionLine[]
   lotCostCorrections          LotCostCorrection[]
+  cashBankings                CashBanking[]
 
   @@map("organizations")
 }
@@ -881,6 +889,14 @@ model Membership {
   /// here for the manager doing a month-end stocktake and the storekeeper
   /// receiving a lorry that arrived at nine at night.
   ignoresWorkingHours Boolean @default(false)
+
+  /// Every session in this shop issued **before** this moment is over, at once
+  /// (2026-10-08). Set when the owner signs somebody out, and when a member of
+  /// staff signs in somewhere new. Revoking refresh tokens alone would leave the
+  /// other device working for up to fifteen minutes on its access token;
+  /// `JwtStrategy` already reads this row on every request, so it can refuse
+  /// one issued earlier. Null means nobody has ever been signed out.
+  sessionsEndedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -974,6 +990,10 @@ model User {
   stocktakeLines         StocktakeLine[]
   expenses               Expense[]
   goodsReceipts          GoodsReceipt[]
+  cashHeld               CashBanking[]            @relation("CashBankingHeldBy")
+  cashBankingsRecorded   CashBanking[]            @relation("CashBankingRecordedBy")
+  cashBankingsConfirmed  CashBanking[]            @relation("CashBankingConfirmedBy")
+  cashBankingsVoided     CashBanking[]            @relation("CashBankingVoidedBy")
 
   @@map("users")
 }
@@ -1484,6 +1504,7 @@ model BankAccount {
   organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   payments         Payment[]
   supplierPayments SupplierPayment[]
+  cashBankings     CashBanking[]
 
   /// One row per account number at a bank. The same number at two different
   /// banks is a different account, so both columns are in the key.
@@ -1641,6 +1662,68 @@ model SupplierPayment {
   /// Delta sync pages on `updatedAt`, because voiding mutates the row.
   @@index([organizationId, updatedAt, id])
   @@map("supplier_payments")
+}
+
+/// Cash somebody took and then banked, or handed to the owner (2026-10-08).
+///
+/// **Neither a payment nor an expense.** The money was already counted when
+/// the customer paid; this only says whose hands it left and where it went, so
+/// it changes no invoice, no bill, no profit. Money → Cash adds these up per
+/// person: received in cash − paid out in cash − banked − waiting = still
+/// holding (`cash.ts`).
+///
+/// A row is **waiting** until an owner or manager confirms it, and confirmed or
+/// voided ("not received") after. Nobody confirms their own, except the owner,
+/// whose own are confirmed as they are recorded — there is nobody above them.
+model CashBanking {
+  id             String @id @default(uuid())
+  organizationId String
+
+  /// Whose cash this was. Staff record only their own; an owner or manager
+  /// records for anyone.
+  heldByUserId String
+
+  /// In minor units (kobo). Always positive. A shortfall is not recorded here:
+  /// it stays as "still holding" against the person, never written off.
+  amount Int
+
+  /// The account it was paid into. **Null means handed to the owner**, where
+  /// the trail ends — the app does not follow the owner's own pocket.
+  bankAccountId String?
+
+  /// The deposit slip or transfer reference.
+  reference String?
+  note      String?
+
+  occurredAt DateTime @default(now())
+
+  recordedByUserId String?
+
+  confirmedAt       DateTime?
+  confirmedByUserId String?
+
+  /// "Not received": the money never arrived where the row says. The amount
+  /// goes back to the person's "still holding". Kept, with its reason, like a
+  /// voided payment.
+  voidedAt       DateTime?
+  voidedReason   String?
+  voidedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  heldBy       User         @relation("CashBankingHeldBy", fields: [heldByUserId], references: [id], onDelete: Restrict)
+  bankAccount  BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  recordedBy   User?        @relation("CashBankingRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  confirmedBy  User?        @relation("CashBankingConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: SetNull)
+  voidedBy     User?        @relation("CashBankingVoidedBy", fields: [voidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, heldByUserId])
+  @@index([organizationId, occurredAt])
+  /// Delta sync pages on `updatedAt`: confirming or voiding mutates the row.
+  @@index([organizationId, updatedAt, id])
+  @@map("cash_bankings")
 }
 
 /// A rebate a vendor owes for a month's buying, and the bill it was credited on.
