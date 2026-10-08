@@ -1811,6 +1811,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reports/growth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Month by month: is the business growing?
+         * @description Revenue, gross and operating profit, collected, sales, average sale and customers for the last 6 or 12 months, each against the month before. This month is partial, so it is compared with the same stretch of last month — never all of it.
+         */
+        get: operations["ReportController_growth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/dashboard": {
         parameters: {
             query?: never;
@@ -5869,6 +5889,53 @@ export interface components {
             /** @description If everything on hand sold at today’s carton price on this list: a projection to plan by, never a record. Follows the category filter. */
             projection: components["schemas"]["MarginsProjection"];
         };
+        GrowthFiguresView: {
+            /** @description Tax-exclusive, net of returns. */
+            revenue: number;
+            grossProfit: number;
+            /** @description Gross profit over revenue, in basis points. */
+            marginBps: number;
+            operatingProfit: number;
+            /** @description Received from customers, whatever invoice it settled. */
+            collected: number;
+            /** @description Invoices recorded. */
+            sales: number;
+            /** @description Revenue per sale, rounded once. */
+            averageSale: number;
+            /** @description Named customers who bought. */
+            customers: number;
+            /** @description Of those, buying for the first time ever. */
+            newCustomers: number;
+        };
+        GrowthChangeView: {
+            revenue: number | null;
+            grossProfit: number | null;
+            operatingProfit: number | null;
+            collected: number | null;
+            sales: number | null;
+            averageSale: number | null;
+            customers: number | null;
+            newCustomers: number | null;
+            /** @description The margin’s move in points, as basis points: 250 is from 10.0% to 12.5%. */
+            marginPoints: number;
+        };
+        GrowthMonthView: {
+            /** @example 2026-10 */
+            month: string;
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            /** @description This month, so far. Its change is against the same stretch of the month before, never all of it. */
+            partial: boolean;
+            figures: components["schemas"]["GrowthFiguresView"];
+            /** @description Against the month before it. */
+            change: components["schemas"]["GrowthChangeView"];
+        };
+        GrowthReportView: {
+            /** @description Oldest first, ending with this month. */
+            months: components["schemas"]["GrowthMonthView"][];
+        };
         PeriodView: {
             /** @example month */
             name: string;
@@ -5891,7 +5958,7 @@ export interface components {
             month: number;
             monthGross: number;
             lastMonth: number;
-            /** @description Change on last month in basis points; 2500 is up 25%. Zero when last month sold nothing, because no percentage exists. */
+            /** @description Change on the same stretch of last month — the same days and time of day, not all of it — in basis points; 2500 is up 25%. Zero when there is nothing to compare with; growth.change.revenue says null. */
             changeBps: number;
         };
         MethodTotal: {
@@ -6088,6 +6155,22 @@ export interface components {
         TrendSummary: {
             days: components["schemas"]["TrendDay"][];
         };
+        GrowthComparisonView: {
+            /** Format: date-time */
+            currentFrom: string;
+            /** Format: date-time */
+            currentTo: string;
+            /** Format: date-time */
+            previousFrom: string;
+            /**
+             * Format: date-time
+             * @description The same day of the month and time of day as now, last month — or the end of last month, if it had no such day.
+             */
+            previousTo: string;
+            current: components["schemas"]["GrowthFiguresView"];
+            previous: components["schemas"]["GrowthFiguresView"];
+            change: components["schemas"]["GrowthChangeView"];
+        };
         SignedInSummary: {
             people: number;
             devices: number;
@@ -6114,6 +6197,8 @@ export interface components {
             movers: components["schemas"]["MoversSummary"];
             purchasing: components["schemas"]["PurchasingSummary"];
             trend: components["schemas"]["TrendSummary"];
+            /** @description This month so far beside the same stretch of last month, figure by figure. */
+            growth: components["schemas"]["GrowthComparisonView"];
             /** @description People and devices active in the last thirty minutes — the same count Settings → Staff shows. */
             signedIn: components["schemas"]["SignedInSummary"];
             /** @description The month’s goods available for sale, at cost. Absent for a role that may not see cost — which this endpoint already refuses. */
@@ -9954,6 +10039,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarginsView"];
+                };
+            };
+        };
+    };
+    ReportController_growth: {
+        parameters: {
+            query?: {
+                /** @description How many months, ending with this one. Six when omitted. */
+                months?: 6 | 12;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowthReportView"];
                 };
             };
         };

@@ -3490,6 +3490,54 @@ async function main() {
   await api('GET', '/products', { token: backIn.accessToken ?? backIn.tokens?.accessToken });
   check('and she can sign straight back in — not suspended', true);
 
+  step(58, 'Growth: this month against the same days of last month, and month by month');
+  const growthDash = (await api('GET', '/reports/dashboard', { token: t })).data;
+  const growthNow = growthDash.growth;
+  eq('this month’s revenue is the dashboard’s revenue', growthNow.current.revenue, growthDash.sales.month);
+  eq('and its gross profit is the profit block’s', growthNow.current.grossProfit, growthDash.profit.grossProfit);
+  check(
+    'last month’s side ends on the same day and time last month, not at the month’s end',
+    new Date(growthNow.previousTo) <= new Date(growthNow.currentFrom) &&
+      new Date(growthNow.previousFrom) < new Date(growthNow.previousTo),
+    `${growthNow.previousFrom} – ${growthNow.previousTo}`,
+  );
+  check('it counts sales and the customers who bought', growthNow.current.sales > 0 && growthNow.current.customers > 0);
+  check(
+    'and new customers are some of those customers',
+    growthNow.current.newCustomers <= growthNow.current.customers,
+  );
+  eq(
+    'the average sale is revenue per sale, rounded once',
+    growthNow.current.averageSale,
+    Math.round(growthNow.current.revenue / growthNow.current.sales),
+  );
+  if (growthNow.previous.revenue === 0) {
+    eq('with nothing last month, there is no change to give — null, not 0', growthNow.change.revenue, null);
+    eq('and the revenue tile says no comparison', growthDash.sales.changeBps, 0);
+  } else {
+    eq('the revenue tile’s change is the growth figure', growthDash.sales.changeBps, growthNow.change.revenue);
+  }
+
+  const growthReport = (await api('GET', '/reports/growth?months=6', { token: t })).data;
+  eq('six months, ending with this one', growthReport.months.length, 6);
+  const thisMonthRow = growthReport.months[5];
+  check('this month is marked as so far', thisMonthRow.partial && !growthReport.months[4].partial);
+  eq('and its revenue agrees with Home', thisMonthRow.figures.revenue, growthNow.current.revenue);
+  eq('its sales count too', thisMonthRow.figures.sales, growthNow.current.sales);
+  eq(
+    'and its change is against the same days of last month, as Home’s is',
+    thisMonthRow.change.revenue,
+    growthNow.change.revenue,
+  );
+  eq('twelve on request', (await api('GET', '/reports/growth?months=12', { token: t })).data.months.length, 12);
+  await api('GET', '/reports/growth?months=7', { token: t, expect: 400 });
+  check('and only six or twelve (400)', true);
+  await api('GET', '/reports/growth', {
+    token: backIn.accessToken ?? backIn.tokens?.accessToken,
+    expect: 403,
+  });
+  check('a cashier cannot see growth — it carries gross profit (403)', true);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

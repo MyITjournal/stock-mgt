@@ -26,6 +26,8 @@ import { MarginService } from './margin.service';
 import { StockSummaryService } from './stock-summary.service';
 import { StockSummaryView } from './dto/stock-summary.dto';
 import { MarginsQueryDto, MarginsView } from './dto/margins.dto';
+import { GrowthService } from './growth.service';
+import { GrowthQueryDto, GrowthReportView } from './dto/growth.dto';
 import {
   ExpiryQueryDto,
   PeriodQueryDto,
@@ -43,6 +45,7 @@ export class ReportController {
     private readonly dashboard: DashboardService,
     private readonly marginService: MarginService,
     private readonly stockSummary: StockSummaryService,
+    private readonly growthService: GrowthService,
   ) {}
 
   @Get('margins')
@@ -55,6 +58,18 @@ export class ReportController {
   @ApiOkResponse({ type: MarginsView })
   margins(@Query() query: MarginsQueryDto): Promise<MarginsView> {
     return this.marginService.margins(query);
+  }
+
+  @Get('growth')
+  @Roles(...SEES_COST)
+  @ApiOperation({
+    summary: 'Month by month: is the business growing?',
+    description:
+      'Revenue, gross and operating profit, collected, sales, average sale and customers for the last 6 or 12 months, each against the month before. This month is partial, so it is compared with the same stretch of last month — never all of it.',
+  })
+  @ApiOkResponse({ type: GrowthReportView })
+  growth(@Query() query: GrowthQueryDto): Promise<GrowthReportView> {
+    return this.growthService.months(query.months ?? 6);
   }
 
   @Get('dashboard')

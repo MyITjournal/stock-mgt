@@ -1284,3 +1284,23 @@ last seen …*. No address is shown anywhere.
 **329. [gate] Press Sign out on the cashier.** A green note says they are signed out. On the
 cashier's device, the next tap lands on the sign-in screen; signing in again works. Your own card
 has no Sign out button, and a manager sees the list with no Sign out buttons.
+
+---
+
+## BA. Growth
+
+**330. [gate] Home, as the owner, early in a month.** The revenue tile's arrow is against the same
+days of last month — not a large drop just because the month has barely started. The *Growth*
+table below the tiles is headed with two day ranges ("1–8 Oct" and "1–8 Sep") and lists revenue,
+gross profit, gross margin, operating profit, collected, sales, average sale, customers who bought
+and new customers, each with ▲/▼. The margin's change is in **pts**. A figure with nothing last
+month shows "—", never 0%.
+
+**331. [gate] Reports → Growth.** Two bar charts — revenue by month, gross profit by month — and
+this month's columns are lighter, dashed and labelled "so far". Hovering a column shows its month
+and figure. The table lists the newest month first, with each figure's change beneath it, and its
+current-month revenue matches Home's. *Last 12 months* shows twelve; the choice survives a reload.
+Download gives a sheet with the same rows.
+
+**332. [gate] As a cashier**, there is no Reports item, and typing `/reports/growth` does not show
+the figures.

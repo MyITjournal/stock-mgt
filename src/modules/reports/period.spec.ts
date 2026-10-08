@@ -4,7 +4,10 @@ import {
   customPeriod,
   dayKey,
   eachDayKey,
+  monthKey,
+  monthPeriod,
   resolvePeriod,
+  sameSpanLastMonth,
   startOfDay,
   startOfMonth,
 } from './period';
@@ -182,5 +185,36 @@ describe('period', () => {
         '2026-10-26',
       ]);
     });
+  });
+});
+
+describe('sameSpanLastMonth', () => {
+  it('is the same days and time of day last month, not all of it', () => {
+    // 10:40 on 8 October, Lagos (UTC+1).
+    const span = sameSpanLastMonth(LAGOS, new Date('2026-10-08T09:40:00Z'));
+    expect(span.from).toEqual(new Date('2026-08-31T23:00:00Z')); // 1 Sep, 00:00 WAT
+    expect(span.to).toEqual(new Date('2026-09-08T09:40:00Z')); // 8 Sep, 10:40 WAT
+  });
+
+  it('takes the whole of a shorter last month on a day it did not have', () => {
+    // 31 October, against a 30-day September.
+    const span = sameSpanLastMonth(LAGOS, new Date('2026-10-31T12:00:00Z'));
+    expect(span.to).toEqual(new Date('2026-09-30T23:00:00Z')); // 1 Oct, 00:00 WAT
+  });
+
+  it('reaches back across a year', () => {
+    const span = sameSpanLastMonth(LAGOS, new Date('2027-01-05T11:00:00Z'));
+    expect(span.from).toEqual(new Date('2026-11-30T23:00:00Z')); // 1 Dec 2026
+    expect(span.to).toEqual(new Date('2026-12-05T11:00:00Z'));
+  });
+});
+
+describe('monthPeriod and monthKey', () => {
+  it('gives a whole calendar month in the shop’s zone', () => {
+    const at = new Date('2026-10-08T09:40:00Z');
+    const september = monthPeriod(LAGOS, at, -1);
+    expect(september.from).toEqual(new Date('2026-08-31T23:00:00Z'));
+    expect(september.to).toEqual(new Date('2026-09-30T23:00:00Z'));
+    expect(monthKey(LAGOS, september.from)).toBe('2026-09');
   });
 });

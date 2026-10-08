@@ -7,6 +7,7 @@ import { MoneyTargetRing, TargetRing } from '../components/TargetRing';
 import { Spinner } from '../auth/RequireAuth';
 import { DuePayments } from '../components/DuePayments';
 import { Link } from 'react-router-dom';
+import { GrowthPanel } from './GrowthPanel';
 
 /**
  * The whole screen, from one request.
@@ -216,6 +217,8 @@ export function HomePage() {
           is the best available answer, not a measured one.
         </p>
       )}
+
+      <GrowthPanel growth={data.growth} timezone={data.timezone} />
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <Panel title="Who owes me most">

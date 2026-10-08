@@ -2301,6 +2301,55 @@ stock or movement, base units, shown in the shop's own units.
 - **Margins stopped colouring under 3% amber** at the same time: in this trade 2–3% is ordinary,
   so most rows were amber and the colour marked nothing. Red for below cost stays.
 
+### Growth: a month so far against the same days of last month (2026-10-08)
+
+The owner: "one of the high points of Reho is to do a proper assessment of the business in
+comparison to the previous months." Two things came of it, and the first was a bug.
+
+**The bug.** Home's "▲/▼ on last month" set `sales.month` — this month **so far** — against
+`last-month`, the **whole** of last month. On 8 October that was eight days against thirty, so
+the arrow read about −74% on an ordinary month and only stopped lying in the last week. Nothing
+in the code was wrong arithmetic; the two windows were different lengths. `sameSpanLastMonth`
+(`period.ts`, where all date arithmetic lives) is the fix: from the 1st of last month to the
+**same day and the same time of day** — 10:40 on the 8th against 10:40 on the 8th, so a
+morning is set against a morning. A day last month did not have (the 31st against a 30-day
+month) takes all of last month. `sales.changeBps` is now the growth revenue change, still 0 when
+there is nothing to compare (the field's old meaning); the growth block says null.
+
+**What grows, and how it is compared** (`reports/growth.ts`, pure): revenue, gross profit, gross
+margin, operating profit, collected, number of sales, average sale, customers who bought, new
+customers. Every money figure comes from the reports that already exist —
+`ReportService.profit` and `collections` — so growth can never disagree with the profit report
+for the same window. Three rules:
+
+- **No comparison is null, not 0.** A first month, or one that sold nothing, has no change;
+  "0%" would read as "flat".
+- **A loss is measured on its size**, so a loss shrinking from ₦100k to ₦50k reads as up 50% —
+  the direction it moved.
+- **The margin moves in points.** 10.0% → 12.5% is "▲ 2.5 pts"; "up 25%" is true and useless.
+
+**Customers** are named buyers (walk-ins are nobody in particular); **new customers** are those
+whose first sale *ever* falls in the window, from one grouped read of each customer's first sale
+per request, so twelve months cost one query, not twelve. A merged duplicate's sales moved to the
+kept customer, so its history counts there.
+
+**Two places.** Home's *Growth* table (`dashboard.growth`) is this month so far against the same
+days of last month. *Reports → Growth* (`GET /reports/growth?months=6|12`, `SEES_COST` because it
+carries gross profit) is month by month: each full month against the whole month before, and the
+month under way against the same days — the comparison Home makes, so the two agree on the
+current month. Six or twelve only; anything else is a 400.
+
+**The first chart in the app** (`MonthBars`): plain HTML, no library. Revenue and gross profit
+are **two charts rather than one with two scales** — on a 3% margin, gross profit drawn on
+revenue's scale is a row of slivers, and a second axis is the classic way to make two unrelated
+lines look related. One series each, so no legend; columns capped at 24px, rounded at the top and
+square on the baseline; only the newest column carries its value, and hovering or focusing any
+column shows its own. **The month under way is lighter, dashed and labelled "so far"**, because a
+half-month column beside full ones reads as a fall — the same mistake the bug made in words. The
+table beneath is the chart's figures in full, so nothing rests on reading a bar.
+
+Not built: a same-month-last-year column, which waits for a year of records.
+
 ### Margins: today's price beside what the stock cost (2026-10-07)
 
 The owner wanted to compare cost and price per item to decide prices — a vendor promo had moved
