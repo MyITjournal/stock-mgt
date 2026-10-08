@@ -751,6 +751,21 @@ And three from 7.6a, in `web/src/reports/`:
   opening stock entered as cartons plus loose pieces — keeping the latest time and an "N entries
   added up" note. **Forced movements are never merged**, each keeping its own reason; the
   *Movements* count still counts every movement. Counts, not money, so the screen may sum them.
+- **Growth compares a month so far with the same days of last month — never all of it**
+  (§12, 2026-10-08). Home's revenue tile used to set 8 days of October against 30 of September,
+  so every month read as a collapse until its last week. `sameSpanLastMonth` (`period.ts`) is
+  1st to the same day **and time of day** last month (a day last month did not have takes all of
+  it). `GrowthService` builds every figure from the existing reports — revenue, gross and
+  operating profit from `ReportService.profit`, collected from `collections` — plus a count of
+  sales, named customers who bought, and **new customers** (first sale ever in the window, one
+  grouped read per request). Pure rules in `reports/growth.ts`: a change is **null, not 0**,
+  with nothing to compare; a shrinking loss reads as up; **the margin moves in points**.
+  Home has a *Growth* table (`dashboard.growth`; `sales.changeBps` is now its revenue change);
+  *Reports → Growth* (`GET /reports/growth?months=6|12`, `SEES_COST`) is month by month, each
+  full month against the one before and this month against the same days — two bar charts
+  (revenue, gross profit: **two charts, never one with two scales**, since profit is a sliver of
+  revenue), a table and a download. `MonthBars` is the app's first chart: plain HTML, the
+  month under way lighter and dashed with "so far".
 - **Margins are a projection, at the average cost of the stock on hand** (§12, 2026-10-07).
   *Reports → Margins* (`GET /reports/margins`, `SEES_COST`) puts each product's price on a chosen
   list — **one row per product, in the biggest unit the till sells** (owner, 2026-10-07: a 1/2

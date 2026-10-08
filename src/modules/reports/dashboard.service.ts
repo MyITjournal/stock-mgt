@@ -7,6 +7,7 @@ import { ReportService, describe } from './report.service';
 import { PurchaseTargetService } from './purchase-target.service';
 import { StockSummaryService } from './stock-summary.service';
 import { SessionsService } from '../staff/sessions.service';
+import { GrowthService } from './growth.service';
 import { DashboardView } from './dto/dashboard.response';
 
 /** How many rows each attention list shows before it stops being a glance. */
@@ -37,6 +38,7 @@ export class DashboardService {
     private readonly targets: PurchaseTargetService,
     private readonly stockSummary: StockSummaryService,
     private readonly sessions: SessionsService,
+    private readonly growthService: GrowthService,
   ) {}
 
   async build(): Promise<DashboardView> {
@@ -66,6 +68,7 @@ export class DashboardService {
       signedIn,
       monthTargets,
       paidToVendors,
+      growth,
     ] = await Promise.all([
       this.reports.profit(today),
       this.reports.profit(month),
@@ -86,6 +89,8 @@ export class DashboardService {
       // timezone, which is the month every other figure here is.
       this.targets.report(),
       this.payables.paidBetween(month),
+      // This month so far beside the same stretch of last month (2026-10-08).
+      this.growthService.thisMonth(timezone, now),
     ]);
 
     const paidShareBps = shareBps(
@@ -105,7 +110,11 @@ export class DashboardService {
         month: monthProfit.revenue,
         monthGross: monthProfit.grossSales,
         lastMonth: lastMonthProfit.revenue,
-        changeBps: changeBps(lastMonthProfit.revenue, monthProfit.revenue),
+        // Against the same days of last month, not all of it (2026-10-08):
+        // eight days of October set against thirty of September read as a
+        // collapse every month until its last week. 0 when there is nothing
+        // to compare with, as before; `growth.change.revenue` says null.
+        changeBps: growth.change.revenue ?? 0,
       },
 
       // 2. Did I actually get paid? Not the same question.
@@ -242,6 +251,9 @@ export class DashboardService {
 
       trend: { days: daily },
 
+      // 11. Am I growing? Every figure against the same stretch of last month.
+      growth,
+
       // 10. Who is working right now? The same count as Settings → Staff.
       signedIn: {
         people: signedIn.activePeople,
@@ -259,15 +271,4 @@ export class DashboardService {
       }),
     };
   }
-}
-
-/**
- * Change from one period to the next, in basis points (2500 = up 25%).
- *
- * No previous revenue means no percentage exists — returning 0 rather than
- * Infinity, on the same reasoning as `marginBps`.
- */
-function changeBps(previous: number, current: number): number {
-  if (previous === 0) return 0;
-  return Math.round(((current - previous) / Math.abs(previous)) * 10_000);
 }

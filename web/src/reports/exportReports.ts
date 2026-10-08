@@ -357,3 +357,85 @@ export function exportMargins(data: S['MarginsView']) {
     ),
   ]);
 }
+
+/**
+ * Growth, month by month (2026-10-08): one row per month, each figure beside
+ * its change on the month before — this month's against the same days of last
+ * month. Changes are the server's basis points, shown as percentages; the
+ * margin's move is in points.
+ */
+export function exportGrowth(data: S['GrowthReportView']) {
+  const change = (bps: number | null) => bps;
+  const columns: SheetColumn<S['GrowthMonthView']>[] = [
+    { header: 'Month', value: (row) => row.month },
+    {
+      header: 'So far',
+      value: (row) => (row.partial ? 'yes — against the same days' : null),
+    },
+    { header: 'Revenue', kind: 'money', value: (row) => row.figures.revenue },
+    {
+      header: 'Revenue change',
+      kind: 'percent',
+      value: (row) => change(row.change.revenue),
+    },
+    {
+      header: 'Gross profit',
+      kind: 'money',
+      value: (row) => row.figures.grossProfit,
+    },
+    {
+      header: 'Gross profit change',
+      kind: 'percent',
+      value: (row) => change(row.change.grossProfit),
+    },
+    {
+      header: 'Gross margin',
+      kind: 'percent',
+      value: (row) => row.figures.marginBps,
+    },
+    {
+      header: 'Margin move (points)',
+      kind: 'percent',
+      value: (row) => row.change.marginPoints,
+    },
+    {
+      header: 'Operating profit',
+      kind: 'money',
+      value: (row) => row.figures.operatingProfit,
+    },
+    {
+      header: 'Operating profit change',
+      kind: 'percent',
+      value: (row) => change(row.change.operatingProfit),
+    },
+    {
+      header: 'Collected',
+      kind: 'money',
+      value: (row) => row.figures.collected,
+    },
+    {
+      header: 'Collected change',
+      kind: 'percent',
+      value: (row) => change(row.change.collected),
+    },
+    { header: 'Sales', kind: 'number', value: (row) => row.figures.sales },
+    {
+      header: 'Average sale',
+      kind: 'money',
+      value: (row) => row.figures.averageSale,
+    },
+    {
+      header: 'Customers who bought',
+      kind: 'number',
+      value: (row) => row.figures.customers,
+    },
+    {
+      header: 'New customers',
+      kind: 'number',
+      value: (row) => row.figures.newCustomers,
+    },
+  ];
+  return downloadWorkbook(stamp('growth'), [
+    tab('Growth', columns, data.months),
+  ]);
+}

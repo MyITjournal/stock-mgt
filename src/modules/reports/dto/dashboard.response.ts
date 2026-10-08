@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SalesGroupRow } from './report.response';
 import { DebtorGroup } from '../../payments/dto/receivable.response';
+import { GrowthComparisonView } from './growth.dto';
 
 /**
  * What `GET /reports/dashboard` returns.
@@ -60,7 +61,7 @@ class SalesSummary {
 
   @ApiProperty({
     description:
-      'Change on last month in basis points; 2500 is up 25%. Zero when last month sold nothing, because no percentage exists.',
+      'Change on the same stretch of last month — the same days and time of day, not all of it — in basis points; 2500 is up 25%. Zero when there is nothing to compare with; growth.change.revenue says null.',
   })
   changeBps!: number;
 }
@@ -555,6 +556,13 @@ export class DashboardView {
 
   @ApiProperty({ type: () => TrendSummary })
   trend!: TrendSummary;
+
+  @ApiProperty({
+    type: () => GrowthComparisonView,
+    description:
+      'This month so far beside the same stretch of last month, figure by figure.',
+  })
+  growth!: GrowthComparisonView;
 
   @ApiProperty({
     type: () => SignedInSummary,
