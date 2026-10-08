@@ -11,6 +11,7 @@ import { afterWrite } from '../api/cache';
 import { useIsManager, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ReturnDialog, type ReturnLineInput } from './ReturnDialog';
+import { CorrectSaleDialog } from './CorrectSaleDialog';
 import { optionLabel } from '../lib/options';
 
 type SaleView = components['schemas']['SaleView'];
@@ -32,6 +33,8 @@ export function SaleDetailPage() {
   // Returns are owner or manager only (2026-10-07) — money and goods both move.
   const canTakeBack = useIsManager();
   const [returning, setReturning] = useState(false);
+  // Correcting prices or the customer is owner or manager too (2026-10-08).
+  const [correcting, setCorrecting] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
 
   const { data: sale, isPending } = useQuery({
@@ -111,6 +114,11 @@ export function SaleDetailPage() {
             path={`/sales/${sale.id}/invoice.pdf`}
             label="Invoice PDF"
           />
+          {canTakeBack && (
+            <Button variant="secondary" onClick={() => setCorrecting(true)}>
+              Correct sale
+            </Button>
+          )}
           {canTakeBack && (
             <Button onClick={() => setReturning(true)}>Take goods back</Button>
           )}
@@ -202,6 +210,59 @@ export function SaleDetailPage() {
                       )}
                     </span>
                     <Money value={entry.refundAmount} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {sale.corrections.length > 0 && (
+            <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <h2 className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs uppercase tracking-wide text-slate-500">
+                Corrections
+              </h2>
+              <ul className="divide-y divide-slate-100 text-sm">
+                {sale.corrections.map((correction) => (
+                  <li key={correction.id} className="space-y-1 px-4 py-3">
+                    <div>
+                      <span className="text-slate-900">
+                        {correction.reason}
+                      </span>
+                      <span className="ml-2 text-xs text-slate-500">
+                        {new Date(correction.createdAt).toLocaleString('en-NG')}
+                        {correction.recordedBy
+                          ? ` · ${[correction.recordedBy.firstName, correction.recordedBy.lastName].filter(Boolean).join(' ')}`
+                          : ''}
+                      </span>
+                    </div>
+                    <ul className="space-y-0.5 text-xs text-slate-600">
+                      {correction.lines.map((line) => (
+                        <li key={line.saleLineId}>
+                          {itemName(line.saleLineId)}
+                          <Money value={line.unitPriceBefore} /> →{' '}
+                          <Money value={line.unitPriceAfter} /> each
+                        </li>
+                      ))}
+                      {correction.totalAfter !== correction.totalBefore && (
+                        <li>
+                          Total: <Money value={correction.totalBefore} /> →{' '}
+                          <Money value={correction.totalAfter} />
+                        </li>
+                      )}
+                      {correction.paidAfter !== correction.paidBefore && (
+                        <li>
+                          Paid: <Money value={correction.paidBefore} /> →{' '}
+                          <Money value={correction.paidAfter} />
+                        </li>
+                      )}
+                      {correction.customerIdAfter !==
+                        correction.customerIdBefore && (
+                        <li>
+                          Customer: {personName(correction.customerBefore)} →{' '}
+                          {personName(correction.customerAfter)}
+                        </li>
+                      )}
+                    </ul>
                   </li>
                 ))}
               </ul>
@@ -309,6 +370,10 @@ export function SaleDetailPage() {
         </aside>
       </div>
 
+      {correcting && (
+        <CorrectSaleDialog sale={sale} onClose={() => setCorrecting(false)} />
+      )}
+
       {returning && (
         <ReturnDialog
           sale={sale}
@@ -323,6 +388,15 @@ export function SaleDetailPage() {
       )}
     </Page>
   );
+}
+
+/** A customer's name, or "Walk-in" for none. */
+function personName(
+  person: { firstName: string; lastName: string | null } | null,
+): string {
+  return person
+    ? [person.firstName, person.lastName].filter(Boolean).join(' ')
+    : 'Walk-in';
 }
 
 function Row({

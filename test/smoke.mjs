@@ -4442,6 +4442,130 @@ async function main() {
     JSON.stringify([[thyme?.id, 480_000]]),
   );
 
+  step(67, 'Correcting a sale: the owner’s discount, and the right customer');
+  // Bola rang up two trips at ₦5,000 as paid in cash; the owner had agreed
+  // ₦4,000 a trip, and ₦8,000 is what she took.
+  const heldBefore = (await api('GET', '/cash', { token: cashierNow })).data.people[0];
+  const grossBefore = (await api('GET', '/reports/dashboard', { token: t })).data.sales.monthGross;
+  const fullPrice = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: {
+        id: randomUUID(),
+        lines: [{ productId: service.id, unitId: service.units[0].id, quantity: 2 }],
+        allowDuplicate: true,
+      },
+    })
+  ).data;
+  eq('the sale went in at the list price', fullPrice.total, 1_000_000);
+  const tripLine = fullPrice.lines[0].id;
+  const discount = { reason: 'Owner agreed ₦4,000 a trip', lines: [{ lineId: tripLine, unitPrice: 400_000 }] };
+
+  await api('POST', `/sales/${fullPrice.id}/corrections`, {
+    token: cashierNow,
+    key: randomUUID(),
+    body: discount,
+    expect: 403,
+  });
+  check('a cashier cannot correct a sale', true);
+
+  const correctionPreview = (
+    await api('POST', `/sales/${fullPrice.id}/corrections/preview`, { token: t, body: discount })
+  ).data;
+  eq('the preview gives the new total', correctionPreview.totalAfter, 800_000);
+  check('and says the payment comes down with it', correctionPreview.paymentFollows);
+  eq('to what was really taken', correctionPreview.paidAfter, 800_000);
+  eq('leaving nothing owed', correctionPreview.balanceAfter, 0);
+  eq(
+    'and saves nothing',
+    (await api('GET', `/sales/${fullPrice.id}`, { token: t })).data.total,
+    1_000_000,
+  );
+
+  const correctionId = randomUUID();
+  const discounted = (
+    await api('POST', `/sales/${fullPrice.id}/corrections`, {
+      token: t,
+      key: randomUUID(),
+      body: { id: correctionId, ...discount },
+    })
+  ).data;
+  eq('the sale takes the true total', discounted.total, 800_000);
+  eq('the line its true price', discounted.lines[0].unitPrice, 400_000);
+  eq('paid is what was taken', discounted.allocated, 800_000);
+  eq('nothing is owed', discounted.balance, 0);
+  eq('the correction is kept with its reason', discounted.corrections[0]?.reason, discount.reason);
+  eq('with the total before', discounted.corrections[0]?.totalBefore, 1_000_000);
+
+  const retried = (
+    await api('POST', `/sales/${fullPrice.id}/corrections`, {
+      token: t,
+      key: randomUUID(),
+      body: { id: correctionId, ...discount },
+    })
+  ).data;
+  eq('a retry with the same id is the same correction — a fresh key', retried.corrections.length, 1);
+
+  const heldAfter = (await api('GET', '/cash', { token: cashierNow })).data.people[0];
+  eq('Bola holds what she really took', heldAfter.stillHolding - heldBefore.stillHolding, 800_000);
+  const tillPayments = (await api('GET', '/payments?limit=500&order=desc', { token: t })).data.payments;
+  const voidedTill = tillPayments.find(
+    (p) => p.voidedAt && p.voidedReason?.includes(fullPrice.number),
+  );
+  check('the payment that claimed ₦10,000 is voided, naming the sale', !!voidedTill);
+  check(
+    'and one for ₦8,000 stands in its place, still hers',
+    tillPayments.some(
+      (p) => !p.voidedAt && p.amount === 800_000 && p.recordedByUserId === bolaId &&
+        p.occurredAt === voidedTill?.occurredAt,
+    ),
+  );
+  eq(
+    'the month’s sales read the corrected total',
+    (await api('GET', '/reports/dashboard', { token: t })).data.sales.monthGross - grossBefore,
+    800_000,
+  );
+
+  // It was really the twin buyer's, on account.
+  const movedSale = (
+    await api('POST', `/sales/${fullPrice.id}/corrections`, {
+      token: t,
+      key: randomUUID(),
+      body: { reason: 'It was the twin buyer, not a walk-in', customerId: twinBuyer.id },
+    })
+  ).data;
+  eq('the sale moves to the right customer', movedSale.customerId, twinBuyer.id);
+  eq('its prices stay as charged', movedSale.total, 800_000);
+  const theirPayments = (
+    await api('GET', `/payments?customerId=${twinBuyer.id}&limit=100&order=desc`, { token: t })
+  ).data.payments;
+  check(
+    'and the payment taken for it moves too',
+    theirPayments.some((p) => !p.voidedAt && p.amount === 800_000),
+  );
+
+  const raised = (
+    await api('POST', `/sales/${fullPrice.id}/corrections`, {
+      token: t,
+      key: randomUUID(),
+      body: { reason: 'Undercharged one trip', lines: [{ lineId: tripLine, unitPrice: 450_000 }] },
+    })
+  ).data;
+  eq('raising a price leaves the difference owed', raised.balance, 100_000);
+  check('and gives it the due day it would have had', raised.dueDate !== null);
+  eq('three corrections, oldest first', raised.corrections.map((c) => c.totalAfter).join(), '800000,800000,900000');
+
+  const unchanged = (
+    await api('POST', `/sales/${fullPrice.id}/corrections`, {
+      token: t,
+      key: randomUUID(),
+      body: { reason: 'Nothing really', lines: [{ lineId: tripLine, unitPrice: 450_000 }] },
+      expect: 400,
+    })
+  ).data;
+  check('a correction that changes nothing is refused', /Nothing has changed/.test(unchanged.message), unchanged.message);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

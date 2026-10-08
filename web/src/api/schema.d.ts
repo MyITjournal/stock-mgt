@@ -1702,6 +1702,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sales/{id}/corrections/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a correction to a sale
+         * @description Runs the correction and rolls it back, so it meets every check the real one does, and says what the total, the payments and the balance would become. Saves nothing.
+         */
+        post: operations["SaleController_previewCorrection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sales/{id}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct a sale
+         * @description The prices really charged (per line, tax-inclusive, as the till takes them), the customer it really was, or both, and why. The sale and its lines take the true figures, so every report reads them. A payment that would be more than the new total is voided and one for the true amount recorded in its place, by the same person on the same day. Payments that settled only this sale move with it to the right customer. Stock and cost do not move. A 409 when goods have come back on the sale (prices only), when no single payment can be brought down to the new total, or when a payment on it also paid other invoices (customer only).
+         */
+        post: operations["SaleController_correct"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cash": {
         parameters: {
             query?: never;
@@ -5728,6 +5768,42 @@ export interface components {
             createdAt: string;
             payment: components["schemas"]["AllocatedPaymentRef"];
         };
+        CorrectedCustomerRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Ngozi */
+            firstName: string;
+            lastName: string | null;
+        };
+        SaleCorrectionLineView: {
+            /** Format: uuid */
+            saleLineId: string;
+            unitPriceBefore: number;
+            unitPriceAfter: number;
+            lineTotalBefore: number;
+            lineTotalAfter: number;
+        };
+        SaleCorrectionView: {
+            /** Format: uuid */
+            id: string;
+            reason: string;
+            /** Format: date-time */
+            createdAt: string;
+            recordedBy: components["schemas"]["RecordedByView"] | null;
+            /** Format: uuid */
+            customerIdBefore: string | null;
+            /** Format: uuid */
+            customerIdAfter: string | null;
+            customerBefore: components["schemas"]["CorrectedCustomerRef"] | null;
+            customerAfter: components["schemas"]["CorrectedCustomerRef"] | null;
+            /** @description Kobo. */
+            totalBefore: number;
+            totalAfter: number;
+            /** @description Settled by payments before and after, in kobo. They differ when a lower total brought the payment down with it. */
+            paidBefore: number;
+            paidAfter: number;
+            lines: components["schemas"]["SaleCorrectionLineView"][];
+        };
         SaleView: {
             /** Format: uuid */
             id: string;
@@ -5792,6 +5868,8 @@ export interface components {
             returns: components["schemas"]["SaleReturnView"][];
             /** @description Payments settling this invoice. Voided payments are excluded — one never settled anything, so counting it would show money that was never taken (§5). */
             allocations: components["schemas"]["SaleAllocationView"][];
+            /** @description Corrections made to the sale, oldest first. The sale itself already shows the corrected figures. */
+            corrections: components["schemas"]["SaleCorrectionView"][];
             /** @description Settled by payments, signed. Derived, never stored. */
             allocated: number;
             /** @description Credited back by returns. */
@@ -6026,6 +6104,59 @@ export interface components {
              */
             occurredAt?: string;
             lines: components["schemas"]["ReturnLineDto"][];
+        };
+        CorrectLinePriceDto: {
+            /**
+             * Format: uuid
+             * @description The sale line.
+             */
+            lineId: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 450000
+             */
+            unitPrice: number;
+        };
+        CorrectSaleDto: {
+            /**
+             * Format: uuid
+             * @description The correction’s own id. Sent again on a retry, it returns the sale as corrected rather than correcting it twice.
+             */
+            id?: string;
+            /** @example Owner gave ₦500 off each carton. */
+            reason: string;
+            /**
+             * Format: uuid
+             * @description The customer it really was. Omitted: unchanged. Null: a walk-in. Prices are not re-worked from their price list.
+             */
+            customerId?: string | null;
+            /** @description Only the lines whose price changes. A line left out keeps its price. */
+            lines?: components["schemas"]["CorrectLinePriceDto"][];
+        };
+        SaleCorrectionPreviewLine: {
+            /** Format: uuid */
+            lineId: string;
+            lineTotalBefore: number;
+            lineTotalAfter: number;
+        };
+        SaleCorrectionPreviewView: {
+            /** @description Kobo. */
+            totalBefore: number;
+            totalAfter: number;
+            /** @description The VAT inside the new total. */
+            taxTotalAfter: number;
+            paidBefore: number;
+            paidAfter: number;
+            /** @description Still owed after the correction. Positive: the customer owes. Negative: the business owes. */
+            balanceAfter: number;
+            /** @description True when a payment is brought down to the new total: voided, and one for the true amount recorded in its place. */
+            paymentFollows: boolean;
+            /** @description The customer after, by name. Null is a walk-in. */
+            customerAfter: string | null;
+            customerChanged: boolean;
+            /** @description Payments that move to the new customer with the sale, counting voided ones. */
+            paymentsMoved: number;
+            lines: components["schemas"]["SaleCorrectionPreviewLine"][];
         };
         CashPersonView: {
             /** Format: uuid */
@@ -10378,6 +10509,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateReturnDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+        };
+    };
+    SaleController_previewCorrection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectSaleDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleCorrectionPreviewView"];
+                };
+            };
+        };
+    };
+    SaleController_correct: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Send the correction’s own id too: across a retry the id is what makes two attempts one correction. */
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectSaleDto"];
             };
         };
         responses: {

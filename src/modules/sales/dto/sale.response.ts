@@ -266,6 +266,149 @@ export class SaleAllocationView {
   payment!: AllocatedPaymentRef;
 }
 
+class CorrectedCustomerRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Ngozi' })
+  firstName!: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  lastName!: string | null;
+}
+
+/** One line whose price was corrected, before and after, in kobo. */
+class SaleCorrectionLineView {
+  @ApiProperty({ format: 'uuid' })
+  saleLineId!: string;
+
+  @ApiProperty()
+  unitPriceBefore!: number;
+
+  @ApiProperty()
+  unitPriceAfter!: number;
+
+  @ApiProperty()
+  lineTotalBefore!: number;
+
+  @ApiProperty()
+  lineTotalAfter!: number;
+}
+
+/**
+ * A correction made to this sale (2026-10-08): why, who, when, and what it
+ * said before. Customer before and after are the same when only prices moved;
+ * null is a walk-in.
+ */
+export class SaleCorrectionView {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty()
+  reason!: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt!: Date;
+
+  @ApiProperty({ type: () => RecordedByView, nullable: true })
+  recordedBy!: RecordedByView | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  customerIdBefore!: string | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  customerIdAfter!: string | null;
+
+  @ApiProperty({ type: () => CorrectedCustomerRef, nullable: true })
+  customerBefore!: CorrectedCustomerRef | null;
+
+  @ApiProperty({ type: () => CorrectedCustomerRef, nullable: true })
+  customerAfter!: CorrectedCustomerRef | null;
+
+  @ApiProperty({ description: 'Kobo.' })
+  totalBefore!: number;
+
+  @ApiProperty()
+  totalAfter!: number;
+
+  @ApiProperty({
+    description:
+      'Settled by payments before and after, in kobo. They differ when a lower total brought the payment down with it.',
+  })
+  paidBefore!: number;
+
+  @ApiProperty()
+  paidAfter!: number;
+
+  @ApiProperty({ type: () => [SaleCorrectionLineView] })
+  lines!: SaleCorrectionLineView[];
+}
+
+/** One line of a correction preview. */
+class SaleCorrectionPreviewLine {
+  @ApiProperty({ format: 'uuid' })
+  lineId!: string;
+
+  @ApiProperty()
+  lineTotalBefore!: number;
+
+  @ApiProperty()
+  lineTotalAfter!: number;
+}
+
+/**
+ * What a correction to a sale would do, worked out by doing it and rolling
+ * back — so the dialog shows the server's figures and meets every refusal the
+ * save would.
+ */
+export class SaleCorrectionPreviewView {
+  @ApiProperty({ description: 'Kobo.' })
+  totalBefore!: number;
+
+  @ApiProperty()
+  totalAfter!: number;
+
+  @ApiProperty({ description: 'The VAT inside the new total.' })
+  taxTotalAfter!: number;
+
+  @ApiProperty()
+  paidBefore!: number;
+
+  @ApiProperty()
+  paidAfter!: number;
+
+  @ApiProperty({
+    description:
+      'Still owed after the correction. Positive: the customer owes. Negative: the business owes.',
+  })
+  balanceAfter!: number;
+
+  @ApiProperty({
+    description:
+      'True when a payment is brought down to the new total: voided, and one for the true amount recorded in its place.',
+  })
+  paymentFollows!: boolean;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The customer after, by name. Null is a walk-in.',
+  })
+  customerAfter!: string | null;
+
+  @ApiProperty()
+  customerChanged!: boolean;
+
+  @ApiProperty({
+    description:
+      'Payments that move to the new customer with the sale, counting voided ones.',
+  })
+  paymentsMoved!: number;
+
+  @ApiProperty({ type: () => [SaleCorrectionPreviewLine] })
+  lines!: SaleCorrectionPreviewLine[];
+}
+
 export class SaleView {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -380,6 +523,13 @@ export class SaleView {
       'Payments settling this invoice. Voided payments are excluded — one never settled anything, so counting it would show money that was never taken (§5).',
   })
   allocations!: SaleAllocationView[];
+
+  @ApiProperty({
+    type: () => [SaleCorrectionView],
+    description:
+      'Corrections made to the sale, oldest first. The sale itself already shows the corrected figures.',
+  })
+  corrections!: SaleCorrectionView[];
 
   @ApiProperty({
     description: 'Settled by payments, signed. Derived, never stored.',

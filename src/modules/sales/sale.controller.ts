@@ -22,12 +22,15 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 import { SaleService } from './sale.service';
 import { SaleReturnService } from './sale-return.service';
+import { SaleCorrectionService } from './sale-correction.service';
 import { DueService } from './due.service';
 import { DueInvoicesView } from './dto/due.response';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { CreateReturnDto } from './dto/create-return.dto';
+import { CorrectSaleDto } from './dto/correct-sale.dto';
 import {
   PossibleDuplicateConflict,
+  SaleCorrectionPreviewView,
   SaleListView,
   SaleReceiptView,
   SaleView,
@@ -56,6 +59,7 @@ export class SaleController {
   constructor(
     private readonly sales: SaleService,
     private readonly returns: SaleReturnService,
+    private readonly corrections: SaleCorrectionService,
     private readonly due: DueService,
   ) {}
 
@@ -182,5 +186,42 @@ export class SaleController {
     @Body() dto: CreateReturnDto,
   ) {
     return this.returns.create(id, dto);
+  }
+
+  @Post(':id/corrections/preview')
+  @Roles(...TAKES_BACK)
+  @ApiOperation({
+    summary: 'Preview a correction to a sale',
+    description:
+      'Runs the correction and rolls it back, so it meets every check the real one does, and says what the total, the payments and the balance would become. Saves nothing.',
+  })
+  @ApiOkResponse({ type: SaleCorrectionPreviewView })
+  previewCorrection(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectSaleDto,
+  ): Promise<SaleCorrectionPreviewView> {
+    return this.corrections.preview(id, dto);
+  }
+
+  /**
+   * Owner or manager, like taking goods back: lowering a price after the fact
+   * is money, and a rep who could do it could pocket the difference.
+   */
+  @Post(':id/corrections')
+  @Roles(...TAKES_BACK)
+  @Idempotent(
+    'Send the correction’s own id too: across a retry the id is what makes two attempts one correction.',
+  )
+  @ApiOperation({
+    summary: 'Correct a sale',
+    description:
+      'The prices really charged (per line, tax-inclusive, as the till takes them), the customer it really was, or both, and why. The sale and its lines take the true figures, so every report reads them. A payment that would be more than the new total is voided and one for the true amount recorded in its place, by the same person on the same day. Payments that settled only this sale move with it to the right customer. Stock and cost do not move. A 409 when goods have come back on the sale (prices only), when no single payment can be brought down to the new total, or when a payment on it also paid other invoices (customer only).',
+  })
+  @ApiCreatedResponse({ type: SaleView })
+  correct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectSaleDto,
+  ): Promise<SaleView> {
+    return this.corrections.correct(id, dto);
   }
 }

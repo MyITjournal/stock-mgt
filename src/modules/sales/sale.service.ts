@@ -100,6 +100,33 @@ const SALE_INCLUDE = {
       },
     },
   },
+  // What a correction changed, oldest first (2026-10-08). No cost in it.
+  corrections: {
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      reason: true,
+      createdAt: true,
+      recordedBy: { select: { id: true, firstName: true, lastName: true } },
+      customerIdBefore: true,
+      customerIdAfter: true,
+      customerBefore: { select: { id: true, firstName: true, lastName: true } },
+      customerAfter: { select: { id: true, firstName: true, lastName: true } },
+      totalBefore: true,
+      totalAfter: true,
+      paidBefore: true,
+      paidAfter: true,
+      lines: {
+        select: {
+          saleLineId: true,
+          unitPriceBefore: true,
+          unitPriceAfter: true,
+          lineTotalBefore: true,
+          lineTotalAfter: true,
+        },
+      },
+    },
+  },
 } as const;
 
 /**

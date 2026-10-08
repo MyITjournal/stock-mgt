@@ -31,10 +31,13 @@ model Customer {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  priceTier    PriceTier?   @relation(fields: [priceTierId], references: [id], onDelete: SetNull)
-  sales        Sale[]
-  payments     Payment[]
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  priceTier       PriceTier?       @relation(fields: [priceTierId], references: [id], onDelete: SetNull)
+  sales           Sale[]
+  payments        Payment[]
+  /// Sales corrected away from, and onto, this customer (2026-10-08).
+  correctionsFrom SaleCorrection[] @relation("SaleCorrectionCustomerBefore")
+  correctionsTo   SaleCorrection[] @relation("SaleCorrectionCustomerAfter")
 
   @@index([organizationId])
   @@index([priceTierId])
@@ -442,6 +445,7 @@ model Sale {
   lines        SaleLine[]
   returns      SaleReturn[]
   allocations  PaymentAllocation[]
+  corrections  SaleCorrection[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -497,17 +501,87 @@ model SaleLine {
 
   createdAt DateTime @default(now())
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sale         Sale            @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product      Product         @relation(fields: [productId], references: [id])
-  unit         ProductUnit     @relation(fields: [unitId], references: [id])
-  variant      ProductVariant? @relation(fields: [variantId], references: [id])
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sale         Sale                 @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product      Product              @relation(fields: [productId], references: [id])
+  unit         ProductUnit          @relation(fields: [unitId], references: [id])
+  variant      ProductVariant?      @relation(fields: [variantId], references: [id])
   returns      SaleReturn[]
+  corrections  SaleCorrectionLine[]
 
   @@index([organizationId])
   @@index([saleId])
   @@index([productId])
   @@map("sale_lines")
+}
+
+/// A recorded sale put right by an owner or manager (2026-10-08): the prices
+/// that were really charged — staff rang it up at the list price and the owner
+/// gave a discount — or the customer it really was, or both.
+///
+/// The sale and its lines take the true figures, so every report, statement
+/// and invoice reads them with no special case; this row keeps what they were
+/// before, who changed them and why. Stock and cost never move: the same goods
+/// went out. DECISIONS.md "Correcting a sale".
+model SaleCorrection {
+  id             String @id @default(uuid())
+  organizationId String
+  saleId         String
+
+  reason String
+
+  /// Both always set; the same when the customer was not changed. Null is a
+  /// walk-in.
+  customerIdBefore String?
+  customerIdAfter  String?
+
+  /// The sale's total before and after, in kobo. The same when only the
+  /// customer changed.
+  totalBefore Int
+  totalAfter  Int
+
+  /// What payments had settled on the sale before and after. They differ when
+  /// a lower total brought the payment taken at the time down with it: that
+  /// payment is voided and one for the true amount recorded in its place.
+  paidBefore Int
+  paidAfter  Int
+
+  recordedByUserId String?
+  createdAt        DateTime @default(now())
+
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sale           Sale                 @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  customerBefore Customer?            @relation("SaleCorrectionCustomerBefore", fields: [customerIdBefore], references: [id], onDelete: SetNull)
+  customerAfter  Customer?            @relation("SaleCorrectionCustomerAfter", fields: [customerIdAfter], references: [id], onDelete: SetNull)
+  recordedBy     User?                @relation("SaleCorrectionRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  lines          SaleCorrectionLine[]
+
+  @@index([organizationId])
+  @@index([saleId])
+  @@map("sale_corrections")
+}
+
+/// One line whose price was corrected: the price of one of its units, and the
+/// line total, before and after, in kobo.
+model SaleCorrectionLine {
+  id             String @id @default(uuid())
+  organizationId String
+  correctionId   String
+  saleLineId     String
+
+  unitPriceBefore Int
+  unitPriceAfter  Int
+  lineTotalBefore Int
+  lineTotalAfter  Int
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  correction   SaleCorrection @relation(fields: [correctionId], references: [id], onDelete: Cascade)
+  saleLine     SaleLine       @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([correctionId])
+  @@index([saleLineId])
+  @@map("sale_correction_lines")
 }
 
 /// Goods coming back. One row per returned line; several returned in one visit
@@ -933,6 +1007,8 @@ model Organization {
   goodsReceiptCorrectionLines GoodsReceiptCorrectionLine[]
   lotCostCorrections          LotCostCorrection[]
   cashBankings                CashBanking[]
+  saleCorrections             SaleCorrection[]
+  saleCorrectionLines         SaleCorrectionLine[]
 
   @@map("organizations")
 }
@@ -1057,6 +1133,7 @@ model User {
   supplierBills          SupplierBill[]           @relation("SupplierBillRecordedBy")
   receiptCorrections     GoodsReceiptCorrection[] @relation("GoodsReceiptCorrectionRecordedBy")
   lotCostCorrections     LotCostCorrection[]      @relation("LotCostCorrectionRecordedBy")
+  saleCorrections        SaleCorrection[]         @relation("SaleCorrectionRecordedBy")
   supplierPayments       SupplierPayment[]        @relation("SupplierPaymentRecordedBy")
   voidedSupplierPayments SupplierPayment[]        @relation("SupplierPaymentVoidedBy")
   stocktakesStarted      Stocktake[]              @relation("StocktakeStartedBy")

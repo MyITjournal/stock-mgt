@@ -31,6 +31,9 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'Sale',
   'SaleLine',
   'SaleReturn',
+  // Corrections to a recorded sale — prices, customer — and their lines.
+  'SaleCorrection',
+  'SaleCorrectionLine',
   // Money in and out (Slice 5).
   'Payment',
   'PaymentAllocation',

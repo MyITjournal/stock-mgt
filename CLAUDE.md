@@ -41,6 +41,9 @@ One line each; the reasoning is in DECISIONS.md.
 - **Banking cash (`CashBanking`) is neither a payment nor an expense** — it moves no balance or
   profit. Still holding = received − paid out − banked − waiting (`cash.ts`); nobody confirms
   their own.
+- A sale's **prices or customer are corrected** (`sale-correction.ts`, owner/manager), never edited
+  elsewhere: the sale takes the true figures, a history row keeps the old, and a payment above the
+  new total is voided and re-recorded as its true amount — never a refund. Stock never moves.
 - Server messages naming an amount use `shopMoney`; the browser renders money through `<Money>`
   and computes none (the till's running total is the one exception).
 
@@ -111,7 +114,8 @@ Latest (2026-10-08): who is signed in and sign-out, growth, the duplicate-sale w
 stock on Add product, cash banking (Money → Cash, Sales → My cash). The 2026-10-08 build queue
 is done. **Product options (variants): all five branches built** (ledger + API; product screens and
 till; stock in; counting and moving; reports and the spreadsheet) — `dev` is ready to go to `main`
-once `feat/variants-reports` is merged. DECISIONS.md §24 has the detail. v2 is scoped in
+once `feat/variants-reports` is merged. DECISIONS.md §24 has the detail. Owner bug list
+(2026-10-09): 1. correcting a sale (prices per item, customer) — `fix/correct-a-sale`. v2 is scoped in
 [docs/PRD-V2.md](docs/PRD-V2.md). The by-hand browser script is
 [docs/MANUAL-TESTS-WEB.md](docs/MANUAL-TESTS-WEB.md).
 

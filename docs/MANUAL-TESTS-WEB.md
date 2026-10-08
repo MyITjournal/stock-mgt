@@ -1481,3 +1481,25 @@ filled in, each row's price the one that option sells at. Import → Download th
 rows are Indomie in two flavours. Upload a copy of it with the names changed: the preview says *1 to
 add (2 options)* for Indomie, and the second row names its option. Make one option row's carton
 *how many* differ from the first row: every row of that product needs fixing.
+
+## BI. Correcting a sale
+
+**379. [gate] The discount.** Signed in as a sales rep, sell two of anything at the list price as a
+walk-in paid in cash; note the rep's *Still holding* on Sales → My cash. As the owner, open the sale:
+**Correct sale** sits beside *Take goods back*. Lower one item's price, give a reason, **Check**: the
+new total, *Paid … → …* (the payment taken at the time is cancelled and the true amount recorded in
+its place) and *Still owed ₦0.00*. Save: the sale shows the new prices and total, and a
+*Corrections* box lists the old and new price, the total and paid before and after, who and why.
+The rep's *Still holding* has dropped by the discount. Money in: the old payment is struck through
+with *Price corrected on INV-…*, and one for the true amount stands, recorded by the rep.
+
+**380. The customer.** Correct the same sale again: pick a customer instead of *Walk-in*. Check says
+the payment moves with it. Save: the sale is on that customer's page, and so is its payment. Back to
+*Walk-in* works too.
+
+**381. A higher price.** Raise a price: *Still owed* is the difference, and the sale shows it as
+owing, with a due day five days after the sale.
+
+**382. [gate] What is closed.** Take one item back, then open **Correct sale**: the prices cannot be
+typed in and a note says why; the customer can still be changed. Signed in as a sales rep or
+storekeeper, there is no **Correct sale** button.

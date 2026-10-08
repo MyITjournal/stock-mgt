@@ -1123,7 +1123,40 @@ re-enters stock.
 
 A sale rung up by mistake is returned in full. That is why there is no void, no status machine and
 no delete — and it leaves both movements in the ledger, which is the honest record of what
-physically happened.
+physically happened. A sale whose goods were right but whose **prices or customer** were wrong is
+corrected instead — next section.
+
+### Correcting a sale: the owner's discount, and the right customer (2026-10-08)
+
+Found in real use: a rep rang a sale up at the list price, the owner gave the customer a discount,
+and the cash in hand was less than the app said had been taken. Nothing could put it right — a void
+and a smaller payment left the invoice owing the discount, and returning and re-selling made two
+invoices and moved the stock three times. `POST /sales/:id/corrections` (owner/manager, reason
+required, `/preview` runs it and rolls back — the delivery-correction shape) takes the true
+**price per item** (owner: per item, never "₦X off the bill") and/or the true **customer**.
+
+- **The sale and its lines take the true figures**, VAT re-split at each line's frozen rate. Every
+  report, statement and invoice already reads `total`/`taxTotal`/`lineTotal`, so none of them
+  changed. `SaleCorrection` + `SaleCorrectionLine` keep before and after, who and why; the sale page
+  lists them. Stock and cost never move — the same goods went out — so the margin just shrinks.
+- **A payment that would now exceed the sale comes down with it**: voided ("Price corrected on
+  INV-0042: …") and the true amount recorded in its place with the same person, method, store,
+  reference and day. The cash was never taken, so the payment was a *mistake* — §11's void, not a
+  refund — and the rep's cash in hand (`cash.ts`) and Money in read what really came in. It must be
+  one payment that went wholly to this sale and can take the whole excess (the latest, if several);
+  otherwise a 409 says to void the extra first. **The trap**: if the customer really paid the full
+  price and was handed money back later, that is a refund, not this — the correction would erase
+  cash that was taken.
+- **A higher price leaves the difference owed**, and a sale that had no due day gets the one it
+  would have had — five days after the *sale*.
+- **Prices are closed once goods have come back** (409): the refund was worked out from the old
+  price. The customer can still be changed.
+- **The customer**: the tier is not re-applied — prices are what was charged. The owes-already gate
+  is not re-run — this is fixing a record, not giving credit. Payments that settled **only** this
+  sale move with it (voided ones too); one that also paid other invoices is a 409, since moving it
+  would break the old customer's statement.
+- **Trap kept for later** (as with merging, §6 above): sales sync on `createdAt`, so a device that
+  already synced the sale would not learn of the correction. No device syncs today.
 
 ### Invoice numbers are sequential per organization, and cost a row lock
 
