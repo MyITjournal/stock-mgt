@@ -1151,6 +1151,49 @@ deliveries, which is how a distributor's receivables become uncollectable. The
 ledger still records whatever actually happened; it is the *write path* that is
 opinionated, exactly as with negative stock (§5).
 
+### A sale that looks already recorded: warned, never blocked (2026-10-08)
+
+The owner recorded a customer's sale because a member of staff had not got to it, and asked how
+the staff member would know before entering it again. Nothing would have told him. The
+`Idempotency-Key` stops one device sending one sale twice; it cannot know that two people are
+recording the same thing that happened.
+
+**What counts as the same sale** (`sales/duplicates.ts`, pure):
+
+- **A named customer: the same day**, in the shop's timezone — the day the sale is *dated*, so a
+  sale entered from yesterday's notebook is checked against yesterday.
+- **A walk-in: ten minutes either side.** A walk-in is nobody in particular, and a day of
+  walk-ins each buying one Peak Milk is a normal day.
+- **The same items in the same amounts**, in any order, two lines of one product added together.
+  **Prices are not compared** — the second person may have typed a different price for the same
+  goods, and it is still the same sale. A request that left the unit to the server is matched on
+  product and quantity alone, rather than guessing the unit.
+
+**A warning, not a rule.** A customer can genuinely buy the same thing twice in a day, so the
+409 (`error: POSSIBLE_DUPLICATE`, with up to three `duplicates`: number, total, when, who
+recorded it) can be passed by **anyone** with `allowDuplicate: true` — no reason, no owner. It is
+checked **before anything is written**, so *Record anyway* starts clean; it carries the same sale
+`id` and a fresh key, the till's usual retry shape. The till keeps `allowDuplicate` on for
+every later attempt at that sale, because a stock or credit override retry would otherwise meet
+the warning a second time.
+
+**The till** (`DuplicateDialog`): *Already recorded?*, the sale(s) it looks like with who
+recorded them and when, *Open it* in a new tab (the cart stays behind it), **Same sale — clear the
+cart**, and **Record anyway**. Sales → History gained a **Recorded by** column and the time of
+day, so the day's sales can be read down before one is entered.
+
+⚠ **The trap it exposed in smoke.** Smoke records the same sale step after step on purpose, and
+the first run failed on step 35 — not on the credit refusal it was testing, but on the duplicate
+warning arriving first. Worse, the check just before it ("a second credit sale is refused")
+**passed** — on the wrong 409. A test that expects "a 409" without saying *which* proves nothing
+once a second rule can answer with one. Smoke's `api()` now sends `allowDuplicate: true` on
+every `POST /sales` unless the step sets it, and step 59 sets it to `false` to test the warning.
+**A future client — the mobile app's offline queue in particular — must expect this 409** and ask
+the person, never resend with `allowDuplicate` on its own.
+
+Not built: comparing against a sale still sitting unsent on another device. The check can only
+see what reached the server.
+
 ### Credit is due in five days, and every member of staff sees who is due (2026-10-06)
 
 The till gained **Pay later** (§17): a switch, not "0 against Cash", which sends

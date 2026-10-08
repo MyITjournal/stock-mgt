@@ -40,7 +40,7 @@ describe('SaleService', () => {
     product: { findFirst: jest.Mock };
     customer: { findFirst: jest.Mock };
     priceTier: { findFirst: jest.Mock };
-    sale: { findFirst: jest.Mock };
+    sale: { findFirst: jest.Mock; findMany: jest.Mock };
     organization: { findUniqueOrThrow: jest.Mock };
     $transaction: jest.Mock;
   };
@@ -83,6 +83,9 @@ describe('SaleService', () => {
       },
       priceTier: { findFirst: jest.fn().mockResolvedValue({ id: RETAIL }) },
       sale: {
+        // Nothing recorded earlier today, so the duplicate check (2026-10-08)
+        // finds no twin and the sale goes ahead.
+        findMany: jest.fn().mockResolvedValue([]),
         // Stands in for a `SALE_INCLUDE` read, so it carries the relations one
         // always returns — `lines` among them, which the cost redaction on the
         // way out walks.
@@ -284,6 +287,53 @@ describe('SaleService', () => {
     });
     const line = writtenLine();
     expect(line.lineTotal - line.taxAmount + line.taxAmount).toBe(10_800_000);
+  });
+
+  describe('a sale that looks already recorded (2026-10-08)', () => {
+    const twin = {
+      id: 'sale-earlier',
+      number: 'INV-0007',
+      total: 10_800_000,
+      occurredAt: new Date('2026-10-08T09:42:00Z'),
+      lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 2 }],
+      recordedBy: { firstName: 'Ade', lastName: 'Bayo' },
+    };
+
+    it('warns, naming the sale and who recorded it, and writes nothing', async () => {
+      prisma.sale.findMany.mockResolvedValue([twin]);
+
+      await expect(sell({ customerId: 'customer-1' })).rejects.toMatchObject({
+        status: 409,
+        response: {
+          error: 'POSSIBLE_DUPLICATE',
+          duplicates: [
+            expect.objectContaining({
+              number: 'INV-0007',
+              recordedBy: 'Ade Bayo',
+            }),
+          ],
+        },
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('does not warn about the same goods in a different amount', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        {
+          ...twin,
+          lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 3 }],
+        },
+      ]);
+      await sell({ customerId: 'customer-1' });
+      expect(tx.sale.create).toHaveBeenCalled();
+    });
+
+    it('records it anyway when asked, without looking', async () => {
+      prisma.sale.findMany.mockResolvedValue([twin]);
+      await sell({ customerId: 'customer-1', allowDuplicate: true });
+      expect(prisma.sale.findMany).not.toHaveBeenCalled();
+      expect(tx.sale.create).toHaveBeenCalled();
+    });
   });
 
   it('records no VAT at all for a shop that does not charge it', async () => {

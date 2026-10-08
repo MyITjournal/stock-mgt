@@ -133,6 +133,7 @@ export function SalesPage() {
               <th className="px-4 py-2 font-medium">Invoice</th>
               <th className="px-4 py-2 font-medium">When</th>
               <th className="px-4 py-2 font-medium">Customer</th>
+              <th className="px-4 py-2 font-medium">Recorded by</th>
               <th className="px-4 py-2 text-right font-medium">Total</th>
               <th className="px-4 py-2 text-right font-medium">Owing</th>
               <th className="px-4 py-2" />
@@ -142,7 +143,7 @@ export function SalesPage() {
             {isPending && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-slate-500"
                 >
                   Loading…
@@ -153,7 +154,7 @@ export function SalesPage() {
             {data?.sales.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-slate-500"
                 >
                   No sales match that.
@@ -178,8 +179,16 @@ export function SalesPage() {
                     {sale.number}
                   </Link>
                 </td>
+                {/* With the time (2026-10-08), so the day's sales can be read
+                    down before one is entered again. */}
                 <td className="px-4 py-3 text-slate-600">
                   {new Date(sale.occurredAt).toLocaleDateString('en-NG')}
+                  <span className="block text-xs text-slate-400">
+                    {new Date(sale.occurredAt).toLocaleTimeString('en-NG', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-slate-600">
                   {sale.customer
@@ -187,6 +196,13 @@ export function SalesPage() {
                         .filter(Boolean)
                         .join(' ')
                     : 'Walk-in'}
+                </td>
+                <td className="px-4 py-3 text-slate-600">
+                  {sale.recordedBy
+                    ? [sale.recordedBy.firstName, sale.recordedBy.lastName]
+                        .filter(Boolean)
+                        .join(' ')
+                    : '—'}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Money value={sale.total} />

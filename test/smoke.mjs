@@ -81,6 +81,14 @@ let seenHash = null;
 
 /** Every call goes through here, so an unexpected status is never swallowed. */
 async function api(method, path, { body, token, key, expect = [200, 201] } = {}) {
+  // The script records the same sale again and again on purpose — one carton to
+  // the same customer, step after step. Left on, the duplicate warning
+  // (2026-10-08) would answer those with a 409 of its own, and a step expecting
+  // a *different* 409 (credit, stock) would pass for the wrong reason. So a sale
+  // here skips it unless the step says otherwise; step 59 turns it on.
+  if (method === 'POST' && path === '/sales' && body && body.allowDuplicate === undefined) {
+    body = { ...body, allowDuplicate: true };
+  }
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
@@ -3537,6 +3545,75 @@ async function main() {
     expect: 403,
   });
   check('a cashier cannot see growth — it carries gross profit (403)', true);
+
+  step(59, 'A sale that looks already recorded: warned, never blocked');
+  const cashierNow = backIn.accessToken ?? backIn.tokens?.accessToken;
+  const twinBuyer = (
+    await api('POST', '/customers', {
+      token: t,
+      body: { id: randomUUID(), firstName: `Twin buyer ${shopSuffix}` },
+    })
+  ).data;
+  // A service, so no stock refusal can stand in for the one being tested.
+  const twinSale = {
+    customerId: twinBuyer.id,
+    lines: [{ productId: service.id, unitId: service.units[0].id, quantity: 1 }],
+    allowDuplicate: false,
+  };
+  const firstTwin = (
+    await api('POST', '/sales', { token: t, key: randomUUID(), body: { id: randomUUID(), ...twinSale } })
+  ).data;
+  check('the owner records a customer’s sale', !!firstTwin.id);
+
+  const secondTwinId = randomUUID();
+  const warned = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { id: secondTwinId, ...twinSale },
+      expect: 409,
+    })
+  ).data;
+  eq('the cashier entering it again is warned', warned.error, 'POSSIBLE_DUPLICATE');
+  eq('naming the sale it looks like', warned.duplicates[0].id, firstTwin.id);
+  check('and who recorded it', typeof warned.duplicates[0].recordedBy === 'string' && warned.duplicates[0].recordedBy.length > 0);
+  await api('GET', `/sales/${secondTwinId}`, { token: t, expect: 404 });
+  check('and nothing was written', true);
+
+  const moreOfIt = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { id: randomUUID(), ...twinSale, lines: [{ ...twinSale.lines[0], quantity: 2 }] },
+    })
+  ).data;
+  check('the same goods in a different amount are not a duplicate', !!moreOfIt.id);
+
+  const anyway = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { id: secondTwinId, ...twinSale, allowDuplicate: true },
+    })
+  ).data;
+  eq('the cashier can record it anyway — the same id, a fresh key', anyway.id, secondTwinId);
+
+  // A walk-in: nobody in particular, so only a sale minutes ago counts.
+  const walkInSale = {
+    lines: [{ productId: service.id, unitId: service.units[0].id, quantity: 7 }],
+    allowDuplicate: false,
+  };
+  await api('POST', '/sales', { token: t, key: randomUUID(), body: { id: randomUUID(), ...walkInSale } });
+  const walkInWarned = (
+    await api('POST', '/sales', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { id: randomUUID(), ...walkInSale },
+      expect: 409,
+    })
+  ).data;
+  eq('a walk-in sale of the same items minutes later is warned too', walkInWarned.error, 'POSSIBLE_DUPLICATE');
+  check('and says nothing about a customer', !/same customer/.test(walkInWarned.message), walkInWarned.message);
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

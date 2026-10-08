@@ -477,3 +477,44 @@ export class SaleReceiptView {
   @ApiProperty({ type: String, nullable: true })
   note!: string | null;
 }
+
+/** A sale the one being recorded looks like (2026-10-08). */
+export class PossibleDuplicateSale {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'INV-0123' })
+  number!: string;
+
+  @ApiProperty({ description: 'Minor units.' })
+  total!: number;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  occurredAt!: Date;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: 'Ade Bayo',
+    description: 'Who recorded it, when known.',
+  })
+  recordedBy!: string | null;
+}
+
+/**
+ * The 409 for a sale that looks already recorded. Send the sale again with
+ * `allowDuplicate: true` — the same `id`, a fresh key — to record it anyway.
+ */
+export class PossibleDuplicateConflict {
+  @ApiProperty({ example: 'POSSIBLE_DUPLICATE' })
+  error!: string;
+
+  @ApiProperty()
+  message!: string;
+
+  @ApiProperty({
+    type: () => [PossibleDuplicateSale],
+    description: 'Newest first; at most three.',
+  })
+  duplicates!: PossibleDuplicateSale[];
+}
