@@ -83,6 +83,15 @@ export class ImportRowView {
   })
   messages!: string[];
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: 'Chicken',
+    description:
+      'The option this row adds. Rows with the same name and size and an Option filled in are one product with options; each row’s units show what that option sells at.',
+  })
+  option!: string | null;
+
   @ApiProperty({ type: ImportProductView, nullable: true })
   product!: ImportProductView | null;
 }
@@ -91,8 +100,14 @@ export class ImportReportView {
   @ApiProperty({ description: 'False for a preview; true once saved.' })
   saved!: boolean;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Products added. A product with options is several rows, and counts once.',
+  })
   adding!: number;
+
+  @ApiProperty({ description: 'Options added, across those products.' })
+  options!: number;
 
   @ApiProperty()
   skipped!: number;

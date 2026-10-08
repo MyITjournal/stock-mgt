@@ -117,12 +117,33 @@ export class ImportRowDto {
 
   @ApiPropertyOptional({
     example: '6154000000005',
-    description: 'For the counted-in unit.',
+    description:
+      'For the counted-in unit — of this row’s option, when it names one.',
   })
   @IsOptional()
   @IsString()
   @MaxLength(500)
   barcode?: string;
+
+  @ApiPropertyOptional({
+    example: 'Flavour',
+    description:
+      'What the options differ by: "Flavour", or "Flavour / Pack size". Blank is "Option".',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  optionType?: string;
+
+  @ApiPropertyOptional({
+    example: 'Chicken',
+    description:
+      'This row’s option — "Chicken", or "Chicken / 70g". Rows with the same name and size, each with an option, are one product with options: the first row’s units and prices are the product’s, and a later row’s price that differs is that option’s own.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  option?: string;
 }
 
 export class ImportProductsDto {
@@ -130,7 +151,7 @@ export class ImportProductsDto {
   @IsArray()
   @ArrayMinSize(1, { message: 'The file has no rows to import.' })
   @ArrayMaxSize(MAX_IMPORT_ROWS, {
-    message: `One file can hold up to ${MAX_IMPORT_ROWS} products. Split it into smaller files.`,
+    message: `One file can hold up to ${MAX_IMPORT_ROWS} rows. Split it into smaller files.`,
   })
   @ValidateNested({ each: true })
   @Type(() => ImportRowDto)

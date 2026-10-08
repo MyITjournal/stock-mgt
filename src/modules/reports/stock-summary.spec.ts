@@ -19,21 +19,21 @@ describe('summariseStock', () => {
     // 3 lotions from before; 78 delivered, 6 of them never came; 40 sold,
     // 2 brought back; 1 broken.
     const { lines } = summariseStock(new Map([['lotion', { quantity: 3 }]]), [
-      { productId: 'lotion', type: 'receipt', reason: null, quantity: 84 },
+      { key: 'lotion', type: 'receipt', reason: null, quantity: 84 },
       {
-        productId: 'lotion',
+        key: 'lotion',
         type: 'adjustment',
         reason: 'receipt_correction',
         quantity: -6,
       },
-      { productId: 'lotion', type: 'sale', reason: null, quantity: -40 },
-      { productId: 'lotion', type: 'return_in', reason: null, quantity: 2 },
-      { productId: 'lotion', type: 'damage', reason: 'damage', quantity: -1 },
+      { key: 'lotion', type: 'sale', reason: null, quantity: -40 },
+      { key: 'lotion', type: 'return_in', reason: null, quantity: 2 },
+      { key: 'lotion', type: 'damage', reason: 'damage', quantity: -1 },
     ]);
 
     expect(lines).toEqual([
       {
-        productId: 'lotion',
+        key: 'lotion',
         opening: 3,
         delivered: 78,
         sold: 38,
@@ -46,7 +46,7 @@ describe('summariseStock', () => {
   it('counts opening stock entered during the period as opening', () => {
     const { lines } = summariseStock(new Map(), [
       {
-        productId: 'spray',
+        key: 'spray',
         type: 'adjustment',
         reason: 'opening_balance',
         quantity: 21,
@@ -63,7 +63,7 @@ describe('summariseStock', () => {
       ]),
       [],
     );
-    expect(lines.map((line) => line.productId)).toEqual(['still']);
+    expect(lines.map((line) => line.key)).toEqual(['still']);
   });
 
   it('carries value the same way, and reconciles to the stock value', () => {
@@ -71,21 +71,21 @@ describe('summariseStock', () => {
     // ₦4,027; 40 sold at the delivery's cost.
     const { lines, totalValue } = summariseStock(new Map(), [
       {
-        productId: 'lotion',
+        key: 'lotion',
         type: 'adjustment',
         reason: 'opening_balance',
         quantity: 3,
         value: 3 * 414_445.4,
       },
       {
-        productId: 'lotion',
+        key: 'lotion',
         type: 'receipt',
         reason: null,
         quantity: 78,
         value: 78 * 402_700,
       },
       {
-        productId: 'lotion',
+        key: 'lotion',
         type: 'sale',
         reason: null,
         quantity: -40,
@@ -123,14 +123,14 @@ describe('summariseStock', () => {
       new Map([['a', { quantity: 1, value: 0.4 }]]),
       [
         {
-          productId: 'a',
+          key: 'a',
           type: 'receipt',
           reason: null,
           quantity: 1,
           value: 0.4,
         },
         {
-          productId: 'a',
+          key: 'a',
           type: 'sale',
           reason: null,
           quantity: -1,
@@ -148,5 +148,55 @@ describe('summariseStock', () => {
     expect(summary.totalValue).toBeUndefined();
     expect(summary.availableValue).toBeUndefined();
     expect(summary.lines[0]).not.toHaveProperty('value');
+  });
+});
+
+describe('summariseStock — by option (§24)', () => {
+  it('shows stock moving into an option on both rows, and the product still adds up', () => {
+    // 100 cartons held before Indomie had options; adding them put all 100 on
+    // Chicken (a move on the same lot), and a count spread 60 to the others.
+    const { lines } = summariseStock(
+      new Map([['indomie', { quantity: 100 }]]),
+      [
+        { key: 'indomie', type: 'transfer_out', reason: null, quantity: -100 },
+        {
+          key: 'indomie:chicken',
+          type: 'transfer_in',
+          reason: null,
+          quantity: 100,
+        },
+        {
+          key: 'indomie:chicken',
+          type: 'transfer_out',
+          reason: 'count_correction',
+          quantity: -60,
+        },
+        {
+          key: 'indomie:pepper',
+          type: 'transfer_in',
+          reason: 'count_correction',
+          quantity: 60,
+        },
+        { key: 'indomie:pepper', type: 'sale', reason: null, quantity: -5 },
+      ],
+    );
+
+    const byKey = Object.fromEntries(lines.map((line) => [line.key, line]));
+    expect(byKey['indomie']).toMatchObject({
+      opening: 100,
+      adjusted: -100,
+      closing: 0,
+    });
+    expect(byKey['indomie:chicken']).toMatchObject({
+      adjusted: 40,
+      closing: 40,
+    });
+    expect(byKey['indomie:pepper']).toMatchObject({
+      adjusted: 60,
+      sold: 5,
+      closing: 55,
+    });
+    const closing = lines.reduce((sum, line) => sum + line.closing, 0);
+    expect(closing).toBe(95);
   });
 });

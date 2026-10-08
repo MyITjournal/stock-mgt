@@ -15,8 +15,8 @@ export type AuditLine = AuditMovement & {
  * or a count corrected twice, wrote a movement each, and the list read like a
  * stammer.
  *
- * Movements are added up when they share the **product, the place, the reason
- * and the person** — the same decision made in pieces. The line carries the
+ * Movements are added up when they share the **product and option, the place,
+ * the reason and the person** — the same decision made in pieces. The line carries the
  * latest time and how many it holds. **A forced movement stays on its own**:
  * each was pushed through a shortfall with its own reason, and adding those
  * together would hide the reasons. Quantities are counts, not money, so the
@@ -35,6 +35,8 @@ export function auditLines(movements: readonly AuditMovement[]): AuditLine[] {
     }
     const key = [
       movement.product.id,
+      // Gold and Classic are two items (§24), never one line.
+      movement.variant?.id ?? '',
       movement.location.id,
       movement.reason ?? movement.type,
       movement.recordedBy?.id ?? 'nobody',

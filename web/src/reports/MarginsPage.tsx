@@ -8,6 +8,7 @@ import { Field, Select } from '../components/Field';
 import { DownloadButton } from '../components/DownloadButton';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
+import { optionLabel } from '../lib/options';
 import { exportMargins } from './exportReports';
 
 type MarginsView = components['schemas']['MarginsView'];
@@ -60,13 +61,14 @@ export function MarginsPage() {
   const columns: readonly Column<MarginRow>[] = [
     {
       header: 'Product',
-      sortValue: (row) => `${row.productName} ${row.size ?? ''}`,
+      sortValue: (row) =>
+        `${optionLabel(row.productName, row.variant?.name)} ${row.size ?? ''}`,
       cell: (row) => (
         <Link
           to={`/stock/products/${row.productId}`}
           className="text-slate-900 hover:underline"
         >
-          {row.productName}
+          {optionLabel(row.productName, row.variant?.name)}
           {row.size && <span className="ml-1 text-slate-500">{row.size}</span>}
         </Link>
       ),
@@ -280,7 +282,9 @@ export function MarginsPage() {
       <DataTable
         rows={data?.rows ?? []}
         columns={columns}
-        rowKey={(row) => `${row.productId}:${row.unitId}`}
+        rowKey={(row) =>
+          `${row.productId}:${row.variant?.id ?? ''}:${row.unitId}`
+        }
         loading={isPending}
         empty="No products sold at the till yet."
       />

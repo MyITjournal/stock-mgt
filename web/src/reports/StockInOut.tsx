@@ -43,9 +43,7 @@ export function StockInOut({ query }: { query: string }) {
   const rows = (data?.rows ?? []).filter(
     (row) =>
       !term ||
-      `${row.product.name} ${row.product.size ?? ''}`
-        .toLowerCase()
-        .includes(term),
+      `${row.label} ${row.product.size ?? ''}`.toLowerCase().includes(term),
   );
 
   /** A quantity in the shop's units; a dash for nothing, signed when asked. */
@@ -76,13 +74,13 @@ export function StockInOut({ query }: { query: string }) {
   const columns: readonly Column<StockSummaryRow>[] = [
     {
       header: 'Product',
-      sortValue: (row) => `${row.product.name} ${row.product.size ?? ''}`,
+      sortValue: (row) => `${row.label} ${row.product.size ?? ''}`,
       cell: (row) => (
         <Link
           to={`/stock/products/${row.product.id}`}
           className="text-slate-900 hover:underline"
         >
-          {row.product.name}
+          {row.label}
           {row.product.size && (
             <span className="ml-1 text-slate-500">{row.product.size}</span>
           )}
@@ -195,7 +193,7 @@ export function StockInOut({ query }: { query: string }) {
       <DataTable
         rows={rows}
         columns={columns}
-        rowKey={(row) => row.product.id}
+        rowKey={(row) => row.key}
         loading={isPending}
         empty={
           term ? 'Nothing matches that.' : 'No stock moved in this period.'

@@ -408,6 +408,15 @@ class ReportProductRef {
   name!: string;
 }
 
+/** The option a row is for — "Gold" of Eva Soap (§24). */
+export class ReportOptionRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Gold' })
+  name!: string;
+}
+
 class ReportLocationRef {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -429,6 +438,14 @@ export class ExpiringLotRow {
 
   @ApiProperty({ type: () => ReportProductRef })
   product!: ReportProductRef;
+
+  @ApiProperty({
+    type: () => ReportOptionRef,
+    nullable: true,
+    description:
+      'The option this stock is. A lot can hold several options of one product, so each is its own row. Null for a product without options.',
+  })
+  variant!: ReportOptionRef | null;
 
   @ApiProperty({ type: () => ReportLocationRef })
   location!: ReportLocationRef;
@@ -470,7 +487,7 @@ export class ExpiryReportView {
   expired!: number;
 }
 
-/** A product needing attention. */
+/** A product, or one option of it, needing attention. */
 export class StockAlertRow {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -487,6 +504,14 @@ export class StockAlertRow {
     description: 'Null when nobody has set a level for this product.',
   })
   reorderPoint!: number | null;
+
+  @ApiProperty({
+    type: () => ReportOptionRef,
+    nullable: true,
+    description:
+      "The option this row is for: each option is checked against the product's level on its own. Null for a product without options.",
+  })
+  variant!: ReportOptionRef | null;
 
   @ApiProperty({ description: 'Summed across every location.' })
   quantity!: number;
@@ -519,7 +544,7 @@ export class StockAlertsView {
 
   @ApiProperty({
     description:
-      'How many products have no level set, so nobody mistakes the list for complete.',
+      'How many products have no level set, so nobody mistakes the list for complete. Products, not options: the level is set once per product.',
   })
   withoutReorderPoint!: number;
 }
@@ -568,6 +593,14 @@ export class StockAuditRow {
 
   @ApiProperty({ type: () => ReportProductRef })
   product!: ReportProductRef;
+
+  @ApiProperty({
+    type: () => ReportOptionRef,
+    nullable: true,
+    description:
+      'The option moved. Null for a product without options, or a movement from before it had them.',
+  })
+  variant!: ReportOptionRef | null;
 
   @ApiProperty({ type: () => ReportLocationRef })
   location!: ReportLocationRef;
@@ -629,9 +662,16 @@ class DeadStockProductRef {
   sku?: string;
 }
 
-class DeadStockRow {
+export class DeadStockRow {
   @ApiProperty({ type: () => DeadStockProductRef })
   product!: DeadStockProductRef;
+
+  @ApiProperty({
+    type: () => ReportOptionRef,
+    nullable: true,
+    description: 'The option not selling. Null for a product without options.',
+  })
+  variant!: ReportOptionRef | null;
 
   @ApiProperty({ description: 'Base units sitting on a shelf.' })
   quantity!: number;

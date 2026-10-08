@@ -12,6 +12,14 @@ class SummaryProductRef {
   size!: string | null;
 }
 
+class SummaryOptionRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Gold' })
+  name!: string;
+}
+
 class SummaryUnit {
   @ApiProperty({ example: 'carton' })
   name!: string;
@@ -48,10 +56,31 @@ export class StockSummaryValues {
   closing!: number;
 }
 
-/** One product's period, in base units: opening + delivered − sold ± adjusted = closing. */
+/** One item's period, in base units: opening + delivered − sold ± adjusted = closing. */
 export class StockSummaryRow {
+  @ApiProperty({
+    description:
+      'Unique per row: the product, or the product and option. For a list key.',
+  })
+  key!: string;
+
+  @ApiProperty({
+    example: 'Eva Soap — Gold',
+    description:
+      'What the row is called: the product, the product and its option, or "Indomie (before options)" for stock a product held before it had options — that row shows it moving into them.',
+  })
+  label!: string;
+
   @ApiProperty({ type: () => SummaryProductRef })
   product!: SummaryProductRef;
+
+  @ApiProperty({
+    type: () => SummaryOptionRef,
+    nullable: true,
+    description:
+      'The option. Each option is its own row (§24); moves between them land in "adjusted" on both, so the product still adds up.',
+  })
+  variant!: SummaryOptionRef | null;
 
   @ApiProperty({
     type: () => [SummaryUnit],
@@ -99,7 +128,8 @@ export class StockSummaryView {
 
   @ApiProperty({
     type: () => [StockSummaryRow],
-    description: 'One per product with stock or movement, by name.',
+    description:
+      'One per product — per option, for a product with options — with stock or movement, by name.',
   })
   rows!: StockSummaryRow[];
 

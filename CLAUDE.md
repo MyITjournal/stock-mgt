@@ -55,7 +55,8 @@ One line each; the reasoning is in DECISIONS.md.
 - **Options (variants)**: once a product has any, every sale and stock write names one
   (`checkVariant`; `StockService` is the guarantee). The option sits on the movement and balance
   like the location — **never on the lot**. Every `where` on balances, prices and count lines
-  names `variantId`, as `null` when none (partial unique pairs; DECISIONS.md §24).
+  names `variantId`, as `null` when none (partial unique pairs; DECISIONS.md §24). A report row
+  per product is a row per option (`itemKey`/`itemLabel` in `reports/options.ts`).
 
 **Time and feeds**
 - All date arithmetic lives in `reports/period.ts`, in `Organization.timezone`, never UTC.
@@ -96,7 +97,8 @@ laptop. Deploy runs `prisma migrate deploy`. Details: DECISIONS.md §21.
 Its own `package.json`; `npm run dev` inside `web/` serves **5173** (the URL to open) while the
 API runs on 4000.
 - **Types are generated**: `npm run api:types` after any endpoint or DTO change. Every endpoint a
-  screen reads needs a response class that **is** the service's declared return type.
+  screen reads needs a response class that **is** the service's declared return type — under a
+  name no other class uses (Swagger keeps one of two and drops the other's fields).
 - Every request goes through `src/api/client.ts` (cookies, one shared refresh, idempotency keys);
   PDFs through `api.document`. Every write ends with `afterWrite`.
 - A cost field may be **absent**, not null. Seed forms by mounting with data, never `useEffect`.
@@ -107,10 +109,11 @@ API runs on 4000.
 v1 is feature-complete and hosted; work now is fixes and owner requests, one branch each.
 Latest (2026-10-08): who is signed in and sign-out, growth, the duplicate-sale warning, opening
 stock on Add product, cash banking (Money → Cash, Sales → My cash). The 2026-10-08 build queue
-is done. **In progress: product options (variants), five branches — 4 of 5 done (ledger + API;
-product screens and till; stock in; counting and moving); next `feat/variants-reports`.** Nothing goes to `main` until all five are in;
-DECISIONS.md §24 has the list. v2 is scoped in [docs/PRD-V2.md](docs/PRD-V2.md). The by-hand
-browser script is [docs/MANUAL-TESTS-WEB.md](docs/MANUAL-TESTS-WEB.md).
+is done. **Product options (variants): all five branches built** (ledger + API; product screens and
+till; stock in; counting and moving; reports and the spreadsheet) — `dev` is ready to go to `main`
+once `feat/variants-reports` is merged. DECISIONS.md §24 has the detail. v2 is scoped in
+[docs/PRD-V2.md](docs/PRD-V2.md). The by-hand browser script is
+[docs/MANUAL-TESTS-WEB.md](docs/MANUAL-TESTS-WEB.md).
 
 ## Working practice
 

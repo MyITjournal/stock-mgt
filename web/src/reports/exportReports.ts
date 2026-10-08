@@ -6,6 +6,8 @@ import {
   type SheetColumn,
 } from '../lib/exportSheet';
 
+import { optionLabel } from '../lib/options';
+
 type S = components['schemas'];
 
 /**
@@ -16,6 +18,9 @@ type S = components['schemas'];
  *
  * Cost-bearing columns read fields `redactCost` may have removed, so for a role
  * that may not see cost they are simply empty — never zero.
+ *
+ * A product with options is a row per option, named as the screen names it —
+ * "Eva Soap — Gold" (§24).
  */
 
 const fileFor = (report: string, period: S['PeriodView']) =>
@@ -220,7 +225,8 @@ export function exportMovers(
       [
         {
           header: 'Product',
-          value: (row: S['DeadStockRow']) => row.product.name,
+          value: (row: S['DeadStockRow']) =>
+            optionLabel(row.product.name ?? '', row.variant?.name),
           width: 30,
         },
         { header: 'SKU', value: (row: S['DeadStockRow']) => row.product.sku },
@@ -256,7 +262,7 @@ const valuationColumns = (
 
 /** Stock value now — not a period, so the file is stamped with today. */
 const summaryColumns: readonly SheetColumn<S['StockSummaryRow']>[] = [
-  { header: 'Product', value: (row) => row.product.name, width: 30 },
+  { header: 'Product', value: (row) => row.label, width: 30 },
   { header: 'Size', value: (row) => row.product.size },
   {
     header: 'Counted in',
@@ -306,7 +312,11 @@ export function exportStockValue(
 }
 
 const marginColumns: readonly SheetColumn<S['MarginRow']>[] = [
-  { header: 'Product', value: (row) => row.productName, width: 30 },
+  {
+    header: 'Product',
+    value: (row) => optionLabel(row.productName, row.variant?.name),
+    width: 30,
+  },
   { header: 'Size', value: (row) => row.size },
   { header: 'Category', value: (row) => row.category?.name },
   { header: 'Unit', value: (row) => row.unitName },

@@ -13,6 +13,7 @@ import {
   readSpreadsheet,
   type ImportRow,
 } from '../lib/spreadsheet';
+import { optionLabel } from '../lib/options';
 
 type ImportReportView = components['schemas']['ImportReportView'];
 type ImportRowView = components['schemas']['ImportRowView'];
@@ -113,9 +114,10 @@ export function ImportProductsPage() {
             1. Start from the template
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            One row per product. Overwrite the two example rows with your own.
-            Save it as an <strong>Excel Workbook (.xlsx)</strong> — a .csv works
-            too, but Excel rounds long barcodes in one.
+            One row per product — or per option, for a product that comes in
+            flavours or sizes. Overwrite the example rows with your own. Save it
+            as an <strong>Excel Workbook (.xlsx)</strong> — a .csv works too,
+            but Excel rounds long barcodes in one.
           </p>
           <Button
             type="button"
@@ -147,6 +149,13 @@ export function ImportProductsPage() {
             </strong>{' '}
             Prices go on your normal price list. What you paid and how many you
             have are not part of this: use Opening stock for those.
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            <strong>Options</strong> — Indomie in Chicken and Onion Chicken is
+            two rows with the same name and size, Option type "Flavour" and each
+            row's Option. The first row's units and prices are the product's;
+            later rows can leave them blank, and a price that differs is that
+            option's own.
           </p>
         </section>
 
@@ -192,7 +201,7 @@ export function ImportProductsPage() {
                 <p className="font-medium">
                   {report.adding === 0
                     ? 'Nothing new to add — every product in the file is already there.'
-                    : `${report.adding} ${report.adding === 1 ? 'product' : 'products'} added.`}
+                    : `${report.adding} ${report.adding === 1 ? 'product' : 'products'}${withOptions(report.options)} added.`}
                 </p>
                 <p className="mt-1">
                   <Link to="/stock" className="underline">
@@ -220,7 +229,7 @@ export function ImportProductsPage() {
                 <p className="mt-1 text-sm text-slate-700">
                   From <span className="font-medium">{fileName}</span>:{' '}
                   <span className="text-emerald-700">
-                    {report.adding} to add
+                    {report.adding} to add{withOptions(report.options)}
                   </span>
                   {report.skipped > 0 && (
                     <> · {report.skipped} already in your products</>
@@ -310,7 +319,9 @@ function ReportRow({ row, saved }: { row: ImportRowView; saved: boolean }) {
     <tr className={`align-top ${tone}`}>
       <td className="px-3 py-2 text-slate-500">{row.line}</td>
       <td className="px-3 py-2">
-        <div className="font-medium text-slate-900">{row.name || '—'}</div>
+        <div className="font-medium text-slate-900">
+          {optionLabel(row.name || '—', row.option)}
+        </div>
         {product && (
           <div className="text-xs text-slate-500">
             {[
@@ -381,6 +392,11 @@ function ReportRow({ row, saved }: { row: ImportRowView; saved: boolean }) {
       </td>
     </tr>
   );
+}
+
+/** " (12 options)" when the products being added have options. */
+function withOptions(count: number): string {
+  return count > 0 ? ` (${count} ${count === 1 ? 'option' : 'options'})` : '';
 }
 
 function messageFor(caught: unknown): string {

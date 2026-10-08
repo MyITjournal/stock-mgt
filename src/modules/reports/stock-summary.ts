@@ -1,5 +1,6 @@
 /**
- * Stock in and out over a period, per product (2026-10-07):
+ * Stock in and out over a period, per product (2026-10-07) — **per option**
+ * since product options (§24): a line per item, keyed by `itemKey`.
  *
  *     opening + delivered − sold ± adjusted = total
  *
@@ -57,7 +58,8 @@ export interface Amount {
 }
 
 export interface MovementTotal extends Amount {
-  productId: string;
+  /** The item: a product, or one option of it (`itemKey`). */
+  key: string;
   type: StockMovementType;
   reason: StockAdjustmentReason | null;
 }
@@ -72,7 +74,7 @@ export interface SummaryFigures {
 }
 
 export interface SummaryLine extends SummaryFigures {
-  productId: string;
+  key: string;
   /** In minor units, each rounded once. Absent when no value was given. */
   value?: SummaryFigures;
 }
@@ -120,7 +122,7 @@ const rounded = (figures: SummaryFigures): SummaryFigures => ({
 });
 
 /**
- * One line per product that had stock or movement: what it started with
+ * One line per item that had stock or movement: what it started with
  * (`before`, summed before the period) and the period's movements, grouped by
  * type and reason. A product with nothing either side is left out. Values are
  * carried when every input has one.
@@ -135,30 +137,30 @@ export function summariseStock(
 
   const lines = new Map<
     string,
-    { productId: string; quantity: SummaryFigures; value: SummaryFigures }
+    { key: string; quantity: SummaryFigures; value: SummaryFigures }
   >();
   const total = zero();
 
-  const lineFor = (productId: string) => {
-    let line = lines.get(productId);
+  const lineFor = (key: string) => {
+    let line = lines.get(key);
     if (!line) {
-      const start = before.get(productId);
-      line = { productId, quantity: zero(), value: zero() };
+      const start = before.get(key);
+      line = { key, quantity: zero(), value: zero() };
       if (start) {
         add(line.quantity, 'opening', start.quantity);
         add(line.value, 'opening', start.value ?? 0);
         add(total, 'opening', start.value ?? 0);
       }
-      lines.set(productId, line);
+      lines.set(key, line);
     }
     return line;
   };
 
-  for (const [productId, start] of before) {
-    if (start.quantity !== 0) lineFor(productId);
+  for (const [key, start] of before) {
+    if (start.quantity !== 0) lineFor(key);
   }
   for (const row of during) {
-    const line = lineFor(row.productId);
+    const line = lineFor(row.key);
     const column = columnFor(row.type, row.reason);
     add(line.quantity, column, row.quantity);
     add(line.value, column, row.value ?? 0);
@@ -167,7 +169,7 @@ export function summariseStock(
 
   return {
     lines: [...lines.values()].map((line) => ({
-      productId: line.productId,
+      key: line.key,
       ...line.quantity,
       ...(valued && { value: rounded(line.value) }),
     })),
