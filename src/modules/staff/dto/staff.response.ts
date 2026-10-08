@@ -107,6 +107,12 @@ export class StaffMemberView {
   user!: StaffUserView;
 }
 
+/** What signing somebody out answers with. */
+export class StaffSignOutView {
+  @ApiProperty({ example: 'Signed out. They can sign in again.' })
+  message!: string;
+}
+
 /** What resetting a password answers with. Deliberately not the password. */
 export class StaffPasswordResetView {
   @ApiProperty({ example: 'Password updated. Tell them the new one.' })

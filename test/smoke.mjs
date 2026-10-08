@@ -1983,7 +1983,9 @@ async function main() {
     });
 
   const openNow = (await signInAsBola([200, 201])).data;
-  const bolaToken = openNow.accessToken ?? openNow.tokens?.accessToken;
+  // `let`: a cashier signing in again ends her earlier session at once
+  // (2026-10-08), so each later sign-in hands over the token to carry on with.
+  let bolaToken = openNow.accessToken ?? openNow.tokens?.accessToken;
   check('a cashier can sign in during opening hours', !!bolaToken);
 
   // Close the shop by moving the window into the past hour.
@@ -2016,8 +2018,9 @@ async function main() {
     token: t,
     body: { ignoresWorkingHours: true },
   });
-  await signInAsBola([200, 201]);
-  check('an exempt member of staff can sign in at any hour', true);
+  const exemptNow = (await signInAsBola([200, 201])).data;
+  bolaToken = exemptNow.accessToken ?? exemptNow.tokens?.accessToken;
+  check('an exempt member of staff can sign in at any hour', !!bolaToken);
 
   // Her own hours are checked through the record rather than another sign-in:
   // login is throttled at five a minute per address, and this step has already
@@ -3447,6 +3450,45 @@ async function main() {
   check('signing in again ends the session on the first device (401 on renewal)', true);
   await api('POST', '/auth/refresh', { body: { refreshToken: secondRefresh } });
   check('and the newest one carries on', true);
+  await api('GET', '/products', {
+    token: firstDevice.accessToken ?? firstDevice.tokens?.accessToken,
+    expect: 401,
+  });
+  check('and the first device is out at once, not in fifteen minutes', true);
+  const secondToken = secondDevice.accessToken ?? secondDevice.tokens?.accessToken;
+
+  step(57, 'Who is signed in, and signing somebody out');
+  const sessions = (await api('GET', '/staff/sessions', { token: t })).data;
+  const bolaSessions = sessions.members.find((m) => m.userId === bola.user.id);
+  check(
+    'the owner sees the cashier signed in now, and on what',
+    bolaSessions?.sessions.some((s) => s.activeNow && typeof s.device === 'string'),
+    JSON.stringify(bolaSessions),
+  );
+  check(
+    'and no address is handed out',
+    !JSON.stringify(sessions).includes('"ip"'),
+  );
+  const dashNow = (await api('GET', '/reports/dashboard', { token: t })).data;
+  eq('Home counts the same people as the staff screen', dashNow.signedIn.people, sessions.activePeople);
+  await api('GET', '/staff/sessions', { token: secondToken, expect: 403 });
+  check('a cashier cannot see who is signed in (403)', true);
+  await api('POST', `/staff/${bola.user.id}/sign-out`, { token: secondToken, expect: 403 });
+  check('nor sign anybody out (403)', true);
+  await api('POST', `/staff/${ownerMe.sub}/sign-out`, { token: t, expect: 400 });
+  check('the owner cannot sign themselves out this way (400)', true);
+
+  await api('POST', `/staff/${bola.user.id}/sign-out`, { token: t });
+  await api('GET', '/products', { token: secondToken, expect: 401 });
+  check('signed out by the owner, her very next request is refused', true);
+  const afterSignOut = (await api('GET', '/staff/sessions', { token: t })).data;
+  check(
+    'and she shows as not signed in',
+    !afterSignOut.members.find((m) => m.userId === bola.user.id)?.sessions.length,
+  );
+  const backIn = (await signInAsBola([200, 201])).data;
+  await api('GET', '/products', { token: backIn.accessToken ?? backIn.tokens?.accessToken });
+  check('and she can sign straight back in — not suspended', true);
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

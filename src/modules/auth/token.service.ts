@@ -42,9 +42,10 @@ export interface TokenContext {
  * and managers keep several — a phone at the till and a laptop in the office
  * is how they work.
  *
- * Ended means the refresh token is revoked; the other device's access token
- * still runs out on its own, so it is out **within 15 minutes**, as with a
- * suspension or a password reset. Every path that mints a session asks this:
+ * Ended **at once** (2026-10-08): the refresh tokens are revoked and the
+ * membership's `sessionsEndedAt` set, so the other device's access token is
+ * refused on its next request rather than running out fifteen minutes later
+ * (`endSessions`). Every path that mints a session asks this:
  * `AuthService.issueForUser` and `switchOrganization` (rotation renews the
  * same session, so it does not).
  */
@@ -90,12 +91,18 @@ export class TokenService {
     context: TokenContext = {},
     familyId: string = crypto.randomUUID(),
   ): Promise<TokenPair> {
-    const accessToken = await this.jwt.signAsync(payload, {
-      secret: env.JWT_ACCESS_SECRET,
-      // Env values are plain strings; jsonwebtoken types this as an `ms`
-      // template literal ("15m"), which zod cannot express.
-      expiresIn: env.JWT_ACCESS_EXPIRES_IN as SignOptions['expiresIn'],
-    });
+    // `iatMs`: when this token was issued, to the millisecond. The standard
+    // `iat` is whole seconds, so two sign-ins in the same second could not be
+    // told apart, and ending the first would spare it (2026-10-08).
+    const accessToken = await this.jwt.signAsync(
+      { ...payload, iatMs: Date.now() },
+      {
+        secret: env.JWT_ACCESS_SECRET,
+        // Env values are plain strings; jsonwebtoken types this as an `ms`
+        // template literal ("15m"), which zod cannot express.
+        expiresIn: env.JWT_ACCESS_EXPIRES_IN as SignOptions['expiresIn'],
+      },
+    );
 
     const selector = crypto.randomBytes(16).toString('hex');
     const verifier = crypto.randomBytes(32).toString('hex');
@@ -221,6 +228,41 @@ export class TokenService {
       where: { tokenSelector: selector },
     });
     if (stored) await this.revokeFamily(stored.familyId);
+  }
+
+  /**
+   * Ends a person's sessions **at once** (2026-10-08): revokes their refresh
+   * tokens and sets `Membership.sessionsEndedAt`, which `JwtStrategy` reads on
+   * every request to refuse an access token issued earlier — so the other
+   * device is out on its next tap, not when its token runs out.
+   *
+   * `everywhere` revokes refresh tokens in every shop the person belongs to
+   * (signing in on a new device); otherwise only this shop's (an owner
+   * signing somebody out — another business's sessions are not theirs to end).
+   * The cut itself is always this shop's membership.
+   */
+  async endSessions(
+    userId: string,
+    organizationId: string,
+    { everywhere = false }: { everywhere?: boolean } = {},
+  ): Promise<void> {
+    // Taken before any new session is issued, so a token issued after this
+    // call — the new one, when signing in ends the others — is never refused.
+    const cut = new Date();
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+          ...(everywhere ? {} : { organizationId }),
+        },
+        data: { revokedAt: cut },
+      }),
+      this.prisma.membership.updateMany({
+        where: { userId, organizationId },
+        data: { sessionsEndedAt: cut },
+      }),
+    ]);
   }
 
   /** Revokes every token for a user, across all organizations. */

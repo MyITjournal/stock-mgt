@@ -5,6 +5,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { env } from '../../../config/env';
 import { AccessTokenPayload } from '../token.service';
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
+import { issuedBeforeCut } from '../../staff/sessions';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -25,7 +26,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
    * alone, so revoking someone's access takes effect immediately instead of
    * waiting for their access token to expire.
    */
-  async validate(payload: AccessTokenPayload): Promise<AuthenticatedUser> {
+  async validate(
+    payload: AccessTokenPayload & { iat?: number; iatMs?: number },
+  ): Promise<AuthenticatedUser> {
     const membership = await this.prisma.membership.findFirst({
       where: {
         userId: payload.sub,
@@ -37,6 +40,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     if (!membership || membership.user.deletedAt) {
       throw new UnauthorizedException('Membership is no longer active');
+    }
+
+    // Signed out by the owner, or signed in somewhere else since this token
+    // was issued (2026-10-08). The same read as the line above, so it costs
+    // nothing extra and bites on the very next request.
+    if (issuedBeforeCut(payload, membership.sessionsEndedAt)) {
+      throw new UnauthorizedException('This session has ended');
     }
 
     return {
