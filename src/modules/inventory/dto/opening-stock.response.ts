@@ -11,13 +11,28 @@ export class OpeningStockUnitView {
   factor!: number;
 }
 
-/** A product that has never had stock come in at the location asked about. */
+/**
+ * A product that has never had stock come in at the location asked about —
+ * or, for a product with options, one option of it (one row each).
+ */
 export class OpeningStockProductView {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ format: 'uuid', description: 'The product.' })
   id!: string;
 
   @ApiProperty()
   name!: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The option this row is for; null for a product without options. Send it back as the line’s variantId.',
+  })
+  variantId!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, example: 'Chicken / 70g' })
+  variantName!: string | null;
 
   @ApiProperty({ type: String, nullable: true })
   size!: string | null;

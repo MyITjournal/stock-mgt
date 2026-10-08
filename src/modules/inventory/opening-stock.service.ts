@@ -22,10 +22,12 @@ import {
 } from './dto/opening-stock.response';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { MAX_MINOR_UNITS } from '../../common/money/is-money.validator';
+import { optionLabel } from '../catalog/variants';
 import {
   correctedOpeningTotal,
   costPriceAfterOpening,
   planOpeningStock,
+  stockKey,
   type OpeningProduct,
 } from './opening-stock';
 
@@ -44,7 +46,11 @@ export class OpeningStockService {
     private readonly stock: StockService,
   ) {}
 
-  /** Every stocked product that has never had stock come in at this location. */
+  /**
+   * Every stocked product that has never had stock come in at this location —
+   * one row per active option for a product with options, each asked about
+   * on its own.
+   */
   async list(locationId?: string): Promise<OpeningStockProductView[]> {
     const location = await this.location(locationId);
     const [products, stocked] = await Promise.all([
@@ -60,15 +66,19 @@ export class OpeningStockService {
             select: { id: true, name: true, factor: true },
             orderBy: { factor: 'asc' },
           },
+          variants: {
+            where: { isActive: true },
+            select: { id: true, name: true },
+            orderBy: { name: 'asc' },
+          },
         },
         orderBy: { name: 'asc' },
       }),
       this.stockedAt(this.prisma, location),
     ]);
 
-    return products
-      .filter((product) => !stocked.has(product.id))
-      .map((product) => ({
+    return products.flatMap((product) => {
+      const row = {
         id: product.id,
         name: product.name,
         size: product.size,
@@ -76,7 +86,19 @@ export class OpeningStockService {
         category: product.category?.name ?? null,
         units: product.units,
         defaultUnitId: product.units[product.units.length - 1].id,
-      }));
+      };
+      const options =
+        product.variants.length > 0
+          ? product.variants
+          : [{ id: null, name: null }];
+      return options
+        .filter((option) => !stocked.has(stockKey(product.id, option.id)))
+        .map((option) => ({
+          ...row,
+          variantId: option.id,
+          variantName: option.name,
+        }));
+    });
   }
 
   /**
@@ -102,6 +124,7 @@ export class OpeningStockService {
             id: true,
             name: true,
             units: { select: { id: true, name: true, factor: true } },
+            variants: { select: { id: true, name: true, isActive: true } },
           },
         });
         const byId = new Map<string, OpeningProduct>(
@@ -131,6 +154,7 @@ export class OpeningStockService {
         await this.stock.recordNewLots(
           plan.lines.map((line) => ({
             productId: line.productId,
+            variantId: line.variantId,
             locationId: location,
             quantity: line.quantity,
             type: StockMovementType.adjustment,
@@ -169,7 +193,11 @@ export class OpeningStockService {
     return id;
   }
 
-  /** Products that have ever had stock come in at this location. */
+  /**
+   * Products — and options, keyed by `stockKey` — that have ever had stock
+   * come in at this location. An option counts once anything came into it,
+   * including the stock moved into it when the product's options were added.
+   */
   private async stockedAt(
     db: Pick<StockWriter, 'stockMovement'>,
     locationId: string,
@@ -181,10 +209,10 @@ export class OpeningStockService {
         quantity: { gt: 0 },
         ...(productIds && { productId: { in: productIds } }),
       },
-      distinct: ['productId'],
-      select: { productId: true },
+      distinct: ['productId', 'variantId'],
+      select: { productId: true, variantId: true },
     });
-    return new Set(rows.map((row) => row.productId));
+    return new Set(rows.map((row) => stockKey(row.productId, row.variantId)));
   }
 
   /**
@@ -261,7 +289,9 @@ export class OpeningStockService {
         receiptLine: { select: { id: true } },
         movements: {
           where: { reason: StockAdjustmentReason.opening_balance },
-          select: { id: true },
+          // An opening lot is one option's (or none): its name goes on the
+          // dialog, so "Indomie — Chicken" is what is being corrected.
+          select: { id: true, variant: { select: { name: true } } },
           take: 1,
         },
         product: {
@@ -312,7 +342,10 @@ export class OpeningStockService {
       deliveredSince: Boolean(deliveredSince),
       view: {
         batchId: lot.id,
-        productName: lot.product.name,
+        productName: optionLabel(
+          lot.product.name,
+          lot.movements[0].variant?.name,
+        ),
         quantity: lot.quantityReceived,
         baseUnitName: base?.name ?? 'unit',
         totalCostBefore: lot.totalCost,

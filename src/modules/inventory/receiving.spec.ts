@@ -301,4 +301,60 @@ describe('ReceivingService', () => {
     expect(receipt.lines[0]).not.toHaveProperty('totalCost');
     expect(receipt.lines[0]).not.toHaveProperty('unitCost');
   });
+
+  describe('a product with options (2026-10-08)', () => {
+    const GOLD = 'variant-gold';
+    beforeEach(() => {
+      prisma.product.findFirst.mockResolvedValue({
+        id: PRODUCT,
+        name: 'Eva Soap',
+        trackStock: true,
+        variants: [
+          { id: GOLD, name: 'Gold', isActive: true },
+          { id: 'variant-classic', name: 'Classic', isActive: true },
+        ],
+        units: [
+          { id: PIECE, name: 'piece', factor: 1 },
+          { id: CARTON, name: 'carton', factor: 24 },
+        ],
+      });
+    });
+
+    const receiveGold = (variantId?: string) =>
+      TenantContext.run({ organizationId: ORG, orgRole: OrgRole.owner }, () =>
+        service.create({
+          supplierId: SUPPLIER,
+          lines: [
+            {
+              productId: PRODUCT,
+              variantId,
+              unitId: CARTON,
+              quantityReceived: 2,
+              totalCost: 4_800_000,
+            },
+          ],
+        }),
+      );
+
+    it('puts the option on the line and the movement, never the lot', async () => {
+      await receiveGold(GOLD);
+
+      expect(tx.goodsReceiptLine.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ variantId: GOLD }) as object,
+      });
+      expect(stock.recordInbound).toHaveBeenCalledWith(
+        expect.objectContaining({ variantId: GOLD, quantity: 48 }),
+        tx,
+      );
+      const [[{ data: lot }]] = tx.stockBatch.create.mock.calls as [
+        [{ data: Record<string, unknown> }],
+      ];
+      expect(lot).not.toHaveProperty('variantId');
+    });
+
+    it('asks which option before anything is written', async () => {
+      await expect(receiveGold()).rejects.toThrow(/comes in options/);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
 });

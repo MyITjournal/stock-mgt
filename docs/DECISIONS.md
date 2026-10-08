@@ -5780,7 +5780,7 @@ screens call them **options**; the code and schema say *variant*. Built in five 
 2. `feat/variants-on-product-and-till` — product form and detail, an option's own price and
    barcode, till search and scan, sale lines, receipt, invoice, returns. **Done.**
 3. `feat/variants-stock-in` — receiving, delivery corrections ("wrong option"), opening stock, lot
-   cost.
+   cost. **Done.**
 4. `feat/variants-counting-and-moving` — counts, adjustments, transfers, the stock levels page.
 5. `feat/variants-reports` — valuation, low stock, margins, movers, stock in/out, import/export.
 
@@ -5826,8 +5826,8 @@ cover a non-stocked product, which never reaches the engine. Selling (`sale`) an
 returns may still move its leftover stock, or retiring it would strand that stock. Retiring the
 last active option is refused — retire the product instead. Options are never deleted.
 
-Until branches 3–5 land, a screen that sends no option gets a plain "comes in options (…). Say
-which one." on a product that has them — a delivery, a count, an adjustment. It cannot write wrong
+Until branches 4–5 land, a screen that sends no option gets a plain "comes in options (…). Say
+which one." on a product that has them — a count, an adjustment, a transfer. It cannot write wrong
 data; it just cannot do that yet. That is acceptable on `dev`, and is why nothing goes to `main`
 before branch 5.
 
@@ -5856,11 +5856,33 @@ size and price. So **to the till an option is an item of its own**:
   the product had options** name none, and the engine now insists on one, so a return line may name
   the option they go back as (`variantId`, only then; naming a different option for a line sold as
   one is refused). The return dialog asks, only for those lines.
-- **Opening stock on Add product is hidden once options are filled in** until branch 3 does
-  opening stock per option; the form says so.
 - The product form writes options **before** prices and barcodes on the server, so a price can name
   an option added in the same save (the form mints option ids). Adding first options to a product
   holding stock asks "The stock you already have is…", defaulting to the first option.
+
+### Stock in by option (branch 3)
+
+- **A delivery line names its option** (`GoodsReceiptLine.variantId`), written on the line and the
+  movement, never the lot. The delivery form's product list is **one entry per active option**
+  ("Eva Soap — Gold"), as at the till — `stockChoices` in `web/src/lib/options.ts` — so there is no
+  second box to forget. A retired option is not offered, and the engine refuses one (`receipt`).
+- **Wrong option, same product: the stock moves on the same lot.** The recorded option's whole
+  quantity comes out of the line's lot and the right option's goes in, both
+  `adjustment`/`receipt_correction`, then the lot and line take the true figures as for any line.
+  Unlike a wrong product (§5, a new lot), nothing is re-costed — the same reason adoption moves on
+  the lot (above). Gold already sold from that lot is a shortfall: 409, overridable with a reason.
+  The correction keeps `variantIdBefore`/`After`. A correction moves as an `adjustment`, which the
+  engine lets a retired option make, so the service checks the right option is active itself.
+- **A delivery recorded before its product had options names none**, but its stock was moved into
+  one (`moveIntoVariant`'s `transfer_in` on that lot). The correction service reads that option as
+  the line's recorded one (`withCurrentOptions`), so a count difference lands where the stock is,
+  naming it again is no change, and naming another is a swap. With no such move (the lot was empty
+  when options were added), the engine's "Say which one" stands.
+- **Opening stock is per option**: one sheet row per active option, each a lot of its own, and
+  "already stocked here" is asked per (product, option) (`stockKey`), so Pepper Soup is still offered
+  once Chicken has stock. **Add product with options takes one unit and one cost for all** (owner,
+  2026-10-08: "they mostly share the same") and a quantity box per option; a wrong one is put right
+  with the lot-cost correction, which now names the option.
 
 ### Written like units, not through endpoints of their own
 

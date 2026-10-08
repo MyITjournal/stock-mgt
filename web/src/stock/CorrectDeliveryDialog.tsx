@@ -9,6 +9,12 @@ import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
 import { useProductUnits } from './units';
 import { decimalDraft, toWholeBaseUnits } from '../lib/decimalQuantity';
+import {
+  choiceValue,
+  optionLabel,
+  stockChoices,
+  type StockChoice,
+} from '../lib/options';
 
 type GoodsReceiptView = components['schemas']['GoodsReceiptView'];
 type GoodsReceiptLineView = components['schemas']['GoodsReceiptLineView'];
@@ -24,9 +30,15 @@ interface UnitChoice {
 interface LineDraft {
   /**
    * The product that really came, when the line was entered as the wrong one
-   * (2026-10-07). Null while the recorded product is right.
+   * (2026-10-07), or the same product's right option (2026-10-08). Null while
+   * what was recorded is right.
    */
-  rightProduct: { id: string; name: string; units: UnitChoice[] } | null;
+  rightProduct: {
+    id: string;
+    variantId: string | null;
+    name: string;
+    units: UnitChoice[];
+  } | null;
   received: string;
   receivedUnit: UnitChoice;
   paidFor: string;
@@ -55,6 +67,11 @@ interface LineDraft {
  * product; its units replace the line's, and the figures stay as typed. The
  * check then says what comes out of stock and what goes in. Nothing else on
  * the form changes — this is a correction, not a second way to receive.
+ *
+ * **Wrong option** (2026-10-08): the same box lists every option — Gold
+ * entered when Moringa came is chosen like a product. Another option of the
+ * same product keeps the line's units, and the server moves the stock between
+ * options on the same lot, its cost untouched.
  */
 export function CorrectDeliveryDialog({
   receipt,
@@ -119,16 +136,28 @@ export function CorrectDeliveryDialog({
     return { line, draft, received, paidFor };
   });
   const problems = read.flatMap(({ line, received, paidFor, draft }) => [
-    ...('error' in received ? [`${line.product.name}: ${received.error}`] : []),
-    ...('error' in paidFor ? [`${line.product.name}: ${paidFor.error}`] : []),
-    ...(draft.value === null ? [`${line.product.name}: enter the value.`] : []),
+    ...('error' in received
+      ? [`${recordedName(line)}: ${received.error}`]
+      : []),
+    ...('error' in paidFor ? [`${recordedName(line)}: ${paidFor.error}`] : []),
+    ...(draft.value === null
+      ? [`${recordedName(line)}: enter the value.`]
+      : []),
   ]);
 
   const body = () => ({
     reason: reason.trim(),
     lines: read.map(({ line, received, paidFor, draft }) => ({
       lineId: line.id,
-      ...(draft.rightProduct && { productId: draft.rightProduct.id }),
+      // Another product names the product, and its option if it has them;
+      // another option of the same product names only the option.
+      ...(draft.rightProduct &&
+        draft.rightProduct.id !== line.product.id && {
+          productId: draft.rightProduct.id,
+        }),
+      ...(draft.rightProduct?.variantId && {
+        variantId: draft.rightProduct.variantId,
+      }),
       received: 'base' in received ? received.base : 0,
       paidFor: 'base' in paidFor ? paidFor.base : 0,
       totalCost: draft.value ?? 0,
@@ -184,8 +213,10 @@ export function CorrectDeliveryDialog({
   };
 
   const busy = check.isPending || save.isPending;
-  const nameOf = (lineId: string) =>
-    receipt.lines.find((line) => line.id === lineId)?.product.name ?? '';
+  const nameOf = (lineId: string) => {
+    const line = receipt.lines.find((candidate) => candidate.id === lineId);
+    return line ? recordedName(line) : '';
+  };
 
   return (
     <div
@@ -338,9 +369,13 @@ function LineRow({
           factor: unit.factor,
         }))
       : [draft.receivedUnit];
-  const choices = draft.rightProduct?.units ?? recordedChoices;
+  // Another option of the same product counts in the same units.
+  const choices =
+    draft.rightProduct && draft.rightProduct.id !== line.product.id
+      ? draft.rightProduct.units
+      : recordedChoices;
   const baseName =
-    (draft.rightProduct
+    (draft.rightProduct && draft.rightProduct.id !== line.product.id
       ? choices.find((unit) => unit.factor === 1)?.name
       : baseUnit?.name) ?? draft.baseName;
   const pick = (id: string) => choices.find((unit) => unit.id === id)!;
@@ -351,16 +386,40 @@ function LineRow({
     queryFn: () => api.get<ProductView[]>('/products'),
     enabled: swapping,
   });
-  const labelOf = (product: ProductView) =>
-    product.size ? `${product.name} ${product.size}` : product.name;
-
-  /** The right product chosen: its units replace the line's, figures stay. */
-  const chooseProduct = (label: string) => {
-    const product = products.find(
-      (row) =>
-        row.trackStock && row.id !== line.product.id && labelOf(row) === label,
+  const labelOf = (choice: StockChoice<ProductView>) =>
+    optionLabel(
+      choice.product.size
+        ? `${choice.product.name} ${choice.product.size}`
+        : choice.product.name,
+      choice.optionName,
     );
-    if (!product) return;
+  // Everything but what the line already is: other products, and the other
+  // options of this one.
+  const recorded = choiceValue(line.product.id, line.variant?.id);
+  const candidates = stockChoices(
+    products.filter((row) => row.trackStock),
+  ).filter((choice) => choice.value !== recorded);
+
+  /**
+   * The right product or option chosen. Another product's units replace the
+   * line's; another option of this product keeps them. The figures stay.
+   */
+  const chooseProduct = (label: string) => {
+    const choice = candidates.find((row) => labelOf(row) === label);
+    if (!choice) return;
+    const product = choice.product;
+    if (product.id === line.product.id) {
+      onChange({
+        rightProduct: {
+          id: product.id,
+          variantId: choice.variantId,
+          name: labelOf(choice),
+          units: recordedChoices,
+        },
+      });
+      setSwapping(false);
+      return;
+    }
     const productUnits = product.units.map((unit) => ({
       id: unit.id,
       name: unit.name,
@@ -375,7 +434,8 @@ function LineRow({
     onChange({
       rightProduct: {
         id: product.id,
-        name: labelOf(product),
+        variantId: choice.variantId,
+        name: labelOf(choice),
         units: productUnits,
       },
       receivedUnit: same(draft.receivedUnit.name),
@@ -409,7 +469,7 @@ function LineRow({
           {draft.rightProduct ? (
             <>
               <span className="text-slate-400 line-through">
-                {line.product.name}
+                {recordedName(line)}
               </span>{' '}
               <span className="font-medium text-slate-900">
                 {draft.rightProduct.name}
@@ -425,7 +485,7 @@ function LineRow({
           ) : (
             <>
               <span className="font-medium text-slate-900">
-                {line.product.name}
+                {recordedName(line)}
               </span>{' '}
               {!swapping && (
                 <button
@@ -433,7 +493,7 @@ function LineRow({
                   onClick={() => setSwapping(true)}
                   className="text-xs text-brand-700 underline-offset-2 hover:underline"
                 >
-                  Wrong product?
+                  {line.variant ? 'Wrong product or option?' : 'Wrong product?'}
                 </button>
               )}
             </>
@@ -452,7 +512,11 @@ function LineRow({
       {swapping && (
         <div className="mt-2">
           <Field
-            label="The product that actually came"
+            label={
+              line.variant
+                ? 'The product or option that actually came'
+                : 'The product that actually came'
+            }
             htmlFor={`right-${line.id}`}
             hint="Start typing its name. What was recorded comes back out of stock; this goes in, at the line's cost."
           >
@@ -464,11 +528,9 @@ function LineRow({
               onChange={(event) => chooseProduct(event.target.value)}
             />
             <datalist id={`right-products-${line.id}`}>
-              {products
-                .filter((row) => row.trackStock && row.id !== line.product.id)
-                .map((row) => (
-                  <option key={row.id} value={labelOf(row)} />
-                ))}
+              {candidates.map((choice) => (
+                <option key={choice.value} value={labelOf(choice)} />
+              ))}
             </datalist>
           </Field>
           <button
@@ -476,7 +538,9 @@ function LineRow({
             onClick={() => setSwapping(false)}
             className="mt-1 text-xs text-slate-500 underline-offset-2 hover:underline"
           >
-            Cancel — the product is right
+            {line.variant
+              ? 'Cancel — it is right'
+              : 'Cancel — the product is right'}
           </button>
         </div>
       )}
@@ -557,4 +621,9 @@ function LineRow({
       </div>
     </div>
   );
+}
+
+/** The line as recorded: "Eva Soap — Gold", or just the product. */
+function recordedName(line: GoodsReceiptLineView): string {
+  return optionLabel(line.product.name, line.variant?.name);
 }

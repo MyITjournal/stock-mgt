@@ -13,6 +13,9 @@ import type { OpeningDraft } from './openingDraft';
  * as it comes to whole counted-in units; the cost is for **one** of that unit,
  * and says so beside the box, because a carton's cost typed against a piece
  * values the lot twelve times over.
+ *
+ * A product with options gets **a box per option** and one unit and cost for
+ * them all (2026-10-08): each filled box is that option's own opening lot.
  */
 export function OpeningStockFields({
   units,
@@ -20,8 +23,11 @@ export function OpeningStockFields({
   onChange,
   locations,
   problem,
+  options = [],
 }: {
   units: readonly { key: string; name: string }[];
+  /** The product's options in use, by the form's id; none for a plain product. */
+  options?: readonly { id: string; label: string }[];
   value: OpeningDraft;
   onChange: (next: OpeningDraft) => void;
   locations: readonly { id: string; name: string }[];
@@ -45,19 +51,25 @@ export function OpeningStockFields({
       </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <Field label="How many" htmlFor="opening-quantity">
+        <Field
+          label={options.length > 0 ? 'Counted in' : 'How many'}
+          htmlFor={options.length > 0 ? 'opening-unit' : 'opening-quantity'}
+        >
           <div className="flex gap-2">
-            <Input
-              id="opening-quantity"
-              inputMode="decimal"
-              className="w-28"
-              placeholder="0"
-              value={value.quantity}
-              onChange={(event) =>
-                set({ quantity: decimalDraft(event.target.value) })
-              }
-            />
+            {options.length === 0 && (
+              <Input
+                id="opening-quantity"
+                inputMode="decimal"
+                className="w-28"
+                placeholder="0"
+                value={value.quantity}
+                onChange={(event) =>
+                  set({ quantity: decimalDraft(event.target.value) })
+                }
+              />
+            )}
             <Select
+              id={options.length > 0 ? 'opening-unit' : undefined}
               aria-label="Counted in"
               className="flex-1"
               value={value.unitKey}
@@ -90,6 +102,39 @@ export function OpeningStockFields({
             </span>
           </div>
         </Field>
+
+        {options.length > 0 && (
+          <div className="sm:col-span-2">
+            <div className="text-sm font-medium text-slate-700">
+              How many of each
+            </div>
+            <div className="mt-1 grid gap-2 sm:grid-cols-2">
+              {options.map((option) => (
+                <label
+                  key={option.id}
+                  className="flex items-center justify-between gap-2 text-sm text-slate-700"
+                >
+                  <span className="min-w-0 truncate">{option.label}</span>
+                  <Input
+                    aria-label={`How many ${unitName} of ${option.label}`}
+                    inputMode="decimal"
+                    className="w-28"
+                    placeholder="0"
+                    value={value.quantities[option.id] ?? ''}
+                    onChange={(event) =>
+                      set({
+                        quantities: {
+                          ...value.quantities,
+                          [option.id]: decimalDraft(event.target.value),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         <Field label="Expires (optional)" htmlFor="opening-expiry">
           <Input

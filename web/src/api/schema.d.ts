@@ -3693,6 +3693,11 @@ export interface components {
              */
             productId?: string;
             /**
+             * Format: uuid
+             * @description The option that really arrived (2026-10-08). Omitted when the option was right. Named alone, it moves the stock to that option on the same lot, its cost untouched; with productId, it is the right product’s option. Never a retired option.
+             */
+            variantId?: string;
+            /**
              * @description What really arrived, in base units — 6½ cartons of 14 is 91. Zero when none of it came, and then the paid-for and value are zero too.
              * @example 91
              */
@@ -3762,6 +3767,12 @@ export interface components {
             /** @example PEAK-400 */
             sku: string;
         };
+        ReceiptOptionRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Chicken / 70g */
+            name: string;
+        };
         ReceiptUnitRef: {
             /** Format: uuid */
             id: string;
@@ -3808,6 +3819,11 @@ export interface components {
             receiptId: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option arrived. Null for a product without options.
+             */
+            variantId: string | null;
             /** Format: uuid */
             unitId: string;
             /** Format: uuid */
@@ -3827,6 +3843,7 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             product: components["schemas"]["ReceiptProductRef"];
+            variant: components["schemas"]["ReceiptOptionRef"] | null;
             unit: components["schemas"]["ReceiptUnitRef"];
             batch: components["schemas"]["ReceiptBatchView"];
             /** @description Output, never input. Divided by what *arrived*, not what was paid for, so free goods pull the cost of every unit down — which is the whole point of them. **Absent** for a role that may not see cost. */
@@ -3892,6 +3909,11 @@ export interface components {
             receiptId: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option arrived. Null for a product without options.
+             */
+            variantId: string | null;
             /** Format: uuid */
             unitId: string;
             /** Format: uuid */
@@ -3911,6 +3933,7 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             product: components["schemas"]["ReceiptProductRef"];
+            variant: components["schemas"]["ReceiptOptionRef"] | null;
         };
         GoodsReceiptSummary: {
             /** Format: uuid */
@@ -3963,6 +3986,11 @@ export interface components {
             id?: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option arrived — required for a product with options, refused for one without, and never a retired option (DECISIONS.md §24). On the line and the stock movement, not the lot.
+             */
+            variantId?: string;
             /**
              * Format: uuid
              * @description The unit the quantities are counted in — the carton, not the piece. Defaults to the base unit.
@@ -4038,9 +4066,19 @@ export interface components {
             factor: number;
         };
         OpeningStockProductView: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The product.
+             */
             id: string;
             name: string;
+            /**
+             * Format: uuid
+             * @description The option this row is for; null for a product without options. Send it back as the line’s variantId.
+             */
+            variantId: string | null;
+            /** @example Chicken / 70g */
+            variantName: string | null;
             size: string | null;
             sku: string;
             category: string | null;
@@ -4055,6 +4093,11 @@ export interface components {
         OpeningStockLineDto: {
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option, for a product with options — required then, and never a retired one. Each option is entered once per location (DECISIONS.md §24).
+             */
+            variantId?: string;
             /**
              * Format: uuid
              * @description Which of the product’s units the quantity is counted in.

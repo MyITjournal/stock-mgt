@@ -53,6 +53,14 @@ class ReceiptProductRef {
   sku!: string;
 }
 
+class ReceiptOptionRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Chicken / 70g' })
+  name!: string;
+}
+
 class ReceiptUnitRef {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -134,6 +142,14 @@ export class GoodsReceiptLineSummary {
   @ApiProperty({ format: 'uuid' })
   productId!: string;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'Which option arrived. Null for a product without options.',
+  })
+  variantId!: string | null;
+
   @ApiProperty({ format: 'uuid' })
   unitId!: string;
 
@@ -175,6 +191,9 @@ export class GoodsReceiptLineSummary {
 
   @ApiProperty({ type: () => ReceiptProductRef })
   product!: ReceiptProductRef;
+
+  @ApiProperty({ type: () => ReceiptOptionRef, nullable: true })
+  variant!: ReceiptOptionRef | null;
 }
 
 /** The same line on the detail screen, with its lot and the rate it implies. */

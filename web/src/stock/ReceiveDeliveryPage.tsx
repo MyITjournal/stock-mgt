@@ -16,6 +16,7 @@ import {
 } from '../lib/draft';
 import type { components } from '../api/schema';
 import { decimalDraft, toWholeBaseUnits } from '../lib/decimalQuantity';
+import { choiceValue, stockChoices } from '../lib/options';
 
 type ProductView = components['schemas']['ProductView'];
 type SupplierView = components['schemas']['SupplierView'];
@@ -29,6 +30,11 @@ interface DraftLine {
   /** Minted once, so a retry describes the same line rather than a new one. */
   key: string;
   productId: string;
+  /**
+   * The option that arrived, for a product with options. Optional because a
+   * draft kept before options existed has none.
+   */
+  variantId?: string | null;
   unitId: string;
   quantityReceived: string;
   quantityPaidFor: string;
@@ -131,6 +137,7 @@ function emptyLine(): DraftLine {
   return {
     key: crypto.randomUUID(),
     productId: '',
+    variantId: null,
     unitId: '',
     quantityReceived: '',
     quantityPaidFor: '',
@@ -226,6 +233,8 @@ export function ReceiveDeliveryPage() {
   });
 
   const productById = new Map(products.map((product) => [product.id, product]));
+  // One choice per option — "Eva Soap — Gold" is chosen like a product.
+  const choices = stockChoices(products);
 
   const setLine = (key: string, patch: Partial<DraftLine>) =>
     setLines((current) =>
@@ -237,8 +246,10 @@ export function ReceiveDeliveryPage() {
 
   const lineIsComplete = (line: DraftLine) => {
     const read = readOf(line);
+    const product = productById.get(line.productId);
     return (
-      Boolean(line.productId) &&
+      Boolean(product) &&
+      (product!.variants.length === 0 || Boolean(line.variantId)) &&
       read !== null &&
       !read.error &&
       read.received > 0 &&
@@ -282,6 +293,7 @@ export function ReceiveDeliveryPage() {
           return {
             id: line.key,
             productId: line.productId,
+            ...(line.variantId ? { variantId: line.variantId } : {}),
             ...(read.unitId ? { unitId: read.unitId } : {}),
             quantityReceived: read.received,
             ...(read.paidFor !== undefined
@@ -464,18 +476,27 @@ export function ReceiveDeliveryPage() {
                       <Field label="Product" htmlFor={`line-product-${index}`}>
                         <Select
                           id={`line-product-${index}`}
-                          value={line.productId}
-                          onChange={(event) =>
+                          value={choiceValue(line.productId, line.variantId)}
+                          onChange={(event) => {
+                            const choice = choices.find(
+                              (row) => row.value === event.target.value,
+                            );
+                            const productId = choice?.product.id ?? '';
                             setLine(line.key, {
-                              productId: event.target.value,
-                              unitId: '',
-                            })
-                          }
+                              productId,
+                              variantId: choice?.variantId ?? null,
+                              // Another option of the same product keeps
+                              // the unit chosen.
+                              ...(productId !== line.productId && {
+                                unitId: '',
+                              }),
+                            });
+                          }}
                         >
                           <option value="">Choose a product</option>
-                          {products.map((candidate) => (
-                            <option key={candidate.id} value={candidate.id}>
-                              {candidate.name}
+                          {choices.map((choice) => (
+                            <option key={choice.value} value={choice.value}>
+                              {choice.label}
                             </option>
                           ))}
                         </Select>

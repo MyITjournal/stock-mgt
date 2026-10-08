@@ -1,4 +1,5 @@
 import { MAX_MINOR_UNITS } from '../../common/money/is-money.validator';
+import { optionLabel } from '../catalog/variants';
 
 /**
  * Opening stock: what is on the shelves on the day a shop starts using Reho,
@@ -21,16 +22,36 @@ import { MAX_MINOR_UNITS } from '../../common/money/is-money.validator';
  * product that already has stock is corrected with a count. A product sold
  * before it was counted has only outbound movements, so it is still offered —
  * which is exactly the shop that needs this most.
+ *
+ * ## Per option (2026-10-08)
+ *
+ * A product with options is entered **per option** — Chicken and Pepper Soup
+ * are different stock — and "has stock come in here" is asked per option too,
+ * so Pepper Soup is still offered after Chicken is entered. Each option's
+ * opening stock is a lot of its own, which is what lets one option's cost be
+ * corrected without touching another's.
  */
+
+/**
+ * The key "already stocked here" is asked by: the product, or the product
+ * and its option.
+ */
+export function stockKey(productId: string, variantId?: string | null): string {
+  return variantId ? `${productId}/${variantId}` : productId;
+}
 
 export interface OpeningProduct {
   id: string;
   name: string;
   units: readonly { id: string; name: string; factor: number }[];
+  /** Its options; none for a product without. */
+  variants?: readonly { id: string; name: string; isActive: boolean }[];
 }
 
 export interface OpeningLineInput {
   productId: string;
+  /** Which option, for a product with options — required then. */
+  variantId?: string | null;
   unitId: string;
   /** In `unitId`; may be a decimal that comes to whole base units. */
   quantity: number;
@@ -40,6 +61,7 @@ export interface OpeningLineInput {
 
 export interface PlannedOpeningLine {
   productId: string;
+  variantId: string | null;
   /** In base units. */
   quantity: number;
   /**
@@ -54,7 +76,7 @@ export interface PlannedOpeningLine {
 
 export interface OpeningPlan {
   lines: PlannedOpeningLine[];
-  /** Names of products that already have stock at this location. */
+  /** Names of products (and options) that already have stock at this location. */
   alreadyStocked: string[];
   /** Anything else wrong, in words. */
   problems: string[];
@@ -77,13 +99,31 @@ export function planOpeningStock(
       );
       continue;
     }
-    if (stockedHere.has(product.id)) {
-      alreadyStocked.add(product.name);
+    const variants = product.variants ?? [];
+    const variantId = input.variantId ?? null;
+    const variant = variants.find((row) => row.id === variantId);
+    if (variants.length > 0 && !variantId) {
+      problems.push(`${product.name} comes in options. Say which one.`);
+      continue;
+    }
+    if (variantId && !variant) {
+      problems.push(`${product.name}: that option is not one of its options.`);
+      continue;
+    }
+    if (variant && !variant.isActive) {
+      problems.push(
+        `${optionLabel(product.name, variant.name)} is retired, so it cannot take stock.`,
+      );
+      continue;
+    }
+    const label = optionLabel(product.name, variant?.name);
+    if (stockedHere.has(stockKey(product.id, variantId))) {
+      alreadyStocked.add(label);
       continue;
     }
     const unit = product.units.find((row) => row.id === input.unitId);
     if (!unit) {
-      problems.push(`${product.name}: that unit is not one of its units.`);
+      problems.push(`${label}: that unit is not one of its units.`);
       continue;
     }
 
@@ -93,19 +133,20 @@ export function planOpeningStock(
     const baseQuantity = Math.round(exactBase);
     if (baseQuantity < 1 || Math.abs(exactBase - baseQuantity) > 1e-6) {
       problems.push(
-        `${product.name}: ${input.quantity} ${unit.name} is not a whole number of the units it is counted in. Use a smaller unit, or a quantity that divides evenly.`,
+        `${label}: ${input.quantity} ${unit.name} is not a whole number of the units it is counted in. Use a smaller unit, or a quantity that divides evenly.`,
       );
       continue;
     }
 
     const totalCost = Math.round(input.unitCost * input.quantity);
     if (!Number.isSafeInteger(totalCost) || totalCost > MAX_MINOR_UNITS) {
-      problems.push(`${product.name}: that cost is too large to record.`);
+      problems.push(`${label}: that cost is too large to record.`);
       continue;
     }
 
     lines.push({
       productId: product.id,
+      variantId,
       quantity: baseQuantity,
       totalCost,
       ...(input.expiryDate && { expiryDate: new Date(input.expiryDate) }),

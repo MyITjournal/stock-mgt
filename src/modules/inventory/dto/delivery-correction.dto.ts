@@ -31,6 +31,15 @@ export class TrueLineFiguresDto {
   @IsUUID()
   productId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'The option that really arrived (2026-10-08). Omitted when the option was right. Named alone, it moves the stock to that option on the same lot, its cost untouched; with productId, it is the right product’s option. Never a retired option.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
   @ApiProperty({
     example: 91,
     description:

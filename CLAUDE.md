@@ -107,8 +107,8 @@ API runs on 4000.
 v1 is feature-complete and hosted; work now is fixes and owner requests, one branch each.
 Latest (2026-10-08): who is signed in and sign-out, growth, the duplicate-sale warning, opening
 stock on Add product, cash banking (Money → Cash, Sales → My cash). The 2026-10-08 build queue
-is done. **In progress: product options (variants), five branches — 2 of 5 done (ledger + API;
-product screens and till); next `feat/variants-stock-in`.** Nothing goes to `main` until all five are in;
+is done. **In progress: product options (variants), five branches — 3 of 5 done (ledger + API;
+product screens and till; stock in); next `feat/variants-counting-and-moving`.** Nothing goes to `main` until all five are in;
 DECISIONS.md §24 has the list. v2 is scoped in [docs/PRD-V2.md](docs/PRD-V2.md). The by-hand
 browser script is [docs/MANUAL-TESTS-WEB.md](docs/MANUAL-TESTS-WEB.md).
 

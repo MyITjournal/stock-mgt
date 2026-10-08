@@ -9,6 +9,7 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import type { components } from '../api/schema';
 import { decimalDraft, toWholeBaseUnits } from '../lib/decimalQuantity';
+import { optionLabel } from '../lib/options';
 
 type OpeningProduct = components['schemas']['OpeningStockProductView'];
 type OpeningResult = components['schemas']['OpeningStockResultView'];
@@ -35,8 +36,13 @@ type LocationView = components['schemas']['LocationView'];
  * Products leave the sheet once saved, so the same stock cannot be entered
  * twice; a product that already has stock is corrected with a count.
  *
- * What is typed lives here, keyed by product, and is never reseeded from a
- * refetch — a background refetch must not wipe a half-filled sheet.
+ * A product with options has **one row per option** — Chicken and Pepper
+ * Soup are different stock — and each leaves the sheet once it has stock
+ * (DECISIONS.md §24).
+ *
+ * What is typed lives here, keyed by product and option, and is never
+ * reseeded from a refetch — a background refetch must not wipe a half-filled
+ * sheet.
  */
 export function OpeningStockPage() {
   const { data: locations = [] } = useQuery({
@@ -81,6 +87,11 @@ export function OpeningStockPage() {
   );
 }
 
+/** A sheet row's key: the product, or the product and its option. */
+function rowKey(product: OpeningProduct): string {
+  return product.variantId ? `${product.id}/${product.variantId}` : product.id;
+}
+
 interface LineDraft {
   key: string;
   unitId: string;
@@ -104,9 +115,9 @@ function Sheet({ locationId }: { locationId: string }) {
   });
 
   const linesOf = (product: OpeningProduct): LineDraft[] =>
-    drafts[product.id] ?? [
+    drafts[rowKey(product)] ?? [
       {
-        key: `${product.id}:0`,
+        key: `${rowKey(product)}:0`,
         unitId: product.defaultUnitId,
         quantity: '',
         unitCost: null,
@@ -125,7 +136,7 @@ function Sheet({ locationId }: { locationId: string }) {
     change: Partial<LineDraft>,
   ) =>
     setLines(
-      product.id,
+      rowKey(product),
       linesOf(product).map((line) =>
         line.key === key ? { ...line, ...change } : line,
       ),
@@ -137,10 +148,10 @@ function Sheet({ locationId }: { locationId: string }) {
     const last = lines[lines.length - 1];
     const index = product.units.findIndex((unit) => unit.id === last.unitId);
     const smaller = product.units[Math.max(0, index - 1)];
-    setLines(product.id, [
+    setLines(rowKey(product), [
       ...lines,
       {
-        key: `${product.id}:${Date.now()}`,
+        key: `${rowKey(product)}:${Date.now()}`,
         unitId: smaller.id,
         quantity: '',
         unitCost: null,
@@ -151,7 +162,7 @@ function Sheet({ locationId }: { locationId: string }) {
 
   const removeLine = (product: OpeningProduct, key: string) =>
     setLines(
-      product.id,
+      rowKey(product),
       linesOf(product).filter((line) => line.key !== key),
     );
 
@@ -169,7 +180,8 @@ function Sheet({ locationId }: { locationId: string }) {
   const notWhole = filled.filter(
     ({ product, line }) => quantityProblem(product, line) !== null,
   );
-  const filledProducts = new Set(filled.map(({ product }) => product.id)).size;
+  const filledProducts = new Set(filled.map(({ product }) => rowKey(product)))
+    .size;
 
   const save = useMutation({
     mutationFn: () =>
@@ -177,6 +189,7 @@ function Sheet({ locationId }: { locationId: string }) {
         locationId,
         lines: filled.map(({ product, line }) => ({
           productId: product.id,
+          ...(product.variantId && { variantId: product.variantId }),
           unitId: line.unitId,
           quantity: Number(line.quantity),
           unitCost: line.unitCost,
@@ -200,7 +213,13 @@ function Sheet({ locationId }: { locationId: string }) {
   const needle = search.trim().toLowerCase();
   const shown = needle
     ? products.filter((product) =>
-        [product.name, product.sku, product.size ?? '', product.category ?? '']
+        [
+          product.name,
+          product.variantName ?? '',
+          product.sku,
+          product.size ?? '',
+          product.category ?? '',
+        ]
           .join(' ')
           .toLowerCase()
           .includes(needle),
@@ -298,6 +317,8 @@ function Sheet({ locationId }: { locationId: string }) {
                                     {product.size}
                                   </span>
                                 )}
+                                {product.variantName &&
+                                  ` — ${product.variantName}`}
                               </div>
                               {product.category && (
                                 <div className="text-xs text-slate-500">
@@ -313,7 +334,7 @@ function Sheet({ locationId }: { locationId: string }) {
                         </td>
                         <td className="px-3 py-2">
                           <Input
-                            aria-label={`How many ${unitName} of ${product.name}`}
+                            aria-label={`How many ${unitName} of ${optionLabel(product.name, product.variantName)}`}
                             inputMode="decimal"
                             className="w-24"
                             value={line.quantity}
@@ -333,7 +354,7 @@ function Sheet({ locationId }: { locationId: string }) {
                         </td>
                         <td className="px-3 py-2">
                           <Select
-                            aria-label={`Unit for ${product.name}`}
+                            aria-label={`Unit for ${optionLabel(product.name, product.variantName)}`}
                             className="w-36"
                             value={line.unitId}
                             onChange={(event) =>
@@ -360,7 +381,7 @@ function Sheet({ locationId }: { locationId: string }) {
                           <div className="flex items-center gap-2">
                             <MoneyInput
                               id={`opening-cost-${line.key}`}
-                              aria-label={`Cost per ${unitName} of ${product.name}`}
+                              aria-label={`Cost per ${unitName} of ${optionLabel(product.name, product.variantName)}`}
                               className="w-32"
                               value={line.unitCost}
                               onChange={(unitCost) =>
@@ -384,7 +405,7 @@ function Sheet({ locationId }: { locationId: string }) {
                         <td className="px-3 py-2">
                           <Input
                             type="date"
-                            aria-label={`Expiry for ${product.name}`}
+                            aria-label={`Expiry for ${optionLabel(product.name, product.variantName)}`}
                             className="w-40"
                             value={line.expiryDate}
                             onChange={(event) =>
@@ -409,7 +430,7 @@ function Sheet({ locationId }: { locationId: string }) {
                             <Button
                               type="button"
                               variant="ghost"
-                              aria-label={`Remove this line for ${product.name}`}
+                              aria-label={`Remove this line for ${optionLabel(product.name, product.variantName)}`}
                               onClick={() => removeLine(product, line.key)}
                             >
                               ×

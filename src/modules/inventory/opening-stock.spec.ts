@@ -2,6 +2,7 @@ import {
   correctedOpeningTotal,
   costPriceAfterOpening,
   planOpeningStock,
+  stockKey,
   type OpeningProduct,
 } from './opening-stock';
 
@@ -40,7 +41,12 @@ describe('planOpeningStock', () => {
     );
 
     expect(plan.lines).toEqual([
-      { productId: 'peak', quantity: 14 * 160, totalCost: 14 * 1_400_000 },
+      {
+        productId: 'peak',
+        variantId: null,
+        quantity: 14 * 160,
+        totalCost: 14 * 1_400_000,
+      },
     ]);
     expect(plan.problems).toEqual([]);
   });
@@ -77,7 +83,12 @@ describe('planOpeningStock', () => {
       new Set(),
     );
     expect(plan.lines).toEqual([
-      { productId: 'peak', quantity: 2_280, totalCost: 19_950_000 },
+      {
+        productId: 'peak',
+        variantId: null,
+        quantity: 2_280,
+        totalCost: 19_950_000,
+      },
     ]);
   });
 
@@ -167,12 +178,102 @@ describe('planOpeningStock', () => {
   });
 });
 
+describe('planOpeningStock — per option (2026-10-08)', () => {
+  const indomie: OpeningProduct = {
+    id: 'indomie',
+    name: 'Indomie 70g',
+    units: [
+      { id: 'pack', name: 'pack', factor: 1 },
+      { id: 'carton', name: 'carton', factor: 40 },
+    ],
+    variants: [
+      { id: 'chicken', name: 'Chicken', isActive: true },
+      { id: 'pepper', name: 'Pepper Soup', isActive: true },
+      { id: 'onion', name: 'Onion', isActive: false },
+    ],
+  };
+  const shelf = new Map([[indomie.id, indomie]]);
+  const line = {
+    productId: 'indomie',
+    unitId: 'carton',
+    quantity: 2,
+    unitCost: 600_000,
+  };
+
+  it('takes each option as a lot of its own, valued at the shared cost', () => {
+    const plan = planOpeningStock(
+      [
+        { ...line, variantId: 'chicken' },
+        { ...line, variantId: 'pepper', quantity: 1 },
+      ],
+      shelf,
+      new Set(),
+    );
+    expect(plan.problems).toEqual([]);
+    expect(plan.lines).toEqual([
+      expect.objectContaining({
+        variantId: 'chicken',
+        quantity: 80,
+        totalCost: 1_200_000,
+      }),
+      expect.objectContaining({
+        variantId: 'pepper',
+        quantity: 40,
+        totalCost: 600_000,
+      }),
+    ]);
+  });
+
+  it('asks which option, and refuses one of another product or a retired one', () => {
+    const problems = (variantId?: string) =>
+      planOpeningStock([{ ...line, variantId }], shelf, new Set()).problems[0];
+    expect(problems()).toContain('comes in options. Say which one');
+    expect(problems('gold')).toContain('not one of its options');
+    expect(problems('onion')).toContain('Indomie 70g — Onion is retired');
+  });
+
+  it('asks "already stocked" per option, so Pepper Soup is still offered', () => {
+    const plan = planOpeningStock(
+      [
+        { ...line, variantId: 'chicken' },
+        { ...line, variantId: 'pepper' },
+      ],
+      shelf,
+      new Set([stockKey('indomie', 'chicken')]),
+    );
+    expect(plan.alreadyStocked).toEqual(['Indomie 70g — Chicken']);
+    expect(plan.lines.map((row) => row.variantId)).toEqual(['pepper']);
+  });
+
+  it('refuses an option on a product without options', () => {
+    const plan = planOpeningStock(
+      [
+        {
+          productId: 'milo',
+          variantId: 'chicken',
+          unitId: 'tin',
+          quantity: 1,
+          unitCost: 1,
+        },
+      ],
+      catalog,
+      new Set(),
+    );
+    expect(plan.problems[0]).toContain('not one of its options');
+  });
+});
+
 describe('costPriceAfterOpening', () => {
   it('is the total over the base units, rounded once', () => {
     // 2,240 sachets for ₦196,000 and 30 for ₦2,700: 19,870,000 / 2,270.
     const prices = costPriceAfterOpening([
-      { productId: 'peak', quantity: 2240, totalCost: 19_600_000 },
-      { productId: 'peak', quantity: 30, totalCost: 270_000 },
+      {
+        productId: 'peak',
+        variantId: null,
+        quantity: 2240,
+        totalCost: 19_600_000,
+      },
+      { productId: 'peak', variantId: null, quantity: 30, totalCost: 270_000 },
     ]);
     expect(prices.get('peak')).toBe(Math.round(19_870_000 / 2270));
   });

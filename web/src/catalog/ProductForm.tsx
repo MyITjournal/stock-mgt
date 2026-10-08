@@ -298,21 +298,40 @@ export function ProductForm({
     locations.find((row) => row.isDefault)?.id ||
     locations[0]?.id ||
     '';
-  // Not for a product with options yet: opening stock per option comes with
-  // the receiving work (§24, branch 3), and the server would refuse it without.
-  const offersOpening =
-    !editing && trackStock && seesCost && attributes.length === 0;
-  const wantsOpening =
-    offersOpening && opening.quantity !== '' && Number(opening.quantity) > 0;
+  const offersOpening = !editing && trackStock && seesCost;
+  // A product with options takes a box per option in use, with the unit and
+  // cost shared; each filled box is that option's own opening lot (§24).
+  const openingOptions =
+    attributes.length > 0
+      ? options
+          .filter((option) => option.isActive)
+          .map((option, index) => ({
+            id: option.id,
+            label: optionLabelOf(option, index),
+          }))
+      : [];
+  const openingFilled = (
+    attributes.length > 0
+      ? openingOptions.map((option) => ({
+          option,
+          quantity: opening.quantities[option.id] ?? '',
+        }))
+      : [{ option: null, quantity: opening.quantity }]
+  ).filter(({ quantity }) => quantity !== '' && Number(quantity) > 0);
+  const wantsOpening = offersOpening && openingFilled.length > 0;
   const openingProblem = (() => {
     if (!wantsOpening || !openingUnit) return null;
-    const read = toWholeBaseUnits(
-      opening.quantity.replace(/\.$/, ''),
-      openingUnit.factor,
-      openingUnit.name.trim(),
-      baseName,
-    );
-    if ('error' in read) return read.error;
+    for (const { option, quantity } of openingFilled) {
+      const read = toWholeBaseUnits(
+        quantity.replace(/\.$/, ''),
+        openingUnit.factor,
+        openingUnit.name.trim(),
+        baseName,
+      );
+      if ('error' in read) {
+        return option ? `${option.label}: ${read.error}` : read.error;
+      }
+    }
     if (opening.unitCost === null) {
       return `Enter what one ${openingUnit.name.trim()} cost — opening stock is valued at cost.`;
     }
@@ -329,15 +348,14 @@ export function ProductForm({
       if (!unit) throw new Error('Its unit could not be found.');
       await api.post('/stock/opening', {
         ...(openingLocationId && { locationId: openingLocationId }),
-        lines: [
-          {
-            productId: saved.id,
-            unitId: unit.id,
-            quantity: Number(opening.quantity),
-            unitCost: opening.unitCost,
-            ...(opening.expiryDate && { expiryDate: opening.expiryDate }),
-          },
-        ],
+        lines: openingFilled.map(({ option, quantity }) => ({
+          productId: saved.id,
+          ...(option && { variantId: option.id }),
+          unitId: unit.id,
+          quantity: Number(quantity),
+          unitCost: opening.unitCost,
+          ...(opening.expiryDate && { expiryDate: opening.expiryDate }),
+        })),
       });
     } catch (caught) {
       throw new OpeningStockNotSaved(
@@ -978,12 +996,6 @@ export function ProductForm({
         {optionsProblem && (
           <p className="mt-2 text-xs text-amber-700">{optionsProblem}</p>
         )}
-        {!editing && attributes.length > 0 && trackStock && seesCost && (
-          <p className="mt-2 text-xs text-slate-500">
-            Opening stock for each option cannot be entered here yet — that is
-            coming next. Save the product first.
-          </p>
-        )}
 
         {/* -- Prices ------------------------------------------------------ */}
         <section className="mt-6">
@@ -1160,6 +1172,7 @@ export function ProductForm({
             onChange={setOpening}
             locations={locations}
             problem={openingProblem}
+            options={openingOptions}
           />
         )}
 

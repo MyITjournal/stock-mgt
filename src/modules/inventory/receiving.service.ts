@@ -176,6 +176,7 @@ export class ReceivingService {
             organizationId,
             receiptId: receipt.id,
             productId: line.input.productId,
+            variantId: line.input.variantId ?? null,
             unitId: line.unitId,
             batchId: batch.id,
             quantityReceivedInUnit: line.input.quantityReceived,
@@ -191,6 +192,7 @@ export class ReceivingService {
         await this.stock.recordInbound(
           {
             productId: line.input.productId,
+            variantId: line.input.variantId ?? null,
             locationId,
             batchId: batch.id,
             quantity: line.quantityReceived,
@@ -302,7 +304,10 @@ export class ReceivingService {
         supplier: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
         lines: {
-          include: { product: { select: { id: true, name: true, sku: true } } },
+          include: {
+            product: { select: { id: true, name: true, sku: true } },
+            variant: { select: { id: true, name: true } },
+          },
         },
       },
     });
@@ -323,6 +328,7 @@ export class ReceivingService {
         lines: {
           include: {
             product: { select: { id: true, name: true, sku: true } },
+            variant: { select: { id: true, name: true } },
             unit: { select: { id: true, name: true, factor: true } },
             batch: true,
           },
@@ -389,10 +395,13 @@ export class ReceivingService {
     const resolved: ResolvedLine[] = [];
 
     for (const input of lines) {
+      // Names a missing or foreign option before anything is written; the
+      // engine refuses a retired one, as it refuses any new stock for it.
       const { unit } = await resolveProductUnit(
         this.prisma,
         input.productId,
         input.unitId,
+        { variantId: input.variantId ?? null },
       );
 
       resolved.push({
