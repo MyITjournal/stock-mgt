@@ -11,6 +11,7 @@ import {
   unitMargin,
 } from './margins';
 import { MarginRow, MarginsView } from './dto/margins.dto';
+import { itemKey } from './options';
 
 /**
  * `GET /reports/margins` — today's price beside today's cost, per selling
@@ -65,16 +66,25 @@ export class MarginService {
           orderBy: { factor: 'asc' },
           select: { id: true, name: true, factor: true },
         },
-        prices: { select: { tierId: true, unitId: true, price: true } },
+        prices: {
+          select: { tierId: true, unitId: true, variantId: true, price: true },
+        },
+        // Retired options are left out: they can no longer be sold.
+        variants: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          select: { id: true, name: true },
+        },
       },
     });
     const ids = products.map((product) => product.id);
 
-    const [balances, deliveries] = await Promise.all([
+    const [balances, deliveries, optionDeliveries] = await Promise.all([
       this.prisma.stockBalance.findMany({
         where: { productId: { in: ids }, quantity: { gt: 0 } },
         select: {
           productId: true,
+          variantId: true,
           quantity: true,
           batch: { select: { totalCost: true, quantityReceived: true } },
         },
@@ -97,30 +107,73 @@ export class MarginService {
           totalCost: true,
         },
       }),
+      // The newest delivery of each option. The figures are the lot's, which
+      // take any correction, as above.
+      this.prisma.goodsReceiptLine.findMany({
+        where: {
+          productId: { in: ids },
+          variantId: { not: null },
+          batch: { quantityReceived: { gt: 0 } },
+        },
+        orderBy: [{ batch: { receivedAt: 'desc' } }, { createdAt: 'desc' }],
+        distinct: ['productId', 'variantId'],
+        select: {
+          productId: true,
+          variantId: true,
+          batch: {
+            select: {
+              receivedAt: true,
+              quantityReceived: true,
+              quantityPaidFor: true,
+              totalCost: true,
+            },
+          },
+        },
+      }),
     ]);
 
+    // Keyed by product and option (`itemKey`): each option's own lots.
     const lotsOf = new Map<string, typeof balances>();
     for (const row of balances) {
-      const list = lotsOf.get(row.productId) ?? [];
+      const key = itemKey(row.productId, row.variantId);
+      const list = lotsOf.get(key) ?? [];
       list.push(row);
-      lotsOf.set(row.productId, list);
+      lotsOf.set(key, list);
     }
-    const lastOf = new Map(deliveries.map((lot) => [lot.productId, lot]));
+    const lastOf = new Map<string, (typeof deliveries)[number]>(
+      deliveries.map((lot) => [lot.productId, lot]),
+    );
+    for (const line of optionDeliveries) {
+      lastOf.set(itemKey(line.productId, line.variantId), {
+        productId: line.productId,
+        ...line.batch,
+      });
+    }
 
     const rows: MarginRow[] = [];
     // The stock on hand sold at today's carton price: exact parts, summed
     // and rounded once at the end.
     const projected: { revenue: number; cost: number }[] = [];
     let unpriced = 0;
-    for (const product of products) {
-      const lots = (lotsOf.get(product.id) ?? []).map((row) => ({
+    // A row per option (owner, 2026-10-08): an option can have its own price,
+    // and its own cost — the lots it holds.
+    const items = products.flatMap((product) => {
+      const options: ({ id: string; name: string } | null)[] =
+        product.variants.length > 0 ? product.variants : [null];
+      return options.map((variant) => ({ product, variant }));
+    });
+    for (const { product, variant } of items) {
+      const key = itemKey(product.id, variant?.id);
+      const lots = (lotsOf.get(key) ?? []).map((row) => ({
         quantity: row.quantity,
         totalCost: row.batch.totalCost,
         quantityReceived: row.batch.quantityReceived,
       }));
       const onHand = lots.reduce((total, lot) => total + lot.quantity, 0);
       const average = averageUnitCost(lots);
-      const last = lastOf.get(product.id);
+      // An option never delivered as itself — its stock came from before it
+      // had options — takes the product's last delivery.
+      const last = lastOf.get(key) ?? lastOf.get(product.id);
       // Exact, unrounded: the lot total over everything it brought in (§2).
       const lastUnitCost = last ? last.totalCost / last.quantityReceived : null;
       // With nothing on the shelf, the last delivery is the best cost there
@@ -136,7 +189,12 @@ export class MarginService {
       // times as long to read. The carton is how a wholesaler thinks of it.
       const biggest = product.units.at(-1);
       for (const unit of biggest ? [biggest] : []) {
-        const { price } = resolveUnitPrice(product, unit, tier?.id);
+        const { price } = resolveUnitPrice(
+          product,
+          unit,
+          tier?.id,
+          variant?.id,
+        );
         // Rounded once, for the whole selling unit (§2).
         const cost =
           baseCost === null ? null : Math.round(baseCost * unit.factor);
@@ -161,6 +219,7 @@ export class MarginService {
         rows.push({
           productId: product.id,
           productName: product.name,
+          variant,
           size: product.size,
           category: product.category,
           unitId: unit.id,
@@ -201,6 +260,7 @@ function byThinnestFirst(a: MarginRow, b: MarginRow): number {
   return (
     rank(a) - rank(b) ||
     (a.marginBps ?? 0) - (b.marginBps ?? 0) ||
-    a.productName.localeCompare(b.productName)
+    a.productName.localeCompare(b.productName) ||
+    (a.variant?.name ?? '').localeCompare(b.variant?.name ?? '')
   );
 }

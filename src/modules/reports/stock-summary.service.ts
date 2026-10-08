@@ -5,6 +5,7 @@ import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import type { Period } from './period';
 import { describe } from './report.service';
 import { summariseStock } from './stock-summary';
+import { itemKey, itemLabel } from './options';
 import { StockSummaryView } from './dto/stock-summary.dto';
 
 /**
@@ -27,9 +28,11 @@ export class StockSummaryService {
     // Values are buying prices: worked out only for a role that may see cost,
     // and absent — never zero — for anyone else (§9).
     const withValue = callerSeesCost();
+    // Per option (§24): moving stock between options is a pair of movements
+    // on one lot, so it shows on both rows and the product still adds up.
     const by = withValue
-      ? (['productId', 'batchId'] as const)
-      : (['productId'] as const);
+      ? (['productId', 'variantId', 'batchId'] as const)
+      : (['productId', 'variantId'] as const);
     const [before, during] = await Promise.all([
       this.prisma.stockMovement.groupBy({
         by: [...by],
@@ -70,15 +73,26 @@ export class StockSummaryService {
         : undefined;
 
     const opening = new Map<string, { quantity: number; value?: number }>();
+    // Which product and option each line's key stands for.
+    const items = new Map<
+      string,
+      { productId: string; variantId: string | null }
+    >();
+    const keyOf = (row: { productId: string; variantId: string | null }) => {
+      const key = itemKey(row.productId, row.variantId);
+      items.set(key, { productId: row.productId, variantId: row.variantId });
+      return key;
+    };
     for (const row of before) {
       const quantity = row._sum.quantity ?? 0;
-      const sum = opening.get(row.productId) ?? {
+      const key = keyOf(row);
+      const sum = opening.get(key) ?? {
         quantity: 0,
         ...(withValue && { value: 0 }),
       };
       sum.quantity += quantity;
       if (withValue) sum.value = (sum.value ?? 0) + valueOf(row, quantity)!;
-      opening.set(row.productId, sum);
+      opening.set(key, sum);
     }
 
     const { lines, totalValue, availableValue } = summariseStock(
@@ -86,7 +100,7 @@ export class StockSummaryService {
       during.map((row) => {
         const quantity = row._sum.quantity ?? 0;
         return {
-          productId: row.productId,
+          key: keyOf(row),
           type: row.type,
           reason: row.reason,
           quantity,
@@ -94,10 +108,11 @@ export class StockSummaryService {
         };
       }),
     );
-    const byId = new Map(lines.map((line) => [line.productId, line]));
-
+    const productIds = [
+      ...new Set(lines.map((line) => items.get(line.key)!.productId)),
+    ];
     const products = await this.prisma.product.findMany({
-      where: { id: { in: [...byId.keys()] } },
+      where: { id: { in: productIds } },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -107,15 +122,45 @@ export class StockSummaryService {
           orderBy: { factor: 'asc' },
           select: { name: true, factor: true },
         },
+        variants: {
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          select: { id: true, name: true },
+        },
       },
     });
+    const productOf = new Map(products.map((product) => [product.id, product]));
+    const rank = new Map(products.map((product, index) => [product.id, index]));
+
+    // By product name, then the "before options" row, then options in the
+    // product's own order — so a family reads together.
+    const optionRank = (productId: string, variantId: string | null) =>
+      variantId === null
+        ? -1
+        : (productOf
+            .get(productId)
+            ?.variants.findIndex((variant) => variant.id === variantId) ?? 0);
+    const ordered = lines
+      .map((line) => ({ line, item: items.get(line.key)! }))
+      .filter(({ item }) => productOf.has(item.productId))
+      .sort(
+        (a, b) =>
+          rank.get(a.item.productId)! - rank.get(b.item.productId)! ||
+          optionRank(a.item.productId, a.item.variantId) -
+            optionRank(b.item.productId, b.item.variantId),
+      );
 
     return {
       period: describe(period),
-      rows: products.map((product) => {
-        const line = byId.get(product.id)!;
+      rows: ordered.map(({ line, item }) => {
+        const product = productOf.get(item.productId)!;
+        const variant =
+          product.variants.find((option) => option.id === item.variantId) ??
+          null;
         return {
+          key: line.key,
+          label: itemLabel(product, variant),
           product: { id: product.id, name: product.name, size: product.size },
+          variant,
           units: product.units,
           opening: line.opening,
           delivered: line.delivered,

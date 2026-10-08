@@ -1456,3 +1456,28 @@ read *Moved out* of Gold and *Moved in* to Classic.
 
 **372. Product page → *Where the stock is* and *The lots on the shelf*** show an *Option* column.
 Stock → Movements and the expiry panel name the option after the product.
+
+## BH. Reports by option
+
+**373. [gate] Reports → Stock → Needs attention.** Set Eva Soap's reorder level just above one
+option's stock. Below reorder point lists *Eva Soap — that option* alone, not the product. An option
+with nothing on hand is under *Out of stock* by name; a retired one is not.
+
+**374. [gate] Reports → Stock → Stock in and out.** Eva Soap is a row per option. The product from
+351 also has an *… (before options)* row: what it held before, moved out to nothing. Every row adds
+up, and *Stock value* by product is by option too.
+
+**375. Reports → Sales → by product, and Reports → Movers.** Gold and Classic are two rows. *Not
+moving* names the option.
+
+**376. Reports → Margins.** A row per option. An option with its own carton price shows that price;
+the others show the product's. Download: the *Product* column reads *Eva Soap — Gold*.
+
+**377. Reports → Stock → Decisions somebody made.** Damage one Gold and one Classic: two lines, not
+one added up.
+
+**378. [gate] Products → Download.** Eva Soap is a row per option with *Option type* and *Option*
+filled in, each row's price the one that option sells at. Import → Download the template: the last
+rows are Indomie in two flavours. Upload a copy of it with the names changed: the preview says *1 to
+add (2 options)* for Indomie, and the second row names its option. Make one option row's carton
+*how many* differ from the first row: every row of that product needs fixing.

@@ -5,6 +5,7 @@ import { Money } from '../components/Money';
 import { DataTable, type Column } from '../components/DataTable';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
+import { optionLabel } from '../lib/options';
 import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
 import { DownloadButton } from '../components/DownloadButton';
@@ -184,7 +185,11 @@ export function MoversPage() {
             columns={[
               {
                 header: 'Product',
-                cell: (row) => row.product.name ?? row.product.id.slice(0, 8),
+                cell: (row) =>
+                  optionLabel(
+                    row.product.name ?? row.product.id.slice(0, 8),
+                    row.variant?.name,
+                  ),
               },
               {
                 header: 'SKU',
@@ -197,7 +202,7 @@ export function MoversPage() {
                 cell: (row) => row.quantity,
               },
             ]}
-            rowKey={(row) => row.product.id}
+            rowKey={(row) => `${row.product.id}:${row.variant?.id ?? ''}`}
             empty="Everything held has sold recently."
           />
         </Section>

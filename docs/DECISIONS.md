@@ -5784,6 +5784,7 @@ screens call them **options**; the code and schema say *variant*. Built in five 
 4. `feat/variants-counting-and-moving` — counts, adjustments, transfers, the stock levels page.
    **Done.**
 5. `feat/variants-reports` — valuation, low stock, margins, movers, stock in/out, import/export.
+   **Done.**
 
 ### The owner's three answers
 
@@ -5919,6 +5920,48 @@ by more than is on hand (counted ≥ 0), so the moving pick has no shortfall and
 `variantId` out, and it says so. `withCurrentOptions` (branch 3) takes the *earliest* option
 `transfer_in` on a lot, so a later count move on that lot does not change which option an old
 delivery line is read as.
+
+### Reports and the spreadsheet by option (branch 5)
+
+Same rule as branch 4: **every report row that was per product is per option**, named "Eva Soap —
+Gold" (`reports/options.ts`: `itemKey` `productId:variantId`, `itemLabel`). Sales by product,
+movers, dead stock, stock value by product, purchases' top products, expiry, the decisions list,
+stock in/out and margins. By category, location, profit, growth and targets are unchanged.
+
+- **A row that names no option of a product that now has them** — sold, received or held before it
+  had options — keeps its own row, labelled **"Indomie (before options)"**. In stock in/out it is
+  the old stock moving out to nothing; the option rows show it moving in. Moves between options land
+  in *adjusted* on both rows, so the product's rows still add up (`summariseStock` is keyed by
+  item, not product).
+- **Low stock: the product's level, applied to each option on its own** (owner, 2026-10-08) —
+  `reports/stock-alerts.ts`. Ten flavours at 5 cartons each sum to a healthy 50 with every one due.
+  No level per option: a box on every option for a number that is nearly always the product's. A
+  retired option is never *out* or *low* (it cannot be restocked) but is listed when negative.
+  `withoutReorderPoint` still counts products.
+- **Margins: a row per active option** (owner chose this over one row per product): its own price
+  through `resolveUnitPrice(…, variantId)`, its cost from the lots *it* holds, its last delivery
+  from a receipt line naming it, else the product's.
+- **Dead stock**: a sale from before options names none, and nobody can say which flavour it was —
+  so it counts as a sale of every option of that product, rather than calling them all dead the day
+  options are added.
+- **Products spreadsheet: a row per option** (owner's answer). Rows with the same name and size and
+  an **Option** are one product; **Option type** says what they differ by (blank is "Option";
+  "Flavour / Pack size" with "Chicken / 70g"). The first row is the product and its first option;
+  later rows may repeat its units, category and counted-in or leave them blank, but not differ. **A
+  later row's price is that option's own only where it differs** — ten flavours at one price are
+  priced once. A row's barcode goes on its option. **A product goes in whole or not at all**: one
+  bad option row puts every row of that product in error. `adding` counts products, `options`
+  options. Export writes the same layout, each row at what that option sells for; retired options
+  are left out (an import would bring them back live), and a code on every option goes on the first
+  row only, under *Other barcodes*, so the file reads back without "Same barcode as row …".
+
+**Trap hit: two response classes with one name.** `dashboard.response.ts` had its own
+`StockAlertRow`, `DeadStockRow` and `ExpiringBatchRow`. Swagger keys schemas by class name and keeps
+one, so the generated `StockAlertRow` silently had no `variant`, and the dashboard's
+`ExpiringBatchRow` could as easily have hidden the inventory one's. The dashboard now uses the
+report classes. `NamedRef`, `PersonRef`, `BankedInto`, `RecorderRef`, `PeriodView` and
+`PurchaseGroupRow` are still declared twice elsewhere — harmless while the copies match, the same
+trap the day one gains a field.
 
 ### Written like units, not through endpoints of their own
 

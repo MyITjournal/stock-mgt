@@ -100,9 +100,16 @@ export class ProductImportService {
 
   private async write(plan: ImportPlan): Promise<void> {
     const organizationId = TenantContext.requireOrganizationId();
-    const products = plan.rows.flatMap((row) =>
-      row.status === 'add' && row.product ? [row.product] : [],
-    );
+    // A product with options is several rows carrying the same product.
+    const products = [
+      ...new Map(
+        plan.rows.flatMap((row) =>
+          row.status === 'add' && row.product
+            ? [[row.product.id, row.product] as const]
+            : [],
+        ),
+      ).values(),
+    ];
 
     try {
       await this.prisma.$transaction(
@@ -134,6 +141,7 @@ export class ProductImportService {
               size: product.size,
               categoryId: product.category?.id ?? null,
               basePrice: product.basePrice,
+              variantAttributes: product.variantAttributes,
             })),
           });
 
@@ -152,40 +160,80 @@ export class ProductImportService {
             ),
           });
 
-          // The counted-in unit's price is the base price, as on the form;
-          // every bigger unit's goes on the default list.
-          const prices = products.flatMap((product) =>
-            product.units.flatMap((unit) =>
-              !unit.isBase && unit.price !== null && plan.defaultTierId
-                ? [
-                    {
-                      organizationId,
-                      productId: product.id,
-                      tierId: plan.defaultTierId,
-                      unitId: unit.id,
-                      price: unit.price,
-                    },
-                  ]
-                : [],
-            ),
+          const variants = products.flatMap((product) =>
+            product.variants.map((variant) => ({
+              id: variant.id,
+              organizationId,
+              productId: product.id,
+              values: variant.values,
+              name: variant.name,
+              key: variant.key,
+              sortOrder: variant.sortOrder,
+            })),
           );
+          if (variants.length > 0) {
+            await tx.productVariant.createMany({ data: variants });
+          }
+
+          // The counted-in unit's price is the base price, as on the form;
+          // every bigger unit's goes on the default list. An option's own
+          // prices go there too, naming it (§24).
+          const tierId = plan.defaultTierId;
+          const prices = tierId
+            ? products.flatMap((product) => [
+                ...product.units.flatMap((unit) =>
+                  !unit.isBase && unit.price !== null
+                    ? [
+                        {
+                          organizationId,
+                          productId: product.id,
+                          tierId,
+                          unitId: unit.id,
+                          price: unit.price,
+                        },
+                      ]
+                    : [],
+                ),
+                ...product.variants.flatMap((variant) =>
+                  variant.prices.map((row) => ({
+                    organizationId,
+                    productId: product.id,
+                    variantId: variant.id,
+                    tierId,
+                    unitId: row.unitId,
+                    price: row.price,
+                  })),
+                ),
+              ])
+            : [];
           if (prices.length > 0) {
             await tx.productPrice.createMany({ data: prices });
           }
 
-          const barcodes = products.flatMap((product) =>
-            product.barcode
-              ? [
-                  {
-                    organizationId,
-                    productId: product.id,
-                    unitId: product.units.find((unit) => unit.isBase)!.id,
-                    code: product.barcode.code,
-                    symbology: product.barcode.symbology,
-                  },
-                ]
-              : [],
-          );
+          // On the counted-in unit, and on the option when the row was one.
+          const barcodes = products.flatMap((product) => {
+            const unitId = product.units.find((unit) => unit.isBase)!.id;
+            return [
+              { variantId: null, barcode: product.barcode },
+              ...product.variants.map((variant) => ({
+                variantId: variant.id,
+                barcode: variant.barcode,
+              })),
+            ].flatMap(({ variantId, barcode }) =>
+              barcode
+                ? [
+                    {
+                      organizationId,
+                      productId: product.id,
+                      unitId,
+                      variantId,
+                      code: barcode.code,
+                      symbology: barcode.symbology,
+                    },
+                  ]
+                : [],
+            );
+          });
           if (barcodes.length > 0) {
             await tx.productBarcode.createMany({ data: barcodes });
           }
@@ -214,6 +262,7 @@ function report(plan: ImportPlan, saved: boolean): ImportReportView {
   return {
     saved,
     adding: plan.adding,
+    options: plan.options,
     skipped: plan.skipped,
     errors: plan.errors,
     newCategories: [
@@ -225,6 +274,7 @@ function report(plan: ImportPlan, saved: boolean): ImportReportView {
       name: row.name,
       status: row.status,
       messages: row.messages,
+      option: row.variant?.name ?? null,
       product: row.product && {
         name: row.product.name,
         sku: row.product.sku,
@@ -233,15 +283,18 @@ function report(plan: ImportPlan, saved: boolean): ImportReportView {
           name: row.product.category.name,
           isNew: row.product.category.isNew,
         },
+        // What this row sells at: an option's own price, else the product's.
         units: row.product.units.map((unit) => ({
           name: unit.name,
           factor: unit.factor,
-          price: unit.isBase ? row.product!.basePrice : unit.price,
+          price:
+            row.variant?.prices.find((own) => own.unitId === unit.id)?.price ??
+            (unit.isBase ? row.product!.basePrice : unit.price),
           isBase: unit.isBase,
           isSellable: unit.isSellable,
           isDefaultSelling: unit.isDefaultSelling,
         })),
-        barcode: row.product.barcode,
+        barcode: row.variant ? row.variant.barcode : row.product.barcode,
       },
     })),
   };

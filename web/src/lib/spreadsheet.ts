@@ -8,7 +8,9 @@ type FixedField =
   | 'category'
   | 'countedIn'
   | 'price'
-  | 'barcode';
+  | 'barcode'
+  | 'optionType'
+  | 'option';
 
 /**
  * Reading a product spreadsheet into rows for `POST /products/import`.
@@ -56,6 +58,12 @@ export const FIXED_COLUMNS: readonly {
     aliases: ['countedinprice', 'unit1price'],
   },
   { field: 'barcode', header: 'Barcode', aliases: ['ean', 'code'] },
+  {
+    field: 'optionType',
+    header: 'Option type',
+    aliases: ['optiontypes', 'varianttype', 'attribute', 'attributes'],
+  },
+  { field: 'option', header: 'Option', aliases: ['variant', 'options'] },
 ];
 
 /** The header of one fixed column, for the export to write. */
@@ -98,6 +106,14 @@ export const COLUMN_HELP: readonly { header: string; hint: string }[] = [
     header: 'Barcode',
     hint: 'For the counted-in unit. Format the column as Text first.',
   },
+  {
+    header: 'Option type',
+    hint: 'Only for a product with options: what they differ by — Flavour, or Flavour / Pack size.',
+  },
+  {
+    header: 'Option',
+    hint: 'One row per option, same name and size: Chicken, Onion. Leave units blank after the first row; a different price is that option’s own.',
+  },
 ];
 
 /** How many bigger-unit slots the template starts with. */
@@ -106,7 +122,8 @@ const TEMPLATE_UNITS = 4;
 /**
  * The template's examples are real shapes from a shop: a lotion sold only in
  * parts of its carton, a roll-on sold by the pack and the carton and halves of
- * each, and a carton of noodles sold whole and by the piece.
+ * each, and a carton of noodles sold whole and by the piece — in two flavours,
+ * the second filling in only its option (§24).
  */
 const EXAMPLES: readonly {
   fixed: Partial<Record<FixedField, string>>;
@@ -146,8 +163,18 @@ const EXAMPLES: readonly {
       category: 'Noodles',
       countedIn: 'piece',
       price: '250',
+      optionType: 'Flavour',
+      option: 'Chicken',
     },
     units: [['carton', '40', '9,600']],
+  },
+  {
+    fixed: {
+      name: 'Indomie 70g',
+      size: '70g',
+      option: 'Onion Chicken',
+    },
+    units: [],
   },
 ];
 
@@ -160,6 +187,8 @@ export function downloadTemplate(): void {
     ),
     ...slots.flatMap((n) => Object.values(unitHeaders(n))),
     headerOf('barcode'),
+    headerOf('optionType'),
+    headerOf('option'),
   ];
   const rows = EXAMPLES.map((example) => [
     ...(['name', 'size', 'category', 'countedIn', 'price'] as const).map(
@@ -167,6 +196,8 @@ export function downloadTemplate(): void {
     ),
     ...slots.flatMap((_, i) => example.units[i] ?? ['', '', '']),
     example.fixed.barcode ?? '',
+    example.fixed.optionType ?? '',
+    example.fixed.option ?? '',
   ]);
   const lines = [header, ...rows].map((cells) => cells.map(csvCell).join(','));
   // The byte-order mark makes Excel read the file as UTF-8.

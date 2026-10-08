@@ -4321,6 +4321,127 @@ async function main() {
   const rebuiltAfterCount = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
   eq('and cache and ledger agree', rebuiltAfterCount.corrected, 0);
 
+  step(66, 'Reports by option: a row per option, and a spreadsheet of options');
+  // Every report with a row per product has a row per option (owner,
+  // 2026-10-08: "each variant is to be handled as an item").
+  const noodleName = `Noodles ${shopSuffix}`;
+  const optionTotals = new Map();
+  for (const row of (
+    await api('GET', `/stock/levels?productId=${noodles.id}&includeEmpty=true`, { token: t })
+  ).data) {
+    optionTotals.set(row.variant?.id ?? null, (optionTotals.get(row.variant?.id ?? null) ?? 0) + row.quantity);
+  }
+
+  const optionSummary = (await api('GET', '/reports/stock-summary?period=month', { token: t })).data;
+  const noodleLines = optionSummary.rows.filter((row) => row.product.id === noodles.id);
+  eq(
+    'stock in and out has a row per option, each ending on what that option holds',
+    JSON.stringify(
+      noodleLines.filter((row) => row.variant).map((row) => [row.label, row.closing]).sort(),
+    ),
+    JSON.stringify(
+      [
+        [`${noodleName} — Chicken`, optionTotals.get(chickenId)],
+        [`${noodleName} — Pepper Soup`, optionTotals.get(pepperId)],
+      ].sort(),
+    ),
+  );
+  const beforeOptions = noodleLines.find((row) => !row.variant);
+  eq(
+    'the stock it held before it had options has its own row, moved out to nothing',
+    `${beforeOptions?.label} ${beforeOptions?.opening} ${beforeOptions?.closing}`,
+    `${noodleName} (before options) 80 0`,
+  );
+  check(
+    'and every option row adds up',
+    noodleLines.every((row) => row.opening + row.delivered - row.sold + row.adjusted === row.closing),
+    JSON.stringify(noodleLines),
+  );
+
+  const salesByOption = (await api('GET', '/reports/sales?period=month&groupBy=product', { token: t })).data;
+  check(
+    'sales by product name the option sold',
+    salesByOption.rows.some((row) => row.label === `${noodleName} — Chicken`),
+    JSON.stringify(salesByOption.rows.map((row) => row.label)),
+  );
+
+  const optionValue = (await api('GET', '/reports/stock-valuation', { token: t })).data;
+  const chickenValue = optionValue.byProduct.find((row) => row.key === `${noodles.id}:${chickenId}`);
+  eq('stock value by product is by option', chickenValue?.label, `${noodleName} — Chicken`);
+  eq('in that option’s units', chickenValue?.units, optionTotals.get(chickenId));
+
+  // Step 63 took Pepper Soup's own price away; it gets one back.
+  const pepperAgain = 1_200_000;
+  await api('PATCH', `/products/${noodles.id}`, {
+    token: t,
+    body: { prices: [{ unit: 'carton', variantId: pepperId, price: pepperAgain }] },
+  });
+  const optionMargins = (await api('GET', '/reports/margins', { token: t })).data.rows.filter(
+    (row) => row.productId === noodles.id,
+  );
+  eq(
+    'margins: a row per option, each at its own price',
+    JSON.stringify(optionMargins.map((row) => [row.variant?.name, row.price]).sort()),
+    JSON.stringify([
+      ['Chicken', productCartonPrice],
+      ['Pepper Soup', pepperAgain],
+    ]),
+  );
+
+  // The product's level applies to each option on its own.
+  const lowest = Math.min(optionTotals.get(chickenId), optionTotals.get(pepperId));
+  await api('PATCH', `/products/${noodles.id}`, { token: t, body: { reorderPoint: lowest } });
+  const optionAlerts = (await api('GET', '/reports/stock-alerts', { token: t })).data;
+  eq(
+    'low stock is checked per option, against the product’s level',
+    JSON.stringify(
+      optionAlerts.lowStock.filter((row) => row.id === noodles.id).map((row) => row.variant?.name).sort(),
+    ),
+    JSON.stringify(
+      [
+        ['Chicken', optionTotals.get(chickenId)],
+        ['Pepper Soup', optionTotals.get(pepperId)],
+      ]
+        .filter(([, quantity]) => quantity > 0 && quantity <= lowest)
+        .map(([name]) => name)
+        .sort(),
+    ),
+  );
+  await api('PATCH', `/products/${noodles.id}`, { token: t, body: { reorderPoint: null } });
+
+  // The spreadsheet: same name and size, a row per option.
+  const spiceRows = [
+    {
+      line: 2, name: `Spice ${shopSuffix}`, size: '50g', countedIn: 'sachet', price: '100',
+      units: [{ name: 'carton', count: '50', price: '4,500' }],
+      optionType: 'Flavour', option: 'Curry',
+    },
+    { line: 3, name: `Spice ${shopSuffix}`, size: '50g', option: 'Thyme', units: [{ name: 'carton', price: '4,800' }] },
+  ];
+  const spicePreview = (
+    await api('POST', '/products/import', {
+      token: t,
+      key: randomUUID(),
+      body: { rows: spiceRows, dryRun: true },
+    })
+  ).data;
+  eq('two rows are one product with two options', `${spicePreview.adding} ${spicePreview.options}`, '1 2');
+  await api('POST', '/products/import', { token: t, key: randomUUID(), body: { rows: spiceRows } });
+  const spice = (await api('GET', '/products', { token: t })).data.find(
+    (p) => p.name === `Spice ${shopSuffix}`,
+  );
+  eq(
+    'imported with its options',
+    `${spice?.variantAttributes.join()} ${spice?.variants.map((v) => v.name).join()}`,
+    'Flavour Curry,Thyme',
+  );
+  const thyme = spice?.variants.find((v) => v.name === 'Thyme');
+  eq(
+    'and only the option whose price differs has its own',
+    JSON.stringify(spice?.prices.filter((p) => p.variantId).map((p) => [p.variantId, p.price])),
+    JSON.stringify([[thyme?.id, 480_000]]),
+  );
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

@@ -51,12 +51,28 @@ class LastDelivery {
   deal!: Deal | null;
 }
 
+class MarginOption {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Gold' })
+  name!: string;
+}
+
 export class MarginRow {
   @ApiProperty({ format: 'uuid' })
   productId!: string;
 
   @ApiProperty({ example: 'Dry Impact Roll-on' })
   productName!: string;
+
+  @ApiProperty({
+    type: () => MarginOption,
+    nullable: true,
+    description:
+      'The option this row is for. A product with options has a row per active option (§24): each can have its own price, and its cost is that of the stock it holds. Null for a product without options.',
+  })
+  variant!: MarginOption | null;
 
   @ApiProperty({ type: String, nullable: true, example: '50ml' })
   size!: string | null;

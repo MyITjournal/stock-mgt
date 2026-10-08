@@ -16,6 +16,8 @@ import {
 } from './period';
 import { Profit, computeProfit, marginBps } from './profit';
 import { ValuedLot, valueOf } from './valuation';
+import { HAS_OPTIONS, OPTION_REF, itemKey, itemLabel } from './options';
+import { stockAlerts } from './stock-alerts';
 import {
   CollectionsView,
   CustomerReportView,
@@ -350,11 +352,13 @@ export class ReportService {
         taxAmount: true,
         costOfGoodsSold: true,
         baseQuantity: true,
+        variant: OPTION_REF,
         product: {
           select: {
             id: true,
             name: true,
             category: { select: { id: true, name: true } },
+            variants: HAS_OPTIONS,
           },
         },
       },
@@ -364,7 +368,7 @@ export class ReportService {
     const invoicesSeen = new Map<string, Set<string>>();
 
     for (const line of lines) {
-      const { key, label } = lineKey(line.product, groupBy);
+      const { key, label } = lineKey(line.product, line.variant, groupBy);
       const group = draftFor(groups, key, label);
 
       group.grossSales += line.lineTotal;
@@ -394,11 +398,13 @@ export class ReportService {
           select: {
             taxRateBps: true,
             unitFactor: true,
+            variant: OPTION_REF,
             product: {
               select: {
                 id: true,
                 name: true,
                 category: { select: { id: true, name: true } },
+                variants: HAS_OPTIONS,
               },
             },
           },
@@ -407,7 +413,11 @@ export class ReportService {
     });
 
     for (const row of returns) {
-      const { key, label } = lineKey(row.saleLine.product, groupBy);
+      const { key, label } = lineKey(
+        row.saleLine.product,
+        row.saleLine.variant,
+        groupBy,
+      );
       applyReturn(draftFor(groups, key, label), row);
     }
 
@@ -542,11 +552,13 @@ export class ReportService {
         quantity: true,
         batch: { select: { totalCost: true, quantityReceived: true } },
         location: { select: { id: true, name: true } },
+        variant: OPTION_REF,
         product: {
           select: {
             id: true,
             name: true,
             category: { select: { id: true, name: true } },
+            variants: HAS_OPTIONS,
           },
         },
       },
@@ -572,10 +584,11 @@ export class ReportService {
         (lot) => lot.row.product.category?.id ?? 'uncategorised',
         (lot) => lot.row.product.category?.name ?? 'Uncategorised',
       ),
+      // By option, like every product row in a report (§24).
       byProduct: rollUp(
         lots,
-        (lot) => lot.row.product.id,
-        (lot) => lot.row.product.name,
+        (lot) => itemKey(lot.row.product.id, lot.row.variant?.id),
+        (lot) => itemLabel(lot.row.product, lot.row.variant),
       ).slice(0, 50),
     };
   }
@@ -606,6 +619,7 @@ export class ReportService {
           },
         },
         product: { select: { id: true, name: true } },
+        variant: OPTION_REF,
         location: { select: { id: true, name: true } },
       },
       orderBy: { batch: { expiryDate: 'asc' } },
@@ -617,6 +631,7 @@ export class ReportService {
       lotCode: row.batch.lotCode,
       expiryDate: row.batch.expiryDate,
       product: row.product,
+      variant: row.variant,
       location: row.location,
       quantity: row.quantity,
       value: valueOf([
@@ -649,7 +664,8 @@ export class ReportService {
   }
 
   /**
-   * Stock that needs attention: out, low, or negative.
+   * Stock that needs attention: out, low, or negative — a row per option, the
+   * product's level applying to each (`stock-alerts.ts`).
    *
    * Quantities are summed **across locations**, because `reorderPoint` is a
    * per-product level (§12) — a van being empty is not a reason to reorder if
@@ -659,39 +675,31 @@ export class ReportService {
     const [products, balances] = await Promise.all([
       this.prisma.product.findMany({
         where: { deletedAt: null, isActive: true, trackStock: true },
-        select: { id: true, name: true, sku: true, reorderPoint: true },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          reorderPoint: true,
+          variants: {
+            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+            select: { id: true, name: true, isActive: true },
+          },
+        },
       }),
       this.prisma.stockBalance.groupBy({
-        by: ['productId'],
+        by: ['productId', 'variantId'],
         _sum: { quantity: true },
       }),
     ]);
 
-    const onHand = new Map(
-      balances.map((row) => [row.productId, row._sum.quantity ?? 0]),
+    return stockAlerts(
+      products,
+      balances.map((row) => ({
+        productId: row.productId,
+        variantId: row.variantId,
+        quantity: row._sum.quantity ?? 0,
+      })),
     );
-
-    const withStock = products.map((product) => ({
-      ...product,
-      quantity: onHand.get(product.id) ?? 0,
-    }));
-
-    return {
-      outOfStock: withStock.filter((product) => product.quantity === 0),
-      // A level of 0 means "tell me when it runs out", which the line above
-      // already covers, so low stock is strictly above empty.
-      lowStock: withStock.filter(
-        (product) =>
-          product.reorderPoint !== null &&
-          product.quantity > 0 &&
-          product.quantity <= product.reorderPoint,
-      ),
-      negative: withStock.filter((product) => product.quantity < 0),
-      /** How many products have no level set, so nobody mistakes the list for complete. */
-      withoutReorderPoint: withStock.filter(
-        (product) => product.reorderPoint === null,
-      ).length,
-    };
   }
 
   /**
@@ -724,6 +732,7 @@ export class ReportService {
         quantityReceived: true,
         quantityPaidFor: true,
         totalCost: true,
+        variant: OPTION_REF,
         receipt: {
           select: {
             id: true,
@@ -737,6 +746,7 @@ export class ReportService {
             name: true,
             sku: true,
             category: { select: { id: true, name: true } },
+            variants: HAS_OPTIONS,
           },
         },
       },
@@ -754,8 +764,9 @@ export class ReportService {
         label: line.receipt.supplier.name,
         line,
       });
-      accumulate(byProduct, line.product.id, {
-        label: line.product.name,
+      // By option, like every product row in a report (§24).
+      accumulate(byProduct, itemKey(line.product.id, line.variant?.id), {
+        label: itemLabel(line.product, line.variant),
         line,
       });
       accumulate(byCategory, line.product.category?.id ?? 'uncategorised', {
@@ -805,6 +816,7 @@ export class ReportService {
         forcedReason: true,
         createdAt: true,
         product: { select: { id: true, name: true } },
+        variant: OPTION_REF,
         location: { select: { id: true, name: true } },
         recordedBy: { select: { id: true, firstName: true, lastName: true } },
       },
@@ -848,27 +860,56 @@ export class ReportService {
     const staleBefore = new Date(Date.now() - staleDays * 86_400_000);
 
     // Anything held that has not sold in the window: cash sitting on a shelf.
+    // Per option (§24): Pepper Soup not moving while Chicken sells is the
+    // point of the list.
     const [held, recentlySold] = await Promise.all([
       this.prisma.stockBalance.groupBy({
-        by: ['productId'],
+        by: ['productId', 'variantId'],
         where: { quantity: { gt: 0 } },
         _sum: { quantity: true },
       }),
       this.prisma.saleLine.findMany({
         where: { sale: { occurredAt: { gte: staleBefore } } },
-        select: { productId: true },
-        distinct: ['productId'],
+        select: { productId: true, variantId: true },
+        distinct: ['productId', 'variantId'],
       }),
     ]);
 
-    const sold = new Set(recentlySold.map((line) => line.productId));
-    const stagnant = held.filter((row) => !sold.has(row.productId));
+    // A sale from before the product had options names none, and nobody can
+    // say which flavour it was — so it counts for every option of that
+    // product, rather than calling them all dead the day options are added.
+    const sold = new Set(
+      recentlySold.map((line) => itemKey(line.productId, line.variantId)),
+    );
+    const soldBeforeOptions = new Set(
+      recentlySold
+        .filter((line) => line.variantId === null)
+        .map((line) => line.productId),
+    );
+    const stagnant = held.filter(
+      (row) =>
+        !sold.has(itemKey(row.productId, row.variantId)) &&
+        !soldBeforeOptions.has(row.productId),
+    );
 
-    const names = await this.prisma.product.findMany({
-      where: { id: { in: stagnant.map((row) => row.productId) } },
-      select: { id: true, name: true, sku: true },
-    });
+    const [names, variants] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { id: { in: stagnant.map((row) => row.productId) } },
+        select: { id: true, name: true, sku: true },
+      }),
+      this.prisma.productVariant.findMany({
+        where: {
+          id: {
+            in: stagnant.flatMap((row) =>
+              row.variantId ? [row.variantId] : [],
+            ),
+          },
+        },
+        select: { id: true, name: true },
+      }),
+    ]);
     const nameOf = new Map(names.map((product) => [product.id, product]));
+    const optionOf = new Map(variants.map((option) => [option.id, option]));
 
     return {
       period: describe(period),
@@ -884,6 +925,7 @@ export class ReportService {
         .slice(0, TOP_N),
       deadStock: stagnant.map((row) => ({
         product: nameOf.get(row.productId) ?? { id: row.productId },
+        variant: row.variantId ? (optionOf.get(row.variantId) ?? null) : null,
         quantity: row._sum.quantity ?? 0,
       })),
       staleDays,
@@ -1100,12 +1142,15 @@ function saleKey(sale: SaleForKey, groupBy: SalesGrouping, timezone: string) {
   }
 }
 
+/** By product means by option — Gold and Classic are two rows (§24). */
 function lineKey(
   product: {
     id: string;
     name: string;
     category: { id: string; name: string } | null;
+    variants: readonly unknown[];
   },
+  variant: { id: string; name: string } | null,
   groupBy: 'product' | 'category',
 ) {
   if (groupBy === 'category') {
@@ -1113,7 +1158,10 @@ function lineKey(
       ? { key: product.category.id, label: product.category.name }
       : { key: 'uncategorised', label: 'Uncategorised' };
   }
-  return { key: product.id, label: product.name };
+  return {
+    key: itemKey(product.id, variant?.id),
+    label: itemLabel(product, variant),
+  };
 }
 
 function rollUp<T extends ValuedLot>(

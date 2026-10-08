@@ -11,6 +11,7 @@ import { DownloadButton } from '../components/DownloadButton';
 import { exportStockValue } from './exportReports';
 import { StockInOut } from './StockInOut';
 import { auditLines } from './auditLines';
+import { optionLabel } from '../lib/options';
 
 type StockValuationView = components['schemas']['StockValuationView'];
 type StockAlertsView = components['schemas']['StockAlertsView'];
@@ -19,6 +20,9 @@ type ExpiryReportView = components['schemas']['ExpiryReportView'];
 type StockAuditView = components['schemas']['StockAuditView'];
 type StockSummaryView = components['schemas']['StockSummaryView'];
 type ValuationGroupRow = components['schemas']['ValuationGroupRow'];
+
+/** A product, or one option of it: each option is its own row (§24). */
+const alertKey = (row: StockAlertRow) => `${row.id}:${row.variant?.id ?? ''}`;
 
 const REASON_LABELS: Record<string, string> = {
   damage: 'Damaged',
@@ -96,10 +100,12 @@ export function StockReportPage() {
   const alertColumns: readonly Column<StockAlertRow>[] = [
     {
       header: 'Product',
-      sortValue: (row) => row.name,
+      sortValue: (row) => optionLabel(row.name, row.variant?.name),
       cell: (row) => (
         <span>
-          <span className="block text-slate-900">{row.name}</span>
+          <span className="block text-slate-900">
+            {optionLabel(row.name, row.variant?.name)}
+          </span>
           <span className="block text-xs text-slate-500">{row.sku}</span>
         </span>
       ),
@@ -202,7 +208,7 @@ export function StockReportPage() {
             <DataTable
               rows={alerts?.outOfStock ?? []}
               columns={alertColumns}
-              rowKey={(row) => row.id}
+              rowKey={alertKey}
               empty="Nothing has run out."
             />
           </Panel>
@@ -213,7 +219,7 @@ export function StockReportPage() {
             <DataTable
               rows={alerts?.lowStock ?? []}
               columns={alertColumns}
-              rowKey={(row) => row.id}
+              rowKey={alertKey}
               empty="Nothing is running low."
             />
           </Panel>
@@ -222,7 +228,7 @@ export function StockReportPage() {
             <DataTable
               rows={alerts?.negative ?? []}
               columns={alertColumns}
-              rowKey={(row) => row.id}
+              rowKey={alertKey}
               empty="Nothing is negative."
             />
           </Panel>
@@ -269,7 +275,10 @@ export function StockReportPage() {
           <DataTable
             rows={expiry?.batches ?? []}
             columns={[
-              { header: 'Product', cell: (row) => row.product.name },
+              {
+                header: 'Product',
+                cell: (row) => optionLabel(row.product.name, row.variant?.name),
+              },
               { header: 'Where', cell: (row) => row.location.name },
               {
                 header: 'Lot',
@@ -305,7 +314,9 @@ export function StockReportPage() {
                 cell: (row) => <Money value={row.value} />,
               },
             ]}
-            rowKey={(row) => row.batchId}
+            rowKey={(row) =>
+              `${row.batchId}:${row.variant?.id ?? ''}:${row.location.id}`
+            }
             empty="Nothing is going off in the next month."
           />
         </Panel>
@@ -379,7 +390,10 @@ export function StockReportPage() {
                 </span>
               ),
             },
-            { header: 'Product', cell: (row) => row.product.name },
+            {
+              header: 'Product',
+              cell: (row) => optionLabel(row.product.name, row.variant?.name),
+            },
             { header: 'Where', cell: (row) => row.location.name },
             {
               header: 'Why',

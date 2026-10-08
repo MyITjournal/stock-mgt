@@ -3095,10 +3095,20 @@ export interface components {
             /** @description Unit 2, Unit 3, … in column order. A unit with a price is sold at the till; one without is counted only. */
             units?: components["schemas"]["ImportUnitDto"][];
             /**
-             * @description For the counted-in unit.
+             * @description For the counted-in unit — of this row’s option, when it names one.
              * @example 6154000000005
              */
             barcode?: string;
+            /**
+             * @description What the options differ by: "Flavour", or "Flavour / Pack size". Blank is "Option".
+             * @example Flavour
+             */
+            optionType?: string;
+            /**
+             * @description This row’s option — "Chicken", or "Chicken / 70g". Rows with the same name and size, each with an option, are one product with options: the first row’s units and prices are the product’s, and a later row’s price that differs is that option’s own.
+             * @example Chicken
+             */
+            option?: string;
         };
         ImportProductsDto: {
             rows: components["schemas"]["ImportRowDto"][];
@@ -3145,12 +3155,20 @@ export interface components {
             status: "add" | "skip" | "error";
             /** @description What is wrong for `error`, why for `skip`, and warnings worth reading for `add`. */
             messages: string[];
+            /**
+             * @description The option this row adds. Rows with the same name and size and an Option filled in are one product with options; each row’s units show what that option sells at.
+             * @example Chicken
+             */
+            option: string | null;
             product: components["schemas"]["ImportProductView"] | null;
         };
         ImportReportView: {
             /** @description False for a preview; true once saved. */
             saved: boolean;
+            /** @description Products added. A product with options is several rows, and counts once. */
             adding: number;
+            /** @description Options added, across those products. */
+            options: number;
             skipped: number;
             errors: number;
             /** @description Categories the import creates or brings back. */
@@ -6330,6 +6348,12 @@ export interface components {
             /** @example Retail */
             name: string;
         };
+        MarginOption: {
+            /** Format: uuid */
+            id: string;
+            /** @example Gold */
+            name: string;
+        };
         MarginCategory: {
             /** Format: uuid */
             id: string;
@@ -6354,6 +6378,8 @@ export interface components {
             productId: string;
             /** @example Dry Impact Roll-on */
             productName: string;
+            /** @description The option this row is for. A product with options has a row per active option (§24): each can have its own price, and its cost is that of the stock it holds. Null for a product without options. */
+            variant: components["schemas"]["MarginOption"] | null;
             /** @example 50ml */
             size: string | null;
             category: components["schemas"]["MarginCategory"] | null;
@@ -6519,16 +6545,52 @@ export interface components {
             estimatedLines: number;
             lastMonthOperating: number;
         };
+        ReportProductRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ReportOptionRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Gold */
+            name: string;
+        };
+        ReportLocationRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        ExpiringLotRow: {
+            /** Format: uuid */
+            batchId: string;
+            lotCode: string | null;
+            /** Format: date-time */
+            expiryDate: string | null;
+            product: components["schemas"]["ReportProductRef"];
+            /** @description The option this stock is. A lot can hold several options of one product, so each is its own row. Null for a product without options. */
+            variant: components["schemas"]["ReportOptionRef"] | null;
+            location: components["schemas"]["ReportLocationRef"];
+            quantity: number;
+            /** @description What walking away from this lot costs. **Absent** for a role that may not see cost — the list itself stays open, because knowing which lots to push is a shelf question rather than a cost one. */
+            value?: number;
+            /** @description Negative once the date has passed. */
+            daysToExpiry: number | null;
+        };
         StockAlertRow: {
+            /** Format: uuid */
             id: string;
             name: string;
             sku: string;
+            /** @description Null when nobody has set a level for this product. */
             reorderPoint: number | null;
-            /** @description Summed across locations, in base units. */
+            /** @description The option this row is for: each option is checked against the product's level on its own. Null for a product without options. */
+            variant: components["schemas"]["ReportOptionRef"] | null;
+            /** @description Summed across every location. */
             quantity: number;
         };
         AttentionSummary: {
-            expiringSoon: components["schemas"]["ExpiringBatchRow"][];
+            expiringSoon: components["schemas"]["ExpiringLotRow"][];
             expiringCount: number;
             valueAtRisk?: number;
             /** @description Already past their date and still on the shelf. */
@@ -6558,13 +6620,17 @@ export interface components {
             units: number;
             invoices: number;
         };
-        DeadStockProduct: {
+        DeadStockProductRef: {
+            /** Format: uuid */
             id: string;
             name?: string;
             sku?: string;
         };
         DeadStockRow: {
-            product: components["schemas"]["DeadStockProduct"];
+            product: components["schemas"]["DeadStockProductRef"];
+            /** @description The option not selling. Null for a product without options. */
+            variant: components["schemas"]["ReportOptionRef"] | null;
+            /** @description Base units sitting on a shelf. */
             quantity: number;
         };
         MoversSummary: {
@@ -6841,30 +6907,6 @@ export interface components {
             /** @description The fifty most valuable. */
             byProduct: components["schemas"]["ValuationGroupRow"][];
         };
-        ReportProductRef: {
-            /** Format: uuid */
-            id: string;
-            name: string;
-        };
-        ReportLocationRef: {
-            /** Format: uuid */
-            id: string;
-            name: string;
-        };
-        ExpiringLotRow: {
-            /** Format: uuid */
-            batchId: string;
-            lotCode: string | null;
-            /** Format: date-time */
-            expiryDate: string | null;
-            product: components["schemas"]["ReportProductRef"];
-            location: components["schemas"]["ReportLocationRef"];
-            quantity: number;
-            /** @description What walking away from this lot costs. **Absent** for a role that may not see cost — the list itself stays open, because knowing which lots to push is a shelf question rather than a cost one. */
-            value?: number;
-            /** @description Negative once the date has passed. */
-            daysToExpiry: number | null;
-        };
         ExpiryReportView: {
             withinDays: number;
             batches: components["schemas"]["ExpiringLotRow"][];
@@ -6879,7 +6921,7 @@ export interface components {
             lowStock: components["schemas"]["StockAlertRow"][];
             /** @description Stock that went out before it was entered as received. A forced movement leaves this trail. */
             negative: components["schemas"]["StockAlertRow"][];
-            /** @description How many products have no level set, so nobody mistakes the list for complete. */
+            /** @description How many products have no level set, so nobody mistakes the list for complete. Products, not options: the level is set once per product. */
             withoutReorderPoint: number;
         };
         ProductReportView: {
@@ -6934,6 +6976,12 @@ export interface components {
             /** @example 400ml */
             size: string | null;
         };
+        SummaryOptionRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Gold */
+            name: string;
+        };
         SummaryUnit: {
             /** @example carton */
             name: string;
@@ -6953,7 +7001,16 @@ export interface components {
             closing: number;
         };
         StockSummaryRow: {
+            /** @description Unique per row: the product, or the product and option. For a list key. */
+            key: string;
+            /**
+             * @description What the row is called: the product, the product and its option, or "Indomie (before options)" for stock a product held before it had options — that row shows it moving into them.
+             * @example Eva Soap — Gold
+             */
+            label: string;
             product: components["schemas"]["SummaryProductRef"];
+            /** @description The option. Each option is its own row (§24); moves between them land in "adjusted" on both, so the product still adds up. */
+            variant: components["schemas"]["SummaryOptionRef"] | null;
             /** @description The product’s units, smallest first, so a screen can say "6 carton, 3 piece". */
             units: components["schemas"]["SummaryUnit"][];
             /** @description On hand when the period began, plus opening stock entered during it. */
@@ -6971,7 +7028,7 @@ export interface components {
         };
         StockSummaryView: {
             period: components["schemas"]["PeriodView"];
-            /** @description One per product with stock or movement, by name. */
+            /** @description One per product — per option, for a product with options — with stock or movement, by name. */
             rows: components["schemas"]["StockSummaryRow"][];
             /** @description Every product together, summed exactly and rounded once — the closing figure is the stock value. **Absent** for a role that may not see cost. */
             totalValue?: components["schemas"]["StockSummaryValues"];
@@ -6999,6 +7056,8 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             product: components["schemas"]["ReportProductRef"];
+            /** @description The option moved. Null for a product without options, or a movement from before it had them. */
+            variant: components["schemas"]["ReportOptionRef"] | null;
             location: components["schemas"]["ReportLocationRef"];
             recordedBy: components["schemas"]["AuditUserRef"] | null;
         };

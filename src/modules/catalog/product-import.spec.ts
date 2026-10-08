@@ -433,3 +433,173 @@ describe('planImport', () => {
     expect(plan.rows[0].status).toBe('error');
   });
 });
+
+describe('planImport — a row per option (§24)', () => {
+  /** Indomie in three flavours: one product, three rows. */
+  const indomie = (
+    option: string,
+    extra: Partial<ImportRowInput> = {},
+  ): ImportRowInput => ({
+    name: 'Indomie',
+    size: '70g',
+    category: 'Noodles',
+    countedIn: 'piece',
+    price: '250',
+    units: [{ name: 'carton', count: '40', price: '9,600' }],
+    optionType: 'Flavour',
+    option,
+    ...extra,
+  });
+
+  it('makes rows with the same name and size one product with options', () => {
+    const plan = planImport(
+      [
+        indomie('Chicken', { line: 2 }),
+        indomie('Onion Chicken', { line: 3 }),
+        indomie('Pepper Soup', { line: 4 }),
+      ],
+      context(),
+    );
+
+    expect(plan).toMatchObject({ adding: 1, options: 3, errors: 0 });
+    const product = plan.rows[0].product!;
+    expect(plan.rows.every((row) => row.product === product)).toBe(true);
+    expect(product.variantAttributes).toEqual(['Flavour']);
+    expect(product.variants.map((v) => [v.name, v.sortOrder])).toEqual([
+      ['Chicken', 0],
+      ['Onion Chicken', 1],
+      ['Pepper Soup', 2],
+    ]);
+    // Same prices as the first row: priced once, as the product.
+    expect(product.variants.every((v) => v.prices.length === 0)).toBe(true);
+    expect(plan.rows.map((row) => row.variant?.name)).toEqual([
+      'Chicken',
+      'Onion Chicken',
+      'Pepper Soup',
+    ]);
+  });
+
+  it('gives an option its own price only where it differs from the first row', () => {
+    const plan = planImport(
+      [
+        indomie('Chicken'),
+        indomie('Pepper Soup', {
+          price: '',
+          units: [{ name: 'carton', price: '10,000' }],
+        }),
+      ],
+      context(),
+    );
+    const [, pepper] = plan.rows;
+    const carton = pepper.product!.units.find((u) => u.name === 'carton')!;
+    expect(pepper.variant!.prices).toEqual([
+      { unitId: carton.id, price: 1_000_000 },
+    ]);
+  });
+
+  it('lets a later row leave the shared cells blank', () => {
+    const plan = planImport(
+      [
+        indomie('Chicken'),
+        { name: 'Indomie', size: '70g', option: 'Onion Chicken' },
+      ],
+      context(),
+    );
+    expect(plan).toMatchObject({ adding: 1, options: 2, errors: 0 });
+  });
+
+  it('puts a row’s barcode on its option, not the product', () => {
+    const plan = planImport(
+      [
+        indomie('Chicken', { barcode: '6154000000004' }),
+        indomie('Onion Chicken', { barcode: '6154000000011' }),
+      ],
+      context(),
+    );
+    const product = plan.rows[0].product!;
+    expect(product.barcode).toBeNull();
+    expect(product.variants.map((v) => v.barcode?.code)).toEqual([
+      '6154000000004',
+      '6154000000011',
+    ]);
+  });
+
+  it('calls a blank option type "Option", and reads two attributes', () => {
+    const one = planImport([indomie('Chicken', { optionType: '' })], context());
+    expect(one.rows[0].product!.variantAttributes).toEqual(['Option']);
+
+    const two = planImport(
+      [
+        indomie('Chicken / 70g', { optionType: 'Flavour / Pack size' }),
+        indomie('Chicken / 120g', { optionType: '' }),
+      ],
+      context(),
+    );
+    expect(two.rows[0].product!.variantAttributes).toEqual([
+      'Flavour',
+      'Pack size',
+    ]);
+    expect(two.rows[1].variant!.values).toEqual(['Chicken', '120g']);
+  });
+
+  it('adds none of a product when one of its rows is wrong', () => {
+    const plan = planImport(
+      [
+        indomie('Chicken', { line: 2 }),
+        indomie('Onion Chicken', {
+          line: 3,
+          units: [{ name: 'carton', count: '24' }],
+        }),
+        indomie('Pepper Soup', { line: 4 }),
+      ],
+      context(),
+    );
+    expect(plan).toMatchObject({ adding: 0, options: 0, errors: 3 });
+    expect(plan.rows[1].messages[0]).toMatch(/holds 40 piece in row 2/);
+    expect(plan.rows[0].messages).toEqual([
+      'Row 3 of this product needs fixing, so none of its rows are added.',
+    ]);
+  });
+
+  it('refuses what an option cannot change: units, category, option type', () => {
+    const plan = planImport(
+      [
+        indomie('Chicken', { line: 2 }),
+        indomie('Onion', { line: 3, units: [{ name: 'pack', count: '5' }] }),
+        indomie('Pepper', { line: 4, category: 'Pasta' }),
+        indomie('Curry', { line: 5, optionType: 'Size' }),
+        indomie('Chicken', { line: 6 }),
+      ],
+      context(),
+    );
+    expect(plan.rows[1].messages[0]).toMatch(/row 2 has no "pack"/);
+    expect(plan.rows[2].messages[0]).toMatch(/category/);
+    expect(plan.rows[3].messages[0]).toMatch(/first row says "Flavour"/);
+    expect(plan.rows[4].messages[0]).toMatch(/already an option/);
+  });
+
+  it('refuses mixing a row with an option and one without for one product', () => {
+    const plan = planImport(
+      [indomie('Chicken'), indomie('', { optionType: '' })],
+      context(),
+    );
+    expect(plan.rows[1].messages[0]).toMatch(/fill in Option on every row/);
+  });
+
+  it('refuses an option with the wrong number of parts', () => {
+    const plan = planImport(
+      [indomie('Chicken / 70g', { optionType: 'Flavour' })],
+      context(),
+    );
+    expect(plan.rows[0].status).toBe('error');
+    expect(plan.rows[0].messages[0]).toMatch(/one Flavour/);
+  });
+
+  it('skips every row of a product already in the catalog', () => {
+    const plan = planImport(
+      [indomie('Chicken'), indomie('Onion Chicken')],
+      context({ existingProducts: new Set([productKey('Indomie', '70g')]) }),
+    );
+    expect(plan).toMatchObject({ adding: 0, skipped: 2, errors: 0 });
+  });
+});

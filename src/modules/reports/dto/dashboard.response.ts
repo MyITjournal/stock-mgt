@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { SalesGroupRow } from './report.response';
+import {
+  DeadStockRow,
+  ExpiringLotRow,
+  SalesGroupRow,
+  StockAlertRow,
+} from './report.response';
 import { DebtorGroup } from '../../payments/dto/receivable.response';
 import { GrowthComparisonView } from './growth.dto';
 
@@ -175,63 +180,14 @@ class ProfitSummary {
   lastMonthOperating!: number;
 }
 
-class NamedRef {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  name!: string;
-}
-
-class ExpiringBatchRow {
-  @ApiProperty()
-  batchId!: string;
-
-  @ApiProperty({ nullable: true, type: String })
-  lotCode!: string | null;
-
-  @ApiProperty({ type: String, format: 'date-time', nullable: true })
-  expiryDate!: Date | null;
-
-  @ApiProperty({ type: () => NamedRef })
-  product!: NamedRef;
-
-  @ApiProperty({ type: () => NamedRef })
-  location!: NamedRef;
-
-  @ApiProperty()
-  quantity!: number;
-
-  @ApiPropertyOptional({
-    description:
-      'What walks out of the door if this is not sold in time. Always present here, because this endpoint is closed to roles that may not see cost.',
-  })
-  value?: number;
-
-  @ApiProperty({ nullable: true, type: Number })
-  daysToExpiry!: number | null;
-}
-
-class StockAlertRow {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  name!: string;
-
-  @ApiProperty()
-  sku!: string;
-
-  @ApiProperty({ nullable: true, type: Number })
-  reorderPoint!: number | null;
-
-  @ApiProperty({ description: 'Summed across locations, in base units.' })
-  quantity!: number;
-}
-
+/**
+ * The rows are the reports' own classes, not copies: two classes with one
+ * name collide in the API's schema, and the one that wins drops whatever the
+ * other has — an option on a row, for one (§24).
+ */
 class AttentionSummary {
-  @ApiProperty({ type: () => [ExpiringBatchRow] })
-  expiringSoon!: ExpiringBatchRow[];
+  @ApiProperty({ type: () => [ExpiringLotRow] })
+  expiringSoon!: ExpiringLotRow[];
 
   @ApiProperty()
   expiringCount!: number;
@@ -266,25 +222,6 @@ class AttentionSummary {
     description: 'Movements an owner or manager pushed through a shortfall.',
   })
   forcedMovements!: number;
-}
-
-class DeadStockProduct {
-  @ApiProperty()
-  id!: string;
-
-  @ApiPropertyOptional()
-  name?: string;
-
-  @ApiPropertyOptional()
-  sku?: string;
-}
-
-class DeadStockRow {
-  @ApiProperty({ type: () => DeadStockProduct })
-  product!: DeadStockProduct;
-
-  @ApiProperty()
-  quantity!: number;
 }
 
 class MoversSummary {
