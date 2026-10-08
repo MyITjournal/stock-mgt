@@ -14,12 +14,23 @@ import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { previewIsSellable } from '../lib/sellingUnits';
 import { FRACTIONS, portionOf } from '../lib/portions';
+import { toWholeBaseUnits } from '../lib/decimalQuantity';
+import { OpeningStockFields } from './OpeningStockFields';
+import { EMPTY_OPENING, type OpeningDraft } from './openingDraft';
 
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
 type PackagingTypeView = components['schemas']['PackagingTypeView'];
 type PriceTierView = components['schemas']['PriceTierView'];
 type OrganizationView = components['schemas']['OrganizationView'];
+type LocationView = components['schemas']['LocationView'];
+
+/**
+ * The product saved and its opening stock did not (2026-10-08). Its own kind,
+ * so the form can say which half went in — and the next Save retries only
+ * the stock, never adding the product a second time.
+ */
+class OpeningStockNotSaved extends Error {}
 
 /*
  * `key` is a React key and nothing else — it is never sent. Rows can be removed
@@ -198,8 +209,83 @@ export function ProductForm({
     queryFn: () => api.get<PriceTierView[]>('/price-tiers'),
   });
 
+  // -- Opening stock, when adding (2026-10-08) ------------------------------
+  const [opening, setOpening] = useState<OpeningDraft>(EMPTY_OPENING);
+  // Minted once, and the product once saved is kept: if its opening stock
+  // fails, Save tries the stock again rather than adding the product twice.
+  const [productId] = useState(() => crypto.randomUUID());
+  const [savedProduct, setSavedProduct] = useState<ProductView | null>(null);
+  const { data: locations = [] } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => api.get<LocationView[]>('/locations'),
+    enabled: !editing,
+  });
+  // Counted in the biggest unit by default: that is how a shelf is counted,
+  // and "6.25" cartons is accepted.
+  const openingUnit =
+    units.find((unit) => unit.key === opening.unitKey && unit.name.trim()) ??
+    [...units]
+      .filter((unit) => unit.name.trim())
+      .sort((a, b) => b.factor - a.factor)[0];
+  const openingLocationId =
+    opening.locationId ||
+    locations.find((row) => row.isDefault)?.id ||
+    locations[0]?.id ||
+    '';
+  const offersOpening = !editing && trackStock && seesCost;
+  const wantsOpening =
+    offersOpening && opening.quantity !== '' && Number(opening.quantity) > 0;
+  const openingProblem = (() => {
+    if (!wantsOpening || !openingUnit) return null;
+    const read = toWholeBaseUnits(
+      opening.quantity.replace(/\.$/, ''),
+      openingUnit.factor,
+      openingUnit.name.trim(),
+      baseName,
+    );
+    if ('error' in read) return read.error;
+    if (opening.unitCost === null) {
+      return `Enter what one ${openingUnit.name.trim()} cost — opening stock is valued at cost.`;
+    }
+    return null;
+  })();
+
+  const recordOpening = async (saved: ProductView) => {
+    const unit = saved.units.find(
+      (row) =>
+        row.name.trim().toLowerCase() ===
+        openingUnit?.name.trim().toLowerCase(),
+    );
+    try {
+      if (!unit) throw new Error('Its unit could not be found.');
+      await api.post('/stock/opening', {
+        ...(openingLocationId && { locationId: openingLocationId }),
+        lines: [
+          {
+            productId: saved.id,
+            unitId: unit.id,
+            quantity: Number(opening.quantity),
+            unitCost: opening.unitCost,
+            ...(opening.expiryDate && { expiryDate: opening.expiryDate }),
+          },
+        ],
+      });
+    } catch (caught) {
+      throw new OpeningStockNotSaved(
+        caught instanceof Error ? caught.message : 'It could not be saved.',
+      );
+    }
+  };
+
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      // The product went in on an earlier press and its stock did not: only
+      // the stock is left to do.
+      if (savedProduct) {
+        await recordOpening(savedProduct);
+        return savedProduct;
+      }
+
       // Only rows that were added or changed are sent. Sending everything would
       // work — the server upserts — but it would also rewrite prices nobody
       // touched, and make an audit of what changed impossible to read.
@@ -249,23 +335,38 @@ export function ProductForm({
         }),
       };
 
-      return editing
-        ? api.patch<ProductView>(`/products/${product.id}`, body)
-        : api.post<ProductView>('/products', {
-            id: crypto.randomUUID(),
-            ...body,
-          });
+      if (editing) {
+        return api.patch<ProductView>(`/products/${product.id}`, body);
+      }
+      const saved = await api.post<ProductView>('/products', {
+        id: productId,
+        ...body,
+      });
+      if (wantsOpening) {
+        setSavedProduct(saved);
+        await recordOpening(saved);
+      }
+      return saved;
     },
     onSuccess: () => {
       afterWrite(queryClient);
       onClose();
     },
-    onError: (caught) =>
+    onError: (caught) => {
+      // The product is in; say so, rather than leave somebody adding it again.
+      if (caught instanceof OpeningStockNotSaved) {
+        afterWrite(queryClient);
+        setError(
+          `${name.trim()} is saved, but its opening stock is not: ${caught.message} Press Save opening stock to try again, or record it later under Stock on hand → Opening stock.`,
+        );
+        return;
+      }
       setError(
         caught instanceof ApiError
           ? caught.message
           : 'Could not save that product.',
-      ),
+      );
+    },
   });
 
   const submit = (event: FormEvent) => {
@@ -829,6 +930,20 @@ export function ProductForm({
           />
         )}
 
+        {offersOpening && openingUnit && (
+          <OpeningStockFields
+            units={units}
+            value={{
+              ...opening,
+              unitKey: openingUnit.key,
+              locationId: openingLocationId,
+            }}
+            onChange={setOpening}
+            locations={locations}
+            problem={openingProblem}
+          />
+        )}
+
         {editing && (
           <p className="mt-4 rounded-md bg-slate-50 p-3 text-xs text-slate-500">
             Anything not listed here is left exactly as it is. This form sends
@@ -852,7 +967,8 @@ export function ProductForm({
             onClick={onClose}
             disabled={save.isPending}
           >
-            Cancel
+            {/* Once the product is in, leaving is not cancelling it. */}
+            {savedProduct ? 'Close' : 'Cancel'}
           </Button>
           <Button
             type="submit"
@@ -860,14 +976,17 @@ export function ProductForm({
               save.isPending ||
               !name.trim() ||
               units.length === 0 ||
-              soldNames.length === 0
+              soldNames.length === 0 ||
+              openingProblem !== null
             }
           >
             {save.isPending
               ? 'Saving…'
-              : editing
-                ? 'Save changes'
-                : 'Add product'}
+              : savedProduct
+                ? 'Save opening stock'
+                : editing
+                  ? 'Save changes'
+                  : 'Add product'}
           </Button>
         </div>
       </form>

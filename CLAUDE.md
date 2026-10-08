@@ -987,6 +987,15 @@ shown as a percentage, a field `redactCost` removed is an **empty cell, never 0*
 SKUs are **text** so Excel cannot round them. Stock on hand carries counts, not value — value is
 the Stock report's download, where the server values lots from their totals.
 
+**Add product asks "Already on your shelves?"** (§5, 2026-10-08): an optional quantity, unit
+(biggest by default; decimals that come to whole pieces), cost of **one** of that unit, expiry and
+— with several places — where. **No server change**: the form `POST`s the product, then the same
+`POST /stock/opening` the Opening stock screen uses, so it is an opening balance — no bill, no
+vendor target. Only when adding, for a stocked product, to a role that sees cost. ⚠ **Two requests,
+so the form keeps the saved product**: if the stock half fails it says the product *is* saved,
+the button becomes *Save opening stock* and retries **only the stock** (the product id is minted
+once), and Cancel becomes Close — a retry that re-sent the product would add it twice.
+
 **Opening stock is an opening balance, never a delivery** (§5, 2026-10-05): *Stock on hand →
 Opening stock*, `GET`/`POST /stock/opening`. A delivery raises a bill and counts toward vendor
 targets, so day-one stock entered that way put a debt settled in June onto *We owe*. Each line is
