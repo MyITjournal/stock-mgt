@@ -31,6 +31,15 @@ export class GoodsReceiptLineDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
+      'Which option arrived — required for a product with options, refused for one without, and never a retired option (DECISIONS.md §24). On the line and the stock movement, not the lot.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
       'The unit the quantities are counted in — the carton, not the piece. Defaults to the base unit.',
   })
   @IsOptional()

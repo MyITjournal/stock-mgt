@@ -1371,8 +1371,8 @@ counter*.
 ## BE. Selling options (variants)
 
 **349. [gate] Add a product, Eva Soap, with no stock. Under Options press Add options**, type
-*Colour*, then options Classic, Gold and Moringa. The opening-stock box goes, with a line saying why.
-Save. The product page lists the three options.
+*Colour*, then options Classic, Gold and Moringa. The opening-stock box now asks *How many of each*
+(see 360); leave it empty. Save. The product page lists the three options.
 
 **350. Edit it. Add a price: For *Gold*, carton, a different amount.** Save. On the product page the
 prices table says *All options* against the product's prices and *Gold* against Gold's.
@@ -1407,3 +1407,30 @@ price at the till.
 
 **359. Retire Moringa** (Edit → Options → Retire), save. It is gone from the till search; the
 product page shows it struck through.
+
+## BF. Stock in by option
+
+**360. [gate] Add a product with options Chicken and Pepper Soup.** *Already on your shelves?* shows
+one unit, one cost, and a box per option. Fill Chicken only, with a cost; save. Stock on hand shows
+Chicken's stock alone. Stock on hand → Opening stock still lists the product, as *— Pepper Soup*.
+
+**361. Opening stock sheet: fill the Pepper Soup row and save.** It leaves the sheet; the product
+does not come back.
+
+**362. [gate] Receive delivery: open the product list.** Each option is its own entry (*Eva Soap —
+Gold*); a product without options appears once. Receive one carton of Gold and one of Classic. The
+delivery page names the option on each line.
+
+**363. [gate] Correct that delivery → *Wrong product or option?* on the Classic line.** The box lists
+the other options of Eva Soap as well as other products. Restore Moringa first if 359 retired it,
+choose it, keep the figures, Check: *Eva Soap — Classic: −… out of stock · Eva Soap — Moringa: +…
+into stock*, value unchanged. Save: the line reads *Moringa*, and stock value on Reports is the same
+as before.
+
+**364. Correct a delivery recorded before its product had options** (the product from 351), with a
+smaller count. It saves; the stock comes off the option the old stock was moved into.
+
+**365. Retire an option, then start a delivery.** It is not in the product list.
+
+**366. Stock on hand → *Correct cost* on an option's opening lot.** The dialog names the option
+(*… — Chicken*).

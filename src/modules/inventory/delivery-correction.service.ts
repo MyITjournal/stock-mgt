@@ -11,6 +11,7 @@ import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { shopMoney } from '../../common/money/shop-money';
 import { SupplierBillService } from '../payables/supplier-bill.service';
+import { checkVariant, optionLabel } from '../catalog/variants';
 import { StockService, type StockWriter } from './stock.service';
 import { ReceivingService } from './receiving.service';
 import { CorrectDeliveryDto } from './dto/delivery-correction.dto';
@@ -93,6 +94,7 @@ export class DeliveryCorrectionService {
               select: {
                 id: true,
                 productId: true,
+                variantId: true,
                 batchId: true,
                 unitFactor: true,
                 quantityReceived: true,
@@ -104,7 +106,12 @@ export class DeliveryCorrectionService {
         });
         if (!receipt) throw new NotFoundException('Delivery not found');
 
-        const plan = planCorrection(receipt.lines, input.lines);
+        const recorded = await this.withCurrentOptions(
+          tx,
+          receipt.locationId,
+          receipt.lines,
+        );
+        const plan = planCorrection(recorded, input.lines);
         if (plan.problems.length > 0) {
           throw new BadRequestException(plan.problems.join(' '));
         }
@@ -132,7 +139,7 @@ export class DeliveryCorrectionService {
         }
 
         // For the preview: what came out and went in when a line was the
-        // wrong product.
+        // wrong product or option.
         const swapped = new Map<string, { removed: string; added: string }>();
 
         for (const change of plan.changes) {
@@ -144,11 +151,17 @@ export class DeliveryCorrectionService {
             continue;
           }
 
-          // Stock: the difference, on the line's own lot.
-          if (change.stockDelta < 0) {
+          if (change.newOption) {
+            swapped.set(
+              change.line.id,
+              await this.moveToRightOption(tx, writer, receipt, change, input),
+            );
+          } else if (change.stockDelta < 0) {
+            // Stock: the difference, on the line's own lot.
             await this.stock.recordOutbound(
               {
                 productId: change.line.productId,
+                variantId: change.variantId,
                 locationId: receipt.locationId,
                 batchId: change.line.batchId,
                 quantity: -change.stockDelta,
@@ -167,6 +180,7 @@ export class DeliveryCorrectionService {
             await this.stock.recordInbound(
               {
                 productId: change.line.productId,
+                variantId: change.variantId,
                 locationId: receipt.locationId,
                 batchId: change.line.batchId,
                 quantity: change.stockDelta,
@@ -202,6 +216,7 @@ export class DeliveryCorrectionService {
           await tx.goodsReceiptLine.update({
             where: { id: change.line.id },
             data: {
+              variantId: change.variantId,
               quantityReceived: change.received,
               quantityPaidFor: change.paidFor,
               totalCost: change.totalCost,
@@ -241,6 +256,10 @@ export class DeliveryCorrectionService {
                 ...(change.newProductId && {
                   productIdBefore: change.line.productId,
                   productIdAfter: change.newProductId,
+                }),
+                ...(change.variantId !== change.line.variantId && {
+                  variantIdBefore: change.line.variantId,
+                  variantIdAfter: change.variantId,
                 }),
               })),
             },
@@ -302,11 +321,15 @@ export class DeliveryCorrectionService {
           name: true,
           trackStock: true,
           units: { select: { id: true, name: true, factor: true } },
+          variants: { select: { id: true, name: true, isActive: true } },
         },
       }),
       tx.product.findFirst({
         where: { id: change.line.productId },
-        select: { name: true },
+        select: {
+          name: true,
+          variants: { select: { id: true, name: true } },
+        },
       }),
     ]);
     if (!product) {
@@ -317,12 +340,24 @@ export class DeliveryCorrectionService {
         `${product.name} does not keep stock, so it cannot arrive on a delivery.`,
       );
     }
+    // New stock for the right product, so never a retired option — checked
+    // here because a correction moves as an adjustment, which the engine lets
+    // a retired option make.
+    const right = checkVariant(
+      product.name,
+      product.variants,
+      change.variantId,
+      {
+        allowRetired: false,
+      },
+    );
 
     // Out: everything this line brought in of the wrong product, from its lot.
     if (change.line.quantityReceived > 0) {
       await this.stock.recordOutbound(
         {
           productId: change.line.productId,
+          variantId: change.line.variantId,
           locationId: receipt.locationId,
           batchId: change.line.batchId,
           quantity: change.line.quantityReceived,
@@ -361,6 +396,7 @@ export class DeliveryCorrectionService {
     await this.stock.recordInbound(
       {
         productId: product.id,
+        variantId: change.variantId,
         locationId: receipt.locationId,
         batchId: lot.id,
         quantity: change.received,
@@ -379,6 +415,7 @@ export class DeliveryCorrectionService {
       where: { id: change.line.id },
       data: {
         productId: product.id,
+        variantId: change.variantId,
         batchId: lot.id,
         quantityReceived: change.received,
         quantityPaidFor: change.paidFor,
@@ -402,10 +439,128 @@ export class DeliveryCorrectionService {
       await this.refreshCostPrice(tx, change.line.productId, latest.id);
     }
 
+    const wrongOption = wrong?.variants.find(
+      (variant) => variant.id === change.line.variantId,
+    );
     return {
-      removed: wrong?.name ?? 'the recorded product',
-      added: product.name,
+      removed: wrong
+        ? optionLabel(wrong.name, wrongOption?.name)
+        : 'the recorded product',
+      added: optionLabel(product.name, right?.name),
     };
+  }
+
+  /**
+   * A line entered as the wrong option of the right product (2026-10-08):
+   * Gold's stock comes back out of the line's lot and Moringa's goes into
+   * **the same lot**. The option is on the movement, not the lot (§24), so the
+   * lot keeps its exact total and nothing is re-costed — the move that adding
+   * a product's first options makes. The caller then writes the lot's and the
+   * line's true figures, as for any line.
+   *
+   * Gold already sold from the lot is a shortfall like any other: 409, and an
+   * owner or manager may record it with a reason.
+   */
+  private async moveToRightOption(
+    tx: Pick<TenantPrisma, 'product'>,
+    writer: StockWriter,
+    receipt: { id: string; locationId: string; receivedAt: Date },
+    change: LineChange,
+    input: CorrectDeliveryDto,
+  ): Promise<{ removed: string; added: string }> {
+    const product = await tx.product.findFirst({
+      where: { id: change.line.productId },
+      select: {
+        name: true,
+        variants: { select: { id: true, name: true, isActive: true } },
+      },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+    // New stock for the option, so never a retired one (see above).
+    const right = checkVariant(
+      product.name,
+      product.variants,
+      change.variantId,
+      {
+        allowRetired: false,
+      },
+    );
+    const wrong = product.variants.find(
+      (variant) => variant.id === change.line.variantId,
+    );
+    const movement = {
+      productId: change.line.productId,
+      locationId: receipt.locationId,
+      batchId: change.line.batchId,
+      type: StockMovementType.adjustment,
+      reason: StockAdjustmentReason.receipt_correction,
+      note: input.reason,
+      occurredAt: receipt.receivedAt,
+      referenceType: 'goods_receipt',
+      referenceId: receipt.id,
+    };
+
+    if (change.line.quantityReceived > 0) {
+      await this.stock.recordOutbound(
+        {
+          ...movement,
+          variantId: change.line.variantId,
+          quantity: change.line.quantityReceived,
+          force: input.force,
+          forcedReason: input.forcedReason,
+        },
+        writer,
+      );
+    }
+    await this.stock.recordInbound(
+      { ...movement, variantId: change.variantId, quantity: change.received },
+      writer,
+    );
+
+    return {
+      removed: optionLabel(product.name, wrong?.name),
+      added: optionLabel(product.name, right?.name),
+    };
+  }
+
+  /**
+   * The lines with the option their stock is in now. A line recorded before
+   * its product had options names none, but the stock it brought was moved
+   * into one when they were added — a `transfer_in` naming that option on
+   * the line's own lot (`StockService.moveIntoVariant`). That option is what
+   * the line is corrected from: naming it is no change, naming another is a
+   * swap, and a count difference lands where the stock actually is.
+   */
+  private async withCurrentOptions<
+    L extends { batchId: string; variantId: string | null },
+  >(
+    tx: Pick<TenantPrisma, 'stockMovement'>,
+    locationId: string,
+    lines: readonly L[],
+  ): Promise<L[]> {
+    const legacy = lines.filter((line) => line.variantId === null);
+    if (legacy.length === 0) return [...lines];
+    const moved = await tx.stockMovement.findMany({
+      where: {
+        batchId: { in: legacy.map((line) => line.batchId) },
+        locationId,
+        type: StockMovementType.transfer_in,
+        variantId: { not: null },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { batchId: true, variantId: true },
+    });
+    const into = new Map<string, string>();
+    for (const row of moved) {
+      if (row.variantId && !into.has(row.batchId)) {
+        into.set(row.batchId, row.variantId);
+      }
+    }
+    return lines.map((line) =>
+      line.variantId === null && into.has(line.batchId)
+        ? { ...line, variantId: into.get(line.batchId)! }
+        : line,
+    );
   }
 
   /**

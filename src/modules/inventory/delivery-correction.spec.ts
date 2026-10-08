@@ -8,6 +8,7 @@ import {
 const recorded: RecordedLine = {
   id: 'line-1',
   productId: 'lotion',
+  variantId: null,
   batchId: 'batch-1',
   unitFactor: 14,
   quantityReceived: 98,
@@ -151,6 +152,112 @@ describe('planCorrection', () => {
     const twice = { lineId: 'line-1', received: 91, paidFor: 91, totalCost: 1 };
     expect(planCorrection([recorded], [twice, twice]).problems).toContain(
       'A line was given twice.',
+    );
+  });
+});
+
+describe('planCorrection — the wrong option (2026-10-08)', () => {
+  /** Eva Soap entered as Gold; the line's figures as recorded. */
+  const gold: RecordedLine = {
+    ...recorded,
+    productId: 'eva',
+    variantId: 'gold',
+  };
+  const asRecorded = {
+    lineId: 'line-1',
+    received: 98,
+    paidFor: 98,
+    totalCost: 9_800_000,
+  };
+
+  it('swaps the option, keeping the figures and the bill', () => {
+    const plan = planCorrection(
+      [gold],
+      [{ ...asRecorded, variantId: 'moringa' }],
+    );
+    expect(plan.problems).toEqual([]);
+    expect(plan.changes).toEqual([
+      expect.objectContaining({
+        newProductId: null,
+        newOption: true,
+        variantId: 'moringa',
+        stockDelta: 98,
+      }),
+    ]);
+    expect(plan.valueDelta).toBe(0);
+  });
+
+  it('swaps the option and corrects the count in one go', () => {
+    const plan = planCorrection(
+      [gold],
+      [
+        {
+          lineId: 'line-1',
+          variantId: 'moringa',
+          received: 91,
+          paidFor: 84,
+          totalCost: 8_400_000,
+        },
+      ],
+    );
+    expect(plan.changes[0]).toEqual(
+      expect.objectContaining({
+        newOption: true,
+        received: 91,
+        stockDelta: 91,
+      }),
+    );
+    expect(plan.valueDelta).toBe(-1_400_000);
+  });
+
+  it('treats naming the recorded option, or none, as no change of option', () => {
+    for (const variantId of ['gold', undefined]) {
+      const plan = planCorrection([gold], [{ ...asRecorded, variantId }]);
+      expect(plan.problems[0]).toMatch(/Nothing changed/);
+    }
+  });
+
+  it('keeps the recorded option on a count-only correction', () => {
+    const plan = planCorrection(
+      [gold],
+      [{ ...asRecorded, received: 91, paidFor: 91 }],
+    );
+    expect(plan.changes[0]).toEqual(
+      expect.objectContaining({
+        newOption: false,
+        variantId: 'gold',
+        stockDelta: -7,
+      }),
+    );
+  });
+
+  it('refuses the right option with nothing of it arriving', () => {
+    const plan = planCorrection(
+      [gold],
+      [
+        {
+          lineId: 'line-1',
+          variantId: 'moringa',
+          received: 0,
+          paidFor: 0,
+          totalCost: 0,
+        },
+      ],
+    );
+    expect(plan.problems[0]).toContain('Choose the option that did arrive');
+  });
+
+  it('takes the right product’s option with a wrong product', () => {
+    const plan = planCorrection(
+      [gold],
+      [{ ...asRecorded, productId: 'indomie', variantId: 'chicken' }],
+    );
+    expect(plan.changes[0]).toEqual(
+      expect.objectContaining({
+        newProductId: 'indomie',
+        newOption: false,
+        variantId: 'chicken',
+      }),
     );
   });
 });

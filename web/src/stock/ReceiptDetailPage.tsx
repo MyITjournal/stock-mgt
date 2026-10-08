@@ -8,6 +8,7 @@ import { api, ApiError } from '../api/client';
 import { useIsManager, useSeesCost } from '../auth/useAuth';
 import { Button } from '../components/Button';
 import { CorrectDeliveryDialog } from './CorrectDeliveryDialog';
+import { optionLabel } from '../lib/options';
 import type { components } from '../api/schema';
 
 type GoodsReceiptView = components['schemas']['GoodsReceiptView'];
@@ -86,7 +87,7 @@ export function ReceiptDetailPage() {
       cell: (line) => (
         <span>
           <span className="block font-medium text-slate-900">
-            {line.product.name}
+            {optionLabel(line.product.name, line.variant?.name)}
           </span>
           <span className="block text-xs text-slate-500">
             {line.product.sku}
@@ -240,10 +241,12 @@ export function ReceiptDetailPage() {
                 </div>
                 <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
                   {correction.lines.map((row) => {
-                    const name =
-                      receipt.lines.find(
-                        (line) => line.id === row.receiptLineId,
-                      )?.product.name ?? 'A line';
+                    const line = receipt.lines.find(
+                      (candidate) => candidate.id === row.receiptLineId,
+                    );
+                    const name = line
+                      ? optionLabel(line.product.name, line.variant?.name)
+                      : 'A line';
                     return (
                       <li key={row.receiptLineId}>
                         {name}: received {row.receivedBefore} →{' '}

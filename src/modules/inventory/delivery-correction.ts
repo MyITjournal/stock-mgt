@@ -29,6 +29,17 @@
  * report and vendor targets count what really came. The value only moves the
  * bill if it changed too.
  *
+ * ## The wrong option (2026-10-08)
+ *
+ * A line entered as Eva Soap **Gold** when Moringa came. The option is on the
+ * movement, never the lot (§24), so the lot stays: Gold's stock comes out of
+ * it and Moringa's goes in, its exact total untouched — the move that adding
+ * a product's first options makes. The line names the right option.
+ *
+ * A line recorded before its product had options names none, though its stock
+ * was moved into one since. The service passes that option as the recorded
+ * one, so naming it again is no change, and naming another is a swap.
+ *
  * ## Nothing arrived
  *
  * A line may be corrected to zero — an item that was on the paperwork and
@@ -39,6 +50,8 @@
 export interface RecordedLine {
   id: string;
   productId: string;
+  /** The option it is recorded as; null for a product without options. */
+  variantId: string | null;
   batchId: string;
   /** Base units per unit the line was entered in. */
   unitFactor: number;
@@ -51,6 +64,11 @@ export interface TrueFigures {
   lineId: string;
   /** The product that really arrived, when the line named the wrong one. */
   productId?: string;
+  /**
+   * The option that really arrived. Omitted when the option was right; for a
+   * wrong product, the right product's option (if it has options).
+   */
+  variantId?: string | null;
   /** In base units. */
   received: number;
   /** In base units. */
@@ -63,13 +81,21 @@ export interface LineChange {
   line: RecordedLine;
   /** The right product, when the line named the wrong one; else null. */
   newProductId: string | null;
+  /**
+   * True when the product was right and the option was not. The recorded
+   * option's whole `line.quantityReceived` comes out of the lot and
+   * `received` of the right one goes in.
+   */
+  newOption: boolean;
+  /** The option after the correction: the right one, or the recorded one. */
+  variantId: string | null;
   received: number;
   paidFor: number;
   totalCost: number;
   /**
    * Positive: more came than was entered. Negative: fewer. For a wrong
-   * product, what goes in of the right one — the recorded product's whole
-   * `line.quantityReceived` comes out.
+   * product or option, what goes in of the right one — the recorded one's
+   * whole `line.quantityReceived` comes out.
    */
   stockDelta: number;
 }
@@ -112,9 +138,15 @@ export function planCorrection(
       truth.productId && truth.productId !== line.productId
         ? truth.productId
         : null;
-    if (newProductId && truth.received === 0) {
+    const newOption =
+      !newProductId &&
+      truth.variantId !== undefined &&
+      (truth.variantId ?? null) !== line.variantId;
+    if ((newProductId || newOption) && truth.received === 0) {
       problems.push(
-        'Choose the product that did arrive, with how many came of it.',
+        newOption
+          ? 'Choose the option that did arrive, with how many came of it.'
+          : 'Choose the product that did arrive, with how many came of it.',
       );
       continue;
     }
@@ -126,6 +158,7 @@ export function planCorrection(
     }
     const unchanged =
       !newProductId &&
+      !newOption &&
       truth.received === line.quantityReceived &&
       truth.paidFor === line.quantityPaidFor &&
       truth.totalCost === line.totalCost;
@@ -134,12 +167,16 @@ export function planCorrection(
     changes.push({
       line,
       newProductId,
+      newOption,
+      variantId:
+        newProductId || newOption ? (truth.variantId ?? null) : line.variantId,
       received: truth.received,
       paidFor: truth.paidFor,
       totalCost: truth.totalCost,
-      stockDelta: newProductId
-        ? truth.received
-        : truth.received - line.quantityReceived,
+      stockDelta:
+        newProductId || newOption
+          ? truth.received
+          : truth.received - line.quantityReceived,
     });
   }
 

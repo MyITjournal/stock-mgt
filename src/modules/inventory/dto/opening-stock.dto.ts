@@ -33,6 +33,15 @@ export class OpeningStockLineDto {
   @IsUUID()
   productId!: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Which option, for a product with options — required then, and never a retired one. Each option is entered once per location (DECISIONS.md §24).',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
   @ApiProperty({
     format: 'uuid',
     description: 'Which of the product’s units the quantity is counted in.',

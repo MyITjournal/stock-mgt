@@ -4004,6 +4004,169 @@ async function main() {
   const rebuiltWithOptions = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
   eq('with options in the grain, cache and ledger still agree', rebuiltWithOptions.corrected, 0);
 
+  step(64, 'Stock in by option: a delivery, a wrong option put right, and opening stock per option');
+  // The option is on the movement, never the lot (§24): a delivery names it,
+  // a wrong option moves to the right one on the same lot at the same cost,
+  // and opening stock is entered — and asked "already stocked?" — per option.
+  const unnamedDelivery = (
+    await api('POST', '/goods-receipts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        locationId: main.id,
+        lines: [{ productId: noodles.id, unitId: noodleCarton.id, quantityReceived: 1, totalCost: 900_000 }],
+      },
+      expect: 400,
+    })
+  ).data;
+  check('a delivery that does not say which flavour is refused', /Say which one/.test(unnamedDelivery.message), unnamedDelivery.message);
+
+  const noodleDelivery = (
+    await api('POST', '/goods-receipts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        locationId: main.id,
+        invoiceNumber: `FLAVOURS-${shopSuffix}`,
+        lines: [
+          { productId: noodles.id, variantId: chickenId, unitId: noodleCarton.id, quantityReceived: 1, totalCost: 900_000 },
+          // Entered as Pepper Soup; it was Chicken.
+          { productId: noodles.id, variantId: pepperId, unitId: noodleCarton.id, quantityReceived: 1, totalCost: 900_000 },
+        ],
+      },
+    })
+  ).data;
+  eq(
+    'each line names its flavour',
+    JSON.stringify(noodleDelivery.lines.map((line) => line.variant?.name).sort()),
+    JSON.stringify(['Chicken', 'Pepper Soup']),
+  );
+  eq('two cartons more on the shelf', await levelAt(t, noodles.id, main.id), 160);
+
+  const pepperLine = noodleDelivery.lines.find((line) => line.variantId === pepperId);
+  const optionFix = {
+    reason: 'Entered as Pepper Soup; Chicken came.',
+    lines: [{ lineId: pepperLine.id, variantId: chickenId, received: 40, paidFor: 40, totalCost: 900_000 }],
+  };
+  const optionPreview = (
+    await api('POST', `/goods-receipts/${noodleDelivery.id}/corrections/preview`, { token: t, body: optionFix })
+  ).data;
+  eq(
+    'the preview names the option out and the option in',
+    `${optionPreview.lines[0]?.removedProductName} → ${optionPreview.lines[0]?.addedProductName}`,
+    `${noodles.name} — Pepper Soup → ${noodles.name} — Chicken`,
+  );
+  eq('and the delivery’s value does not move', optionPreview.valueDelta, 0);
+
+  const valueBeforeSwap = await valueOf();
+  const swapped = (
+    await api('POST', `/goods-receipts/${noodleDelivery.id}/corrections`, { token: t, key: randomUUID(), body: optionFix })
+  ).data;
+  const swappedLine = swapped.lines.find((line) => line.id === pepperLine.id);
+  eq('the line now names Chicken', swappedLine.variant?.name, 'Chicken');
+  eq('on the same lot', swappedLine.batchId, pepperLine.batchId);
+  eq('the shelf holds the same', await levelAt(t, noodles.id, main.id), 160);
+  eq('worth exactly what it was', await valueOf(), valueBeforeSwap);
+  await new Promise((r) => setTimeout(r, 1500)); // the feed's one-second window
+  const onThatLot = (
+    await api('GET', `/stock/movements?productId=${noodles.id}&limit=1000`, { token: t })
+  ).data.movements.filter((m) => m.batchId === pepperLine.batchId);
+  const byOption = (variantId) =>
+    onThatLot.filter((m) => m.variantId === variantId).reduce((sum, m) => sum + m.quantity, 0);
+  eq('Pepper Soup out of that lot, Chicken into it', `${byOption(pepperId)} / ${byOption(chickenId)}`, '0 / 40');
+
+  // A delivery recorded before the product had options names none; its
+  // stock went into the option chosen then. A count correction lands there.
+  const towels = (
+    await api('POST', '/products', {
+      token: t,
+      key: randomUUID(),
+      body: { id: randomUUID(), name: `Towel ${shopSuffix}`, basePrice: 50_000, units: [{ name: 'piece', factor: 1 }] },
+    })
+  ).data;
+  const towelDelivery = (
+    await api('POST', '/goods-receipts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        locationId: main.id,
+        lines: [{ productId: towels.id, quantityReceived: 10, totalCost: 300_000 }],
+      },
+    })
+  ).data;
+  const blueId = randomUUID();
+  await api('PATCH', `/products/${towels.id}`, {
+    token: t,
+    body: {
+      variantAttributes: ['Colour'],
+      variants: [{ id: blueId, values: ['Blue'] }, { id: randomUUID(), values: ['White'] }],
+      existingStockVariantId: blueId,
+    },
+  });
+  await api('POST', `/goods-receipts/${towelDelivery.id}/corrections`, {
+    token: t,
+    key: randomUUID(),
+    body: {
+      reason: 'Only 8 came.',
+      lines: [{ lineId: towelDelivery.lines[0].id, received: 8, paidFor: 8, totalCost: 240_000 }],
+    },
+  });
+  await new Promise((r) => setTimeout(r, 1500)); // the feed's one-second window
+  const towelMoves = (
+    await api('GET', `/stock/movements?productId=${towels.id}&limit=1000`, { token: t })
+  ).data.movements;
+  eq(
+    'a line from before the options is corrected where its stock went — Blue',
+    JSON.stringify(towelMoves.filter((m) => m.reason === 'receipt_correction').map((m) => [m.variantId, m.quantity])),
+    JSON.stringify([[blueId, -2]]),
+  );
+  eq('8 towels on the shelf', await levelAt(t, towels.id, main.id), 8);
+
+  const [salted, chilli] = ['Salted / 50g', 'Chilli / 50g'].map((name) => crisps.variants.find((v) => v.name === name));
+  const crispRows = async () =>
+    (await api('GET', `/stock/opening?locationId=${main.id}`, { token: t })).data.filter((row) => row.id === crisps.id);
+  eq(
+    'the opening sheet has a row per flavour',
+    JSON.stringify((await crispRows()).map((row) => row.variantName).sort()),
+    JSON.stringify(['Chilli / 50g', 'Salted / 50g']),
+  );
+  await api('POST', '/stock/opening', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      locationId: main.id,
+      lines: [{ productId: crisps.id, variantId: salted.id, unitId: crisps.units[0].id, quantity: 10, unitCost: 5_000 }],
+    },
+  });
+  eq(
+    'once Salted has stock, only Chilli is left on the sheet',
+    JSON.stringify((await crispRows()).map((row) => row.variantId)),
+    JSON.stringify([chilli.id]),
+  );
+  eq('ten packs of Salted on the shelf', await levelAt(t, crisps.id, main.id), 10);
+
+  await api('PATCH', `/products/${crisps.id}`, { token: t, body: { variants: [{ id: chilli.id, values: chilli.values, isActive: false }] } });
+  const retiredIn = (
+    await api('POST', '/goods-receipts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        supplierId: supplier.id,
+        locationId: main.id,
+        lines: [{ productId: crisps.id, variantId: chilli.id, quantityReceived: 5, totalCost: 25_000 }],
+      },
+      expect: 400,
+    })
+  ).data;
+  check('a retired flavour takes no delivery', /retired/.test(retiredIn.message), retiredIn.message);
+  eq('and leaves the opening sheet', (await crispRows()).length, 0);
+
+  const rebuiltAfterStockIn = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
+  eq('after stock in by option, cache and ledger still agree', rebuiltAfterStockIn.corrected, 0);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',
