@@ -3615,6 +3615,54 @@ async function main() {
   eq('a walk-in sale of the same items minutes later is warned too', walkInWarned.error, 'POSSIBLE_DUPLICATE');
   check('and says nothing about a customer', !/same customer/.test(walkInWarned.message), walkInWarned.message);
 
+  step(60, 'Adding a product with its opening stock — the form’s two requests');
+  // What Add product sends when "Already on your shelves?" is filled in: the
+  // product, then its opening stock in the biggest unit, found by name.
+  const shelfProductId = randomUUID();
+  const shelfProduct = (
+    await api('POST', '/products', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        id: shelfProductId,
+        name: `Shelf Lotion ${shopSuffix}`,
+        units: [
+          { name: 'piece', factor: 1 },
+          { name: 'carton', factor: 12 },
+        ],
+      },
+    })
+  ).data;
+  const shelfCarton = shelfProduct.units.find((u) => u.name === 'carton');
+  const shelfOpened = (
+    await api('POST', '/stock/opening', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        locationId: main.id,
+        lines: [{ productId: shelfProduct.id, unitId: shelfCarton.id, quantity: 6.25, unitCost: 4_832_400 }],
+      },
+    })
+  ).data;
+  eq('6.25 cartons go in as one opening lot', shelfOpened.lines, 1);
+  eq('valued at cost per carton × cartons, rounded once', shelfOpened.totalValue, Math.round(6.25 * 4_832_400));
+  eq('and are on the shelf in pieces', await levelAt(t, shelfProduct.id, main.id), 75);
+  const shelfBill = (await api('GET', '/payables', { token: t })).data;
+  check(
+    'with no bill raised — it is an opening balance, not a delivery',
+    !JSON.stringify(shelfBill).includes(shelfProduct.id),
+  );
+  await api('POST', '/stock/opening', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      locationId: main.id,
+      lines: [{ productId: shelfProduct.id, unitId: shelfCarton.id, quantity: 1, unitCost: 4_832_400 }],
+    },
+    expect: [400, 409],
+  });
+  check('and a second press cannot enter it twice', true);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

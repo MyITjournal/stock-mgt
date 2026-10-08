@@ -1323,3 +1323,19 @@ back, press the payment button, then **Record anyway**: the sale is recorded as 
 different sale.
 
 **337. [gate] Sales → History** has a **Recorded by** column, and the date carries the time.
+
+---
+
+## BC. Opening stock on Add product
+
+**338. [gate] Products → Add product: a lotion counted in pieces, with a carton of 12.** Below the
+barcodes, *Already on your shelves? (optional)* offers *How many* with **carton** chosen. Type
+6.25 and a cost of 48,324.00 — the box reads *Cost of one carton … per carton*. Add product.
+Stock on hand shows 75 pieces in an opening lot; Money → Bills shows nothing new.
+
+**339. [gate] Type 6.1 cartons.** It says it is not a whole number of pieces and Add product stays
+greyed. Switch the unit to piece: the cost box empties.
+
+**340. [gate] Leave the section empty.** The product is added with no stock, as before.
+
+**341. Editing a product** shows no such section.

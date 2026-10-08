@@ -966,6 +966,31 @@ the 78-piece delivery, and would have shown as a loss.
 - **On screen, not a spreadsheet**, by the owner's choice: it works on a phone, and tabbing down a
   list is about as quick as Excel. A spreadsheet version would reuse the import pattern.
 
+### Opening stock when adding a product (2026-10-08)
+
+A product added after day one used to need two visits: Add product, then Stock on hand → Opening
+stock to say how many were already there. Add product now ends with an optional **"Already on your
+shelves?"** — how many, in which unit (the biggest by default, since that is how a shelf is
+counted, and "6.25" cartons is accepted when it comes to whole pieces), the cost of **one** of
+that unit, an expiry, and the place when there are several.
+
+**No server change, on purpose.** It sends the product, then the same `POST /stock/opening` the
+Opening stock screen sends, so everything above holds without restating it: an opening balance at
+cost, no bill, nothing toward a vendor target, refused for a product that already has stock at
+that place. A single combined request was considered and declined — it would make the catalog
+call into inventory inside one transaction, an edge the module graph does not have, to save one
+round trip on a screen used a few times a week.
+
+**The price of two requests is a half-done save, and the form owns it.** If the product goes in
+and the stock does not, the form says so in those words, the button becomes **Save opening stock**
+and retries only the stock — the product's id is minted once and the saved product kept — and
+Cancel becomes Close, because the product exists. A form that simply re-sent everything would add
+the product a second time. Changing the unit clears the cost, as on the Opening stock screen: a
+carton's cost kept against a piece values the lot twelve times over.
+
+Shown only when adding (an edit has Opening stock and Correct cost for that), for a product that
+tracks stock, to a role that sees cost — which is everyone who can add a product today.
+
 ### Stocktake: counting is not adjusting
 
 A physical count is recorded first and **posted** second, and the two are
