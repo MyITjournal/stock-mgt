@@ -35,6 +35,16 @@ export interface CartLine {
   saleLineId: string;
   productId: string;
   productName: string;
+  /**
+   * The option — Eva soap in Gold — on a product that has them; null on one
+   * that does not. Picked when the line is added, never changed on it: Gold
+   * and Classic are two things on the shelf, so a different option is a
+   * different line. Absent on a cart saved before options existed, which
+   * means none.
+   */
+  variantId?: string | null;
+  /** "Gold" — shown with the product's name. */
+  variantName?: string | null;
   /** "400g" — shown beside the name, never edited here. */
   size: string | null;
   sku: string;
@@ -80,8 +90,8 @@ export function isOverridden(line: CartLine): boolean {
  *
  * Merging matters more than it looks: scanning a carton four times is how a
  * till is actually used, and four separate lines of one each is a receipt
- * nobody wants to read. Lines merge only when the product, the unit **and** the
- * price all match — a line whose price was overridden is a different agreement
+ * nobody wants to read. Lines merge only when the product, the option, the unit
+ * **and** the price all match — a line whose price was overridden is a different agreement
  * and stays on its own.
  */
 export function addToCart(
@@ -92,6 +102,7 @@ export function addToCart(
   const match = lines.findIndex(
     (line) =>
       line.productId === incoming.productId &&
+      (line.variantId ?? null) === (incoming.variantId ?? null) &&
       line.unitId === incoming.unitId &&
       line.unitPrice === incoming.unitPrice,
   );
@@ -153,6 +164,7 @@ export function toSaleLines(lines: readonly CartLine[]) {
   return lines.map((line) => ({
     id: line.saleLineId,
     productId: line.productId,
+    ...(line.variantId && { variantId: line.variantId }),
     unitId: line.unitId,
     quantity: line.quantity,
     unitPrice: line.unitPrice,

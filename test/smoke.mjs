@@ -3884,6 +3884,123 @@ async function main() {
     expect: 409,
   });
   check('a second "chicken" is refused, case aside', true);
+  step(63, 'Selling an option: its price, the till search, its barcode, the receipt and a return');
+  // Each option is its own thing on the shelf (owner, 2026-10-08: "one variant
+  // is also a product") but shares the product's price unless it has its own.
+  const productCartonPrice = 1_000_000;
+  const pepperCartonPrice = 1_150_000;
+  const priced = (
+    await api('PATCH', `/products/${noodles.id}`, {
+      token: t,
+      body: {
+        prices: [
+          { unit: 'carton', price: productCartonPrice },
+          { unit: 'carton', variantId: pepperId, price: pepperCartonPrice },
+        ],
+      },
+    })
+  ).data;
+  eq(
+    'Pepper Soup has a carton price of its own; Chicken has none',
+    JSON.stringify(
+      priced.prices
+        .filter((p) => p.unitId === noodleCarton.id)
+        .map((p) => [p.variantId, p.price])
+        .sort(),
+    ),
+    JSON.stringify([[pepperId, pepperCartonPrice], [null, productCartonPrice]].sort()),
+  );
+
+  const noodleRows = (
+    await api('GET', `/products/till-search?q=${encodeURIComponent(`noodles ${shopSuffix}`)}`, { token: t })
+  ).data;
+  eq(
+    'the till lists each flavour as its own row',
+    JSON.stringify(noodleRows.map((row) => row.variant?.name).sort()),
+    JSON.stringify(['Chicken', 'Pepper Soup']),
+  );
+  const cartonIn = (row) => row?.units.find((u) => u.id === noodleCarton.id)?.price;
+  eq(
+    'each priced as itself — Chicken at the product’s carton price',
+    cartonIn(noodleRows.find((row) => row.variant?.id === chickenId)),
+    productCartonPrice,
+  );
+  const pepperOnly = (
+    await api('GET', `/products/till-search?q=${encodeURIComponent(`noodles ${shopSuffix} pepper`)}`, { token: t })
+  ).data;
+  eq(
+    '"noodles … pepper" finds Pepper Soup alone, at its own price',
+    JSON.stringify(pepperOnly.map((row) => [row.variant?.id, cartonIn(row)])),
+    JSON.stringify([[pepperId, pepperCartonPrice]]),
+  );
+
+  const chickenCode = (
+    await api('POST', `/products/${noodles.id}/barcodes`, {
+      token: t,
+      key: randomUUID(),
+      body: { id: randomUUID(), unitId: noodleCarton.id, variantId: chickenId },
+    })
+  ).data;
+  const everyCode = (
+    await api('POST', `/products/${noodles.id}/barcodes`, {
+      token: t,
+      key: randomUUID(),
+      body: { id: randomUUID(), unitId: noodleCarton.id },
+    })
+  ).data;
+  const chickenScan = (await api('GET', `/scan/${chickenCode.code}`, { token: t })).data;
+  eq('a code on Chicken scans as Chicken, nothing to ask', [chickenScan.variant?.id, chickenScan.options.length].join(), [chickenId, 0].join());
+  const everyScan = (await api('GET', `/scan/${everyCode.code}`, { token: t })).data;
+  eq(
+    'a code on every option asks which, each already priced',
+    JSON.stringify(everyScan.options.map((o) => [o.name, o.price]).sort()),
+    JSON.stringify([['Chicken', productCartonPrice], ['Pepper Soup', pepperCartonPrice]]),
+  );
+  eq('and names none itself', everyScan.variant, null);
+
+  const chickenSale = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        locationId: main.id,
+        lines: [{ productId: noodles.id, variantId: chickenId, unitId: noodleCarton.id, quantity: 1 }],
+      },
+    })
+  ).data;
+  eq('the sale line is Chicken', chickenSale.lines[0].variant?.name, 'Chicken');
+  eq('at the product’s carton price', chickenSale.lines[0].unitPrice, productCartonPrice);
+  eq('one carton left the shelf', await levelAt(t, noodles.id, main.id), 40);
+  const chickenReceipt = (await api('GET', `/sales/${chickenSale.id}/receipt`, { token: t })).data;
+  check(
+    'the receipt names the flavour',
+    chickenReceipt.lines[0].description.endsWith('— Chicken'),
+    chickenReceipt.lines[0].description,
+  );
+
+  await api('POST', `/sales/${chickenSale.id}/returns`, {
+    token: t,
+    key: randomUUID(),
+    body: { id: randomUUID(), lines: [{ saleLineId: chickenSale.lines[0].id, quantity: 1 }] },
+  });
+  eq('taken back, it is on the shelf again', await levelAt(t, noodles.id, main.id), 80);
+  await new Promise((r) => setTimeout(r, 1500)); // the feed's one-second window
+  const chickenBack = (
+    await api('GET', `/stock/movements?productId=${noodles.id}&limit=1000`, { token: t })
+  ).data.movements.filter((m) => m.type === 'return_in');
+  eq('as Chicken', JSON.stringify(chickenBack.map((m) => [m.variantId, m.quantity])), JSON.stringify([[chickenId, 40]]));
+
+  const unpriced = (
+    await api('PATCH', `/products/${noodles.id}`, {
+      token: t,
+      body: { prices: [{ unit: 'carton', variantId: pepperId, price: null }] },
+    })
+  ).data;
+  check(
+    'Pepper Soup’s own price removed, it sells at the product’s again',
+    !unpriced.prices.some((p) => p.variantId === pepperId),
+  );
+
   const rebuiltWithOptions = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
   eq('with options in the grain, cache and ledger still agree', rebuiltWithOptions.corrected, 0);
 

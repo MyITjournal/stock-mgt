@@ -725,6 +725,53 @@ describe('ProductService tillSearch', () => {
     prices: [
       { tierId: 'tier-wholesale', unitId: 'u-carton', price: 4_000_000 },
     ],
+    variants: [] as { id: string; name: string }[],
+  };
+
+  /** Eva soap: three options at one price, Gold with a carton price of its own. */
+  const EVA = {
+    id: 'eva',
+    name: 'Eva Soap',
+    size: '150g',
+    sku: 'EVA-150G',
+    trackStock: true,
+    taxRateBps: 0,
+    basePrice: 50_000,
+    units: [
+      {
+        id: 'u-piece',
+        name: 'piece',
+        factor: 1,
+        isSellable: true,
+        isDefaultSelling: true,
+      },
+      {
+        id: 'u-eva-carton',
+        name: 'carton',
+        factor: 24,
+        isSellable: true,
+        isDefaultSelling: false,
+      },
+    ],
+    prices: [
+      {
+        tierId: 'tier-wholesale',
+        unitId: 'u-eva-carton',
+        variantId: null,
+        price: 1_100_000,
+      },
+      {
+        tierId: 'tier-wholesale',
+        unitId: 'u-eva-carton',
+        variantId: 'v-gold',
+        price: 1_300_000,
+      },
+    ],
+    variants: [
+      { id: 'v-classic', name: 'Classic' },
+      { id: 'v-gold', name: 'Gold' },
+      { id: 'v-moringa', name: 'Moringa' },
+    ],
   };
 
   beforeEach(async () => {
@@ -781,14 +828,48 @@ describe('ProductService tillSearch', () => {
     expect(args.include.prices.where.tierId).toBe('tier-wholesale');
   });
 
-  it('searches active products by name, SKU or size, ten at most', async () => {
-    await service.tillSearch('14g', 'tier-wholesale');
+  it('searches active products, every word by name, SKU, size or option, ten at most', async () => {
+    await service.tillSearch('peak  14g', 'tier-wholesale');
     const [args] = prisma.product.findMany.mock.calls[0] as [
-      { where: { isActive: boolean; OR: object[] }; take: number },
+      {
+        where: { isActive: boolean; AND: { OR: object[] }[] };
+        take: number;
+      },
     ];
     expect(args.where.isActive).toBe(true);
-    expect(args.where.OR).toHaveLength(3);
+    expect(args.where.AND).toHaveLength(2);
+    expect(args.where.AND[0].OR).toHaveLength(4);
     expect(args.take).toBe(10);
+  });
+
+  it('a product without options is one row, with no option', async () => {
+    const rows = await service.tillSearch('peak', 'tier-wholesale');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].variant).toBeNull();
+  });
+
+  it('a product with options is one row per option, each priced as that option', async () => {
+    prisma.product.findMany.mockResolvedValue([EVA]);
+    const rows = await service.tillSearch('eva', 'tier-wholesale');
+    expect(rows.map((row) => row.variant?.name)).toEqual([
+      'Classic',
+      'Gold',
+      'Moringa',
+    ]);
+    const cartonOf = (name: string) =>
+      rows
+        .find((row) => row.variant?.name === name)
+        ?.units.find((unit) => unit.name === 'carton')?.price;
+    // Gold has its own carton price; the others sell at the product's.
+    expect(cartonOf('Gold')).toBe(1_300_000);
+    expect(cartonOf('Classic')).toBe(1_100_000);
+    expect(cartonOf('Moringa')).toBe(1_100_000);
+  });
+
+  it('keeps only the options a word names — "eva gold" is Gold alone', async () => {
+    prisma.product.findMany.mockResolvedValue([EVA]);
+    const rows = await service.tillSearch('Eva GOLD', 'tier-wholesale');
+    expect(rows.map((row) => row.variant?.id)).toEqual(['v-gold']);
   });
 
   it('drops a product with nothing sold at the till', async () => {
@@ -871,6 +952,77 @@ describe('ProductService options (§24)', () => {
 
   const asOrg = <T>(fn: () => Promise<T>) =>
     TenantContext.run({ organizationId: 'org-aaa' }, fn);
+
+  describe("an option's own price", () => {
+    let productPrice: {
+      updateMany: jest.Mock;
+      create: jest.Mock;
+      deleteMany: jest.Mock;
+    };
+
+    beforeEach(() => {
+      productPrice = {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        create: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      };
+      Object.assign(prisma, { productPrice });
+      prisma.productUnit.findMany.mockResolvedValue([
+        { id: 'u-carton', name: 'carton' },
+      ]);
+      prisma.productVariant.findMany.mockResolvedValue([CHICKEN]);
+    });
+
+    const price = (row: object) =>
+      asOrg(() =>
+        service.update('prod-1', {
+          prices: [{ unit: 'carton', tierId: 'tier-1', ...row }],
+        } as never),
+      );
+
+    it('is written against that option, and only that option', async () => {
+      await price({ variantId: 'v-chicken', price: 1_300_000 });
+      expect(productPrice.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ variantId: 'v-chicken' }) as object,
+        data: { price: 1_300_000 },
+      });
+      expect(productPrice.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ variantId: 'v-chicken' }) as object,
+      });
+    });
+
+    it("keeps the product's own price apart — null in the where, not left out", async () => {
+      await price({ price: 1_100_000 });
+      expect(productPrice.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ variantId: null }) as object,
+        data: { price: 1_100_000 },
+      });
+    });
+
+    it("is removed by a null price, so the option sells at the product's again", async () => {
+      await price({ variantId: 'v-chicken', price: null });
+      expect(productPrice.deleteMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          variantId: 'v-chicken',
+          unitId: 'u-carton',
+        }) as object,
+      });
+      expect(productPrice.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses to remove the product's own price", async () => {
+      await expect(price({ price: null })).rejects.toThrow(
+        /Only an option's own price/,
+      );
+      expect(productPrice.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses an option from another product', async () => {
+      await expect(
+        price({ variantId: 'v-elsewhere', price: 1_000 }),
+      ).rejects.toThrow(/option this product does not have/);
+    });
+  });
 
   it('adds options, named from their values', async () => {
     await asOrg(() =>

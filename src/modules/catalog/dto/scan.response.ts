@@ -72,6 +72,28 @@ class TaxSplit {
   tax!: number;
 }
 
+/**
+ * One option of the scanned product, priced for the scanned unit — offered when
+ * the code is on the product as a whole and the till has to ask which option.
+ */
+class ScannedOption {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Gold' })
+  name!: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Tax-inclusive, in kobo, for one of `unit` as this option.',
+  })
+  price!: number | null;
+
+  @ApiProperty()
+  isTierPrice!: boolean;
+}
+
 export class ScanResult {
   @ApiProperty({
     example: '6154000010025',
@@ -87,6 +109,21 @@ export class ScanResult {
 
   @ApiProperty({ type: () => ScannedUnit })
   unit!: ScannedUnit;
+
+  @ApiProperty({
+    type: () => ScannedOption,
+    nullable: true,
+    description:
+      'The option this code is printed on — Eva soap Gold has its own barcode — priced as that option. Null when the code is on the product as a whole.',
+  })
+  variant!: ScannedOption | null;
+
+  @ApiProperty({
+    type: () => [ScannedOption],
+    description:
+      'Set only when the product has options and this code names none: every active option, priced, so the till can ask which one without another request. Empty otherwise.',
+  })
+  options!: ScannedOption[];
 
   @ApiProperty({
     example: 24,

@@ -29,9 +29,12 @@ export async function exportProducts(seesCost: boolean): Promise<void> {
       .sort((a, b) => a.factor - b.factor);
   const extraSlots = Math.max(0, ...products.map((p) => bigger(p).length));
 
+  // The product's own price — never an option's (§24), which would otherwise
+  // be found first for whichever option happened to come back first.
   const priceOf = (product: ProductView, unitId: string, isBase: boolean) =>
-    product.prices.find((row) => row.unitId === unitId && row.tier.isDefault)
-      ?.price ?? (isBase ? product.basePrice : null);
+    product.prices.find(
+      (row) => row.unitId === unitId && row.tier.isDefault && !row.variantId,
+    )?.price ?? (isBase ? product.basePrice : null);
 
   const columns: SheetColumn<ProductView>[] = [
     { header: headerOf('name'), value: (p) => p.name, width: 32 },

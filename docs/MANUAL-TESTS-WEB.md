@@ -1367,3 +1367,43 @@ counter*.
 
 **348. [gate] In a shop that existed before 8 October, Money → Cash** says *counted from*
 1 October, and cash taken between the 1st and the 7th is in *Still holding* and can be banked.
+
+## BE. Selling options (variants)
+
+**349. [gate] Add a product, Eva Soap, with no stock. Under Options press Add options**, type
+*Colour*, then options Classic, Gold and Moringa. The opening-stock box goes, with a line saying why.
+Save. The product page lists the three options.
+
+**350. Edit it. Add a price: For *Gold*, carton, a different amount.** Save. On the product page the
+prices table says *All options* against the product's prices and *Gold* against Gold's.
+
+**351. [gate] Edit a product that already holds stock and add its first options.** *The stock you
+already have is* appears, set to the first option. Choose another, save: its movements show *Moved
+out* (before options) and *Moved in* to that option, and On hand is unchanged.
+
+**352. [gate] Till: type "eva".** Three rows — Eva Soap Classic, Gold, Moringa — Gold at its own
+price. Type "eva gold": Gold alone. Pick it: the cart line reads *Eva Soap — Gold*. Pick Classic: a
+second line, not added to Gold's.
+
+**353. [gate] Edit Eva Soap → Barcodes → Add a code**, *Which option*: Gold. Attach. Add another
+with *Every option*. At the till, scan (or type) Gold's code: Gold goes in. Scan the other: *Which
+Eva Soap?* lists all three with prices; tap Moringa and it goes in.
+
+**354. Change Gold's line to another unit, then pick a customer on another price list.** Gold
+stays at Gold's price for each, not the product's.
+
+**355. [gate] Take payment.** The receipt and the printed invoice say *Eva Soap — Gold*. Sale
+detail shows the same.
+
+**356. [gate] Take goods back** on that sale, Gold's line. Back into stock; the product page's
+movements show *Returned* against Gold.
+
+**357. Take goods back from a sale made before a product had options** (the product from 351).
+With *Back into stock* ticked, *Back on the shelf as* asks which option, and the button waits for
+an answer. Untick it (damaged): the question goes.
+
+**358. Edit Eva Soap, × on Gold's own price** (it fades), save. Gold now sells at the product's
+price at the till.
+
+**359. Retire Moringa** (Edit → Options → Retire), save. It is gone from the till search; the
+product page shows it struck through.

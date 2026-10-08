@@ -39,6 +39,15 @@ export class ReturnLineDto {
   @IsUUID()
   unitId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Only for goods sold before the product had options: which option they go back on the shelf as. A line sold as an option always goes back as that option.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
   @ApiProperty({
     example: 1,
     minimum: 1,

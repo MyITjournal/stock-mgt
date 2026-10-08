@@ -1,18 +1,27 @@
 import { useState, type FormEvent } from 'react';
+import { useQueries } from '@tanstack/react-query';
+import { api } from '../api/client';
+import { optionLabel } from '../lib/options';
 import { DialogClose } from '../components/DialogClose';
 import { Button } from '../components/Button';
-import { Field, Input } from '../components/Field';
+import { Field, Input, Select } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
 import { Money } from '../components/Money';
 import type { components } from '../api/schema';
 
 type SaleView = components['schemas']['SaleView'];
+type ProductView = components['schemas']['ProductView'];
 
 export interface ReturnLineInput {
   saleLineId: string;
   quantity: number;
   restocked: boolean;
   reason: string;
+  /**
+   * Only for goods sold before the product had options: which option they go
+   * back on the shelf as. A line sold as an option goes back as that option.
+   */
+  variantId?: string;
 }
 
 /**
@@ -67,11 +76,42 @@ export function ReturnDialog({
       [saleLineId]: { ...current[saleLineId], ...change },
     }));
 
+  // Goods sold before their product had options carry none; if it has options
+  // now, what goes back on the shelf has to be one of them (DECISIONS.md §24).
+  // Only those products are read, and usually there are none.
+  const optionless = [
+    ...new Set(
+      sale.lines.filter((line) => !line.variant).map((line) => line.productId),
+    ),
+  ];
+  const products = useQueries({
+    queries: optionless.map((productId) => ({
+      queryKey: ['product', productId],
+      queryFn: () => api.get<ProductView>(`/products/${productId}`),
+      staleTime: 60_000,
+    })),
+  });
+  const optionsFor = (line: SaleView['lines'][number]) =>
+    line.variant
+      ? []
+      : (products
+          .find((query) => query.data?.id === line.productId)
+          ?.data?.variants.filter((option) => option.isActive) ?? []);
+
   const chosen = Object.values(lines);
+  const unplaced = chosen.some((entry) => {
+    const line = sale.lines.find((row) => row.id === entry.saleLineId);
+    return (
+      entry.restocked &&
+      !entry.variantId &&
+      line !== undefined &&
+      optionsFor(line).length > 0
+    );
+  });
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (chosen.length > 0) onConfirm(chosen, note.trim());
+    if (chosen.length > 0 && !unplaced) onConfirm(chosen, note.trim());
   };
 
   return (
@@ -98,6 +138,7 @@ export function ReturnDialog({
         <div className="mt-4 space-y-3">
           {sale.lines.map((line) => {
             const entry = lines[line.id];
+            const options = optionsFor(line);
             return (
               <div
                 key={line.id}
@@ -113,7 +154,7 @@ export function ReturnDialog({
                   />
                   <span className="flex-1">
                     <span className="font-medium text-slate-900">
-                      {line.product.name}
+                      {optionLabel(line.product.name, line.variant?.name)}
                     </span>
                     <span className="ml-2 text-xs text-slate-500">
                       {line.quantity} × {line.unit.name} @{' '}
@@ -128,7 +169,7 @@ export function ReturnDialog({
                     <Field label="How many" htmlFor={`qty-${line.id}`}>
                       <QuantityInput
                         id={`qty-${line.id}`}
-                        label={`How many ${line.product.name} to return`}
+                        label={`How many ${optionLabel(line.product.name, line.variant?.name)} to return`}
                         min={1}
                         max={line.quantity}
                         value={entry.quantity}
@@ -170,6 +211,34 @@ export function ReturnDialog({
                         </span>
                       </label>
                     </div>
+
+                    {entry.restocked && options.length > 0 && (
+                      <div className="sm:col-span-3">
+                        <Field
+                          label="Back on the shelf as"
+                          htmlFor={`option-${line.id}`}
+                          hint={`Sold before ${line.product.name} had options, so say which one this is.`}
+                        >
+                          <Select
+                            id={`option-${line.id}`}
+                            value={entry.variantId ?? ''}
+                            disabled={busy}
+                            onChange={(event) =>
+                              update(line.id, {
+                                variantId: event.target.value || undefined,
+                              })
+                            }
+                          >
+                            <option value="">Choose…</option>
+                            {options.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </Field>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -207,7 +276,10 @@ export function ReturnDialog({
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={busy || chosen.length === 0}>
+          <Button
+            type="submit"
+            disabled={busy || chosen.length === 0 || unplaced}
+          >
             {busy
               ? 'Recording…'
               : `Take back ${chosen.length} line${chosen.length === 1 ? '' : 's'}`}

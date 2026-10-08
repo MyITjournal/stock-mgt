@@ -5778,7 +5778,7 @@ screens call them **options**; the code and schema say *variant*. Built in five 
 
 1. `feat/variants-ledger` — schema, stock engine, the options on the product API. **Done.**
 2. `feat/variants-on-product-and-till` — product form and detail, an option's own price and
-   barcode, till search and scan, sale lines, receipt, invoice, returns.
+   barcode, till search and scan, sale lines, receipt, invoice, returns. **Done.**
 3. `feat/variants-stock-in` — receiving, delivery corrections ("wrong option"), opening stock, lot
    cost.
 4. `feat/variants-counting-and-moving` — counts, adjustments, transfers, the stock levels page.
@@ -5826,9 +5826,41 @@ cover a non-stocked product, which never reaches the engine. Selling (`sale`) an
 returns may still move its leftover stock, or retiring it would strand that stock. Retiring the
 last active option is refused — retire the product instead. Options are never deleted.
 
-Until branches 2–5 land, a screen that sends no option gets a plain "comes in options (…). Say
-which one." on a product that has them. It cannot write wrong data; it just cannot sell that
-product yet. That is acceptable on `dev`, and is why nothing goes to `main` before branch 5.
+Until branches 3–5 land, a screen that sends no option gets a plain "comes in options (…). Say
+which one." on a product that has them — a delivery, a count, an adjustment. It cannot write wrong
+data; it just cannot do that yet. That is acceptable on `dev`, and is why nothing goes to `main`
+before branch 5.
+
+### Selling an option (branch 2)
+
+Owner, 2026-10-08: "one variant is also a product" — Eva soap in Classic, Gold and Moringa, same
+size and price. So **to the till an option is an item of its own**:
+
+- **Till search is one row per active option** ("Eva Soap Gold"), each priced as that option, one
+  tap to the cart. Every word typed must match the name, SKU, size or option, so "eva gold" finds
+  Gold alone. Rows are capped at 20 (products still at 10) so ten flavours of one product fit.
+- **A barcode can be on one option or on every option** (`ProductBarcode.variantId`). One option's
+  code adds it straight away; a code on every option — Eva's carton barcode is the same whatever is
+  inside — comes back with `options`, each already priced, and the till asks "Which Eva Soap?"
+  with no second request. One primary code per unit **and option**.
+- **A cart line's option is fixed** once added: Gold and Classic are two lines, never one line
+  switched. Lines merge only when the option matches too. `GET /products/:id/price` takes
+  `variantId`, so changing unit or customer re-prices as the option.
+- **Receipts and invoices print "Eva Soap — Gold"** (`optionLabel`), in `description`, so every
+  printer keeps working without a new field. Sale lines carry `variant {id, name}`.
+- **The duplicate-sale warning** keys on product *and* option — Gold twice is not Classic twice.
+- **An option's own price can be removed** (`price: null` on a price row naming the option); it then
+  sells at the product's price. The product's own price still cannot be removed (§4) — every option
+  without its own falls back to it.
+- **Returns go back as the option sold**, from that option's movements only. Goods sold **before
+  the product had options** name none, and the engine now insists on one, so a return line may name
+  the option they go back as (`variantId`, only then; naming a different option for a line sold as
+  one is refused). The return dialog asks, only for those lines.
+- **Opening stock on Add product is hidden once options are filled in** until branch 3 does
+  opening stock per option; the form says so.
+- The product form writes options **before** prices and barcodes on the server, so a price can name
+  an option added in the same save (the form mints option ids). Adding first options to a product
+  holding stock asks "The stock you already have is…", defaulting to the first option.
 
 ### Written like units, not through endpoints of their own
 

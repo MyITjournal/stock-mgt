@@ -100,6 +100,25 @@ export function ProductDetailPage() {
   const price = shelfPrice(product);
   const cost = costIn(product);
   const movements = ledger?.movements ?? [];
+  // Options (§24): named on prices, codes and movements once there are any.
+  const hasOptions = product.variants.length > 0;
+  const optionName = (variantId: string | null | undefined) =>
+    product.variants.find((option) => option.id === variantId)?.name;
+  const optionColumn = <Row,>(
+    variantOf: (row: Row) => string | null | undefined,
+    none: string,
+  ): Column<Row>[] =>
+    hasOptions
+      ? [
+          {
+            header: 'Option',
+            cell: (row) =>
+              optionName(variantOf(row)) ?? (
+                <span className="text-slate-400">{none}</span>
+              ),
+          },
+        ]
+      : [];
 
   const movementColumns: readonly Column<SyncedMovementView>[] = [
     {
@@ -126,6 +145,11 @@ export function ProductDetailPage() {
         </span>
       ),
     },
+    // Before options existed a movement named none.
+    ...optionColumn<SyncedMovementView>(
+      (row) => row.variantId,
+      'before options',
+    ),
     {
       header: 'Lot',
       cell: (row) =>
@@ -212,6 +236,46 @@ export function ProductDetailPage() {
         />
       </section>
 
+      {hasOptions && (
+        <section className="mb-6">
+          <h2 className="mb-2 text-sm font-semibold text-slate-900">
+            Options
+            <span className="ml-2 font-normal text-slate-500">
+              by {product.variantAttributes.join(' and ')}
+            </span>
+          </h2>
+          <ul className="flex flex-wrap gap-2 text-sm">
+            {product.variants.map((option) => {
+              const ownPrice = product.prices.some(
+                (row) => row.variantId === option.id,
+              );
+              return (
+                <li
+                  key={option.id}
+                  className={`rounded-full border px-3 py-1 ${
+                    option.isActive
+                      ? 'border-slate-200 bg-white text-slate-900'
+                      : 'border-slate-200 bg-slate-50 text-slate-400 line-through'
+                  }`}
+                  title={option.isActive ? undefined : 'Retired'}
+                >
+                  {option.name}
+                  {ownPrice && (
+                    <span className="ml-1 text-xs text-slate-500">
+                      · own price
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-xs text-slate-500">
+            Stock below is every option together; on hand per option comes with
+            stock levels.
+          </p>
+        </section>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <section>
           <h2 className="mb-2 text-sm font-semibold text-slate-900">
@@ -250,6 +314,10 @@ export function ProductDetailPage() {
           <DataTable
             rows={product.prices}
             columns={[
+              ...optionColumn<ProductView['prices'][number]>(
+                (row) => row.variantId,
+                'All options',
+              ),
               { header: 'Unit', cell: (row) => row.unit.name },
               {
                 header: 'Price',
@@ -314,7 +382,8 @@ export function ProductDetailPage() {
                 ]
               : []),
           ]}
-          rowKey={(row) => row.batchId}
+          // One lot can hold two options' stock (§24), so it can appear twice.
+          rowKey={(row, index) => `${row.batchId}:${index}`}
           empty="No lots holding stock."
         />
         <p className="mt-2 text-xs text-slate-500">
@@ -349,6 +418,8 @@ export function ProductDetailPage() {
               <li key={barcode.id}>
                 <span className="tabular-nums">{barcode.code}</span>
                 <span className="ml-2 text-xs text-slate-400">
+                  {hasOptions &&
+                    `${optionName(barcode.variantId) ?? 'every option'} · `}
                   {barcode.unit.name} · {barcode.symbology}
                   {barcode.isPrimary ? ' · printed on labels' : ''}
                 </span>

@@ -65,6 +65,11 @@ const PRODUCT_INCLUDE = {
 
 /** Suggestions a till shows at once — enough to pick from, few enough to read. */
 const TILL_SEARCH_LIMIT = 10;
+/**
+ * Rows, once a product with options has become one row per option: enough for
+ * every flavour of the one product a cashier is after.
+ */
+const TILL_SEARCH_ROWS = 20;
 
 /** What a product costs the business. Owner, manager and accountant only. */
 const PRODUCT_COST_FIELDS = ['costPrice', 'unitCosts'] as const;
@@ -126,6 +131,16 @@ export class ProductService {
           product.units.map((unit) => [unit.name, unit.id]),
         );
 
+        // Options before prices and barcodes, which may name one of them.
+        if (input.variantAttributes?.length || input.variants?.length) {
+          await this.writeOptions(tx, {
+            productId: product.id,
+            organizationId,
+            attributes: input.variantAttributes,
+            variants: input.variants ?? [],
+          });
+        }
+
         await this.writePrices(tx, {
           productId: product.id,
           organizationId,
@@ -140,15 +155,6 @@ export class ProductService {
           unitIdByName,
           barcodes,
         });
-
-        if (input.variantAttributes?.length || input.variants?.length) {
-          await this.writeOptions(tx, {
-            productId: product.id,
-            organizationId,
-            attributes: input.variantAttributes,
-            variants: input.variants ?? [],
-          });
-        }
 
         return product.id;
       });
@@ -383,48 +389,83 @@ export class ProductService {
 
     const tier = await resolveTierId(this.prisma, tierId);
 
-    const contains = { contains: term, mode: 'insensitive' as const };
+    // Every word must match somewhere — the product's name, SKU or size, or
+    // one of its options — so "eva gold" finds Eva soap in Gold, which no
+    // single field contains.
+    const words = term.toLowerCase().split(/\s+/);
     const products = await this.prisma.product.findMany({
       where: {
         deletedAt: null,
         isActive: true,
-        OR: [{ name: contains }, { sku: contains }, { size: contains }],
+        AND: words.map((word) => {
+          const contains = { contains: word, mode: 'insensitive' as const };
+          return {
+            OR: [
+              { name: contains },
+              { sku: contains },
+              { size: contains },
+              { variants: { some: { isActive: true, name: contains } } },
+            ],
+          };
+        }),
       },
       include: {
         units: { orderBy: { factor: 'asc' } },
         prices: tier ? { where: { tierId: tier } } : false,
+        variants: {
+          where: { isActive: true },
+          orderBy: VARIANT_ORDER,
+          select: { id: true, name: true },
+        },
       },
       orderBy: { name: 'asc' },
       take: TILL_SEARCH_LIMIT,
     });
 
-    return products.flatMap((product) => {
+    const rows = products.flatMap((product) => {
       const sellable = product.units.filter((unit) => unit.isSellable);
       // Nothing the till may sell — not a suggestion worth showing.
       if (sellable.length === 0) return [];
       const priced = { ...product, prices: product.prices ?? [] };
-      const units = sellable.map((unit) => {
-        const resolved = resolveUnitPrice(priced, unit, tier);
-        return {
-          id: unit.id,
-          name: unit.name,
-          factor: unit.factor,
-          price: resolved.price,
-          isTierPrice: resolved.isTierPrice,
-        };
+      const row = (variant: { id: string; name: string } | null) => ({
+        id: product.id,
+        variant,
+        name: product.name,
+        size: product.size,
+        sku: product.sku,
+        trackStock: product.trackStock,
+        defaultUnitId: tillFirstUnit(sellable)!.id,
+        units: sellable.map((unit) => {
+          const resolved = resolveUnitPrice(priced, unit, tier, variant?.id);
+          return {
+            id: unit.id,
+            name: unit.name,
+            factor: unit.factor,
+            price: resolved.price,
+            isTierPrice: resolved.isTierPrice,
+          };
+        }),
       });
-      return [
-        {
-          id: product.id,
-          name: product.name,
-          size: product.size,
-          sku: product.sku,
-          trackStock: product.trackStock,
-          defaultUnitId: tillFirstUnit(sellable)!.id,
-          units,
-        },
-      ];
+
+      if (product.variants.length === 0) return [row(null)];
+
+      // One row per option the words describe: a word the product itself
+      // matches ("eva") keeps every option; one only an option matches
+      // ("gold") keeps that option.
+      const ownText = [product.name, product.sku, product.size ?? '']
+        .join(' ')
+        .toLowerCase();
+      return product.variants
+        .filter((variant) => {
+          const optionText = variant.name.toLowerCase();
+          return words.every(
+            (word) => ownText.includes(word) || optionText.includes(word),
+          );
+        })
+        .map((variant) => row(variant));
     });
+
+    return rows.slice(0, TILL_SEARCH_ROWS);
   }
 
   /**
@@ -528,6 +569,17 @@ export class ProductService {
         });
         const unitIdByName = new Map(units.map((unit) => [unit.name, unit.id]));
 
+        // Options before prices and barcodes, which may name one of them.
+        if (input.variantAttributes !== undefined || input.variants?.length) {
+          await this.writeOptions(tx, {
+            productId: id,
+            organizationId,
+            attributes: input.variantAttributes,
+            variants: input.variants ?? [],
+            existingStockVariantId: input.existingStockVariantId,
+          });
+        }
+
         await this.writePrices(tx, {
           productId: id,
           organizationId,
@@ -541,16 +593,6 @@ export class ProductService {
           unitIdByName,
           barcodes,
         });
-
-        if (input.variantAttributes !== undefined || input.variants?.length) {
-          await this.writeOptions(tx, {
-            productId: id,
-            organizationId,
-            attributes: input.variantAttributes,
-            variants: input.variants ?? [],
-            existingStockVariantId: input.existingStockVariantId,
-          });
-        }
       });
     }
 
@@ -888,7 +930,12 @@ export class ProductService {
       prices?: ProductPriceInput[];
     },
   ): Promise<void> {
-    for (const row of args.prices ?? []) {
+    const prices = args.prices ?? [];
+    const optionIds = prices.some((row) => row.variantId)
+      ? await this.optionIds(tx, args.productId)
+      : new Set<string>();
+
+    for (const row of prices) {
       const unitId = args.unitIdByName.get(row.unit);
       if (!unitId) {
         throw new BadRequestException(
@@ -903,17 +950,36 @@ export class ProductService {
         );
       }
 
+      if (row.variantId && !optionIds.has(row.variantId)) {
+        throw new BadRequestException(
+          `The price for "${row.unit}" names an option this product does not have.`,
+        );
+      }
+
       // Update-then-create rather than `upsert`: "one price per product, tier,
       // unit and option" is a pair of partial unique indexes (§24), which a
-      // Prisma upsert cannot name. These are the product's own prices, so the
-      // option is null — and in the where as null, or an option's override
-      // would be overwritten too.
+      // Prisma upsert cannot name. The option is in the where **as null** on
+      // the product's own price, or an option's price would be overwritten too.
       const where = {
         productId: args.productId,
         tierId,
         unitId,
-        variantId: null,
+        variantId: row.variantId ?? null,
       };
+
+      if (row.price === null) {
+        // Only an option's own price can be taken away: the option then sells
+        // at the product's. The product's price is what every option without
+        // one falls back to, so it is changed, never removed.
+        if (!row.variantId) {
+          throw new BadRequestException(
+            `The price for "${row.unit}" needs an amount. Only an option's own price can be removed.`,
+          );
+        }
+        await tx.productPrice.deleteMany({ where });
+        continue;
+      }
+
       const { count } = await tx.productPrice.updateMany({
         where,
         data: { price: row.price },
@@ -930,6 +996,18 @@ export class ProductService {
     }
   }
 
+  /** The ids of every option this product has, retired ones included. */
+  private async optionIds(
+    tx: TransactionClient,
+    productId: string,
+  ): Promise<Set<string>> {
+    const options = await tx.productVariant.findMany({
+      where: { productId },
+      select: { id: true },
+    });
+    return new Set(options.map((option) => option.id));
+  }
+
   /** Attaches the listed barcodes. Codes are already validated by this point. */
   private async writeBarcodes(
     tx: TransactionClient,
@@ -940,11 +1018,20 @@ export class ProductService {
       barcodes: ResolvedBarcode[];
     },
   ): Promise<void> {
+    const optionIds = args.barcodes.some((row) => row.variantId)
+      ? await this.optionIds(tx, args.productId)
+      : new Set<string>();
+
     for (const row of args.barcodes) {
       const unitId = args.unitIdByName.get(row.unit);
       if (!unitId) {
         throw new BadRequestException(
           `No unit named "${row.unit}" on this product. Barcodes are keyed by unit name, from the units list.`,
+        );
+      }
+      if (row.variantId && !optionIds.has(row.variantId)) {
+        throw new BadRequestException(
+          `The barcode "${row.code}" names an option this product does not have.`,
         );
       }
 
@@ -954,6 +1041,7 @@ export class ProductService {
             organizationId: args.organizationId,
             productId: args.productId,
             unitId,
+            variantId: row.variantId ?? null,
             code: row.code,
             symbology: row.symbology,
             isPrimary: row.isPrimary,
@@ -991,12 +1079,18 @@ export class ProductService {
     productId: string,
     unitId: string,
     tierId?: string,
+    variantId?: string,
   ): Promise<ResolvedUnitPrice> {
     const product = await this.findOneOrFail(productId);
     const unit = product.units.find((u) => u.id === unitId);
     if (!unit) {
       throw new BadRequestException(
         'That unit does not belong to this product',
+      );
+    }
+    if (variantId && !product.variants.some((v) => v.id === variantId)) {
+      throw new BadRequestException(
+        'That option does not belong to this product',
       );
     }
 
@@ -1006,6 +1100,7 @@ export class ProductService {
         product,
         unit,
         await resolveTierId(this.prisma, tierId),
+        variantId,
       ),
     };
   }
@@ -1196,6 +1291,7 @@ interface ResolvedBarcode {
   code: string;
   symbology: BarcodeSymbology;
   isPrimary: boolean;
+  variantId?: string;
 }
 
 /**
@@ -1215,7 +1311,12 @@ function resolveBarcodeInputs(
         `Barcode for "${row.unit}": ${resolved.error}`,
       );
     }
-    return { unit: row.unit, ...resolved, isPrimary: row.isPrimary ?? false };
+    return {
+      unit: row.unit,
+      ...resolved,
+      isPrimary: row.isPrimary ?? false,
+      variantId: row.variantId,
+    };
   });
 }
 

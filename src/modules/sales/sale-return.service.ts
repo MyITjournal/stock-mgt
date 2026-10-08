@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -73,6 +74,16 @@ export class SaleReturnService {
           );
         }
 
+        if (
+          line.variantId &&
+          saleLine.variantId &&
+          line.variantId !== saleLine.variantId
+        ) {
+          throw new BadRequestException(
+            'Goods go back as the option they were sold as. Sell the other option as a new sale instead.',
+          );
+        }
+
         const unitFactor = await this.factorFor(saleLine.unitId, line.unitId);
         const baseQuantity = line.quantity * unitFactor;
         const outstanding =
@@ -95,6 +106,7 @@ export class SaleReturnService {
             saleId,
             locationId: sale.locationId,
             occurredAt,
+            intoVariantId: saleLine.variantId ?? line.variantId ?? null,
           });
         }
 
@@ -142,20 +154,35 @@ export class SaleReturnService {
    * movement named, rather than being silently dropped.
    */
   private async restore(
-    saleLine: { id: string; productId: string; baseQuantity: number },
+    saleLine: {
+      id: string;
+      productId: string;
+      variantId: string | null;
+      baseQuantity: number;
+    },
     baseQuantity: number,
     ctx: {
       writer: StockWriter;
       saleId: string;
       locationId: string;
       occurredAt: Date;
+      /**
+       * The option the goods go back as: the one sold, or — for goods sold
+       * before the product had options — the one the return names. The stock
+       * engine refuses none on a product that has options now.
+       */
+      intoVariantId: string | null;
     },
   ) {
+    // The sale's own movements, of this line's option: Gold sold comes back as
+    // Gold, never as the Classic sold on the same receipt. `variantId` as null
+    // on a product without options, like every other where on the ledger (§24).
     const movements = await this.prisma.stockMovement.findMany({
       where: {
         referenceType: 'sale',
         referenceId: ctx.saleId,
         productId: saleLine.productId,
+        variantId: saleLine.variantId,
         type: StockMovementType.sale,
       },
       orderBy: { createdAt: 'desc' },
@@ -179,6 +206,7 @@ export class SaleReturnService {
       await this.stock.recordInbound(
         {
           productId: saleLine.productId,
+          variantId: ctx.intoVariantId,
           locationId: ctx.locationId,
           batchId: movement.batchId,
           quantity: take,

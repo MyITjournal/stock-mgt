@@ -33,6 +33,15 @@ export class SaleLineDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
+      'Which option — Eva soap in Gold. Required once the product has options, refused on one without, and a retired option cannot be sold. Its own price applies when it has one; otherwise the product’s.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
       'The unit being sold — the carton, not the piece. Defaults to the base unit.',
   })
   @IsOptional()

@@ -27,6 +27,15 @@ export class TillSearchUnit {
   isTierPrice!: boolean;
 }
 
+/** The option a row stands for — Eva soap in Gold. */
+export class TillSearchOption {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Gold' })
+  name!: string;
+}
+
 /**
  * A product as the till's search box needs it, and nothing more.
  *
@@ -36,10 +45,22 @@ export class TillSearchUnit {
  * search *with* every sellable unit already priced on the cart's tier, while
  * the person is still typing, so choosing a suggestion adds it to the cart with
  * no request at all. Lean on purpose: no cost, no barcodes, no lots.
+ *
+ * **A product with options is one row per option** (2026-10-08): to the person
+ * at the counter, Eva soap Gold and Eva soap Moringa are two things on the
+ * shelf, so each is its own suggestion, one tap from the cart.
  */
 export class TillSearchResult {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ format: 'uuid', description: 'The product.' })
   id!: string;
+
+  @ApiProperty({
+    type: TillSearchOption,
+    nullable: true,
+    description:
+      'The option this row is, on a product with options; null on one without. Two rows can share a product id, never an option.',
+  })
+  variant!: TillSearchOption | null;
 
   @ApiProperty({ example: 'Peak 14g' })
   name!: string;
@@ -61,7 +82,8 @@ export class TillSearchResult {
 
   @ApiProperty({
     type: [TillSearchUnit],
-    description: 'Only units sold at the till, smallest first.',
+    description:
+      "Only units sold at the till, smallest first, priced as this row's option.",
   })
   units!: TillSearchUnit[];
 }

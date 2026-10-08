@@ -22,6 +22,7 @@ const CARTON = 'unit-carton';
 const SOLD_LINE = {
   id: LINE,
   productId: PRODUCT,
+  variantId: null as string | null,
   unitId: CARTON,
   baseQuantity: 48,
   lineTotal: 10_800_000,
@@ -125,6 +126,54 @@ describe('SaleReturnService', () => {
       }),
       tx,
     );
+  });
+
+  describe('options (§24)', () => {
+    const soldAs = (variantId: string | null) =>
+      prisma.sale.findFirst.mockResolvedValue({
+        id: SALE,
+        locationId: LOCATION,
+        lines: [{ ...SOLD_LINE, variantId }],
+        returns: [],
+      });
+    const movementQuery = () =>
+      (
+        prisma.stockMovement.findMany.mock.calls[0] as [
+          { where: Record<string, unknown> },
+        ]
+      )[0].where;
+
+    it('puts Gold back as Gold, from the sale’s Gold movements only', async () => {
+      soldAs('gold');
+      await takeBack();
+      expect(movementQuery()).toMatchObject({ variantId: 'gold' });
+      expect(restocked()[0]).toMatchObject({ variantId: 'gold' });
+    });
+
+    it('names no option on a product without options — null, not left out', async () => {
+      await takeBack();
+      expect(movementQuery()).toMatchObject({ variantId: null });
+      expect(restocked()[0]).toMatchObject({ variantId: null });
+    });
+
+    it('puts goods sold before the product had options back as the option named', async () => {
+      soldAs(null);
+      await takeBack({
+        lines: [{ saleLineId: LINE, quantity: 1, variantId: 'classic' }],
+      });
+      expect(movementQuery()).toMatchObject({ variantId: null });
+      expect(restocked()[0]).toMatchObject({ variantId: 'classic' });
+    });
+
+    it('refuses to take Gold back as another option', async () => {
+      soldAs('gold');
+      await expect(
+        takeBack({
+          lines: [{ saleLineId: LINE, quantity: 1, variantId: 'classic' }],
+        }),
+      ).rejects.toThrow(/option they were sold as/);
+      expect(stock.recordInbound).not.toHaveBeenCalled();
+    });
   });
 
   it('spills into the next lot when more comes back than one held', async () => {

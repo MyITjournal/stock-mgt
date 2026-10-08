@@ -28,6 +28,17 @@ export function variantName(values: readonly string[]): string {
   return values.map(cleanVariantText).filter(Boolean).join(' / ');
 }
 
+/**
+ * A product and its option as a receipt, invoice or message names them —
+ * "Eva Soap — Gold". Just the product's name when there is no option.
+ */
+export function optionLabel(
+  productName: string,
+  variantName?: string | null,
+): string {
+  return variantName ? `${productName} — ${variantName}` : productName;
+}
+
 /** What two options of one product may not share: the name, case aside. */
 export function variantKey(values: readonly string[]): string {
   return variantName(values).toLowerCase();
