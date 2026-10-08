@@ -268,7 +268,8 @@ export class ProductController {
   @ApiQuery({
     name: 'q',
     required: true,
-    description: 'At least two characters; matches name, SKU or size',
+    description:
+      'At least two characters. Every word must match the name, SKU, size or option — "eva gold" finds Eva soap in Gold.',
   })
   @ApiQuery({
     name: 'tierId',
@@ -278,7 +279,7 @@ export class ProductController {
   @ApiOperation({
     summary: 'Search for the till, with prices already worked out',
     description:
-      'Up to ten active products with every unit sold at the till priced on the tier — so picking one needs no further request. Built for search-as-you-type.',
+      'Active products with every unit sold at the till priced on the tier — so picking one needs no further request. A product with options comes back as one row per active option, each priced as that option. Built for search-as-you-type.',
   })
   @ApiOkResponse({ type: [TillSearchResult] })
   tillSearch(
@@ -313,6 +314,12 @@ export class ProductController {
   @Get(':id/price')
   @ApiQuery({ name: 'unitId', required: true })
   @ApiQuery({ name: 'tierId', required: false })
+  @ApiQuery({
+    name: 'variantId',
+    required: false,
+    description:
+      "The option being priced. Its own price wins; without one it is the product's.",
+  })
   @ApiOperation({
     summary: 'Resolve the price of one unit for a tier',
     description:
@@ -323,8 +330,10 @@ export class ProductController {
     @Param('id', ParseUUIDPipe) id: string,
     @Query('unitId', ParseUUIDPipe) unitId: string,
     @Query('tierId') tierId?: string,
+    @Query('variantId', new ParseUUIDPipe({ optional: true }))
+    variantId?: string,
   ) {
-    return this.products.resolvePrice(id, unitId, tierId);
+    return this.products.resolvePrice(id, unitId, tierId, variantId);
   }
 
   @Post()

@@ -24,6 +24,15 @@ export class CreateBarcodeDto {
   unitId!: string;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'The option this code is printed on — Eva soap Gold has its own barcode. Omitted on a product with options, scanning it asks which option.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  @ApiPropertyOptional({
     example: '5901234123457',
     description:
       'Omit to generate an internal EAN-13 for goods that arrive without a barcode.',

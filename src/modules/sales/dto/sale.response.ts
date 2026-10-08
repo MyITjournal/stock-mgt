@@ -72,6 +72,14 @@ class SoldProductRef {
   size!: string | null;
 }
 
+class SoldOptionRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Gold' })
+  name!: string;
+}
+
 class SoldUnitRef {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -95,6 +103,14 @@ export class SaleLineView {
 
   @ApiProperty({ format: 'uuid' })
   productId!: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'The option sold — null on a product without options.',
+  })
+  variantId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   unitId!: string;
@@ -150,6 +166,9 @@ export class SaleLineView {
 
   @ApiProperty({ type: () => SoldProductRef })
   product!: SoldProductRef;
+
+  @ApiProperty({ type: () => SoldOptionRef, nullable: true })
+  variant!: SoldOptionRef | null;
 
   @ApiProperty({ type: () => SoldUnitRef })
   unit!: SoldUnitRef;

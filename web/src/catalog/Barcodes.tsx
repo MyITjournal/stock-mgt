@@ -41,6 +41,13 @@ export function Barcodes({
 }) {
   const queryClient = useQueryClient();
   const [unitId, setUnitId] = useState('');
+  // '' is a code on every option — the till then asks which one (§24).
+  const [variantId, setVariantId] = useState('');
+  // Saved options only: a code is attached the moment it is added, so an
+  // option typed into the form above and not yet saved has nothing to attach to.
+  const options = product.variants.filter((option) => option.isActive);
+  const optionName = (id: string | null) =>
+    product.variants.find((option) => option.id === id)?.name;
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -60,6 +67,7 @@ export function Barcodes({
       api.post<ProductBarcodeView>(`/products/${product.id}/barcodes`, {
         id: crypto.randomUUID(),
         unitId: unitId || product.units[0]?.id,
+        ...(variantId && { variantId }),
         ...(code.trim() ? { code: code.trim() } : {}),
       }),
     onSuccess: () => {
@@ -120,6 +128,8 @@ export function Barcodes({
             <span>
               <span className="tabular-nums">{barcode.code}</span>
               <span className="ml-2 text-xs text-slate-400">
+                {options.length > 0 &&
+                  `${optionName(barcode.variantId) ?? 'every option'} · `}
                 {barcode.unit.name} · {barcode.symbology}
                 {barcode.isPrimary ? ' · printed on labels' : ''}
               </span>
@@ -157,6 +167,27 @@ export function Barcodes({
                 ))}
               </Select>
             </label>
+
+            {options.length > 0 && (
+              <label className="sm:col-span-2">
+                <span className="block text-xs font-medium text-slate-700">
+                  Which option
+                </span>
+                <Select
+                  aria-label="Option this code is on"
+                  value={variantId}
+                  onChange={(event) => setVariantId(event.target.value)}
+                  className="mt-1"
+                >
+                  <option value="">Every option — the till asks which</option>
+                  {options.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
 
             <label className="sm:col-span-2">
               <span className="block text-xs font-medium text-slate-700">
@@ -235,8 +266,8 @@ export function Barcodes({
       )}
 
       <p className="mt-2 text-xs text-slate-500">
-        Adding and removing codes takes effect straight away, not when you
-        press Save — each one is its own act on the server.
+        Adding and removing codes takes effect straight away, not when you press
+        Save — each one is its own act on the server.
       </p>
     </section>
   );

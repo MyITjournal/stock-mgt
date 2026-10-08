@@ -25,6 +25,7 @@ import { LocationService } from '../inventory/location.service';
 import { StockService, StockWriter } from '../inventory/stock.service';
 import { BankAccountService } from '../payments/bank-account.service';
 import { resolveUnitPrice } from '../catalog/pricing';
+import { optionLabel } from '../catalog/variants';
 import { CreateSaleDto, SaleLineDto } from './dto/create-sale.dto';
 import { SaleListView, SaleReceiptView, SaleView } from './dto/sale.response';
 import { priceLine, roundCost } from './sale-pricing';
@@ -82,6 +83,7 @@ const SALE_INCLUDE = {
   lines: {
     include: {
       product: { select: { id: true, name: true, sku: true, size: true } },
+      variant: { select: { id: true, name: true } },
       unit: { select: { id: true, name: true, factor: true } },
     },
   },
@@ -288,22 +290,31 @@ export class SaleService {
   ): Promise<LineToWrite> {
     // One read: the unit, whether it is stocked, and the tier prices. Asking
     // the catalog to price it separately would fetch the same product again.
-    const { product, unit } = await resolveProductUnit(
+    // The option, on a product that has them, is checked here — required,
+    // its own, and not retired — before anything is written.
+    const { product, unit, variant } = await resolveProductUnit(
       this.prisma,
       line.productId,
       line.unitId,
-      { allowUnstocked: true, withPrices: true, forSale: true },
+      {
+        allowUnstocked: true,
+        withPrices: true,
+        forSale: true,
+        variantId: line.variantId,
+      },
     );
+    const variantId = variant?.id ?? null;
 
     // A price the seller named is what was agreed, and stands. Otherwise the
-    // price list decides — and an unpriced unit on a product with no base
-    // price has no answer, which is a refusal rather than a guess.
+    // price list decides — the option's own price, else the product's — and an
+    // unpriced unit on a product with no base price has no answer, which is a
+    // refusal rather than a guess.
     const unitPrice =
       line.unitPrice ??
-      resolveUnitPrice(product, unit, ctx.tierId ?? undefined).price;
+      resolveUnitPrice(product, unit, ctx.tierId ?? undefined, variantId).price;
     if (unitPrice === null) {
       throw new BadRequestException(
-        `"${product.name}" has no price for the ${unit.name}. Set one on the product before selling it.`,
+        `"${optionLabel(product.name, variant?.name)}" has no price for the ${unit.name}. Set one on the product before selling it.`,
       );
     }
 
@@ -320,6 +331,7 @@ export class SaleService {
       return {
         id: line.id,
         productId: product.id,
+        variantId,
         unitId: unit.id,
         quantity: line.quantity,
         unitFactor: unit.factor,
@@ -333,6 +345,7 @@ export class SaleService {
     const movements = await this.stock.recordOutbound(
       {
         productId: product.id,
+        variantId,
         locationId: ctx.locationId,
         quantity: baseQuantity,
         type: StockMovementType.sale,
@@ -350,6 +363,7 @@ export class SaleService {
     return {
       id: line.id,
       productId: product.id,
+      variantId,
       unitId: unit.id,
       quantity: line.quantity,
       unitFactor: unit.factor,
@@ -526,7 +540,14 @@ export class SaleService {
         number: true,
         total: true,
         occurredAt: true,
-        lines: { select: { productId: true, unitId: true, quantity: true } },
+        lines: {
+          select: {
+            productId: true,
+            variantId: true,
+            unitId: true,
+            quantity: true,
+          },
+        },
         recordedBy: { select: { firstName: true, lastName: true } },
       },
     });
@@ -626,7 +647,7 @@ export class SaleService {
         ? `${sale.recordedBy.firstName ?? ''} ${sale.recordedBy.lastName ?? ''}`.trim()
         : null,
       lines: sale.lines.map((line) => ({
-        description: line.product.name,
+        description: optionLabel(line.product.name, line.variant?.name),
         size: line.product.size,
         unit: line.unit.name,
         quantity: line.quantity,
@@ -659,6 +680,7 @@ interface LineContext {
 interface LineToWrite {
   id?: string;
   productId: string;
+  variantId: string | null;
   unitId: string;
   quantity: number;
   unitFactor: number;

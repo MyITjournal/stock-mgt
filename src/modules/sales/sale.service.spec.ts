@@ -279,6 +279,77 @@ describe('SaleService', () => {
     });
   });
 
+  describe('a product with options (§24)', () => {
+    const GOLD = 'variant-gold';
+    const withOptions = () => {
+      const product = {
+        id: PRODUCT,
+        name: 'Eva Soap',
+        trackStock: true,
+        taxRateBps: 750,
+        basePrice: 250_000,
+        variants: [
+          { id: 'variant-classic', name: 'Classic', isActive: true },
+          { id: GOLD, name: 'Gold', isActive: true },
+          { id: 'variant-old', name: 'Lime', isActive: false },
+        ],
+        prices: [
+          { tierId: RETAIL, unitId: CARTON, variantId: null, price: 9_000_000 },
+          { tierId: RETAIL, unitId: CARTON, variantId: GOLD, price: 9_600_000 },
+        ],
+        units: [
+          { id: PIECE, name: 'piece', factor: 1, isSellable: true },
+          { id: CARTON, name: 'carton', factor: 24, isSellable: true },
+        ],
+      };
+      prisma.product.findFirst.mockResolvedValue(product);
+    };
+    const line = (variantId?: string) => ({
+      lines: [{ productId: PRODUCT, variantId, unitId: CARTON, quantity: 1 }],
+    });
+
+    it('refuses a line that does not say which option', async () => {
+      withOptions();
+      await expect(sell(line())).rejects.toThrow(/comes in options/);
+      expect(stock.recordOutbound).not.toHaveBeenCalled();
+      expect(tx.sale.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a retired option', async () => {
+      withOptions();
+      await expect(sell(line('variant-old'))).rejects.toThrow(/retired/);
+    });
+
+    it('takes the option from the ledger and writes it on the line', async () => {
+      withOptions();
+      await sell(line(GOLD));
+      expect(stock.recordOutbound).toHaveBeenCalledWith(
+        expect.objectContaining({ productId: PRODUCT, variantId: GOLD }),
+        tx,
+      );
+      expect(writtenLine()).toMatchObject({ variantId: GOLD });
+    });
+
+    it("prices the option at its own price, else the product's", async () => {
+      withOptions();
+      await sell(line(GOLD));
+      expect(writtenLine()).toMatchObject({ unitPrice: 9_600_000 });
+
+      tx.saleLine.createMany.mockClear();
+      await sell(line('variant-classic'));
+      expect(writtenLine()).toMatchObject({ unitPrice: 9_000_000 });
+    });
+  });
+
+  it('writes no option on a product without options', async () => {
+    await sell();
+    expect(writtenLine()).toMatchObject({ variantId: null });
+    expect(stock.recordOutbound).toHaveBeenCalledWith(
+      expect.objectContaining({ variantId: null }),
+      tx,
+    );
+  });
+
   it('prices from the tier and freezes the tax it implies', async () => {
     await sell();
 

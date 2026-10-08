@@ -47,6 +47,8 @@ export function duplicateWindow(
 
 export interface ItemLine {
   productId: string;
+  /** Eva soap Gold and Eva soap Classic are different goods. */
+  variantId?: string | null;
   /** Absent on a request that let the server pick the selling unit. */
   unitId?: string | null;
   quantity: number;
@@ -69,9 +71,8 @@ export function sameItems(
   const tally = (lines: readonly ItemLine[]) => {
     const totals = new Map<string, number>();
     for (const line of lines) {
-      const key = withUnits
-        ? `${line.productId}|${line.unitId}`
-        : line.productId;
+      const item = `${line.productId}|${line.variantId ?? ''}`;
+      const key = withUnits ? `${item}|${line.unitId}` : item;
       totals.set(key, (totals.get(key) ?? 0) + line.quantity);
     }
     return totals;

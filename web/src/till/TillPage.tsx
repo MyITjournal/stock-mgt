@@ -36,8 +36,11 @@ import { DuePayments } from '../components/DuePayments';
 import { SaleDateBar } from './SaleDateBar';
 import { occurredAtFor, today } from '../lib/paidOn';
 import { keptAt, useKeepDraft, useRestoredDraft } from '../lib/draft';
+import { optionLabel, optionQuery } from '../lib/options';
+import { OptionPicker } from './OptionPicker';
 
 type ScanResult = components['schemas']['ScanResult'];
+type ScannedOption = ScanResult['options'][number];
 type ProductView = components['schemas']['ProductView'];
 type ResolvedUnitPrice = components['schemas']['ResolvedUnitPrice'];
 type SaleView = components['schemas']['SaleView'];
@@ -110,7 +113,12 @@ export function TillPage() {
   // and the product it read last — its line is shown under the picture so the
   // unit and quantity can be set without scrolling a fifty-line cart.
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [lastScannedId, setLastScannedId] = useState<string | null>(null);
+  const [lastScanned, setLastScanned] = useState<{
+    productId: string;
+    variantId: string | null;
+  } | null>(null);
+  // A code on every option of a product — the till asks which one.
+  const [choosing, setChoosing] = useState<ScanResult | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -233,7 +241,8 @@ export function TillPage() {
           cart.map(async (line) => {
             const result = await api.get<ResolvedUnitPrice>(
               `/products/${line.productId}/price?unitId=${line.unitId}` +
-                (nextTierId ? `&tierId=${nextTierId}` : ''),
+                (nextTierId ? `&tierId=${nextTierId}` : '') +
+                optionQuery(line.variantId),
             );
             return {
               key: line.key,
@@ -256,7 +265,7 @@ export function TillPage() {
           tiers.find((tier) => tier.id === nextTierId)?.name ?? 'this';
         if (unpriced.length > 0) {
           setError(
-            `${unpriced.map((line) => `${line.productName} (${line.unitName})`).join(', ')} ${unpriced.length === 1 ? 'has' : 'have'} no price on the ${tierName} list, so ${unpriced.length === 1 ? 'it keeps its' : 'they keep their'} previous price. Check before taking payment.`,
+            `${unpriced.map((line) => `${optionLabel(line.productName, line.variantName)} (${line.unitName})`).join(', ')} ${unpriced.length === 1 ? 'has' : 'have'} no price on the ${tierName} list, so ${unpriced.length === 1 ? 'it keeps its' : 'they keep their'} previous price. Check before taking payment.`,
           );
         } else {
           setNotice(`Prices moved to the ${tierName} list.`);
@@ -336,7 +345,7 @@ export function TillPage() {
   }, []);
 
   const addScanned = useCallback(
-    (scan: ScanResult): boolean => {
+    (scan: ScanResult, picked?: ScannedOption): boolean => {
       // A code on a unit only counted in — the single sachet a distributor
       // never sells. The server would refuse the sale; saying so now is kinder
       // than letting it reach the checkout.
@@ -346,14 +355,29 @@ export function TillPage() {
         );
         return false;
       }
-      if (scan.price === null) {
-        setError(unpricedMessage(scan.product.name, scan.unit.name));
+      // A code on the product as a whole, for a product with options: which
+      // one is being sold is a question for the person at the till.
+      if (!picked && !scan.variant && scan.options.length > 0) {
+        setChoosing(scan);
         return false;
       }
-      const price = scan.price;
+      // Priced as the option already — its own price, else the product's.
+      const option = picked ?? scan.variant;
+      const price = option ? option.price : scan.price;
+      if (price === null) {
+        setError(
+          unpricedMessage(
+            optionLabel(scan.product.name, option?.name),
+            scan.unit.name,
+          ),
+        );
+        return false;
+      }
       setLines((current) =>
         addToCart(current, {
           productId: scan.product.id,
+          variantId: option?.id ?? null,
+          variantName: option?.name ?? null,
           productName: scan.product.name,
           size: scan.product.size,
           sku: scan.product.sku,
@@ -388,8 +412,13 @@ export function TillPage() {
             (tierId ? `?tierId=${tierId}` : ''),
         );
         if (addScanned(scan)) {
-          setLastScannedId(scan.product.id);
-          setNotice(`Added ${scan.product.name}.`);
+          setLastScanned({
+            productId: scan.product.id,
+            variantId: scan.variant?.id ?? null,
+          });
+          setNotice(
+            `Added ${optionLabel(scan.product.name, scan.variant?.name)}.`,
+          );
         }
       } catch (caught) {
         if (caught instanceof ApiError && caught.status === 404) {
@@ -426,13 +455,20 @@ export function TillPage() {
       );
       if (!unit) return;
       if (unit.price === null) {
-        setError(unpricedMessage(product.name, unit.name));
+        setError(
+          unpricedMessage(
+            optionLabel(product.name, product.variant?.name),
+            unit.name,
+          ),
+        );
         return;
       }
       const price = unit.price;
       setLines((current) =>
         addToCart(current, {
           productId: product.id,
+          variantId: product.variant?.id ?? null,
+          variantName: product.variant?.name ?? null,
           productName: product.name,
           size: product.size,
           sku: product.sku,
@@ -550,13 +586,19 @@ export function TillPage() {
       try {
         const priced = await api.get<ResolvedUnitPrice>(
           `/products/${line.productId}/price?unitId=${unitId}` +
-            (tierId ? `&tierId=${tierId}` : ''),
+            (tierId ? `&tierId=${tierId}` : '') +
+            optionQuery(line.variantId),
         );
         const price = priced.price;
         if (price === null) {
           // The line stays in the unit it was in, at the price it had —
           // switching it to a unit with no price would leave nothing to charge.
-          setError(unpricedMessage(line.productName, unit.name));
+          setError(
+            unpricedMessage(
+              optionLabel(line.productName, line.variantName),
+              unit.name,
+            ),
+          );
           return;
         }
         setLines((current) =>
@@ -682,9 +724,14 @@ export function TillPage() {
   );
 
   // The last line for the product the camera read — after a unit change the
-  // line's key is the same but its unit is not, so it is found by product.
-  const justScanned = lastScannedId
-    ? lines.findLast((line) => line.productId === lastScannedId)
+  // line's key is the same but its unit is not, so it is found by product, and
+  // by option: Gold scanned is the Gold line, not the Classic one above it.
+  const justScanned = lastScanned
+    ? lines.findLast(
+        (line) =>
+          line.productId === lastScanned.productId &&
+          (line.variantId ?? null) === lastScanned.variantId,
+      )
     : undefined;
 
   const lineHandlers = {
@@ -723,7 +770,8 @@ export function TillPage() {
     setSettledTerm('');
     setActiveIndex(-1);
     setCameraOpen(false);
-    setLastScannedId(null);
+    setLastScanned(null);
+    setChoosing(null);
     setError(null);
     setNotice(null);
     setSaleId(crypto.randomUUID());
@@ -793,7 +841,7 @@ export function TillPage() {
                 onCode={(code) => void scanFromCamera(code)}
                 onClose={() => {
                   setCameraOpen(false);
-                  setLastScannedId(null);
+                  setLastScanned(null);
                 }}
               >
                 {justScanned && (
@@ -878,7 +926,7 @@ export function TillPage() {
                   );
                   return (
                     <li
-                      key={product.id}
+                      key={`${product.id}:${product.variant?.id ?? ''}`}
                       id={`till-suggestion-${index}`}
                       role="option"
                       aria-selected={index === activeIndex}
@@ -895,7 +943,7 @@ export function TillPage() {
                       >
                         <span>
                           <span className="font-medium text-slate-900">
-                            {product.name}
+                            {optionLabel(product.name, product.variant?.name)}
                           </span>
                           {product.size && (
                             <span className="ml-2 text-slate-600">
@@ -950,6 +998,29 @@ export function TillPage() {
           // Already a customer: the sale goes in their name, nothing added.
           onPickExisting={takeNewCustomer}
           pickLabel="Use"
+        />
+      )}
+
+      {choosing && (
+        <OptionPicker
+          scan={choosing}
+          onCancel={() => {
+            setChoosing(null);
+            backToSearch();
+          }}
+          onPick={(option) => {
+            const scan = choosing;
+            setChoosing(null);
+            if (addScanned(scan, option)) {
+              setLastScanned({
+                productId: scan.product.id,
+                variantId: option.id,
+              });
+              setNotice(
+                `Added ${optionLabel(scan.product.name, option.name)}.`,
+              );
+            }
+          }}
         />
       )}
 

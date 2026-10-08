@@ -11,6 +11,7 @@ import { afterWrite } from '../api/cache';
 import { useIsManager, useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ReturnDialog, type ReturnLineInput } from './ReturnDialog';
+import { optionLabel } from '../lib/options';
 
 type SaleView = components['schemas']['SaleView'];
 
@@ -49,6 +50,7 @@ export function SaleDetailPage() {
           quantity: line.quantity,
           restocked: line.restocked,
           ...(line.reason && { reason: line.reason }),
+          ...(line.variantId && { variantId: line.variantId }),
         })),
       }),
     onSuccess: (updated) => {
@@ -78,6 +80,15 @@ export function SaleDetailPage() {
       </Page>
     );
   }
+
+  // What a return was of — "Eva Soap — Gold: " — since two lines of one
+  // product, in two options, are otherwise indistinguishable here.
+  const itemName = (saleLineId: string) => {
+    const line = sale.lines.find((row) => row.id === saleLineId);
+    return line
+      ? `${optionLabel(line.product.name, line.variant?.name)}: `
+      : '';
+  };
 
   const customerName = sale.customer
     ? [sale.customer.firstName, sale.customer.lastName]
@@ -126,7 +137,9 @@ export function SaleDetailPage() {
                 {sale.lines.map((line) => (
                   <tr key={line.id}>
                     <td className="px-4 py-3">
-                      <div className="text-slate-900">{line.product.name}</div>
+                      <div className="text-slate-900">
+                        {optionLabel(line.product.name, line.variant?.name)}
+                      </div>
                       <div className="text-xs text-slate-500">
                         {line.product.sku}
                       </div>
@@ -175,6 +188,7 @@ export function SaleDetailPage() {
                   >
                     <span>
                       <span className="text-slate-900">
+                        {itemName(entry.saleLineId)}
                         {entry.quantity} back
                       </span>
                       <span className="ml-2 text-xs text-slate-500">

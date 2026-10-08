@@ -46,6 +46,16 @@ describe('sameItems', () => {
     expect(sameItems([peak], [{ ...peak, unitId: 'piece' }])).toBe(false);
   });
 
+  it('does not match a different option of the same product', () => {
+    const gold = { productId: 'eva', variantId: 'gold', quantity: 2 };
+    expect(sameItems([gold], [{ ...gold, variantId: 'classic' }])).toBe(false);
+    expect(sameItems([gold], [{ ...gold }])).toBe(true);
+  });
+
+  it('treats no option on the request and a null one on the record alike', () => {
+    expect(sameItems([peak], [{ ...peak, variantId: null }])).toBe(true);
+  });
+
   it('adds two lines of one product together', () => {
     expect(
       sameItems(

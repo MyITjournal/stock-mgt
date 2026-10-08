@@ -10,6 +10,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
   ValidateIf,
@@ -17,7 +18,10 @@ import {
 } from 'class-validator';
 import { MAX_PRODUCT_CHILDREN } from '../../../common/pagination/request-limits';
 import { IsUUID } from 'class-validator';
-import { IsMoney } from '../../../common/money/is-money.validator';
+import {
+  IsMoney,
+  MAX_MINOR_UNITS,
+} from '../../../common/money/is-money.validator';
 import { MAX_VARIANT_ATTRIBUTES } from '../variants';
 
 export class ProductUnitInput {
@@ -79,11 +83,28 @@ export class ProductPriceInput {
   @IsUUID()
   tierId?: string;
 
-  @IsMoney({
-    example: 5400000,
-    // Deliberately not derived from basePrice: a carton is cheaper per piece.
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "An option's own price, for an option that does not sell at the product's (DECISIONS.md §24). Omitted, the price is the product's, which every option without one of its own sells at. An id from `variants` in this same request is fine.",
   })
-  price!: number;
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  // Deliberately not derived from basePrice: a carton is cheaper per piece.
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: 5400000,
+    description:
+      "Amount in minor units (kobo for NGN), tax-inclusive. Null only on an option's price: it removes that option's own price, so the option sells at the product's again.",
+  })
+  @ValidateIf((row: ProductPriceInput) => row.price !== null)
+  @IsInt({ message: '$property must be an integer number of minor units' })
+  @Min(0)
+  @Max(MAX_MINOR_UNITS)
+  price!: number | null;
 }
 
 /** A barcode attached as the product is created. Keyed by unit name, as above. */
@@ -118,6 +139,15 @@ export class ProductBarcodeInput {
   @IsOptional()
   @IsBoolean()
   isPrimary?: boolean;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'The option this code is printed on — Eva soap Gold has its own barcode. Omitted on a product with options, scanning it asks which option. An id from `variants` in this same request is fine.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
 }
 
 /**

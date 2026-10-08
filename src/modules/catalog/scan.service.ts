@@ -25,7 +25,17 @@ export class ScanService {
       where: { code },
       include: {
         unit: true,
-        product: { include: { prices: true } },
+        variant: { select: { id: true, name: true } },
+        product: {
+          include: {
+            prices: true,
+            variants: {
+              where: { isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+              select: { id: true, name: true },
+            },
+          },
+        },
       },
     });
 
@@ -35,16 +45,22 @@ export class ScanService {
       );
     }
 
-    const { product, unit } = barcode;
+    const { product, unit, variant } = barcode;
+    const tier = await resolveTierId(this.prisma, tierId);
 
     // The same rule as GET /products/:id/price and the sale path, not a copy
     // of it: this used to repeat the arithmetic inline, which is exactly how a
     // change to the rule reaches two callers and misses the third.
-    const priced = resolveUnitPrice(
-      product,
-      unit,
-      await resolveTierId(this.prisma, tierId),
-    );
+    const priced = resolveUnitPrice(product, unit, tier, variant?.id);
+    const asOption = (option: { id: string; name: string }) => {
+      const own = resolveUnitPrice(product, unit, tier, option.id);
+      return {
+        id: option.id,
+        name: option.name,
+        price: own.price,
+        isTierPrice: own.isTierPrice,
+      };
+    };
 
     return {
       code,
@@ -62,6 +78,10 @@ export class ScanService {
         factor: unit.factor,
         isSellable: unit.isSellable,
       },
+      variant: variant ? asOption(variant) : null,
+      // A code on the product as a whole, for a product with options: the
+      // till asks which one, from these, with no second request.
+      options: variant ? [] : product.variants.map(asOption),
       // Scanning a carton must add 24 pieces to stock, not 1 anonymous item.
       baseQuantity: unit.factor,
       price: priced.price,

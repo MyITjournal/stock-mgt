@@ -4,6 +4,7 @@ import { MoneyInput, Select } from '../components/Field';
 import { QuantityInput } from '../components/QuantityInput';
 import { Button } from '../components/Button';
 import { isOverridden, lineTotal, type CartLine } from './cart';
+import { optionLabel } from '../lib/options';
 
 /**
  * The cart: what is being sold, in what unit, at what price.
@@ -83,7 +84,7 @@ export function CartLines({
             <tr key={line.key} className="align-top">
               <td className="px-4 py-3">
                 <div className="font-medium text-slate-900">
-                  {line.productName}
+                  {optionLabel(line.productName, line.variantName)}
                   {line.size && (
                     <span className="ml-2 font-normal text-slate-600">
                       {line.size}
@@ -103,7 +104,7 @@ export function CartLines({
 
               <td className="px-4 py-3">
                 <Select
-                  aria-label={`Unit for ${line.productName}`}
+                  aria-label={`Unit for ${optionLabel(line.productName, line.variantName)}`}
                   value={line.unitId}
                   disabled={busy || line.units.length <= 1}
                   onChange={(event) =>
@@ -127,13 +128,13 @@ export function CartLines({
                     type="button"
                     onClick={() => step(line, -1)}
                     disabled={busy || line.quantity <= 1}
-                    aria-label={`One fewer ${line.unitName} of ${line.productName}`}
+                    aria-label={`One fewer ${line.unitName} of ${optionLabel(line.productName, line.variantName)}`}
                     className="h-9 w-9 shrink-0 rounded-md border border-slate-300 bg-white text-lg leading-none text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                   >
                     −
                   </button>
                   <QuantityInput
-                    label={`Quantity of ${line.productName}`}
+                    label={`Quantity of ${optionLabel(line.productName, line.variantName)}`}
                     value={line.quantity}
                     disabled={busy}
                     onChange={(next) => onQuantityChange(line.key, next)}
@@ -143,7 +144,7 @@ export function CartLines({
                     type="button"
                     onClick={() => step(line, 1)}
                     disabled={busy}
-                    aria-label={`One more ${line.unitName} of ${line.productName}`}
+                    aria-label={`One more ${line.unitName} of ${optionLabel(line.productName, line.variantName)}`}
                     className="h-9 w-9 shrink-0 rounded-md border border-slate-300 bg-white text-lg leading-none text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                   >
                     +
@@ -155,7 +156,7 @@ export function CartLines({
                 <div className="flex flex-col items-end gap-1">
                   <MoneyInput
                     id={`price-${line.key}`}
-                    aria-label={`Price of one ${line.unitName} of ${line.productName}`}
+                    aria-label={`Price of one ${line.unitName} of ${optionLabel(line.productName, line.variantName)}`}
                     value={line.unitPrice}
                     disabled={busy}
                     onChange={(minor) => onPriceChange(line.key, minor)}
@@ -184,7 +185,7 @@ export function CartLines({
                   type="button"
                   disabled={busy}
                   onClick={() => onRemove(line.key)}
-                  aria-label={`Remove ${line.productName}`}
+                  aria-label={`Remove ${optionLabel(line.productName, line.variantName)}`}
                 >
                   ×
                 </Button>

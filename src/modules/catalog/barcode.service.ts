@@ -29,6 +29,17 @@ export class BarcodeService {
         'That unit does not belong to this product',
       );
     }
+    if (input.variantId) {
+      const option = await this.prisma.productVariant.findFirst({
+        where: { id: input.variantId, productId },
+        select: { id: true },
+      });
+      if (!option) {
+        throw new BadRequestException(
+          'That option does not belong to this product',
+        );
+      }
+    }
 
     // Shared with creating a product that carries its barcodes inline, so both
     // routes reach the same verdict on the same code.
@@ -43,6 +54,7 @@ export class BarcodeService {
           organizationId: TenantContext.requireOrganizationId(),
           productId,
           unitId: input.unitId,
+          variantId: input.variantId ?? null,
           code,
           symbology,
           isPrimary: input.isPrimary ?? false,
@@ -51,7 +63,7 @@ export class BarcodeService {
       });
 
       if (barcode.isPrimary)
-        await this.clearOtherPrimaries(unit.id, barcode.id);
+        await this.clearOtherPrimaries(unit.id, barcode.variantId, barcode.id);
       return barcode;
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -80,10 +92,17 @@ export class BarcodeService {
     await this.prisma.productBarcode.delete({ where: { id } });
   }
 
-  /** One primary code per unit, so label printing is unambiguous. */
-  private async clearOtherPrimaries(unitId: string, keepId: string) {
+  /**
+   * One primary code per unit — per unit and option, on a product with options
+   * — so label printing is unambiguous.
+   */
+  private async clearOtherPrimaries(
+    unitId: string,
+    variantId: string | null,
+    keepId: string,
+  ) {
     await this.prisma.productBarcode.updateMany({
-      where: { unitId, id: { not: keepId }, isPrimary: true },
+      where: { unitId, variantId, id: { not: keepId }, isPrimary: true },
       data: { isPrimary: false },
     });
   }

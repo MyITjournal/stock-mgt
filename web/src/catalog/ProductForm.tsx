@@ -17,6 +17,8 @@ import { FRACTIONS, portionOf } from '../lib/portions';
 import { toWholeBaseUnits } from '../lib/decimalQuantity';
 import { OpeningStockFields } from './OpeningStockFields';
 import { EMPTY_OPENING, type OpeningDraft } from './openingDraft';
+import { OptionsFields, type OptionDraft } from './OptionsFields';
+import { draftName } from '../lib/options';
 
 type ProductView = components['schemas']['ProductView'];
 type CategoryView = components['schemas']['CategoryView'];
@@ -24,6 +26,7 @@ type PackagingTypeView = components['schemas']['PackagingTypeView'];
 type PriceTierView = components['schemas']['PriceTierView'];
 type OrganizationView = components['schemas']['OrganizationView'];
 type LocationView = components['schemas']['LocationView'];
+type StockLevelRow = components['schemas']['StockLevelRow'];
 
 /**
  * The product saved and its opening stock did not (2026-10-08). Its own kind,
@@ -55,8 +58,15 @@ interface PriceDraft {
   key: string;
   unit: string;
   tierId: string;
+  /** '' is the product's own price; an option's id is that option's price. */
+  variantId: string;
   price: number | null;
   existing: boolean;
+  /**
+   * A saved option's price marked to go: the option then sells at the
+   * product's price again. The one kind of price that can be removed (§24).
+   */
+  removed: boolean;
 }
 
 /**
@@ -82,7 +92,8 @@ interface PriceDraft {
  *   is deliberate: a unit with no tier price falls back to `basePrice ×
  *   factor`, which is right for a sachet and wrong for a carton — the silent
  *   overcharge the per-unit price list exists to prevent. Change a price rather
- *   than removing it.
+ *   than removing it. The exception is an **option's own price** (§24): taken
+ *   away, the option sells at the product's price, which is still there.
  * - **The base price is optional, and empty means no fallback at all.** A unit
  *   with no price of its own then has no price, and the till will not sell it
  *   until it gets one — never a guess. That is what a distributor wants: it
@@ -190,11 +201,66 @@ export function ProductForm({
           key: price.id,
           unit: price.unit.name,
           tierId: price.tierId,
+          variantId: price.variantId ?? '',
           price: price.price,
           existing: true,
+          removed: false,
         }))
       : [],
   );
+
+  // -- Options (§24) --------------------------------------------------------
+  const savedAttributes = product?.variantAttributes ?? [];
+  const [attributes, setAttributes] = useState<string[]>(savedAttributes);
+  const savedOptions = product?.variants ?? [];
+  const [options, setOptions] = useState<OptionDraft[]>(
+    savedOptions.map((option) => ({
+      id: option.id,
+      values: option.values,
+      isActive: option.isActive,
+      existing: true,
+    })),
+  );
+  // A product holding stock that gets its first options: which one that
+  // stock is. '' means the first option listed.
+  const [stockOptionId, setStockOptionId] = useState('');
+  const givingFirstOptions =
+    editing && savedOptions.length === 0 && options.length > 0 && trackStock;
+  const { data: heldStock = [] } = useQuery({
+    queryKey: ['stock-levels', 'product', product?.id],
+    queryFn: () =>
+      api.get<StockLevelRow[]>(`/stock/levels?productId=${product?.id}`),
+    enabled: givingFirstOptions,
+  });
+  const asksWhichOption =
+    givingFirstOptions && heldStock.some((row) => row.quantity !== 0);
+  const optionLabelOf = (option: OptionDraft, index: number) =>
+    draftName(option.values) || `Option ${index + 1}`;
+
+  const optionsProblem = (() => {
+    if (attributes.length === 0) return null;
+    if (attributes.some((attribute) => !attribute.trim())) {
+      return 'Say what the options differ by — Flavour, for instance.';
+    }
+    if (options.length === 0) {
+      return 'Add at least one option, or take options off with ×.';
+    }
+    if (
+      options.some((option) => option.values.some((value) => !value.trim()))
+    ) {
+      return `Fill in every option's ${attributes.map((a) => a.trim()).join(' and ')}.`;
+    }
+    const names = options.map((option) =>
+      draftName(option.values).toLowerCase(),
+    );
+    if (new Set(names).size !== names.length) {
+      return 'Two options have the same name.';
+    }
+    if (!options.some((option) => option.isActive)) {
+      return 'At least one option has to stay in use. Retire the product instead if none is sold.';
+    }
+    return null;
+  })();
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
@@ -232,7 +298,10 @@ export function ProductForm({
     locations.find((row) => row.isDefault)?.id ||
     locations[0]?.id ||
     '';
-  const offersOpening = !editing && trackStock && seesCost;
+  // Not for a product with options yet: opening stock per option comes with
+  // the receiving work (§24, branch 3), and the server would refuse it without.
+  const offersOpening =
+    !editing && trackStock && seesCost && attributes.length === 0;
   const wantsOpening =
     offersOpening && opening.quantity !== '' && Number(opening.quantity) > 0;
   const openingProblem = (() => {
@@ -276,6 +345,32 @@ export function ProductForm({
       );
     }
   };
+
+  // Only options that are new or changed go: the server leaves the rest alone.
+  const attributesChanged =
+    attributes.map((a) => a.trim()).join('\u0000') !==
+    savedAttributes.join('\u0000');
+  const changedOptions = options.filter((option) => {
+    if (!option.existing) return true;
+    const saved = savedOptions.find((row) => row.id === option.id);
+    return (
+      !saved ||
+      saved.isActive !== option.isActive ||
+      saved.values.join('\u0000') !==
+        option.values.map((value) => value.trim()).join('\u0000')
+    );
+  });
+  // A removed option price goes as null — "sell at the product's price".
+  const pricesToSend = prices
+    .filter((price) =>
+      price.removed ? price.existing && price.variantId : price.price !== null,
+    )
+    .map((price) => ({
+      unit: price.unit,
+      tierId: price.tierId,
+      ...(price.variantId && { variantId: price.variantId }),
+      price: price.removed ? null : price.price,
+    }));
 
   const save = useMutation({
     mutationFn: async () => {
@@ -324,15 +419,22 @@ export function ProductForm({
               code: newCodes[unit.key].trim(),
             })),
         }),
-        ...(prices.some((price) => price.price !== null) && {
-          prices: prices
-            .filter((price) => price.price !== null)
-            .map((price) => ({
-              unit: price.unit,
-              tierId: price.tierId,
-              price: price.price as number,
-            })),
+        // Options before prices on the server, so a price can name an option
+        // added in this same save.
+        ...(attributesChanged && {
+          variantAttributes: attributes.map((attribute) => attribute.trim()),
         }),
+        ...(changedOptions.length > 0 && {
+          variants: changedOptions.map((option) => ({
+            id: option.id,
+            values: option.values.map((value) => value.trim()),
+            isActive: option.isActive,
+          })),
+        }),
+        ...(asksWhichOption && {
+          existingStockVariantId: stockOptionId || options[0]?.id,
+        }),
+        ...(pricesToSend.length > 0 && { prices: pricesToSend }),
       };
 
       if (editing) {
@@ -450,6 +552,29 @@ export function ProductForm({
   const removePrice = (key: string) =>
     setPrices((current) => current.filter((price) => price.key !== key));
 
+  // A saved option's price is marked to go, not dropped from the list, so the
+  // save can say so — and pressing again keeps it.
+  const toggleRemoved = (key: string) =>
+    setPrices((current) =>
+      current.map((price) =>
+        price.key === key ? { ...price, removed: !price.removed } : price,
+      ),
+    );
+
+  // An unsaved option taken off takes its unsaved prices with it: left behind
+  // they would name an option the request no longer creates.
+  const changeOptions = (next: OptionDraft[]) => {
+    setOptions(next);
+    setPrices((current) =>
+      current.filter(
+        (price) =>
+          price.existing ||
+          !price.variantId ||
+          next.some((option) => option.id === price.variantId),
+      ),
+    );
+  };
+
   const addPrice = () =>
     setPrices((current) => [
       ...current,
@@ -457,8 +582,10 @@ export function ProductForm({
         key: crypto.randomUUID(),
         unit: units[0]?.name ?? '',
         tierId: tiers.find((tier) => tier.isDefault)?.id ?? tiers[0]?.id ?? '',
+        variantId: '',
         price: null,
         existing: false,
+        removed: false,
       },
     ]);
 
@@ -819,6 +946,45 @@ export function ProductForm({
           )}
         </section>
 
+        {/* -- Options ----------------------------------------------------- */}
+        <OptionsFields
+          attributes={attributes}
+          savedAttributes={savedAttributes.length}
+          options={options}
+          onAttributesChange={setAttributes}
+          onOptionsChange={changeOptions}
+        />
+        {asksWhichOption && options.length > 0 && (
+          <div className="mt-3 max-w-sm">
+            <Field
+              label="The stock you already have is"
+              htmlFor="p-stock-option"
+              hint="It moves to that option at what it cost. A stock count can share it out across the others later."
+            >
+              <Select
+                id="p-stock-option"
+                value={stockOptionId || options[0].id}
+                onChange={(event) => setStockOptionId(event.target.value)}
+              >
+                {options.map((option, index) => (
+                  <option key={option.id} value={option.id}>
+                    {optionLabelOf(option, index)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        )}
+        {optionsProblem && (
+          <p className="mt-2 text-xs text-amber-700">{optionsProblem}</p>
+        )}
+        {!editing && attributes.length > 0 && trackStock && seesCost && (
+          <p className="mt-2 text-xs text-slate-500">
+            Opening stock for each option cannot be entered here yet — that is
+            coming next. Save the product first.
+          </p>
+        )}
+
         {/* -- Prices ------------------------------------------------------ */}
         <section className="mt-6">
           <div className="flex items-center justify-between">
@@ -841,6 +1007,8 @@ export function ProductForm({
             A price added by mistake can be taken off with × until you save;
             after that it can be changed but <strong>not removed</strong> — set
             the right number instead of clearing it.
+            {options.length > 0 &&
+              ' An option sells at the "All options" price unless it has one of its own here; an option\'s own price can be removed, and it goes back to the product\'s.'}
           </p>
 
           <div className="mt-3 space-y-2">
@@ -852,7 +1020,34 @@ export function ProductForm({
               </p>
             )}
             {prices.map((price, index) => (
-              <div key={price.key} className="flex items-center gap-3">
+              <div
+                key={price.key}
+                className={`flex items-center gap-3 ${price.removed ? 'opacity-50' : ''}`}
+              >
+                {options.length > 0 && (
+                  <Select
+                    aria-label={`Price ${index + 1} option`}
+                    value={price.variantId}
+                    disabled={price.existing}
+                    onChange={(event) =>
+                      setPrices((current) =>
+                        current.map((row, i) =>
+                          i === index
+                            ? { ...row, variantId: event.target.value }
+                            : row,
+                        ),
+                      )
+                    }
+                    className="flex-1"
+                  >
+                    <option value="">All options</option>
+                    {options.map((option, optionIndex) => (
+                      <option key={option.id} value={option.id}>
+                        {optionLabelOf(option, optionIndex)}
+                      </option>
+                    ))}
+                  </Select>
+                )}
                 <Select
                   aria-label={`Price ${index + 1} unit`}
                   value={price.unit}
@@ -908,11 +1103,35 @@ export function ProductForm({
                   }
                   className="w-32 text-right"
                 />
-                <RemoveRow
-                  show={!price.existing}
-                  label={`Remove price ${index + 1}`}
-                  onClick={() => removePrice(price.key)}
-                />
+                {price.existing && price.variantId ? (
+                  // A saved option's own price can go: the option then sells
+                  // at the product's price. The product's own price cannot.
+                  <button
+                    type="button"
+                    onClick={() => toggleRemoved(price.key)}
+                    aria-label={
+                      price.removed
+                        ? `Keep price ${index + 1}`
+                        : `Remove price ${index + 1}`
+                    }
+                    title={
+                      price.removed
+                        ? 'Keep this price'
+                        : "Remove — this option sells at the product's price again"
+                    }
+                    className="w-7 shrink-0 rounded-md p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                  >
+                    <span aria-hidden="true" className="block h-4 leading-4">
+                      {price.removed ? '↺' : '×'}
+                    </span>
+                  </button>
+                ) : (
+                  <RemoveRow
+                    show={!price.existing}
+                    label={`Remove price ${index + 1}`}
+                    onClick={() => removePrice(price.key)}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -977,7 +1196,8 @@ export function ProductForm({
               !name.trim() ||
               units.length === 0 ||
               soldNames.length === 0 ||
-              openingProblem !== null
+              openingProblem !== null ||
+              optionsProblem !== null
             }
           >
             {save.isPending

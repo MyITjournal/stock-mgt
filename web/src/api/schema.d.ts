@@ -546,7 +546,7 @@ export interface paths {
         };
         /**
          * Search for the till, with prices already worked out
-         * @description Up to ten active products with every unit sold at the till priced on the tier — so picking one needs no further request. Built for search-as-you-type.
+         * @description Active products with every unit sold at the till priced on the tier — so picking one needs no further request. A product with options comes back as one row per active option, each priced as that option. Built for search-as-you-type.
          */
         get: operations["ProductController_tillSearch"];
         put?: never;
@@ -3006,6 +3006,12 @@ export interface components {
             prices: components["schemas"]["ProductPriceView"][];
             barcodes: components["schemas"]["ProductBarcodeView"][];
         };
+        TillSearchOption: {
+            /** Format: uuid */
+            id: string;
+            /** @example Gold */
+            name: string;
+        };
         TillSearchUnit: {
             /** Format: uuid */
             id: string;
@@ -3025,8 +3031,13 @@ export interface components {
             isTierPrice: boolean;
         };
         TillSearchResult: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The product.
+             */
             id: string;
+            /** @description The option this row is, on a product with options; null on one without. Two rows can share a product id, never an option. */
+            variant: components["schemas"]["TillSearchOption"] | null;
             /** @example Peak 14g */
             name: string;
             /** @example 14g */
@@ -3039,7 +3050,7 @@ export interface components {
              * @description The unit the till picks first — always one of `units`.
              */
             defaultUnitId: string;
-            /** @description Only units sold at the till, smallest first. */
+            /** @description Only units sold at the till, smallest first, priced as this row's option. */
             units: components["schemas"]["TillSearchUnit"][];
         };
         ImportUnitDto: {
@@ -3206,10 +3217,15 @@ export interface components {
              */
             tierId?: string;
             /**
-             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * Format: uuid
+             * @description An option's own price, for an option that does not sell at the product's (DECISIONS.md §24). Omitted, the price is the product's, which every option without one of its own sells at. An id from `variants` in this same request is fine.
+             */
+            variantId?: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. Null only on an option's price: it removes that option's own price, so the option sells at the product's again.
              * @example 5400000
              */
-            price: number;
+            price: number | null;
         };
         ProductBarcodeInput: {
             /**
@@ -3229,6 +3245,11 @@ export interface components {
             symbology?: "EAN13" | "UPC_A" | "EAN8" | "ITF14" | "CODE128" | "QR" | "INTERNAL";
             /** @description Use this code on printed labels. */
             isPrimary?: boolean;
+            /**
+             * Format: uuid
+             * @description The option this code is printed on — Eva soap Gold has its own barcode. Omitted on a product with options, scanning it asks which option. An id from `variants` in this same request is fine.
+             */
+            variantId?: string;
         };
         ProductVariantInput: {
             /**
@@ -3463,6 +3484,11 @@ export interface components {
              */
             unitId: string;
             /**
+             * Format: uuid
+             * @description The option this code is printed on — Eva soap Gold has its own barcode. Omitted on a product with options, scanning it asks which option.
+             */
+            variantId?: string;
+            /**
              * @description Omit to generate an internal EAN-13 for goods that arrive without a barcode.
              * @example 5901234123457
              */
@@ -3500,6 +3526,15 @@ export interface components {
             /** @description Whether the till may sell this unit. A code on an unsold unit — the single sachet a distributor never sells — still resolves, so a delivery can scan it; the till refuses it. */
             isSellable: boolean;
         };
+        ScannedOption: {
+            /** Format: uuid */
+            id: string;
+            /** @example Gold */
+            name: string;
+            /** @description Tax-inclusive, in kobo, for one of `unit` as this option. */
+            price: number | null;
+            isTierPrice: boolean;
+        };
         TaxSplit: {
             /** @description What the customer pays. Prices are stored tax-inclusive (§2). */
             gross: number;
@@ -3517,6 +3552,10 @@ export interface components {
             symbology: components["schemas"]["BarcodeSymbology"];
             product: components["schemas"]["ScannedProduct"];
             unit: components["schemas"]["ScannedUnit"];
+            /** @description The option this code is printed on — Eva soap Gold has its own barcode — priced as that option. Null when the code is on the product as a whole. */
+            variant: components["schemas"]["ScannedOption"] | null;
+            /** @description Set only when the product has options and this code names none: every active option, priced, so the till can ask which one without another request. Empty otherwise. */
+            options: components["schemas"]["ScannedOption"][];
             /**
              * @description How many base units one scan of this code represents, so scanning a carton adds 24 pieces to the ledger rather than one anonymous item.
              * @example 24
@@ -5453,6 +5492,12 @@ export interface components {
             /** @example 400g */
             size: string | null;
         };
+        SoldOptionRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Gold */
+            name: string;
+        };
         SoldUnitRef: {
             /** Format: uuid */
             id: string;
@@ -5470,6 +5515,11 @@ export interface components {
             saleId: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description The option sold — null on a product without options.
+             */
+            variantId: string | null;
             /** Format: uuid */
             unitId: string;
             /**
@@ -5514,6 +5564,7 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             product: components["schemas"]["SoldProductRef"];
+            variant: components["schemas"]["SoldOptionRef"] | null;
             unit: components["schemas"]["SoldUnitRef"];
         };
         SaleReturnView: {
@@ -5745,6 +5796,11 @@ export interface components {
             productId: string;
             /**
              * Format: uuid
+             * @description Which option — Eva soap in Gold. Required once the product has options, refused on one without, and a retired option cannot be sold. Its own price applies when it has one; otherwise the product’s.
+             */
+            variantId?: string;
+            /**
+             * Format: uuid
              * @description The unit being sold — the carton, not the piece. Defaults to the base unit.
              */
             unitId?: string;
@@ -5832,6 +5888,11 @@ export interface components {
              * @description The unit being handed back. Defaults to the unit the line was sold in.
              */
             unitId?: string;
+            /**
+             * Format: uuid
+             * @description Only for goods sold before the product had options: which option they go back on the shelf as. A line sold as an option always goes back as that option.
+             */
+            variantId?: string;
             /**
              * @description Counted in `unitId`. Cannot exceed what is still outstanding.
              * @example 1
@@ -8306,7 +8367,7 @@ export interface operations {
             query: {
                 /** @description The cart's price list; the default one when omitted */
                 tierId?: string;
-                /** @description At least two characters; matches name, SKU or size */
+                /** @description At least two characters. Every word must match the name, SKU, size or option — "eva gold" finds Eva soap in Gold. */
                 q: unknown;
             };
             header?: never;
@@ -8417,6 +8478,8 @@ export interface operations {
             query: {
                 unitId: string;
                 tierId?: string;
+                /** @description The option being priced. Its own price wins; without one it is the product's. */
+                variantId?: string;
             };
             header?: never;
             path: {
