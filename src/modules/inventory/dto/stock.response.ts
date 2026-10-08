@@ -29,6 +29,15 @@ class StockProductRef {
   sku!: string;
 }
 
+/** The option, for a product that has options (§24). */
+class StockOptionRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Gold' })
+  name!: string;
+}
+
 class StockLocationRef {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -78,7 +87,8 @@ class StockLevelBatch {
 }
 
 /**
- * Stock on hand: one row per product and location.
+ * Stock on hand: one row per product, option and location — each option is
+ * an item of its own on the shelf (owner, 2026-10-08).
  *
  * Read from the `StockBalance` cache rather than summed over movements — that
  * is what the cache is for — and `POST /stock/rebuild-balances` proves the two
@@ -87,6 +97,13 @@ class StockLevelBatch {
 export class StockLevelRow {
   @ApiProperty({ type: () => StockProductRef })
   product!: StockProductRef;
+
+  @ApiProperty({
+    type: () => StockOptionRef,
+    nullable: true,
+    description: 'Which option. Null for a product without options.',
+  })
+  variant!: StockOptionRef | null;
 
   @ApiProperty({ type: () => StockLocationRef })
   location!: StockLocationRef;
@@ -112,6 +129,9 @@ export class StockLevelRow {
 export class ExpiringBatchRow {
   @ApiProperty({ type: () => StockProductRef })
   product!: StockProductRef;
+
+  @ApiProperty({ type: () => StockOptionRef, nullable: true })
+  variant!: StockOptionRef | null;
 
   @ApiProperty({ type: () => StockLocationRef })
   location!: StockLocationRef;
@@ -243,6 +263,13 @@ class MovementBatchRef {
 export class SyncedMovementView extends StockMovementView {
   @ApiProperty({ type: () => MovementBatchRef })
   batch!: MovementBatchRef;
+
+  @ApiProperty({
+    type: () => StockOptionRef,
+    nullable: true,
+    description: 'The option that moved, named, so a list can say which.',
+  })
+  variant!: StockOptionRef | null;
 }
 
 /**
@@ -292,6 +319,9 @@ export class MovementPageView {
 export class ForcedMovementView extends StockMovementView {
   @ApiProperty({ type: () => StockProductRef })
   product!: StockProductRef;
+
+  @ApiProperty({ type: () => StockOptionRef, nullable: true })
+  variant!: StockOptionRef | null;
 
   @ApiProperty({ type: () => StockLocationRef })
   location!: StockLocationRef;

@@ -31,8 +31,9 @@ export class StockLevelService {
   constructor(@Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma) {}
 
   /**
-   * Stock on hand, one row per product and location, with the batches that make
-   * it up when asked for.
+   * Stock on hand, one row per product, option and location, with the batches
+   * that make it up when asked for. Each option is a row of its own: on the
+   * shelf an option is an item (owner, 2026-10-08; DECISIONS.md §24).
    */
   async findLevels(filter: LevelFilter = {}): Promise<StockLevelRow[]> {
     const balances = await this.prisma.stockBalance.findMany({
@@ -42,7 +43,16 @@ export class StockLevelService {
         ...(filter.includeEmpty ? {} : { quantity: { not: 0 } }),
       },
       include: {
-        product: { select: { id: true, name: true, sku: true } },
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            // Only whether it has options, for the leftover rows below.
+            variants: { select: { id: true }, take: 1 },
+          },
+        },
+        variant: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
         batch: {
           select: {
@@ -61,7 +71,12 @@ export class StockLevelService {
           },
         },
       },
-      orderBy: [{ productId: 'asc' }, { locationId: 'asc' }],
+      // A product's options together and in its own order, before location.
+      orderBy: [
+        { productId: 'asc' },
+        { variant: { sortOrder: 'asc' } },
+        { locationId: 'asc' },
+      ],
     });
 
     // Asked once for the whole page rather than per batch: the role cannot
@@ -72,6 +87,7 @@ export class StockLevelService {
       string,
       {
         product: { id: string; name: string; sku: string };
+        variant: { id: string; name: string } | null;
         location: { id: string; name: string };
         quantity: number;
         batches: {
@@ -92,9 +108,25 @@ export class StockLevelService {
     >();
 
     for (const balance of balances) {
-      const key = `${balance.productId}:${balance.locationId}`;
+      // The empty "no option" balance a product leaves behind when its stock
+      // moves into its first option (`moveIntoVariant`). Shown, it would be a
+      // card at zero naming no option, whose Adjust and Move can only refuse.
+      if (
+        balance.variantId === null &&
+        balance.quantity === 0 &&
+        balance.product.variants.length > 0
+      ) {
+        continue;
+      }
+
+      const key = `${balance.productId}:${balance.variantId ?? '-'}:${balance.locationId}`;
       const row = grouped.get(key) ?? {
-        product: balance.product,
+        product: {
+          id: balance.product.id,
+          name: balance.product.name,
+          sku: balance.product.sku,
+        },
+        variant: balance.variant,
         location: balance.location,
         quantity: 0,
         batches: [],
@@ -122,6 +154,7 @@ export class StockLevelService {
 
     return [...grouped.values()].map((row) => ({
       product: row.product,
+      variant: row.variant,
       location: row.location,
       quantity: row.quantity,
       ...(filter.includeBatches ? { batches: row.batches } : {}),
@@ -145,6 +178,7 @@ export class StockLevelService {
       },
       include: {
         product: { select: { id: true, name: true, sku: true } },
+        variant: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
         batch: {
           select: {
@@ -163,6 +197,7 @@ export class StockLevelService {
     return balances
       .map((balance) => ({
         product: balance.product,
+        variant: balance.variant,
         location: balance.location,
         batchId: balance.batchId,
         lotCode: balance.batch.lotCode,
@@ -203,6 +238,7 @@ export class StockLevelService {
       orderBy: { occurredAt: 'desc' },
       include: {
         product: { select: { id: true, name: true, sku: true } },
+        variant: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
         recordedBy: { select: { id: true, firstName: true, lastName: true } },
       },

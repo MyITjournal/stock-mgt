@@ -93,6 +93,7 @@ export class SyncService {
       take: limit,
       include: {
         batch: { select: { lotCode: true, expiryDate: true } },
+        variant: { select: { id: true, name: true } },
       },
     });
 

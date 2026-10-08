@@ -45,6 +45,15 @@ export class CountLineDto {
   @IsUUID()
   productId!: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Which option was counted — required for a product with options, refused for one without. Each option is counted as an item of its own; a retired option’s leftover stock may still be counted.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
   @ApiProperty({
     example: 182,
     description:
@@ -65,7 +74,7 @@ export class CountLinesDto {
   @ApiProperty({
     type: [CountLineDto],
     description:
-      'Many at once, because a device that counted a shelf offline syncs the whole sheet in one request. Counting a product twice replaces the earlier line.',
+      'Many at once, because a device that counted a shelf offline syncs the whole sheet in one request. Counting a product (or one option of it) twice replaces the earlier line.',
   })
   @IsArray()
   @ArrayMinSize(1)

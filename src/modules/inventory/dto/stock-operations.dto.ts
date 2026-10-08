@@ -31,6 +31,15 @@ export class CreateAdjustmentDto {
 
   @ApiPropertyOptional({
     format: 'uuid',
+    description:
+      'Which option, for a product that has options — required then, refused otherwise. A retired option’s leftover stock may still be adjusted.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
     description: 'Defaults to the organization’s default location.',
   })
   @IsOptional()
@@ -135,6 +144,15 @@ export class CreateTransferDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   productId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Which option, for a product that has options — required then, refused otherwise. Both halves of the move carry it: the option travels with the goods, like the lot.',
+  })
+  @IsOptional()
+  @IsUUID()
+  variantId?: string;
 
   @ApiProperty({ format: 'uuid' })
   @IsUUID()

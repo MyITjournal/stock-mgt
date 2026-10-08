@@ -1434,3 +1434,25 @@ smaller count. It saves; the stock comes off the option the old stock was moved 
 
 **366. Stock on hand → *Correct cost* on an option's opening lot.** The dialog names the option
 (*… — Chicken*).
+
+## BG. Counting and moving by option
+
+**367. [gate] Stock on hand.** Eva Soap is a card per option (*Eva Soap — Gold*, *— Classic*). Type
+*eva gold*: Gold alone. Download: the sheet has an *Option* column.
+
+**368. [gate] Adjust on the Gold card → Take stock off, 1, Damaged.** The dialog names *Eva Soap —
+Gold*; after saving, only Gold's card drops by one. **Move** on the Gold card to the van: the van
+gets a Gold card, not Classic.
+
+**369. [gate] Counts → start a count at the main store.** The product list has an entry per option,
+retired ones marked *(retired)*. Count Gold two fewer than on hand and Classic two more. Each is its
+own line with its own *Ledger says*. Post: Gold drops two, Classic gains two, the total for Eva Soap
+is unchanged, and stock value on Reports is the same as before. On the product page the movements
+read *Moved out* of Gold and *Moved in* to Classic.
+
+**370. Count Gold short with nothing over elsewhere, and post.** It is written off as before.
+
+**371. Remove a counted option's line.** Only that option's line goes; the others stay.
+
+**372. Product page → *Where the stock is* and *The lots on the shelf*** show an *Option* column.
+Stock → Movements and the expiry panel name the option after the product.

@@ -961,7 +961,7 @@ export interface paths {
         };
         /**
          * Stock on hand
-         * @description One row per product and location, in base units. Ask for batches to see the lots behind the number and what each cost.
+         * @description One row per product, option and location, in base units — each option of a product is a row of its own. Ask for batches to see the lots behind the number and what each cost.
          */
         get: operations["StockController_findLevels"];
         put?: never;
@@ -1144,7 +1144,7 @@ export interface paths {
         put?: never;
         /**
          * Record what was counted
-         * @description Takes the whole sheet at once, in base units. Counting a product twice replaces the earlier line — a recount is a correction, not a second opinion. Nothing here touches stock.
+         * @description Takes the whole sheet at once, in base units. Counting a product (or one option of it) twice replaces the earlier line — a recount is a correction, not a second opinion. Nothing here touches stock.
          */
         post: operations["StocktakeController_count"];
         delete?: never;
@@ -1181,7 +1181,7 @@ export interface paths {
         put?: never;
         /**
          * Post the count, writing the corrections to the ledger
-         * @description Owner or manager only — finding a shortfall and approving it are deliberately different jobs. Variances are recomputed against live stock, then written as `adjustment` movements with reason `count_correction`: shortfalls leave FEFO, surpluses land on the most recently received batch at that location.
+         * @description Owner or manager only — finding a shortfall and approving it are deliberately different jobs. Variances are recomputed against live stock, then written with reason `count_correction`. Within one product, what one option is short and another is over **moves** between them on the same lots (`transfer_out`/`transfer_in` sharing a `transferGroupId`), so nothing is re-costed; only the rest is written off or on as `adjustment` — shortfalls leave FEFO, surpluses land on the most recently received batch at that location.
          */
         post: operations["StocktakeController_post"];
         delete?: never;
@@ -4185,6 +4185,12 @@ export interface components {
             /** @example PEAK-400 */
             sku: string;
         };
+        StockOptionRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Gold */
+            name: string;
+        };
         StockLocationRef: {
             /** Format: uuid */
             id: string;
@@ -4207,6 +4213,8 @@ export interface components {
         };
         StockLevelRow: {
             product: components["schemas"]["StockProductRef"];
+            /** @description Which option. Null for a product without options. */
+            variant: components["schemas"]["StockOptionRef"] | null;
             location: components["schemas"]["StockLocationRef"];
             /** @description Base units on hand. May be negative — a forced movement records stock that went out before it was entered as received. */
             quantity: number;
@@ -4215,6 +4223,7 @@ export interface components {
         };
         ExpiringBatchRow: {
             product: components["schemas"]["StockProductRef"];
+            variant: components["schemas"]["StockOptionRef"] | null;
             location: components["schemas"]["StockLocationRef"];
             /** Format: uuid */
             batchId: string;
@@ -4289,6 +4298,7 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             product: components["schemas"]["StockProductRef"];
+            variant: components["schemas"]["StockOptionRef"] | null;
             location: components["schemas"]["StockLocationRef"];
             recordedBy: components["schemas"]["StockUserRef"] | null;
         };
@@ -4347,6 +4357,8 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             batch: components["schemas"]["MovementBatchRef"];
+            /** @description The option that moved, named, so a list can say which. */
+            variant: components["schemas"]["StockOptionRef"] | null;
         };
         MovementPageView: {
             movements: components["schemas"]["SyncedMovementView"][];
@@ -4367,6 +4379,11 @@ export interface components {
             id?: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option, for a product that has options — required then, refused otherwise. A retired option’s leftover stock may still be adjusted.
+             */
+            variantId?: string;
             /**
              * Format: uuid
              * @description Defaults to the organization’s default location.
@@ -4469,6 +4486,11 @@ export interface components {
             id?: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option, for a product that has options — required then, refused otherwise. Both halves of the move carry it: the option travels with the goods, like the lot.
+             */
+            variantId?: string;
             /** Format: uuid */
             fromLocationId: string;
             /** Format: uuid */
@@ -4543,6 +4565,12 @@ export interface components {
             /** @example PEAK-400 */
             sku: string;
         };
+        CountOptionRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Gold */
+            name: string;
+        };
         StocktakeLineSummary: {
             /** Format: uuid */
             id: string;
@@ -4552,6 +4580,11 @@ export interface components {
             stocktakeId: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option was counted. Null for a product without options.
+             */
+            variantId: string | null;
             /** @description What was actually on the shelf, in **base units** — the unit the ledger counts in. */
             countedQuantity: number;
             /** @description What the ledger believed. Snapshotted when the line was counted, so the sheet still explains itself weeks later; it is evidence, not the arithmetic that posting does. */
@@ -4566,6 +4599,7 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             product: components["schemas"]["CountProductRef"];
+            variant: components["schemas"]["CountOptionRef"] | null;
             countedBy: components["schemas"]["CountUserRef"] | null;
         };
         StocktakeSummary: {
@@ -4610,6 +4644,11 @@ export interface components {
             stocktakeId: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option was counted. Null for a product without options.
+             */
+            variantId: string | null;
             /** @description What was actually on the shelf, in **base units** — the unit the ledger counts in. */
             countedQuantity: number;
             /** @description What the ledger believed. Snapshotted when the line was counted, so the sheet still explains itself weeks later; it is evidence, not the arithmetic that posting does. */
@@ -4624,6 +4663,7 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             product: components["schemas"]["CountProductRef"];
+            variant: components["schemas"]["CountOptionRef"] | null;
             countedBy: components["schemas"]["CountUserRef"] | null;
             /** @description `countedQuantity − expectedQuantity`. Negative is a shortfall, positive a surplus. */
             variance: number;
@@ -4680,6 +4720,11 @@ export interface components {
             /** Format: uuid */
             productId: string;
             /**
+             * Format: uuid
+             * @description Which option was counted — required for a product with options, refused for one without. Each option is counted as an item of its own; a retired option’s leftover stock may still be counted.
+             */
+            variantId?: string;
+            /**
              * @description What was actually on the shelf, in **base units** — the same unit the ledger counts in.
              * @example 182
              */
@@ -4688,7 +4733,7 @@ export interface components {
             note?: string;
         };
         CountLinesDto: {
-            /** @description Many at once, because a device that counted a shelf offline syncs the whole sheet in one request. Counting a product twice replaces the earlier line. */
+            /** @description Many at once, because a device that counted a shelf offline syncs the whole sheet in one request. Counting a product (or one option of it) twice replaces the earlier line. */
             lines: components["schemas"]["CountLineDto"][];
         };
         PostedStocktakeView: {
@@ -9410,7 +9455,10 @@ export interface operations {
     };
     StocktakeController_removeLine: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which option’s line, for a product with options. Left out, the line that names none. */
+                variantId?: string;
+            };
             header?: never;
             path: {
                 id: string;

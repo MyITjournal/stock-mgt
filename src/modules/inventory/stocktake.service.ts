@@ -1,13 +1,20 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { StockAdjustmentReason, StockMovementType } from '@prisma/client';
+import {
+  StockAdjustmentReason,
+  StockMovementType,
+  type StocktakeLine,
+} from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { checkVariant } from '../catalog/variants';
 import { LocationService } from './location.service';
 import { StockService, StockWriter } from './stock.service';
 import { CountLinesDto, CreateStocktakeDto } from './dto/stocktake.dto';
@@ -24,10 +31,25 @@ const STOCKTAKE_INCLUDE = {
   lines: {
     include: {
       product: { select: { id: true, name: true, sku: true } },
+      variant: { select: { id: true, name: true } },
       countedBy: { select: { id: true, firstName: true, lastName: true } },
     },
   },
 } as const;
+
+/**
+ * One count line per product and option — the key `onHand` is read by. Each
+ * option is counted as an item of its own (owner, 2026-10-08).
+ */
+const lineKey = (productId: string, variantId?: string | null) =>
+  `${productId}:${variantId ?? '-'}`;
+
+/** A count line that disagrees with the ledger, and by how much. */
+interface Variance {
+  line: StocktakeLine;
+  /** Counted minus on hand: negative short, positive over. */
+  variance: number;
+}
 
 /**
  * Physical counts.
@@ -37,8 +59,9 @@ const STOCKTAKE_INCLUDE = {
  * looks at the variance and decides it is real. Until it is posted, a stocktake
  * changes nothing — it is a claim about the world, not a change to it.
  *
- * Posting writes ordinary `adjustment` movements through `StockService`, with
- * reason `count_correction`. Nothing here becomes a second source of truth for
+ * Posting writes ordinary movements through `StockService`, with reason
+ * `count_correction`: adjustments, and moves between one product's options
+ * where one is short and another over (`postProduct`). Nothing here becomes a second source of truth for
  * stock: the ledger stays the only one (§5), and a count that has been posted
  * is readable afterwards as exactly the movements it caused.
  */
@@ -100,7 +123,7 @@ export class StocktakeService {
     });
     if (!stocktake) throw new NotFoundException('Stocktake not found');
 
-    const onHand = await this.onHandByProduct(
+    const onHand = await this.onHandByLine(
       stocktake.locationId,
       stocktake.lines.map((line) => line.productId),
     );
@@ -112,7 +135,7 @@ export class StocktakeService {
 
     const lines = stocktake.lines.map((line) => {
       const expected = live
-        ? (onHand.get(line.productId) ?? 0)
+        ? (onHand.get(lineKey(line.productId, line.variantId)) ?? 0)
         : line.expectedQuantity;
       return {
         ...line,
@@ -136,17 +159,19 @@ export class StocktakeService {
    * Records what was counted. Accepts many lines at once, because a device that
    * has been counting a shelf offline syncs the whole sheet in one request.
    *
-   * Counting the same product twice replaces the first line rather than adding
-   * a second: a recount is a correction, not a second opinion.
+   * Counting the same product (or option) twice replaces the first line rather
+   * than adding a second: a recount is a correction, not a second opinion.
    */
   async count(id: string, input: CountLinesDto): Promise<StocktakeView> {
     const stocktake = await this.requireOpen(id);
     const organizationId = TenantContext.requireOrganizationId();
     const countedByUserId = TenantContext.get()?.userId ?? null;
 
-    const productIds = input.lines.map((line) => line.productId);
-    await this.assertProductsExist(productIds);
-    const onHand = await this.onHandByProduct(stocktake.locationId, productIds);
+    await this.assertCountable(input.lines);
+    const onHand = await this.onHandByLine(
+      stocktake.locationId,
+      input.lines.map((line) => line.productId),
+    );
 
     // Update-then-create rather than `upsert`: "one line per product (and
     // option)" is a pair of partial unique indexes now (§24), which a Prisma
@@ -158,13 +183,14 @@ export class StocktakeService {
         const where = {
           stocktakeId: id,
           productId: line.productId,
-          variantId: null,
+          variantId: line.variantId ?? null,
         };
         const counted = {
           countedQuantity: line.countedQuantity,
           // Snapshotted so the sheet still explains itself weeks later, when
           // stock has moved on. It is evidence, not the arithmetic.
-          expectedQuantity: onHand.get(line.productId) ?? 0,
+          expectedQuantity:
+            onHand.get(lineKey(line.productId, line.variantId)) ?? 0,
           note: line.note ?? null,
           countedByUserId,
         };
@@ -183,12 +209,19 @@ export class StocktakeService {
     return this.findOne(id);
   }
 
-  /** Removes a line counted by mistake. */
-  async removeLine(id: string, productId: string): Promise<StocktakeView> {
+  /**
+   * Removes a line counted by mistake. For a product with options, the option
+   * says which line; without one, the line that names none.
+   */
+  async removeLine(
+    id: string,
+    productId: string,
+    variantId?: string,
+  ): Promise<StocktakeView> {
     await this.requireOpen(id);
 
     const line = await this.prisma.stocktakeLine.findFirst({
-      where: { stocktakeId: id, productId },
+      where: { stocktakeId: id, productId, variantId: variantId ?? null },
     });
     if (!line) throw new NotFoundException('That product is not on this count');
 
@@ -208,6 +241,15 @@ export class StocktakeService {
    * that disappear are the ones that would have sold next. A surplus has no
    * such natural lot, so it lands on the batch most recently received at that
    * location, keeping its cost basis current.
+   *
+   * **Within one product, a shortfall in one option and a surplus in another
+   * is a move, not a loss and a find** (owner, 2026-10-08). The usual cause is
+   * stock put on one option when the product's options were added — 100
+   * cartons on Chicken that the shelf says are 40 Chicken, 30 Onion, 30 Pepper.
+   * That part moves on the **same lots**, as `transfer_out`/`transfer_in`
+   * sharing a `transferGroupId`, exactly as `StockService.moveIntoVariant`
+   * put it there: nothing is re-costed, and the value is unchanged. Only what
+   * the product as a whole is short or over is written off or on.
    */
   async post(id: string): Promise<PostedStocktakeView> {
     const stocktake = await this.requireOpen(id);
@@ -220,47 +262,30 @@ export class StocktakeService {
 
     const posted = await this.prisma.$transaction(async (tx) => {
       const writer = tx as unknown as StockWriter;
-      const onHand = await this.onHandByProduct(
+      await this.assertCountable(stocktake.lines, { posting: true }, tx);
+      const onHand = await this.onHandByLine(
         stocktake.locationId,
         stocktake.lines.map((line) => line.productId),
         tx,
       );
 
-      let corrections = 0;
-
+      // Only the lines that disagree, by product: a move between options can
+      // only happen inside one product.
+      const byProduct = new Map<string, Variance[]>();
       for (const line of stocktake.lines) {
-        const expected = onHand.get(line.productId) ?? 0;
-        const variance = line.countedQuantity - expected;
+        const expected = onHand.get(lineKey(line.productId, line.variantId));
+        const variance = line.countedQuantity - (expected ?? 0);
         if (variance === 0) continue;
+        byProduct.set(line.productId, [
+          ...(byProduct.get(line.productId) ?? []),
+          { line, variance },
+        ]);
+      }
 
-        const movement = {
-          productId: line.productId,
-          locationId: stocktake.locationId,
-          quantity: Math.abs(variance),
-          type: StockMovementType.adjustment,
-          reason: StockAdjustmentReason.count_correction,
-          note: line.note ?? undefined,
-          referenceType: 'stocktake',
-          referenceId: stocktake.id,
-        };
-
-        if (variance < 0) {
-          await this.stock.recordOutbound(movement, writer);
-        } else {
-          await this.stock.recordInbound(
-            {
-              ...movement,
-              batchId: await this.batchForSurplus(
-                tx,
-                line.productId,
-                stocktake.locationId,
-              ),
-            },
-            writer,
-          );
-        }
-
-        corrections += 1;
+      let corrections = 0;
+      for (const [productId, variances] of byProduct) {
+        await this.postProduct(tx, writer, stocktake, productId, variances);
+        corrections += variances.length;
       }
 
       await tx.stocktake.update({
@@ -276,6 +301,108 @@ export class StocktakeService {
     });
 
     return { ...(await this.findOne(id)), corrections: posted };
+  }
+
+  /**
+   * One product's corrections. What its short options lost and its over
+   * options gained, up to the smaller of the two, moves between them on the
+   * lots it left from; the rest is written off (FEFO) or on (`batchForSurplus`).
+   * A product without options has one line, so it never moves anything.
+   */
+  private async postProduct(
+    tx: Pick<TenantPrisma, 'stockBalance' | 'stockBatch'>,
+    writer: StockWriter,
+    stocktake: { id: string; locationId: string },
+    productId: string,
+    variances: readonly Variance[],
+  ) {
+    const short = variances.filter((v) => v.variance < 0);
+    const over = variances.filter((v) => v.variance > 0);
+    let toMove = Math.min(
+      short.reduce((sum, v) => sum - v.variance, 0),
+      over.reduce((sum, v) => sum + v.variance, 0),
+    );
+    const transferGroupId = toMove > 0 ? randomUUID() : undefined;
+
+    const movement = (line: StocktakeLine) => ({
+      productId,
+      variantId: line.variantId,
+      locationId: stocktake.locationId,
+      reason: StockAdjustmentReason.count_correction,
+      note: line.note ?? undefined,
+      referenceType: 'stocktake',
+      referenceId: stocktake.id,
+    });
+
+    // The lots the moving part left, lot for lot, for the other options to
+    // arrive on. A count can never be short by more than is there (counted is
+    // at least zero), so the pick has no shortfall and this adds up exactly.
+    const freed: { batchId: string; quantity: number }[] = [];
+
+    for (const { line, variance } of short) {
+      const moving = Math.min(toMove, -variance);
+      toMove -= moving;
+      if (moving > 0) {
+        const out = await this.stock.recordOutbound(
+          {
+            ...movement(line),
+            quantity: moving,
+            type: StockMovementType.transfer_out,
+            transferGroupId,
+          },
+          writer,
+        );
+        for (const left of out) {
+          freed.push({ batchId: left.batchId, quantity: -left.quantity });
+        }
+      }
+      if (-variance > moving) {
+        await this.stock.recordOutbound(
+          {
+            ...movement(line),
+            quantity: -variance - moving,
+            type: StockMovementType.adjustment,
+          },
+          writer,
+        );
+      }
+    }
+
+    for (const { line, variance } of over) {
+      let wanted = variance;
+      while (wanted > 0 && freed.length > 0) {
+        const lot = freed[0];
+        const taking = Math.min(wanted, lot.quantity);
+        await this.stock.recordInbound(
+          {
+            ...movement(line),
+            batchId: lot.batchId,
+            quantity: taking,
+            type: StockMovementType.transfer_in,
+            transferGroupId,
+          },
+          writer,
+        );
+        lot.quantity -= taking;
+        wanted -= taking;
+        if (lot.quantity === 0) freed.shift();
+      }
+      if (wanted > 0) {
+        await this.stock.recordInbound(
+          {
+            ...movement(line),
+            batchId: await this.batchForSurplus(
+              tx,
+              productId,
+              stocktake.locationId,
+            ),
+            quantity: wanted,
+            type: StockMovementType.adjustment,
+          },
+          writer,
+        );
+      }
+    }
   }
 
   /** Abandons a count. The lines are kept; nothing reaches the ledger. */
@@ -303,6 +430,11 @@ export class StocktakeService {
    * actually costs. Only a product that has never been received needs a lot
    * invented, and that one is honestly worth nothing until somebody says
    * otherwise — §2 stores what was paid, and nothing was.
+   *
+   * The lot is the product's, whichever option holds it (§24: the option is on
+   * the movement, never the lot), so this looks across every option's balance
+   * on purpose — the one `where` on balances that leaves `variantId` out. The
+   * movement written onto the lot names the option.
    */
   private async batchForSurplus(
     tx: Pick<TenantPrisma, 'stockBalance' | 'stockBatch'>,
@@ -339,8 +471,11 @@ export class StocktakeService {
     return invented.id;
   }
 
-  /** Base units on hand per product at one location. */
-  private async onHandByProduct(
+  /**
+   * Base units on hand at one location per product and option, keyed by
+   * `lineKey` — each option is counted on its own.
+   */
+  private async onHandByLine(
     locationId: string,
     productIds: string[],
     tx: Pick<TenantPrisma, 'stockBalance'> = this.prisma,
@@ -348,13 +483,16 @@ export class StocktakeService {
     if (productIds.length === 0) return new Map<string, number>();
 
     const balances = await tx.stockBalance.groupBy({
-      by: ['productId'],
-      where: { locationId, productId: { in: productIds } },
+      by: ['productId', 'variantId'],
+      where: { locationId, productId: { in: [...new Set(productIds)] } },
       _sum: { quantity: true },
     });
 
     return new Map(
-      balances.map((row) => [row.productId, row._sum.quantity ?? 0]),
+      balances.map((row) => [
+        lineKey(row.productId, row.variantId),
+        row._sum.quantity ?? 0,
+      ]),
     );
   }
 
@@ -373,25 +511,54 @@ export class StocktakeService {
     return stocktake;
   }
 
-  private async assertProductsExist(productIds: string[]) {
-    const found = await this.prisma.product.findMany({
-      where: { id: { in: productIds }, deletedAt: null },
-      select: { id: true, trackStock: true },
+  /**
+   * Every line names a stocked product and, for a product with options, one of
+   * its options (`checkVariant`; a retired option's leftover stock may still be
+   * counted). Checked when counting, so the problem is named then rather than
+   * at posting — and again at posting, for a product that gained options after
+   * it was counted: that line names none, and the stock is in an option now.
+   */
+  private async assertCountable(
+    lines: readonly { productId: string; variantId?: string | null }[],
+    options: { posting?: boolean } = {},
+    db: Pick<TenantPrisma, 'product'> = this.prisma,
+  ) {
+    const found = await db.product.findMany({
+      where: {
+        id: { in: [...new Set(lines.map((line) => line.productId))] },
+        // A product retired since it was counted still posts.
+        ...(!options.posting && { deletedAt: null }),
+      },
+      select: {
+        id: true,
+        name: true,
+        trackStock: true,
+        variants: { select: { id: true, name: true, isActive: true } },
+      },
     });
 
     const byId = new Map(found.map((product) => [product.id, product]));
-    for (const productId of productIds) {
-      const product = byId.get(productId);
+    for (const line of lines) {
+      const product = byId.get(line.productId);
       if (!product) {
-        throw new NotFoundException(`Product ${productId} not found`);
+        if (options.posting) continue;
+        throw new NotFoundException(`Product ${line.productId} not found`);
       }
       // Counting a service would post an adjustment for something the ledger
       // deliberately ignores.
-      if (!product.trackStock) {
+      if (!options.posting && !product.trackStock) {
         throw new ConflictException(
-          `Product ${productId} is not stocked, so it cannot be counted.`,
+          `Product ${line.productId} is not stocked, so it cannot be counted.`,
         );
       }
+      if (options.posting && !line.variantId && product.variants.length > 0) {
+        throw new BadRequestException(
+          `"${product.name}" was counted before it had options. Remove that line and count it by option.`,
+        );
+      }
+      checkVariant(product.name, product.variants, line.variantId, {
+        allowRetired: true,
+      });
     }
   }
 }

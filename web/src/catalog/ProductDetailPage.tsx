@@ -270,8 +270,8 @@ export function ProductDetailPage() {
             })}
           </ul>
           <p className="mt-2 text-xs text-slate-500">
-            Stock below is every option together; on hand per option comes with
-            stock levels.
+            Each option is stocked as an item of its own; the tables below say
+            which.
           </p>
         </section>
       )}
@@ -285,6 +285,10 @@ export function ProductDetailPage() {
             rows={levels}
             columns={[
               { header: 'Location', cell: (row) => row.location.name },
+              ...optionColumn<StockLevelRow>(
+                (row) => row.variant?.id,
+                'no option',
+              ),
               {
                 header: 'Lots',
                 numeric: true,
@@ -302,7 +306,7 @@ export function ProductDetailPage() {
                 ),
               },
             ]}
-            rowKey={(row) => row.location.id}
+            rowKey={(row) => `${row.location.id}:${row.variant?.id ?? '-'}`}
             empty="None anywhere. A delivery is what puts stock in the ledger."
           />
         </section>
@@ -351,10 +355,15 @@ export function ProductDetailPage() {
             (row.batches ?? []).map((batch) => ({
               ...batch,
               locationName: row.location.name,
+              variantId: row.variant?.id,
             })),
           )}
           columns={[
             { header: 'Where', cell: (row) => row.locationName },
+            ...optionColumn<{ variantId?: string }>(
+              (row) => row.variantId,
+              'no option',
+            ),
             {
               header: 'Lot',
               cell: (row) =>

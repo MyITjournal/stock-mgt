@@ -57,6 +57,7 @@ export class StockOperationsService {
       this.prisma,
       input.productId,
       input.unitId,
+      { variantId: input.variantId },
     );
     const baseQuantity = input.quantity * unit.factor;
     const occurredAt = input.occurredAt
@@ -69,6 +70,7 @@ export class StockOperationsService {
           {
             id: input.id,
             productId: input.productId,
+            variantId: input.variantId,
             locationId,
             batchId: input.batchId,
             quantity: Math.abs(baseQuantity),
@@ -120,6 +122,7 @@ export class StockOperationsService {
         {
           id: input.id,
           productId: input.productId,
+          variantId: input.variantId,
           locationId,
           batchId,
           quantity: baseQuantity,
@@ -158,6 +161,7 @@ export class StockOperationsService {
       this.prisma,
       input.productId,
       input.unitId,
+      { variantId: input.variantId },
     );
     const baseQuantity = input.quantity * unit.factor;
     const occurredAt = input.occurredAt
@@ -169,6 +173,7 @@ export class StockOperationsService {
       const out = await this.stock.recordOutbound(
         {
           productId: input.productId,
+          variantId: input.variantId,
           locationId: input.fromLocationId,
           quantity: baseQuantity,
           type: StockMovementType.transfer_out,
@@ -187,6 +192,7 @@ export class StockOperationsService {
           await this.stock.recordInbound(
             {
               productId: input.productId,
+              variantId: input.variantId,
               locationId: input.toLocationId,
               batchId: movement.batchId,
               quantity: Math.abs(movement.quantity),

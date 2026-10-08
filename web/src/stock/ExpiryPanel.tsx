@@ -4,6 +4,7 @@ import { Money } from '../components/Money';
 import { api } from '../api/client';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
+import { optionLabel } from '../lib/options';
 
 type ExpiringBatchRow = components['schemas']['ExpiringBatchRow'];
 
@@ -66,11 +67,12 @@ export function ExpiryPanel({ locationId }: { locationId: string }) {
           const days = batch.expiryDate ? daysUntil(batch.expiryDate) : null;
           return (
             <li
-              key={batch.batchId}
+              // One lot can hold two options' stock (§24), and be in two places.
+              key={`${batch.batchId}:${batch.variant?.id ?? '-'}:${batch.location.id}`}
               className="flex items-center gap-3 text-sm text-amber-900"
             >
               <span className="flex-1">
-                {batch.product.name}
+                {optionLabel(batch.product.name, batch.variant?.name)}
                 <span className="text-amber-700">
                   {' '}
                   · {batch.location.name}
