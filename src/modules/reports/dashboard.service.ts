@@ -6,6 +6,7 @@ import { marginBps, shareBps } from './profit';
 import { ReportService, describe } from './report.service';
 import { PurchaseTargetService } from './purchase-target.service';
 import { StockSummaryService } from './stock-summary.service';
+import { SessionsService } from '../staff/sessions.service';
 import { DashboardView } from './dto/dashboard.response';
 
 /** How many rows each attention list shows before it stops being a glance. */
@@ -35,6 +36,7 @@ export class DashboardService {
     private readonly payables: PayableService,
     private readonly targets: PurchaseTargetService,
     private readonly stockSummary: StockSummaryService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async build(): Promise<DashboardView> {
@@ -61,6 +63,7 @@ export class DashboardService {
       owedToVendors,
       monthPurchases,
       monthStock,
+      signedIn,
       monthTargets,
       paidToVendors,
     ] = await Promise.all([
@@ -78,6 +81,7 @@ export class DashboardService {
       this.payables.outstanding(),
       this.reports.purchases(month),
       this.stockSummary.summary(month),
+      this.sessions.summary(),
       // No period: the target report defaults to this month in the shop's
       // timezone, which is the month every other figure here is.
       this.targets.report(),
@@ -237,6 +241,12 @@ export class DashboardService {
       },
 
       trend: { days: daily },
+
+      // 10. Who is working right now? The same count as Settings → Staff.
+      signedIn: {
+        people: signedIn.activePeople,
+        devices: signedIn.activeDevices,
+      },
 
       // 9. What stock did I handle this month? Opening + delivered, at cost —
       // from the same ledger walk as Reports → Stock, so the two agree.

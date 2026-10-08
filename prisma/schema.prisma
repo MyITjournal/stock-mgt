@@ -882,6 +882,14 @@ model Membership {
   /// receiving a lorry that arrived at nine at night.
   ignoresWorkingHours Boolean @default(false)
 
+  /// Every session in this shop issued **before** this moment is over, at once
+  /// (2026-10-08). Set when the owner signs somebody out, and when a member of
+  /// staff signs in somewhere new. Revoking refresh tokens alone would leave the
+  /// other device working for up to fifteen minutes on its access token;
+  /// `JwtStrategy` already reads this row on every request, so it can refuse
+  /// one issued earlier. Null means nobody has ever been signed out.
+  sessionsEndedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

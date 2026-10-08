@@ -1271,5 +1271,16 @@ lands on *Your password*.
 not. As the owner it is.
 
 **326. [gate] Sign in as a cashier on one browser, then as the same cashier on another** (a phone,
-or a private window). Within 15 minutes the first is back at the sign-in screen. Do the same as
-the owner: both stay signed in.
+or a private window). On its next tap the first is back at the sign-in screen. Do the same as the
+owner: both stay signed in.
+
+**327. [gate] Home, as the owner, with a cashier signed in elsewhere.** The line under the due
+payments reads "2 people signed in now, on 2 devices · See who". *See who* opens Settings → Staff.
+
+**328. [gate] Settings → Staff.** The cashier's card reads *Signed in · Chrome on Android · since
+… · active … ago* (whatever the browser is); somebody not signed in reads *Not signed in now ·
+last seen …*. No address is shown anywhere.
+
+**329. [gate] Press Sign out on the cashier.** A green note says they are signed out. On the
+cashier's device, the next tap lands on the sign-in screen; signing in again works. Your own card
+has no Sign out button, and a manager sees the list with no Sign out buttons.

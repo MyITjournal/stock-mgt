@@ -906,9 +906,24 @@ worth"). A wider pass to standard accounting terms is planned **after the remain
 other session of that person (`signsInOnOneDevice` in `token.service.ts`, asked by
 `issueForUser` and `switchOrganization`) — so a shared or stolen staff password shows itself:
 the real person is thrown out. Owners and managers keep several devices. The other device is out
-**within 15 minutes** (its access token runs out; the refresh is refused). A refresh token revoked
-on purpose and never replaced now answers *This session has ended* rather than being logged as
-token theft.
+**at once** since 2026-10-08 (it was "within 15 minutes"). A refresh token revoked on purpose and
+never replaced answers *This session has ended* rather than being logged as token theft.
+
+**The owner sees who is signed in, and can sign somebody out** (§9, 2026-10-08).
+`GET /staff/sessions` (owner, manager) reads the refresh-token chains already recorded — nothing
+new is collected, and **no IP address leaves the server** — and `staff/sessions.ts` (pure) names
+each device from its user agent ("Chrome on Android") and decides **active now = renewed in the
+last 30 minutes**, because a live token outlives a closed browser by days. Settings → Staff shows
+*Signed in · device · since 8:12 · active 4 min ago* or *Not signed in now · last seen …*, and Home
+says *N people signed in now, on M devices · See who* (`dashboard.signedIn`, the same count).
+**Sign out** (`POST /staff/:userId/sign-out`, owner only, not yourself) ends their sessions in
+*this* shop and leaves another business's alone; it is not suspension — they can sign straight
+back in. **Ending a session is immediate**: `TokenService.endSessions` revokes the refresh tokens
+*and* sets `Membership.sessionsEndedAt`, which `JwtStrategy` (already reading the membership on
+every request) checks against the token's **`iatMs`** — a millisecond issue time every access
+token now carries, because the standard `iat` is whole seconds and smoke's two sign-ins inside one
+second slipped past a seconds-based cut. ⚠ **Any new path that ends sessions should call
+`endSessions`**, not `revokeAllForUser`, or the other device keeps working for fifteen minutes.
 
 **`Product.size` is plain text** (§4, 2026-10-02) — `400g`, `33cl` — set on the product form and
 shown read-only beside the name on the products list, the till and the receipt (its own `size`

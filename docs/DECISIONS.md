@@ -1580,15 +1580,69 @@ was offered and not chosen.
 - **Both paths that start a session ask it**: `AuthService.issueForUser` and
   `switchOrganization`. Rotation renews the same session, so it does not — a fourth path that
   mints a session needs the same line, as with working hours.
-- **Out within 15 minutes, not at once.** Ending a session revokes refresh tokens; the other
-  device's access token is a signed JWT that runs out on its own. Same as a password reset.
-  A cashier cut off mid-sale keeps the cart, because the till keeps a draft (§13).
+- **Out at once** (since 2026-10-08 — it was "within 15 minutes"; see the next section). A
+  cashier cut off mid-sale keeps the cart, because the till keeps a draft (§13).
 - **A revoked, never-replaced refresh token is no longer called theft.** It used to fall into the
   reuse branch and log *Refresh token reuse detected* — which every ended session would now do.
   It answers *This session has ended* instead. A *replaced* token presented again is still reuse,
   and still revokes its whole family.
 
-Smoke step 56 signs Bola in twice and checks the first session can no longer renew.
+Smoke step 56 signs Bola in twice and checks the first session can no longer renew, and that
+its access token is refused on the very next request.
+
+### Who is signed in, and signing somebody out (2026-10-08)
+
+The owner asked whether they could see how many devices were signed in, and suspend from there.
+Suspending already existed (Settings → Staff); seeing who is on did not.
+
+**Nothing new is collected.** Every sign-in starts a chain of refresh tokens, renewed every fifteen
+minutes while the app is in use, and each row already carried the user agent and an IP.
+`GET /staff/sessions` (owner, manager) reads those chains: one live token per chain (rotation
+revokes the old as it issues the next), the chain's first token for *signed in at*, its newest
+for *last active*. **No IP address is returned** — it means nothing to an owner and is personal
+data. `describeDevice` (pure, `staff/sessions.ts`) turns the user agent into "Chrome on
+Android"; Edge, Opera and Samsung's browser all claim to be Chrome, and every iPhone browser
+claims Safari, so the order of its checks is the whole function.
+
+**Active now means renewed in the last 30 minutes**, not "holds a live token". A refresh token
+lives for days, so a phone whose browser was closed yesterday still holds one; counting it would
+tell an owner somebody is at work who went home. Thirty minutes is one renewal plus slack. A
+person with no live chain still has a row with **last seen**, from the newest token on record
+(housekeeping removes chains a while after they expire, so it can be null).
+
+Home shows the count as one line (*3 people signed in now, on 4 devices · See who*) from
+`dashboard.signedIn`, the same `SessionsService` the Staff screen reads — the two cannot disagree.
+`SessionsService` sits in its own `SessionsModule` with no dependency but the database, so the
+reports module can use it without adding an edge to the graph that once had to lift
+`WorkingHoursModule` out to avoid a cycle.
+
+**Sign out** (`POST /staff/:userId/sign-out`, owner only, like every other staff write) is not
+suspension: they can sign straight back in, inside their hours. It is for a phone left signed in,
+or a password the owner suspects is shared. **Only this shop's sessions end** — a person may work
+for two businesses, and the other is not this owner's to sign out of. **Not for yourself**
+(400): it would end the session you are using; changing your password signs you out everywhere.
+
+**Ending a session is now immediate, everywhere it happens.** Revoking refresh tokens stops the
+*next renewal*, but the access token in the other device is a signed JWT good for up to fifteen
+more minutes. An owner who presses *Sign out* believes the person is out — the same reasoning that
+made a password reset revoke sessions (§9, 2026-09-25). So `TokenService.endSessions` revokes the
+tokens **and** sets `Membership.sessionsEndedAt`, and `JwtStrategy`, which already reads the
+membership on every request to catch a suspension, refuses any access token issued before it.
+The one-device rule uses the same call, so a staff member signing in somewhere new ends the old
+device on its next tap as well.
+
+⚠ **The trap hit building it: `iat` is whole seconds.** The first version compared the cut
+against `iat`, rounding the cut down so the new session survived. Smoke signs in twice inside
+one second, so the *first* device survived too — and a real one could, on a fast double sign-in.
+Every access token now carries **`iatMs`**, its issue time to the millisecond, and the cut is
+taken **before** the new session is issued, so the new token is always after it. A token from
+before `iatMs` existed falls back to `iat`, which can only make it look older — the safe
+direction for a token being refused. **Any new path that ends sessions should call
+`endSessions`**, not `revokeAllForUser`, or it ends them fifteen minutes late.
+
+Smoke step 57 checks the owner sees the cashier, Home agrees, a cashier can neither see nor sign
+anyone out, the owner cannot sign themselves out, a signed-out cashier's very next request is
+refused, and she can sign straight back in.
 
 ### Rate limiting counts people, not addresses
 

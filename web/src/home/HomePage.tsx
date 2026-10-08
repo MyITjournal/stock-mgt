@@ -6,6 +6,7 @@ import { DataTable } from '../components/DataTable';
 import { MoneyTargetRing, TargetRing } from '../components/TargetRing';
 import { Spinner } from '../auth/RequireAuth';
 import { DuePayments } from '../components/DuePayments';
+import { Link } from 'react-router-dom';
 
 /**
  * The whole screen, from one request.
@@ -62,6 +63,32 @@ export function HomePage() {
       ).toLocaleTimeString()}.`}
     >
       <DuePayments />
+
+      {/*
+        Who is working right now (2026-10-08): used in the last half hour.
+        The list, and Sign out, are on Settings → Staff.
+      */}
+      <p className="mb-4 text-sm text-slate-600">
+        <span
+          className={`mr-1.5 inline-block h-2 w-2 rounded-full align-middle ${
+            data.signedIn.people > 0 ? 'bg-emerald-500' : 'bg-slate-300'
+          }`}
+        />
+        {data.signedIn.people === 0
+          ? 'Nobody signed in now'
+          : `${data.signedIn.people} ${
+              data.signedIn.people === 1 ? 'person' : 'people'
+            } signed in now, on ${data.signedIn.devices} ${
+              data.signedIn.devices === 1 ? 'device' : 'devices'
+            }`}{' '}
+        ·{' '}
+        <Link
+          to="/settings/staff"
+          className="font-medium text-slate-900 underline-offset-2 hover:underline"
+        >
+          See who
+        </Link>
+      </p>
 
       {/*
         Sales and collections sit next to each other on purpose. On a credit

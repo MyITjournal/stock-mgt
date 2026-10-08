@@ -9,6 +9,7 @@ import { afterWrite } from '../api/cache';
 import { useAuth } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { StaffHoursDialog } from './StaffHoursDialog';
+import { SignedInLine } from './SignedIn';
 
 type StaffMemberView = components['schemas']['StaffMemberView'];
 type OrganizationView = components['schemas']['OrganizationView'];
@@ -66,6 +67,36 @@ export function StaffPage() {
     queryFn: () => api.get<StaffMemberView[]>('/staff'),
   });
 
+  // Who is signed in (2026-10-08). Refreshed each minute, because "now" is
+  // the point of it and somebody may leave the page open.
+  const { data: sessions } = useQuery({
+    queryKey: ['staff-sessions'],
+    queryFn: () =>
+      api.get<components['schemas']['SessionsSummaryView']>('/staff/sessions'),
+    refetchInterval: 60_000,
+  });
+  const sessionsOf = new Map(
+    (sessions?.members ?? []).map((row) => [row.userId, row]),
+  );
+
+  const signOut = useMutation({
+    mutationFn: (member: StaffMemberView) =>
+      api.post(`/staff/${member.user.id}/sign-out`),
+    onSuccess: (_, member) => {
+      afterWrite(queryClient);
+      setError(null);
+      setNote(
+        `${fullName(member.user)} is signed out. They can sign in again.`,
+      );
+    },
+    onError: (caught) =>
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : 'Could not sign them out.',
+      ),
+  });
+
   const { data: organization } = useQuery({
     queryKey: ['organization'],
     queryFn: () => api.get<OrganizationView>('/organization'),
@@ -91,7 +122,7 @@ export function StaffPage() {
   return (
     <Page
       title="Staff"
-      description="Who works here, what they may do, and when they can sign in. Staff are signed in on one device at a time — signing in somewhere new signs them out of the last."
+      description="Who works here, who is signed in now, and when they can sign in. Staff are signed in on one device at a time — signing in somewhere new signs them out of the last."
       actions={
         isOwner ? (
           <Button onClick={() => setAdding(true)} disabled={full}>
@@ -180,6 +211,10 @@ export function StaffPage() {
                     )}
                   </p>
 
+                  {!suspended && (
+                    <SignedInLine member={sessionsOf.get(member.user.id)} />
+                  )}
+
                   {member.ignoresWorkingHours !== undefined && (
                     <p className="mt-1 text-xs text-slate-500">
                       {member.role === 'owner'
@@ -234,6 +269,17 @@ export function StaffPage() {
                       >
                         Reset password
                       </Button>
+                      {/* Off the till now, without suspending them. */}
+                      {(sessionsOf.get(member.user.id)?.sessions.length ?? 0) >
+                        0 && (
+                        <Button
+                          variant="secondary"
+                          disabled={signOut.isPending}
+                          onClick={() => signOut.mutate(member)}
+                        >
+                          Sign out
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         disabled={change.isPending || (suspended && full)}

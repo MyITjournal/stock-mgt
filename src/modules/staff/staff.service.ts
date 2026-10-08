@@ -14,7 +14,11 @@ import {
   ResetStaffPasswordDto,
   UpdateStaffDto,
 } from './dto/staff.dto';
-import { StaffMemberView, StaffPasswordResetView } from './dto/staff.response';
+import {
+  StaffMemberView,
+  StaffPasswordResetView,
+  StaffSignOutView,
+} from './dto/staff.response';
 
 const MEMBER_SELECT = {
   id: true,
@@ -269,6 +273,30 @@ export class StaffService {
       { status: MembershipStatus.suspended },
       actingUserId,
     );
+  }
+
+  /**
+   * Ends somebody's sessions in this shop, now (2026-10-08).
+   *
+   * Not suspension: they can sign straight back in, inside their hours. For
+   * when the owner wants a phone off the till — one left signed in, or a
+   * password they suspect is shared. Not for yourself: it would end the
+   * session you are using, and changing your password already signs you out
+   * everywhere.
+   */
+  async signOut(
+    userId: string,
+    actingUserId: string,
+  ): Promise<StaffSignOutView> {
+    if (userId === actingUserId) {
+      throw new BadRequestException(
+        'That is you. Use Sign out at the top, or change your password to sign out everywhere.',
+      );
+    }
+    const organizationId = TenantContext.requireOrganizationId();
+    await this.findMembership(userId, organizationId);
+    await this.tokens.endSessions(userId, organizationId);
+    return { message: 'Signed out. They can sign in again.' };
   }
 
   /**

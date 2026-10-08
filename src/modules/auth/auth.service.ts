@@ -542,7 +542,11 @@ export class AuthService {
 
     this.hours.assertWithinHours(membership);
     if (signsInOnOneDevice(membership.role)) {
-      await this.tokens.revokeAllForUser(membership.userId);
+      await this.tokens.endSessions(
+        membership.userId,
+        membership.organizationId,
+        { everywhere: true },
+      );
     }
 
     return this.tokens.issuePair(
@@ -758,7 +762,9 @@ export class AuthService {
     this.hours.assertWithinHours(active);
     // Staff: this sign-in ends any other (see `signsInOnOneDevice`).
     if (signsInOnOneDevice(active.role)) {
-      await this.tokens.revokeAllForUser(active.userId);
+      await this.tokens.endSessions(active.userId, active.organizationId, {
+        everywhere: true,
+      });
     }
 
     return this.tokens.issuePair(

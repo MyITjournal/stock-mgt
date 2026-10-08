@@ -2209,6 +2209,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who is signed in, and on what
+         * @description Each person’s live sessions in this shop — the device, when they signed in, when they were last active — and when each was last seen. “Active now” means used in the last thirty minutes. No addresses are returned.
+         */
+        get: operations["StaffController_sessionSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/staff/{userId}": {
         parameters: {
             query?: never;
@@ -2247,6 +2267,26 @@ export interface paths {
          * @description Staff without an email address cannot use the self-service reset, so somebody has to be able to do it for them.
          */
         post: operations["StaffController_resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/{userId}/sign-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign somebody out of this shop
+         * @description Ends every session they have here **at once** — their next request is refused — without suspending them: they can sign in again. Sessions they have at another business are left alone. To sign yourself out everywhere, change your password.
+         */
+        post: operations["StaffController_signOut"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6048,6 +6088,10 @@ export interface components {
         TrendSummary: {
             days: components["schemas"]["TrendDay"][];
         };
+        SignedInSummary: {
+            people: number;
+            devices: number;
+        };
         StockHandledSummary: {
             /** @description Stock at the start of the month, and opening stock entered in it, at cost. */
             opening: number;
@@ -6070,6 +6114,8 @@ export interface components {
             movers: components["schemas"]["MoversSummary"];
             purchasing: components["schemas"]["PurchasingSummary"];
             trend: components["schemas"]["TrendSummary"];
+            /** @description People and devices active in the last thirty minutes — the same count Settings → Staff shows. */
+            signedIn: components["schemas"]["SignedInSummary"];
             /** @description The month’s goods available for sale, at cost. Absent for a role that may not see cost — which this endpoint already refuses. */
             stock?: components["schemas"]["StockHandledSummary"];
         };
@@ -6751,6 +6797,37 @@ export interface components {
             createdAt: string;
             user: components["schemas"]["StaffUserView"];
         };
+        SessionView: {
+            /** @example Chrome on Android */
+            device: string;
+            /** Format: date-time */
+            signedInAt: string;
+            /**
+             * Format: date-time
+             * @description The last renewal. The app renews every fifteen minutes while it is used, so the person was last active at or up to fifteen minutes after this.
+             */
+            lastActiveAt: string;
+            /** @description Renewed within the last thirty minutes. */
+            activeNow: boolean;
+        };
+        MemberSessionsView: {
+            /** Format: uuid */
+            userId: string;
+            /** @description Live sessions in this shop, most recently active first. */
+            sessions: components["schemas"]["SessionView"][];
+            /**
+             * Format: date-time
+             * @description The last renewal on record; null when none is kept.
+             */
+            lastSeenAt: string | null;
+        };
+        SessionsSummaryView: {
+            members: components["schemas"]["MemberSessionsView"][];
+            /** @description People with a session active now. */
+            activePeople: number;
+            /** @description Sessions active now, across everybody. */
+            activeDevices: number;
+        };
         CreateStaffDto: {
             /** @example Amina */
             firstName: string;
@@ -6812,6 +6889,10 @@ export interface components {
         };
         StaffPasswordResetView: {
             /** @example Password updated. Tell them the new one. */
+            message: string;
+        };
+        StaffSignOutView: {
+            /** @example Signed out. They can sign in again. */
             message: string;
         };
     };
@@ -10463,6 +10544,25 @@ export interface operations {
             };
         };
     };
+    StaffController_sessionSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionsSummaryView"];
+                };
+            };
+        };
+    };
     StaffController_remove: {
         parameters: {
             query?: never;
@@ -10530,6 +10630,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StaffPasswordResetView"];
+                };
+            };
+        };
+    };
+    StaffController_signOut: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffSignOutView"];
                 };
             };
         };

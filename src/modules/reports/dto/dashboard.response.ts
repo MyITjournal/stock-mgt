@@ -495,6 +495,15 @@ class TrendSummary {
   days!: TrendDay[];
 }
 
+/** Who is signed in now (2026-10-08): used in the last thirty minutes. */
+class SignedInSummary {
+  @ApiProperty()
+  people!: number;
+
+  @ApiProperty()
+  devices!: number;
+}
+
 /** What stock the shop handled this month, at cost (2026-10-07). */
 class StockHandledSummary {
   @ApiProperty({
@@ -546,6 +555,13 @@ export class DashboardView {
 
   @ApiProperty({ type: () => TrendSummary })
   trend!: TrendSummary;
+
+  @ApiProperty({
+    type: () => SignedInSummary,
+    description:
+      'People and devices active in the last thirty minutes — the same count Settings → Staff shows.',
+  })
+  signedIn!: SignedInSummary;
 
   @ApiPropertyOptional({
     type: () => StockHandledSummary,
