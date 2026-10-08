@@ -101,6 +101,7 @@ export function PaymentsPage() {
         ...(draft.note && { note: draft.note }),
         ...(draft.allocations.length > 0 && { allocations: draft.allocations }),
         ...(draft.occurredAt && { occurredAt: draft.occurredAt }),
+        ...(draft.locationId && { locationId: draft.locationId }),
       }),
     onSuccess: () => {
       invalidate();

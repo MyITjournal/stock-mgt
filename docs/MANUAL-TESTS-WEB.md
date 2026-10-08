@@ -1339,3 +1339,28 @@ greyed. Switch the unit to piece: the cost box empties.
 **340. [gate] Leave the section empty.** The product is added with no stock, as before.
 
 **341. Editing a product** shows no such section.
+
+---
+
+## BD. Cash banking
+
+**342. [gate] Signed in as a cashier, sell something for cash, then Sales → My cash.** *Still
+holding* shows what was taken; *Received in cash* matches. Money is not in the top bar.
+
+**343. [gate] Record cash banked: half of it, into a bank account, with a slip number.** It shows
+as *Waiting to confirm*; *Still holding* drops by that much. Try more than is held: it says how much
+is held and records nothing.
+
+**344. [gate] As the owner, Money → Cash.** The cashier's row shows the waiting amount; the
+banking list below has **Confirm** and **Not received**. Confirm it: it moves to *Banked*.
+
+**345. [gate] Record cash banked for the cashier, the rest, Handed to the owner.** It is
+*Confirmed* at once and the cashier holds nothing. Mark it **Not received** with a reason: the
+amount is back in *Still holding*.
+
+**346. [gate] Home** has *Cash not yet banked* with the same total as Money → Cash; it turns amber
+when some of it is more than a day old.
+
+**347. Money → Money in → Record a payment**, in a shop with two stores, offers *Store* starting at
+the main store; with one store it does not ask. Reports → Collections no longer says *Not at a
+counter*.

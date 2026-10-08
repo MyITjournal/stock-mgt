@@ -38,6 +38,9 @@ One line each; the reasoning is in DECISIONS.md.
   **remove** the field — never zero it.
 - Balances: `saleBalance` + `LIVE_ALLOCATIONS` (customers); `billBalance` with the required
   `CREDITED_REBATES` (vendors). **A supplier payment is never an `Expense`.**
+- **Banking cash (`CashBanking`) is neither a payment nor an expense** — it moves no balance or
+  profit. Still holding = received − paid out − banked − waiting (`cash.ts`); nobody confirms
+  their own.
 - Server messages naming an amount use `shopMoney`; the browser renders money through `<Money>`
   and computes none (the till's running total is the one exception).
 
@@ -99,8 +102,8 @@ API runs on 4000.
 
 v1 is feature-complete and hosted; work now is fixes and owner requests, one branch each.
 Latest (2026-10-08): who is signed in and sign-out, growth, the duplicate-sale warning, opening
-stock on Add product. **Next: cash banking** — the plan and the owner's choices are in the
-`build-queue-2026-10-08` memory. v2 is scoped in [docs/PRD-V2.md](docs/PRD-V2.md). The by-hand
+stock on Add product, cash banking (Money → Cash, Sales → My cash). The 2026-10-08 build queue
+is done. v2 is scoped in [docs/PRD-V2.md](docs/PRD-V2.md). The by-hand
 browser script is [docs/MANUAL-TESTS-WEB.md](docs/MANUAL-TESTS-WEB.md).
 
 ## Working practice

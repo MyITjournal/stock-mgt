@@ -1702,6 +1702,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whose hands the cash is in
+         * @description Per person: received in cash, paid out in cash, banked (confirmed), waiting to be confirmed, and still holding — with when the oldest cash still held was taken. Owner, manager and accountant see everybody; anyone else sees only themselves.
+         */
+        get: operations["CashController_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash/bankings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cash banked, paged for delta sync
+         * @description Keyset paging over (updatedAt, id): confirming or marking a banking not received changes the row. Staff see only their own.
+         */
+        get: operations["CashController_findAll"];
+        put?: never;
+        /**
+         * Record cash banked, or handed to the owner
+         * @description Neither a payment nor an expense: it changes no invoice, bill or profit figure. Staff record only their own; an owner or manager records for anyone, and theirs is confirmed as it is recorded (the owner’s own too). Anyone else’s waits for the owner or a manager to confirm.
+         */
+        post: operations["CashController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash/bankings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One banking */
+        get: operations["CashController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash/bankings/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the money arrived
+         * @description Owner or manager. Nobody confirms their own banking.
+         */
+        post: operations["CashController_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cash/bankings/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a banking not received
+         * @description Owner or manager, with a reason. The amount goes back to the person’s still holding; the row is kept.
+         */
+        post: operations["CashController_voidBanking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/expenses": {
         parameters: {
             query?: never;
@@ -5642,6 +5743,131 @@ export interface components {
             occurredAt?: string;
             lines: components["schemas"]["ReturnLineDto"][];
         };
+        CashPersonView: {
+            /** Format: uuid */
+            userId: string;
+            firstName: string | null;
+            lastName: string | null;
+            /** @description Cash payments they took, voided ones left out. */
+            received: number;
+            /** @description Cash refunds, cash expenses and cash supplier payments they recorded. */
+            paidOut: number;
+            /** @description Banking an owner or manager has confirmed. */
+            banked: number;
+            /** @description Banking recorded and not yet confirmed. */
+            waiting: number;
+            /** @description received − paidOut − banked − waiting. Negative when they paid out more cash than they took. */
+            stillHolding: number;
+            /**
+             * Format: date-time
+             * @description When the oldest cash they still hold was taken.
+             */
+            oldestUnbankedAt: string | null;
+            /** @description Some of what they hold is more than a day old. */
+            overdue: boolean;
+        };
+        CashTotalsView: {
+            received: number;
+            paidOut: number;
+            banked: number;
+            waiting: number;
+            /** @description What people hold, added up. A negative holding never cancels a colleague’s. */
+            notBanked: number;
+            /** Format: date-time */
+            oldestUnbankedAt: string | null;
+            overdue: boolean;
+        };
+        CashView: {
+            /**
+             * Format: date-time
+             * @description Where counting starts. Null means from the shop’s first payment.
+             */
+            countedFrom: string | null;
+            /** @description Everybody with cash to account for, most held first. Staff see only themselves. */
+            people: components["schemas"]["CashPersonView"][];
+            totals: components["schemas"]["CashTotalsView"];
+        };
+        CashBankingView: {
+            /** Format: uuid */
+            id: string;
+            /** @description Whose cash it was. */
+            heldBy: components["schemas"]["PersonRef"];
+            /** @description In minor units. Always positive. */
+            amount: number;
+            /** @description Null when it was handed to the owner. */
+            bankAccount: components["schemas"]["BankedInto"] | null;
+            reference: string | null;
+            note: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            recordedBy: components["schemas"]["PersonRef"] | null;
+            /** @enum {string} */
+            status: "waiting" | "confirmed" | "not_received";
+            /** Format: date-time */
+            confirmedAt: string | null;
+            confirmedBy: components["schemas"]["PersonRef"] | null;
+            /** Format: date-time */
+            voidedAt: string | null;
+            voidedReason: string | null;
+            voidedBy: components["schemas"]["PersonRef"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CashBankingListView: {
+            bankings: components["schemas"]["CashBankingView"][];
+            nextCursor: string | null;
+            /** Format: date-time */
+            syncedThrough: string;
+            hasMore: boolean;
+        };
+        CreateCashBankingDto: {
+            /**
+             * Format: uuid
+             * @description Optional client-supplied id, so an offline device can mint the row identity itself.
+             */
+            id?: string;
+            /**
+             * Format: uuid
+             * @description Whose cash this was. Omitted, the person recording it. Staff may only record their own; an owner or manager records for anyone.
+             */
+            heldByUserId?: string;
+            /**
+             * @description Amount in minor units (kobo for NGN), tax-inclusive. 2500 means ₦25.00.
+             * @example 4850000
+             */
+            amount: number;
+            /**
+             * @description `bank`: paid into one of your accounts, named in `bankAccountId`. `owner`: handed to the owner, where the trail ends.
+             * @enum {string}
+             */
+            to: "bank" | "owner";
+            /**
+             * Format: uuid
+             * @description Required when `to` is `bank`; refused when it is `owner`.
+             */
+            bankAccountId?: string;
+            /**
+             * @description The deposit slip or transfer reference.
+             * @example Teller 0042117
+             */
+            reference?: string;
+            /** @example Monday and Tuesday takings. */
+            note?: string;
+            /**
+             * Format: date-time
+             * @description When it was banked, by the device clock. Defaults to now; an offline device sends its own.
+             */
+            occurredAt?: string;
+        };
+        VoidCashBankingDto: {
+            /**
+             * @description Why this money did not arrive where the row says.
+             * @example Not on the GTBank statement for the 8th.
+             */
+            reason: string;
+        };
         CategoryRef: {
             /** Format: uuid */
             id: string;
@@ -6195,6 +6421,16 @@ export interface components {
             previous: components["schemas"]["GrowthFiguresView"];
             change: components["schemas"]["GrowthChangeView"];
         };
+        CashTile: {
+            /** @description What people still hold, added up. */
+            notBanked: number;
+            /** @description Recorded as banked, not yet confirmed. */
+            waiting: number;
+            /** Format: date-time */
+            oldestUnbankedAt: string | null;
+            /** @description Some of it is more than a day old — amber. */
+            overdue: boolean;
+        };
         SignedInSummary: {
             people: number;
             devices: number;
@@ -6223,6 +6459,8 @@ export interface components {
             trend: components["schemas"]["TrendSummary"];
             /** @description This month so far beside the same stretch of last month, figure by figure. */
             growth: components["schemas"]["GrowthComparisonView"];
+            /** @description Cash taken and not yet banked — the same totals as `GET /cash`. */
+            cash: components["schemas"]["CashTile"];
             /** @description People and devices active in the last thirty minutes — the same count Settings → Staff shows. */
             signedIn: components["schemas"]["SignedInSummary"];
             /** @description The month’s goods available for sale, at cost. Absent for a role that may not see cost — which this endpoint already refuses. */
@@ -9819,6 +10057,153 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SaleView"];
+                };
+            };
+        };
+    };
+    CashController_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashView"];
+                };
+            };
+        };
+    };
+    CashController_findAll: {
+        parameters: {
+            query?: {
+                status?: "waiting" | "confirmed" | "not_received";
+                heldByUserId?: string;
+                /** @description ISO date-time. Syncing only: a position in the `updatedAt` walk that a cursor overrides. */
+                since?: string;
+                /** @description `asc` (the default) is the sync order. `desc` is for a person reading a list, newest first. `status` applies to `desc` only — a syncing client must hear that a row it holds was confirmed. */
+                order?: "asc" | "desc";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingListView"];
+                };
+            };
+        };
+    };
+    CashController_create: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A retry with the same key returns the original banking instead of recording it twice. */
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCashBankingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingView"];
+                };
+            };
+            /** @description `error: MORE_THAN_HELD` — more than the person holds. A shortfall is fine: bank what you have and the rest stays as still holding. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CashController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingView"];
+                };
+            };
+        };
+    };
+    CashController_confirm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingView"];
+                };
+            };
+        };
+    };
+    CashController_voidBanking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoidCashBankingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashBankingView"];
                 };
             };
         };

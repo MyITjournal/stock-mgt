@@ -3663,6 +3663,96 @@ async function main() {
   });
   check('and a second press cannot enter it twice', true);
 
+  step(61, 'Cash banking: whose hands the cash is in, banked and confirmed');
+  // Bola's cash sales from step 59 are hers to bank. A new shop counts cash
+  // from the beginning, so they are all here.
+  const bolaCash = (await api('GET', '/cash', { token: cashierNow })).data;
+  eq('a cashier sees only her own cash', bolaCash.people.length, 1);
+  const bolaId = bolaCash.people[0].userId;
+  const heldAtFirst = bolaCash.people[0].stillHolding;
+  check('and she is holding the cash she took', heldAtFirst > 0, heldAtFirst);
+
+  await api('POST', '/cash/bankings', {
+    token: cashierNow,
+    key: randomUUID(),
+    body: { heldByUserId: ownerMe.sub, amount: 100, to: 'owner' },
+    expect: 403,
+  });
+  check('she cannot record somebody else’s cash as banked', true);
+
+  const tooMuch = (
+    await api('POST', '/cash/bankings', {
+      token: cashierNow,
+      key: randomUUID(),
+      body: { amount: heldAtFirst + 1, to: 'bank', bankAccountId: gtb.id },
+      expect: 409,
+    })
+  ).data;
+  eq('nor bank more than she holds', tooMuch.error, 'MORE_THAN_HELD');
+
+  const half = Math.floor(heldAtFirst / 2);
+  const bankingId = randomUUID();
+  const bankingKey = randomUUID();
+  const banking = (
+    await api('POST', '/cash/bankings', {
+      token: cashierNow,
+      key: bankingKey,
+      body: { id: bankingId, amount: half, to: 'bank', bankAccountId: gtb.id, reference: 'Teller 0042' },
+    })
+  ).data;
+  eq('her own banking waits to be confirmed', banking.status, 'waiting');
+  const replayed = (
+    await api('POST', '/cash/bankings', {
+      token: cashierNow,
+      key: bankingKey,
+      body: { id: bankingId, amount: half, to: 'bank', bankAccountId: gtb.id, reference: 'Teller 0042' },
+    })
+  ).data;
+  eq('a retry returns the same banking', replayed.id, bankingId);
+
+  await api('POST', `/cash/bankings/${bankingId}/confirm`, { token: cashierNow, expect: 403 });
+  check('she cannot confirm her own', true);
+
+  const ownerSees = (await api('GET', '/cash', { token: t })).data;
+  const bolaRow = ownerSees.people.find((p) => p.userId === bolaId);
+  eq('the owner sees it waiting — once, not twice', bolaRow.waiting, half);
+  eq('and out of her hands', bolaRow.stillHolding, heldAtFirst - half);
+
+  const confirmed = (await api('POST', `/cash/bankings/${bankingId}/confirm`, { token: t })).data;
+  eq('the owner confirms it', confirmed.status, 'confirmed');
+
+  const handed = (
+    await api('POST', '/cash/bankings', {
+      token: t,
+      key: randomUUID(),
+      body: { id: randomUUID(), heldByUserId: bolaId, amount: heldAtFirst - half, to: 'owner' },
+    })
+  ).data;
+  eq('the owner recording the rest for her confirms it as recorded', handed.status, 'confirmed');
+  const bolaSettled = (await api('GET', '/cash', { token: cashierNow })).data.people[0];
+  eq('she now holds nothing', bolaSettled.stillHolding, 0);
+  eq('and all of it is banked', bolaSettled.banked, heldAtFirst);
+
+  const refused = (
+    await api('POST', `/cash/bankings/${handed.id}/void`, {
+      token: t,
+      body: { reason: 'Never reached me — counted the drawer twice.' },
+    })
+  ).data;
+  eq('marked not received', refused.status, 'not_received');
+  const shortAgain = (await api('GET', '/cash', { token: cashierNow })).data.people[0];
+  eq('and it is back in what she holds — never written off', shortAgain.stillHolding, heldAtFirst - half);
+
+  const cashNow = (await api('GET', '/cash', { token: t })).data;
+  const homeCash = (await api('GET', '/reports/dashboard', { token: t })).data.cash;
+  eq('Home’s "Cash not yet banked" is the Cash screen’s total', homeCash.notBanked, cashNow.totals.notBanked);
+
+  const collectedToday = (await api('GET', '/reports/collections?period=today', { token: t })).data;
+  check(
+    'collections no longer say "Not at a counter"',
+    !collectedToday.byLocation.some((row) => row.label === 'Not at a counter'),
+  );
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

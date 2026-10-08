@@ -63,6 +63,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'GoodsReceiptCorrection',
   'LotCostCorrection',
   'GoodsReceiptCorrectionLine',
+  // Cash somebody took, banked or handed to the owner (2026-10-08).
+  'CashBanking',
 ]);
 
 /** Reads and writes that select rows through a `where` clause. */

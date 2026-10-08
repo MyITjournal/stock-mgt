@@ -8,6 +8,7 @@ import { PurchaseTargetService } from './purchase-target.service';
 import { StockSummaryService } from './stock-summary.service';
 import { SessionsService } from '../staff/sessions.service';
 import { GrowthService } from './growth.service';
+import { CashService } from '../cash/cash.service';
 import { DashboardView } from './dto/dashboard.response';
 
 /** How many rows each attention list shows before it stops being a glance. */
@@ -39,6 +40,7 @@ export class DashboardService {
     private readonly stockSummary: StockSummaryService,
     private readonly sessions: SessionsService,
     private readonly growthService: GrowthService,
+    private readonly cash: CashService,
   ) {}
 
   async build(): Promise<DashboardView> {
@@ -69,6 +71,7 @@ export class DashboardService {
       monthTargets,
       paidToVendors,
       growth,
+      cash,
     ] = await Promise.all([
       this.reports.profit(today),
       this.reports.profit(month),
@@ -91,6 +94,8 @@ export class DashboardService {
       this.payables.paidBetween(month),
       // This month so far beside the same stretch of last month (2026-10-08).
       this.growthService.thisMonth(timezone, now),
+      // Whose hands the cash is in (2026-10-08) — the Money → Cash totals.
+      this.cash.summary(now),
     ]);
 
     const paidShareBps = shareBps(
@@ -253,6 +258,14 @@ export class DashboardService {
 
       // 11. Am I growing? Every figure against the same stretch of last month.
       growth,
+
+      // 12. Is the cash in the bank? The same totals as Money → Cash.
+      cash: {
+        notBanked: cash.totals.notBanked,
+        waiting: cash.totals.waiting,
+        oldestUnbankedAt: cash.totals.oldestUnbankedAt,
+        overdue: cash.totals.overdue,
+      },
 
       // 10. Who is working right now? The same count as Settings → Staff.
       signedIn: {

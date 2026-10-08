@@ -497,6 +497,21 @@ class TrendSummary {
 }
 
 /** Who is signed in now (2026-10-08): used in the last thirty minutes. */
+/** "Cash not yet banked" on Home (2026-10-08). */
+class CashTile {
+  @ApiProperty({ description: 'What people still hold, added up.' })
+  notBanked!: number;
+
+  @ApiProperty({ description: 'Recorded as banked, not yet confirmed.' })
+  waiting!: number;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  oldestUnbankedAt!: Date | null;
+
+  @ApiProperty({ description: 'Some of it is more than a day old — amber.' })
+  overdue!: boolean;
+}
+
 class SignedInSummary {
   @ApiProperty()
   people!: number;
@@ -563,6 +578,13 @@ export class DashboardView {
       'This month so far beside the same stretch of last month, figure by figure.',
   })
   growth!: GrowthComparisonView;
+
+  @ApiProperty({
+    type: () => CashTile,
+    description:
+      'Cash taken and not yet banked — the same totals as `GET /cash`.',
+  })
+  cash!: CashTile;
 
   @ApiProperty({
     type: () => SignedInSummary,
