@@ -1304,3 +1304,22 @@ Download gives a sheet with the same rows.
 
 **332. [gate] As a cashier**, there is no Reports item, and typing `/reports/growth` does not show
 the figures.
+
+---
+
+## BB. A sale that looks already recorded
+
+**333. [gate] As the owner, sell 2 cartons of something to a customer. Then, signed in as a
+cashier, put the same 2 cartons to the same customer and press the payment button.** *Already
+recorded?* opens, naming the invoice, who recorded it and when. Nothing has been recorded yet.
+
+**334. [gate] Press Open it.** The sale opens in a new tab; the till's cart is still there in the
+first.
+
+**335. [gate] Press Same sale — clear the cart.** The cart empties and nothing is recorded. Put it
+back, press the payment button, then **Record anyway**: the sale is recorded as usual.
+
+**336. [gate] Change the quantity to 3 cartons and record.** No warning — a different amount is a
+different sale.
+
+**337. [gate] Sales → History** has a **Recorded by** column, and the date carries the time.

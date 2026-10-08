@@ -619,6 +619,21 @@ Four more from the till (7.2), all in `web/src/till/`:
   twice; leaving on purpose (Clear, Cancel) throws the copy away. The till also has **+ / −** per
   line, and the cursor returns to the item search after an item is picked or a line is set with
   Enter (`ScanBox` `focusKey` — picking a suggestion sends no request, so `busy` never fell).
+- **A sale that looks already recorded is a warning, not a rule** (§6, 2026-10-08). The owner
+  recorded a sale a member of staff had not, and nothing would have stopped it going in twice —
+  an `Idempotency-Key` stops one device sending one sale twice, not two people recording one
+  event. `POST /sales` now answers a sale with **the same customer on the same day** (the day
+  it is dated, in the shop's zone), or **a walk-in within ten minutes**, carrying **the same
+  items in the same amounts** — prices not compared — with a 409 `error: POSSIBLE_DUPLICATE`
+  and `duplicates` (number, total, when, who recorded it). Checked **before anything is written**
+  (`duplicates.ts`, pure). `allowDuplicate: true` is *Record anyway* — **any role**, no reason,
+  the same `id` with a fresh key. The till's `DuplicateDialog` offers *Open it* (new tab, cart
+  untouched), *Same sale — clear the cart* and *Record anyway*, and keeps `allowDuplicate` on
+  for every later attempt at that sale (an override retry would otherwise meet the warning
+  again). Sales → History gained **Recorded by** and the time. ⚠ **Smoke sends
+  `allowDuplicate: true` on every sale unless a step says otherwise**: it repeats the same sale
+  on purpose, and step 35's credit refusal was passing on the duplicate 409 instead — a 409
+  test that does not check *which* 409 proves nothing.
 - **The till sits under Sales, and can date a sale** (2026-10-07). One top-bar item, *Sales*,
   opens on the till, with **Till** and **History** tabs (`SalesLayout`); the addresses are still
   `/till` and `/sales`, so `landingPath` and saved links are untouched. **Sale date**

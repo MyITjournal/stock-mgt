@@ -5571,11 +5571,35 @@ export interface components {
             force?: boolean;
             /** @example Sold from the van before the delivery was entered. */
             forcedReason?: string;
+            /** @description Record it even though a sale like it is already recorded — **Record anyway**. Without it, a sale to the same customer on the same day with the same items (a walk-in: within ten minutes) is refused with a 409 `POSSIBLE_DUPLICATE` naming the sale it looks like. Anyone may send it: it is a warning, not a rule. */
+            allowDuplicate?: boolean;
             /**
              * @description Overrides the refusal to sell on credit to a customer who already owes. Owner or manager only, and recorded on the sale.
              * @example Owner approved; paying both invoices on Friday.
              */
             creditOverrideReason?: string;
+        };
+        PossibleDuplicateSale: {
+            /** Format: uuid */
+            id: string;
+            /** @example INV-0123 */
+            number: string;
+            /** @description Minor units. */
+            total: number;
+            /** Format: date-time */
+            occurredAt: string;
+            /**
+             * @description Who recorded it, when known.
+             * @example Ade Bayo
+             */
+            recordedBy: string | null;
+        };
+        PossibleDuplicateConflict: {
+            /** @example POSSIBLE_DUPLICATE */
+            error: string;
+            message: string;
+            /** @description Newest first; at most three. */
+            duplicates: components["schemas"]["PossibleDuplicateSale"][];
         };
         ReturnLineDto: {
             /** Format: uuid */
@@ -9697,6 +9721,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            /** @description Not enough stock, a customer who still owes, or — with `error: POSSIBLE_DUPLICATE` — a sale that looks already recorded. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PossibleDuplicateConflict"];
                 };
             };
         };

@@ -29,6 +29,7 @@ import {
   type PaymentState,
 } from './payment';
 import { OverrideDialog, type OverrideKind } from './OverrideDialog';
+import { DuplicateDialog, type PossibleDuplicate } from './DuplicateDialog';
 import { Receipt } from './Receipt';
 import { CustomerDialog } from '../customers/CustomerDialog';
 import { DuePayments } from '../components/DuePayments';
@@ -127,6 +128,12 @@ export function TillPage() {
     kind: OverrideKind;
     message: string;
   } | null>(null);
+  // "Already recorded?" (2026-10-08): the sale it looks like, while asked.
+  const [duplicate, setDuplicate] = useState<PossibleDuplicate | null>(null);
+  // Once somebody chose Record anyway, every later attempt at this same sale
+  // — an override retry after a stock or credit refusal — says so too, or the
+  // warning would come back between them.
+  const [recordAnyway, setRecordAnyway] = useState(false);
 
   /**
    * The id this sale will carry, minted once for the cart.
@@ -574,6 +581,7 @@ export function TillPage() {
     async (reasons?: {
       forcedReason?: string;
       creditOverrideReason?: string;
+      allowDuplicate?: boolean;
     }) => {
       setBusy(true);
       setError(null);
@@ -611,6 +619,9 @@ export function TillPage() {
             ...(reasons?.creditOverrideReason && {
               creditOverrideReason: reasons.creditOverrideReason,
             }),
+            ...((reasons?.allowDuplicate || recordAnyway) && {
+              allowDuplicate: true,
+            }),
           },
           // One key per attempt. `api.post` reuses it across its own internal
           // retry behind a refreshed session, which is the case that matters;
@@ -625,6 +636,7 @@ export function TillPage() {
         );
         setCompleted({ receipt, saleId: sale.id });
         setOverride(null);
+        setDuplicate(null);
 
         // A counter sale is the widest write in the application: it moves
         // stock, banks a payment, and creates both an invoice and — on credit
@@ -632,7 +644,19 @@ export function TillPage() {
         // last carton left the stock screen still showing it on the shelf.
         afterWrite(queryClient);
       } catch (caught) {
-        if (caught instanceof ApiError && caught.isConflict && isManager) {
+        // Looks already recorded: a warning for whoever is at the till, so
+        // it is checked before the owner-only refusals below.
+        if (
+          caught instanceof ApiError &&
+          caught.code === 'POSSIBLE_DUPLICATE'
+        ) {
+          setDuplicate(caught.body as PossibleDuplicate);
+          setOverride(null);
+        } else if (
+          caught instanceof ApiError &&
+          caught.isConflict &&
+          isManager
+        ) {
           setOverride({
             kind: kindOfConflict(caught.message),
             message: caught.message,
@@ -645,7 +669,16 @@ export function TillPage() {
         setBusy(false);
       }
     },
-    [isManager, lines, payment, saleDay, saleId, total, queryClient],
+    [
+      isManager,
+      lines,
+      payment,
+      saleDay,
+      saleId,
+      total,
+      queryClient,
+      recordAnyway,
+    ],
   );
 
   // The last line for the product the camera read — after a unit change the
@@ -694,6 +727,8 @@ export function TillPage() {
     setError(null);
     setNotice(null);
     setSaleId(crypto.randomUUID());
+    setDuplicate(null);
+    setRecordAnyway(false);
     // A re-pricing still in flight belongs to the sale just abandoned; this
     // makes its answer stale so it cannot speak up on the new one.
     repriceRun.current += 1;
@@ -915,6 +950,21 @@ export function TillPage() {
           // Already a customer: the sale goes in their name, nothing added.
           onPickExisting={takeNewCustomer}
           pickLabel="Use"
+        />
+      )}
+
+      {duplicate && (
+        <DuplicateDialog
+          conflict={duplicate}
+          busy={busy}
+          onCancel={() => setDuplicate(null)}
+          // It is the same sale: nothing to record, and the cart goes.
+          onClearCart={startNewSale}
+          onRecordAnyway={() => {
+            setRecordAnyway(true);
+            setDuplicate(null);
+            void submit({ allowDuplicate: true });
+          }}
         />
       )}
 
