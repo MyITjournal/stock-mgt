@@ -15,16 +15,28 @@ import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
 import { randomUUID } from 'node:crypto';
 import { allocateFefo, sortFefo } from './fefo';
+import { checkVariant } from '../catalog/variants';
 
 /**
  * The subset of the client the ledger writes through, so the same code runs
  * against `TenantPrisma` and against a transaction client — the two share these
- * delegates but not `$transaction`.
+ * delegates but not `$transaction`. The product and its options are read to
+ * check the option a movement names (`assertVariant`).
  */
 export type StockWriter = Pick<
   TenantPrisma,
-  'stockMovement' | 'stockBalance' | 'stockBatch'
+  'stockMovement' | 'stockBalance' | 'stockBatch' | 'product' | 'productVariant'
 >;
+
+/**
+ * Movements that bring new stock in or sell it — refused for a retired option.
+ * Everything else (counts, adjustments, transfers, returns) may still move a
+ * retired option's leftover stock, or retiring it would strand that stock.
+ */
+const NEW_STOCK_OR_SALE: StockMovementType[] = [
+  StockMovementType.receipt,
+  StockMovementType.sale,
+];
 
 /** Who may push a movement through a shortfall. */
 const FORCE_ROLES: OrgRole[] = [OrgRole.owner, OrgRole.manager];
@@ -33,6 +45,12 @@ export interface MovementInput {
   /** Client-supplied id, so an offline device can mint the row identity. */
   id?: string;
   productId: string;
+  /**
+   * Which option, for a product that has options — required then, and refused
+   * for a product without. Carried like the location: on the movement and the
+   * balance, never on the lot.
+   */
+  variantId?: string | null;
   locationId: string;
   quantity: number;
   type: StockMovementType;
@@ -67,6 +85,8 @@ export interface PickCost {
 /** One line for `recordNewLots`: a quantity, and the lot it opens. */
 export interface NewLotLine {
   productId: string;
+  /** As on `MovementInput`. New stock, so a retired option is refused. */
+  variantId?: string | null;
   locationId: string;
   /** In base units. */
   quantity: number;
@@ -122,12 +142,16 @@ export class StockService {
    */
   async recordInbound(input: InboundInput, db: StockWriter = this.prisma) {
     assertPositive(input.quantity);
+    await this.assertVariant(db, input.productId, input.variantId, {
+      allowRetired: !NEW_STOCK_OR_SALE.includes(input.type),
+    });
 
     const movement = await db.stockMovement.create({
       data: {
         ...(input.id && { id: input.id }),
         organizationId: TenantContext.requireOrganizationId(),
         productId: input.productId,
+        variantId: input.variantId ?? null,
         locationId: input.locationId,
         batchId: input.batchId,
         type: input.type,
@@ -162,6 +186,7 @@ export class StockService {
   ): Promise<void> {
     if (lines.length === 0) return;
     for (const line of lines) assertPositive(line.quantity);
+    await this.assertVariants(db, lines);
 
     const organizationId = TenantContext.requireOrganizationId();
     const recordedByUserId = TenantContext.get()?.userId ?? null;
@@ -184,6 +209,7 @@ export class StockService {
       data: rows.map((row) => ({
         organizationId,
         productId: row.productId,
+        variantId: row.variantId ?? null,
         locationId: row.locationId,
         batchId: row.batchId,
         type: row.type,
@@ -198,6 +224,7 @@ export class StockService {
       data: rows.map((row) => ({
         organizationId,
         productId: row.productId,
+        variantId: row.variantId ?? null,
         locationId: row.locationId,
         batchId: row.batchId,
         quantity: row.quantity,
@@ -212,13 +239,11 @@ export class StockService {
    */
   async recordOutbound(input: OutboundInput, db: StockWriter = this.prisma) {
     assertPositive(input.quantity);
+    await this.assertVariant(db, input.productId, input.variantId, {
+      allowRetired: !NEW_STOCK_OR_SALE.includes(input.type),
+    });
 
-    const available = await this.availableBatches(
-      db,
-      input.productId,
-      input.locationId,
-      input.batchId,
-    );
+    const available = await this.availableBatches(db, input);
     const { allocations, shortfall } = allocateFefo(available, input.quantity);
 
     if (shortfall > 0) {
@@ -250,6 +275,7 @@ export class StockService {
           ...(index === 0 && input.id && { id: input.id }),
           organizationId,
           productId: input.productId,
+          variantId: input.variantId ?? null,
           locationId: input.locationId,
           batchId: allocation.batchId,
           type: input.type,
@@ -370,21 +396,146 @@ export class StockService {
   }
 
   /**
-   * Batches with stock, ordered for picking. Reads the cached balance rather
-   * than summing the ledger — that is what the cache is for.
+   * Moves a product's option-less stock into one option — the stock it already
+   * held when its first options were added (2026-10-08).
+   *
+   * A transfer in all but location: for each balance, a `transfer_out` from
+   * "no option" and a `transfer_in` to the option, on the **same lot**, sharing
+   * a `transferGroupId`. So nothing is re-costed or rounded — the lot keeps its
+   * exact total, exactly as when stock moves to the van — and the history
+   * shows the move rather than a rewritten past. Negative balances, left by
+   * forced sales, move too: what is owed to the shelf belongs to the option
+   * as much as what is on it. Returns the movements written; none when there
+   * was nothing to move.
    */
-  private async availableBatches(
+  async moveIntoVariant(
+    productId: string,
+    variant: { id: string; name: string },
+    db: StockWriter = this.prisma,
+  ): Promise<StockMovement[]> {
+    const balances = await db.stockBalance.findMany({
+      where: { productId, variantId: null, quantity: { not: 0 } },
+    });
+    if (balances.length === 0) return [];
+
+    const organizationId = TenantContext.requireOrganizationId();
+    const recordedByUserId = TenantContext.get()?.userId ?? null;
+    const transferGroupId = randomUUID();
+    const occurredAt = new Date();
+    const note = `Moved into "${variant.name}" when the product's options were added`;
+    const movements: StockMovement[] = [];
+
+    for (const balance of balances) {
+      const halves = [
+        { type: StockMovementType.transfer_out, variantId: null, sign: -1 },
+        { type: StockMovementType.transfer_in, variantId: variant.id, sign: 1 },
+      ];
+      for (const half of halves) {
+        const quantity = half.sign * balance.quantity;
+        movements.push(
+          await db.stockMovement.create({
+            data: {
+              organizationId,
+              productId,
+              variantId: half.variantId,
+              locationId: balance.locationId,
+              batchId: balance.batchId,
+              type: half.type,
+              quantity,
+              note,
+              occurredAt,
+              recordedByUserId,
+              transferGroupId,
+            },
+          }),
+        );
+        await this.applyToBalance(
+          db,
+          {
+            productId,
+            variantId: half.variantId,
+            locationId: balance.locationId,
+          },
+          balance.batchId,
+          quantity,
+        );
+      }
+    }
+
+    return movements;
+  }
+
+  /**
+   * Checks the option a movement names against the product's options — see
+   * `checkVariant`. One read, and none of the product unless there is
+   * something to complain about.
+   */
+  private async assertVariant(
     db: StockWriter,
     productId: string,
-    locationId: string,
-    batchId?: string,
+    variantId: string | null | undefined,
+    options: { allowRetired: boolean },
   ) {
+    const variants = await db.productVariant.findMany({
+      where: { productId },
+      select: { id: true, name: true, isActive: true },
+    });
+    if (variants.length === 0 && !variantId) return;
+    // Only reached when a product has options, or one was named anyway.
+    const product = await db.product.findFirst({
+      where: { id: productId },
+      select: { name: true },
+    });
+    checkVariant(product?.name ?? 'This product', variants, variantId, options);
+  }
+
+  /** `assertVariant` for many new lots at once, in one read. */
+  private async assertVariants(
+    db: StockWriter,
+    lines: readonly { productId: string; variantId?: string | null }[],
+  ) {
+    const productIds = [...new Set(lines.map((line) => line.productId))];
+    const variants = await db.productVariant.findMany({
+      where: { productId: { in: productIds } },
+      select: { id: true, name: true, isActive: true, productId: true },
+    });
+    const flagged = lines.filter(
+      (line) =>
+        line.variantId ||
+        variants.some((variant) => variant.productId === line.productId),
+    );
+    if (flagged.length === 0) return;
+
+    const products = await db.product.findMany({
+      where: { id: { in: [...new Set(flagged.map((l) => l.productId))] } },
+      select: { id: true, name: true },
+    });
+    const nameOf = new Map(products.map((p) => [p.id, p.name]));
+    for (const line of flagged) {
+      checkVariant(
+        nameOf.get(line.productId) ?? 'This product',
+        variants.filter((variant) => variant.productId === line.productId),
+        line.variantId,
+        { allowRetired: false },
+      );
+    }
+  }
+
+  /**
+   * Batches with stock, ordered for picking. Reads the cached balance rather
+   * than summing the ledger — that is what the cache is for.
+   *
+   * Only the named option's stock: selling Chicken never draws on Pepper Soup,
+   * even where one lot holds both (a lot can, after `moveIntoVariant`).
+   */
+  private async availableBatches(db: StockWriter, input: OutboundInput) {
     const balances = await db.stockBalance.findMany({
       where: {
-        productId,
-        locationId,
+        productId: input.productId,
+        variantId: input.variantId ?? null,
+        locationId: input.locationId,
         quantity: { gt: 0 },
-        ...(batchId && { batchId }),
+        ...(input.batchId && { batchId: input.batchId }),
       },
       include: {
         batch: { select: { expiryDate: true, receivedAt: true } },
@@ -426,7 +577,11 @@ export class StockService {
     if (input.batchId) return input.batchId;
 
     const known = await db.stockBalance.findMany({
-      where: { productId: input.productId, locationId: input.locationId },
+      where: {
+        productId: input.productId,
+        variantId: input.variantId ?? null,
+        locationId: input.locationId,
+      },
       include: { batch: { select: { expiryDate: true, receivedAt: true } } },
     });
 
@@ -462,15 +617,19 @@ export class StockService {
    * and a strict unique upsert would not. Two transactions racing to create the
    * same balance row leave one of them with a unique violation, so that case
    * falls back to the update.
+   *
+   * `variantId` is always in the where, **as null when there is none**: left
+   * out, the update would match every option's row for the lot at once.
    */
   private async applyToBalance(
     db: StockWriter,
-    input: MovementInput,
+    input: Pick<MovementInput, 'productId' | 'variantId' | 'locationId'>,
     batchId: string,
     delta: number,
   ) {
     const where = {
       productId: input.productId,
+      variantId: input.variantId ?? null,
       locationId: input.locationId,
       batchId,
     };

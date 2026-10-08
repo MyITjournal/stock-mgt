@@ -151,6 +151,15 @@ export class StockMovementView {
   @ApiProperty({ format: 'uuid' })
   productId!: string;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Which option moved. Null for a product without options (§24).',
+  })
+  variantId!: string | null;
+
   @ApiProperty({ format: 'uuid' })
   locationId!: string;
 
@@ -320,6 +329,14 @@ export class TransferResultView {
 class DriftedBalance {
   @ApiProperty({ format: 'uuid' })
   productId!: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'The option; null for a product without options.',
+  })
+  variantId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   locationId!: string;

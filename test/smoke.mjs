@@ -3753,6 +3753,140 @@ async function main() {
     !collectedToday.byLocation.some((row) => row.label === 'Not at a counter'),
   );
 
+  step(62, 'Options: a product that comes in flavours, and the stock it already held');
+  // Indomie on the shelf before anybody said which flavour (§24). Its first
+  // options must say which one that stock is; it moves there as a transfer on
+  // the same lots, so the total and its value cannot change.
+  const noodles = (
+    await api('POST', '/products', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        id: randomUUID(),
+        name: `Noodles ${shopSuffix}`,
+        basePrice: 25_000,
+        units: [
+          { name: 'pack', factor: 1 },
+          { name: 'carton', factor: 40 },
+        ],
+      },
+    })
+  ).data;
+  eq('a product starts with no options', noodles.variants.length, 0);
+  const noodleCarton = noodles.units.find((u) => u.name === 'carton');
+  await api('POST', '/stock/opening', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      locationId: main.id,
+      lines: [{ productId: noodles.id, unitId: noodleCarton.id, quantity: 2, unitCost: 900_000 }],
+    },
+  });
+  const valueOf = async () =>
+    (await api('GET', '/reports/stock-valuation', { token: t })).data.total;
+  const noodleValueBefore = await valueOf();
+  eq('two cartons on the shelf, in packs', await levelAt(t, noodles.id, main.id), 80);
+
+  const chickenId = randomUUID();
+  const pepperId = randomUUID();
+  const flavours = {
+    variantAttributes: ['Flavour'],
+    variants: [
+      { id: chickenId, values: ['Chicken'] },
+      { id: pepperId, values: [' Pepper  Soup '] },
+    ],
+  };
+  const unsaid = (
+    await api('PATCH', `/products/${noodles.id}`, { token: t, body: flavours, expect: 400 })
+  ).data;
+  check('first options on stocked goods must say which one the stock is', /already holds stock/.test(unsaid.message), unsaid.message);
+  eq('and nothing was saved', (await api('GET', `/products/${noodles.id}`, { token: t })).data.variants.length, 0);
+
+  const flavoured = (
+    await api('PATCH', `/products/${noodles.id}`, {
+      token: t,
+      body: { ...flavours, existingStockVariantId: chickenId },
+    })
+  ).data;
+  eq(
+    'the product now comes in two options, names tidied',
+    JSON.stringify(flavoured.variants.map((v) => v.name).sort()),
+    JSON.stringify(['Chicken', 'Pepper Soup']),
+  );
+  eq('by flavour', JSON.stringify(flavoured.variantAttributes), JSON.stringify(['Flavour']));
+  eq('still two cartons on the shelf', await levelAt(t, noodles.id, main.id), 80);
+  eq('worth exactly what they were', await valueOf(), noodleValueBefore);
+
+  await new Promise((r) => setTimeout(r, 1500)); // the feed's one-second window
+  const noodleMoves = (
+    await api('GET', `/stock/movements?productId=${noodles.id}&limit=1000`, { token: t })
+  ).data.movements;
+  const intoChicken = noodleMoves.filter((m) => m.type === 'transfer_in');
+  eq(
+    'the stock moved into Chicken, as one transfer',
+    JSON.stringify(intoChicken.map((m) => [m.variantId, m.quantity])),
+    JSON.stringify([[chickenId, 80]]),
+  );
+  eq(
+    'out of "no option" on the same lot',
+    JSON.stringify(
+      noodleMoves.filter((m) => m.type === 'transfer_out').map((m) => [m.variantId, m.batchId, m.quantity]),
+    ),
+    JSON.stringify([[null, intoChicken[0]?.batchId, -80]]),
+  );
+  eq('and the ledger still sums to the level', noodleMoves.reduce((sum, m) => sum + m.quantity, 0), 80);
+
+  const unnamedSale = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: { locationId: main.id, lines: [{ productId: noodles.id, unitId: noodleCarton.id, quantity: 1 }] },
+      expect: 400,
+    })
+  ).data;
+  check('a sale that does not say which flavour is refused', /Say which one/.test(unnamedSale.message), unnamedSale.message);
+  // A product made with its options in one request, and nothing on the shelf
+  // yet — so the only reason left to refuse its opening stock is the option.
+  const crisps = (
+    await api('POST', '/products', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        id: randomUUID(),
+        name: `Crisps ${shopSuffix}`,
+        units: [{ name: 'pack', factor: 1 }],
+        variantAttributes: ['Flavour', 'Size'],
+        variants: [{ values: ['Salted', '50g'] }, { values: ['Chilli', '50g'] }],
+      },
+    })
+  ).data;
+  eq(
+    'a product can be made with its options',
+    JSON.stringify(crisps.variants.map((v) => v.name).sort()),
+    JSON.stringify(['Chilli / 50g', 'Salted / 50g']),
+  );
+  const unnamedOpening = (
+    await api('POST', '/stock/opening', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        locationId: main.id,
+        lines: [{ productId: crisps.id, unitId: crisps.units[0].id, quantity: 10, unitCost: 5_000 }],
+      },
+      expect: 400,
+    })
+  ).data;
+  check('and opening stock that does not say which is refused too', /Say which one/.test(unnamedOpening.message), unnamedOpening.message);
+
+  await api('PATCH', `/products/${noodles.id}`, {
+    token: t,
+    body: { variants: [{ id: randomUUID(), values: ['chicken'] }] },
+    expect: 409,
+  });
+  check('a second "chicken" is refused, case aside', true);
+  const rebuiltWithOptions = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
+  eq('with options in the grain, cache and ledger still agree', rebuiltWithOptions.corrected, 0);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

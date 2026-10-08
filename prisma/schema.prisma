@@ -144,6 +144,11 @@ model Product {
   /// False for services and non-stocked items, which the ledger should ignore.
   trackStock Boolean @default(true)
 
+  /// What this product's options differ by: ["Flavour"], or ["Flavour",
+  /// "Pack size"]. At most two (2026-10-08). Empty for a product without
+  /// options, which is nearly every FMCG product — see `ProductVariant`.
+  variantAttributes String[] @default([])
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -151,6 +156,7 @@ model Product {
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   packagingType     PackagingType?     @relation(fields: [packagingTypeId], references: [id], onDelete: SetNull)
+  variants          ProductVariant[]
   units             ProductUnit[]
   prices            ProductPrice[]
   saleLines         SaleLine[]
@@ -166,6 +172,58 @@ model Product {
   @@index([categoryId])
   @@index([packagingTypeId])
   @@map("products")
+}
+
+/// One option of a product: Indomie in Chicken, Onion Chicken, Pepper Soup.
+///
+/// **An option is not a unit** (PRD-V2 §2). A unit is a multiple of the same
+/// item — a carton of 40 packs — and every option shares the product's units.
+/// An option is a different item under the same product: Chicken and Pepper
+/// Soup are not multiples of each other, and their stock is separate.
+///
+/// Stock carries the option the way it carries the location: on the movement
+/// and the balance, **never on the lot**. Moving stock into an option is then a
+/// transfer — same lot, same exact cost — as moving it to the van already is.
+///
+/// Never deleted: sales and movements point at it. Retired instead.
+model ProductVariant {
+  id             String @id @default(uuid())
+  organizationId String
+  productId      String
+
+  /// One value per entry in `Product.variantAttributes`, in the same order:
+  /// ["Chicken", "70g"].
+  values String[]
+  /// The values joined — "Chicken / 70g". Written from `values` on every save
+  /// by `variantName`, never typed, so it cannot disagree with them. Stored so
+  /// a receipt or report selects it like any other name.
+  name   String
+  /// `name` lower-cased with its spaces collapsed, so two options of one
+  /// product cannot differ only by case. A plain column, so the unique rule
+  /// below has no nullable part to fall through (§13's trap).
+  key    String
+
+  /// Retired options cannot be sold or received, but their leftover stock can
+  /// still be counted, adjusted, moved and returned.
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product           Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  prices            ProductPrice[]
+  barcodes          ProductBarcode[]
+  saleLines         SaleLine[]
+  stockMovements    StockMovement[]
+  stockBalances     StockBalance[]
+  goodsReceiptLines GoodsReceiptLine[]
+  stocktakeLines    StocktakeLine[]
+
+  @@unique([organizationId, productId, key])
+  @@index([productId])
+  @@map("product_variants")
 }
 
 /// How a product is packaged and sold: piece, pack, carton.
@@ -237,10 +295,13 @@ model PriceTier {
 /// Unique per organization, not globally: two tenants will stock the same Peak
 /// Milk, and one will invent its own internal code.
 model ProductBarcode {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   productId      String
   unitId         String
+  /// Which option the code is printed on — each flavour's carton scans
+  /// differently. Null for a product without options.
+  variantId      String?
 
   code      String
   symbology BarcodeSymbology @default(EAN13)
@@ -250,9 +311,10 @@ model ProductBarcode {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unit         ProductUnit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  variant      ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, code])
   @@index([productId])
@@ -286,11 +348,15 @@ enum BarcodeSymbology {
 /// the piece price. Bulk discount is the norm in FMCG, and a model that can only
 /// multiply the base price cannot express it.
 model ProductPrice {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   productId      String
   tierId         String
   unitId         String
+  /// Set only on an option's own price, which overrides the product's for that
+  /// option. Null is the product's price, which every option sells at unless
+  /// it has one of its own (2026-10-08).
+  variantId      String?
 
   /// Tax-inclusive, in minor units (kobo), for ONE of that unit.
   price Int
@@ -298,12 +364,16 @@ model ProductPrice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  tier         PriceTier    @relation(fields: [tierId], references: [id], onDelete: Cascade)
-  unit         ProductUnit  @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tier         PriceTier       @relation(fields: [tierId], references: [id], onDelete: Cascade)
+  unit         ProductUnit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  variant      ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, productId, tierId, unitId])
+  // One price per (product, tier, unit, option) — enforced by two PARTIAL
+  // unique indexes in 20261008150000_product_variants, one for variantId NULL
+  // and one for NOT NULL, because a plain unique over a nullable column lets
+  // duplicates through (§13). Prisma cannot express them, so they are SQL only.
   @@index([productId])
   @@map("product_prices")
 }
@@ -383,11 +453,13 @@ model Sale {
 
 /// One product on an invoice, priced and costed at the moment it was sold.
 model SaleLine {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   saleId         String
   productId      String
   unitId         String
+  /// Which option was sold. Null for a product without options.
+  variantId      String?
 
   /// As typed, counted in `unitId` — two cartons, not forty-eight pieces.
   quantity     Int
@@ -425,10 +497,11 @@ model SaleLine {
 
   createdAt DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  product      Product      @relation(fields: [productId], references: [id])
-  unit         ProductUnit  @relation(fields: [unitId], references: [id])
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sale         Sale            @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product      Product         @relation(fields: [productId], references: [id])
+  unit         ProductUnit     @relation(fields: [unitId], references: [id])
+  variant      ProductVariant? @relation(fields: [variantId], references: [id])
   returns      SaleReturn[]
 
   @@index([organizationId])
@@ -828,6 +901,7 @@ model Organization {
   packagingTypes              PackagingType[]
   products                    Product[]
   productUnits                ProductUnit[]
+  productVariants             ProductVariant[]
   priceTiers                  PriceTier[]
   productPrices               ProductPrice[]
   customers                   Customer[]
@@ -1155,11 +1229,14 @@ model StockBatch {
 /// application. A mutable quantity column was rejected — no audit trail, and it
 /// does not merge when three offline devices sync.
 model StockMovement {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   productId      String
   locationId     String
   batchId        String
+  /// Which option moved. Null for a product without options. On the movement
+  /// rather than the lot, like the location — see `ProductVariant`.
+  variantId      String?
 
   type     StockMovementType
   /// Signed, in base units: positive brings stock in, negative takes it out.
@@ -1194,14 +1271,16 @@ model StockMovement {
 
   createdAt DateTime @default(now())
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  location     Location     @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Restrict)
-  recordedBy   User?        @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant      ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  location     Location        @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  batch        StockBatch      @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  recordedBy   User?           @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([organizationId, productId, locationId])
+  @@index([variantId])
   /// The delta-sync cursor: keyset paging over (createdAt, id).
   @@index([organizationId, createdAt, id])
   @@index([transferGroupId])
@@ -1212,23 +1291,29 @@ model StockMovement {
 /// transaction as the movement it reflects, and rebuildable from `StockMovement`
 /// if it ever drifts.
 model StockBalance {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   productId      String
   locationId     String
   batchId        String
+  /// Null for a product without options.
+  variantId      String?
 
   /// Base units on hand. May go negative — see the forced-movement path.
   quantity Int @default(0)
 
   updatedAt DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  location     Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  batch        StockBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant      ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  location     Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  batch        StockBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, productId, locationId, batchId])
+  // One row per (product, location, lot, option) — two PARTIAL unique indexes
+  // in 20261008150000_product_variants, split on variantId NULL / NOT NULL.
+  // A plain unique over the nullable column would let two variant-less rows for
+  // the same lot coexist, and stock would silently split between them (§13).
   @@index([organizationId, productId])
   @@map("stock_balances")
 }
@@ -1268,12 +1353,14 @@ model GoodsReceipt {
 /// `unitFactor` record what the user actually typed — "20 cartons" — so a later
 /// edit to the unit factor cannot rewrite history.
 model GoodsReceiptLine {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   receiptId      String
   productId      String
   unitId         String
-  batchId        String @unique
+  batchId        String  @unique
+  /// Which option arrived. Null for a product without options.
+  variantId      String?
 
   /// As entered, in `unitId`.
   quantityReceivedInUnit Int
@@ -1293,6 +1380,7 @@ model GoodsReceiptLine {
   receipt      GoodsReceipt                 @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   product      Product                      @relation(fields: [productId], references: [id], onDelete: Restrict)
   unit         ProductUnit                  @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  variant      ProductVariant?              @relation(fields: [variantId], references: [id], onDelete: Restrict)
   batch        StockBatch                   @relation(fields: [batchId], references: [id], onDelete: Cascade)
   corrections  GoodsReceiptCorrectionLine[]
 
@@ -1367,10 +1455,12 @@ model Stocktake {
 /// The variance that actually posts is recomputed against live stock inside the
 /// posting transaction. The snapshot is evidence; it is not the arithmetic.
 model StocktakeLine {
-  id             String @id @default(uuid())
+  id             String  @id @default(uuid())
   organizationId String
   stocktakeId    String
   productId      String
+  /// Which option was counted. Null for a product without options.
+  variantId      String?
 
   /// Base units, like every other quantity in the ledger.
   countedQuantity  Int
@@ -1384,14 +1474,16 @@ model StocktakeLine {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  stocktake    Stocktake    @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
-  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  countedBy    User?        @relation(fields: [countedByUserId], references: [id], onDelete: SetNull)
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stocktake    Stocktake       @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant      ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  countedBy    User?           @relation(fields: [countedByUserId], references: [id], onDelete: SetNull)
 
-  /// One line per product per count: counting a product twice is a correction
-  /// to the first line, not a second opinion.
-  @@unique([stocktakeId, productId])
+  // One line per product (and option) per count: counting it twice is a
+  // correction to the first line, not a second opinion. Two PARTIAL unique
+  // indexes in 20261008150000_product_variants, split on variantId NULL / NOT
+  // NULL — a plain unique over the nullable column would not hold (§13).
   @@index([organizationId])
   @@index([stocktakeId])
   @@map("stocktake_lines")
@@ -1864,6 +1956,9 @@ model GoodsReceiptCorrectionLine {
   /// recorded as, and which it really was. Null when the product was right.
   productIdBefore String?
   productIdAfter  String?
+  /// The same for an option: set only when the line was the wrong option.
+  variantIdBefore String?
+  variantIdAfter  String?
 
   organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   correction   GoodsReceiptCorrection @relation(fields: [correctionId], references: [id], onDelete: Cascade)

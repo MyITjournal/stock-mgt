@@ -15,7 +15,7 @@ import {
 } from '../../common/authz/cost-visibility';
 import { splitTaxInclusive } from '../../common/money/money';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
-import { BarcodeSymbology, BusinessType } from '@prisma/client';
+import { BarcodeSymbology, BusinessType, Prisma } from '@prisma/client';
 import {
   chooseDefaultSellingUnit,
   defaultIsSellable,
@@ -38,12 +38,24 @@ import {
   ProductBarcodeInput,
   ProductPriceInput,
   ProductUnitInput,
+  ProductVariantInput,
   UpdateProductDto,
 } from './dto/product.dto';
+import { cleanVariantText, variantKey, variantName } from './variants';
+import { StockService } from '../inventory/stock.service';
+import type { StockWriter } from '../inventory/stock.service';
+
+/** How a product's options are listed. Typed apart: `as const` below would make it read-only. */
+const VARIANT_ORDER: Prisma.ProductVariantOrderByWithRelationInput[] = [
+  { sortOrder: 'asc' },
+  { name: 'asc' },
+];
 
 const PRODUCT_INCLUDE = {
   category: true,
   packagingType: true,
+  // Retired ones included, so the form can show and restore them.
+  variants: { orderBy: VARIANT_ORDER },
   units: { orderBy: { factor: 'asc' } },
   prices: { include: { tier: true, unit: true } },
   // Barcodes ride along because a caller that attached them inline needs to
@@ -76,6 +88,7 @@ export class ProductService {
   constructor(
     @Inject(TENANT_PRISMA) private readonly prisma: TenantPrisma,
     private readonly images: CloudinaryService,
+    private readonly stock: StockService,
   ) {}
 
   async create(input: CreateProductDto) {
@@ -127,6 +140,15 @@ export class ProductService {
           unitIdByName,
           barcodes,
         });
+
+        if (input.variantAttributes?.length || input.variants?.length) {
+          await this.writeOptions(tx, {
+            productId: product.id,
+            organizationId,
+            attributes: input.variantAttributes,
+            variants: input.variants ?? [],
+          });
+        }
 
         return product.id;
       });
@@ -473,7 +495,13 @@ export class ProductService {
       throw translateUniqueViolation(error, input.sku ?? '');
     }
 
-    if (input.units?.length || input.prices?.length || barcodes.length) {
+    if (
+      input.units?.length ||
+      input.prices?.length ||
+      barcodes.length ||
+      input.variantAttributes !== undefined ||
+      input.variants?.length
+    ) {
       await this.prisma.$transaction(async (tx) => {
         // Units first: a request may add a unit and price it in one go, so the
         // new unit has to exist before the name lookup below can find it.
@@ -513,10 +541,169 @@ export class ProductService {
           unitIdByName,
           barcodes,
         });
+
+        if (input.variantAttributes !== undefined || input.variants?.length) {
+          await this.writeOptions(tx, {
+            productId: id,
+            organizationId,
+            attributes: input.variantAttributes,
+            variants: input.variants ?? [],
+            existingStockVariantId: input.existingStockVariantId,
+          });
+        }
       });
     }
 
     return this.findOneOrFail(id);
+  }
+
+  /**
+   * Writes what the options differ by and the options themselves — and, when
+   * this gives a product that holds stock its first options, moves that stock
+   * into the one the request names (DECISIONS.md §24).
+   *
+   * Upserts like `writeUnits`, for the same reason: options the request leaves
+   * out are left alone, and none is ever deleted, since sales and movements
+   * point at them. Matched by id when given — which is how one is renamed —
+   * else by name, case aside.
+   */
+  private async writeOptions(
+    tx: TransactionClient,
+    args: {
+      productId: string;
+      organizationId: string;
+      attributes?: string[];
+      variants: ProductVariantInput[];
+      existingStockVariantId?: string;
+    },
+  ): Promise<void> {
+    const [product, existing] = await Promise.all([
+      tx.product.findFirst({
+        where: { id: args.productId },
+        select: { name: true, variantAttributes: true },
+      }),
+      tx.productVariant.findMany({ where: { productId: args.productId } }),
+    ]);
+    if (!product) throw new NotFoundException('Product not found');
+
+    let attributes = product.variantAttributes;
+    if (args.attributes !== undefined) {
+      attributes = settleAttributes(args.attributes, existing);
+      await tx.product.update({
+        where: { id: args.productId },
+        data: { variantAttributes: attributes },
+      });
+    }
+
+    const byId = new Map(existing.map((variant) => [variant.id, variant]));
+    const idByKey = new Map(
+      existing.map((variant) => [variant.key, variant.id]),
+    );
+
+    for (const row of args.variants) {
+      if (attributes.length === 0) {
+        throw new BadRequestException(
+          `Say what the options of "${product.name}" differ by first, in variantAttributes — Flavour, for instance.`,
+        );
+      }
+      const values = row.values.map(cleanVariantText);
+      if (values.length !== attributes.length || values.some((v) => !v)) {
+        throw new BadRequestException(
+          `Each option of "${product.name}" needs ${attributes.length === 1 ? `a ${attributes[0]}` : `a ${attributes.join(' and a ')}`}; "${row.values.join(' / ')}" does not have that.`,
+        );
+      }
+      const name = variantName(values);
+      const key = variantKey(values);
+
+      const target = row.id
+        ? byId.get(row.id)
+        : byId.get(idByKey.get(key) ?? '');
+      const clash = idByKey.get(key);
+      if (clash && clash !== target?.id) {
+        throw new ConflictException(
+          `"${product.name}" already has an option called "${byId.get(clash)?.name ?? name}".`,
+        );
+      }
+
+      const data = {
+        values,
+        name,
+        key,
+        ...(row.isActive !== undefined && { isActive: row.isActive }),
+        ...(row.sortOrder !== undefined && { sortOrder: row.sortOrder }),
+      };
+
+      if (target) {
+        const updated = await tx.productVariant.update({
+          where: { id: target.id },
+          data,
+        });
+        idByKey.delete(target.key);
+        idByKey.set(key, updated.id);
+        byId.set(updated.id, updated);
+        continue;
+      }
+
+      try {
+        const created = await tx.productVariant.create({
+          data: {
+            ...(row.id && { id: row.id }),
+            organizationId: args.organizationId,
+            productId: args.productId,
+            ...data,
+          },
+        });
+        idByKey.set(key, created.id);
+        byId.set(created.id, created);
+      } catch (error) {
+        // Only an id already used elsewhere can get here: names were checked
+        // above, against every option this product has.
+        if (isUniqueViolation(error)) {
+          throw new ConflictException(
+            `The option id ${row.id} is already in use.`,
+          );
+        }
+        throw error;
+      }
+    }
+
+    const options = [...byId.values()];
+    if (options.length > 0 && !options.some((variant) => variant.isActive)) {
+      throw new BadRequestException(
+        `"${product.name}" needs at least one option that is not retired. Retire the product instead if it is no longer sold.`,
+      );
+    }
+
+    // First options on a product that already holds stock: that stock has to
+    // become one of them, or it would sit under no option, unsellable.
+    if (existing.length > 0 || options.length === 0) return;
+    const holding = await tx.stockBalance.count({
+      where: {
+        productId: args.productId,
+        variantId: null,
+        quantity: { not: 0 },
+      },
+    });
+    if (holding === 0) return;
+
+    const chosen = args.existingStockVariantId
+      ? byId.get(args.existingStockVariantId)
+      : undefined;
+    if (!chosen) {
+      throw new BadRequestException(
+        `"${product.name}" already holds stock. Say which option that stock is (existingStockVariantId): it moves there at its original cost, and a count can spread it across the others later.`,
+      );
+    }
+    if (!chosen.isActive) {
+      throw new BadRequestException(
+        `The stock cannot go to "${chosen.name}", which is retired.`,
+      );
+    }
+    await this.stock.moveIntoVariant(
+      args.productId,
+      chosen,
+      tx as unknown as StockWriter,
+    );
   }
 
   /**
@@ -716,24 +903,30 @@ export class ProductService {
         );
       }
 
-      await tx.productPrice.upsert({
-        where: {
-          organizationId_productId_tierId_unitId: {
-            organizationId: args.organizationId,
-            productId: args.productId,
-            tierId,
-            unitId,
-          },
-        },
-        create: {
-          organizationId: args.organizationId,
-          productId: args.productId,
-          tierId,
-          unitId,
-          price: row.price,
-        },
-        update: { price: row.price },
+      // Update-then-create rather than `upsert`: "one price per product, tier,
+      // unit and option" is a pair of partial unique indexes (§24), which a
+      // Prisma upsert cannot name. These are the product's own prices, so the
+      // option is null — and in the where as null, or an option's override
+      // would be overwritten too.
+      const where = {
+        productId: args.productId,
+        tierId,
+        unitId,
+        variantId: null,
+      };
+      const { count } = await tx.productPrice.updateMany({
+        where,
+        data: { price: row.price },
       });
+      if (count === 0) {
+        await tx.productPrice.create({
+          data: {
+            organizationId: args.organizationId,
+            ...where,
+            price: row.price,
+          },
+        });
+      }
     }
   }
 
@@ -937,6 +1130,35 @@ export function assertExactlyOneBaseUnit(units: ProductUnitInput[]): void {
   if (new Set(names).size !== names.length) {
     throw new BadRequestException('Unit names must be unique within a product');
   }
+}
+
+/**
+ * What a product's options differ by, cleaned and checked: at most two
+ * (the DTO caps it), each named, no two alike. Renaming is always fine, and
+ * so is adding a second; removing one that options already fill is refused,
+ * since it would leave their values meaning nothing.
+ */
+export function settleAttributes(
+  requested: readonly string[],
+  existing: readonly { values: readonly string[] }[],
+): string[] {
+  const cleaned = requested.map(cleanVariantText);
+  if (cleaned.some((attribute) => !attribute)) {
+    throw new BadRequestException(
+      'An attribute needs a name — Flavour, Size, Colour.',
+    );
+  }
+  const lower = cleaned.map((attribute) => attribute.toLowerCase());
+  if (new Set(lower).size !== lower.length) {
+    throw new BadRequestException('The two attributes need different names.');
+  }
+  const used = Math.max(0, ...existing.map((variant) => variant.values.length));
+  if (cleaned.length < used) {
+    throw new BadRequestException(
+      `The options already use ${used === 1 ? 'one attribute' : 'two attributes'}. An attribute can be renamed or added, but not removed once options use it.`,
+    );
+  }
+  return cleaned;
 }
 
 /** "Peak Milk 400g" -> "PEAK-MILK-400G". Unique per organization. */

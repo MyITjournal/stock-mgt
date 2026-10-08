@@ -2832,6 +2832,40 @@ export interface components {
             /** @description What the till would charge for one on the default price list. Null: no price, and the till refuses it. */
             price: number | null;
         };
+        ProductVariantView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organizationId: string;
+            /** Format: uuid */
+            productId: string;
+            /**
+             * @description One per entry in the product’s `variantAttributes`, in order.
+             * @example [
+             *       "Chicken",
+             *       "70g"
+             *     ]
+             */
+            values: string[];
+            /**
+             * @description The values joined. Written by the server, never typed.
+             * @example Chicken / 70g
+             */
+            name: string;
+            /**
+             * @description The name, case aside — what two options may not share.
+             * @example chicken / 70g
+             */
+            key: string;
+            /** @description False when retired: not sold or received, but its stock can still be counted, adjusted, moved and returned. */
+            isActive: boolean;
+            /** @example 0 */
+            sortOrder: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         ProductUnitView: {
             /** Format: uuid */
             id: string;
@@ -2869,6 +2903,11 @@ export interface components {
             /** Format: uuid */
             unitId: string;
             /**
+             * Format: uuid
+             * @description Set on an option’s own price, which overrides the product’s for that option. Null is the product’s price.
+             */
+            variantId: string | null;
+            /**
              * @description Tax-inclusive price of one `unitId`, in kobo.
              * @example 1200000
              */
@@ -2891,6 +2930,11 @@ export interface components {
             productId: string;
             /** Format: uuid */
             unitId: string;
+            /**
+             * Format: uuid
+             * @description The option the code is printed on; null when none.
+             */
+            variantId: string | null;
             /** @example 6154000010025 */
             code: string;
             symbology: components["schemas"]["BarcodeSymbology"];
@@ -2940,6 +2984,15 @@ export interface components {
             isActive: boolean;
             /** @description False for a service or anything sold without touching the ledger. */
             trackStock: boolean;
+            /**
+             * @description What the options differ by, at most two. Empty for a product without options.
+             * @example [
+             *       "Flavour"
+             *     ]
+             */
+            variantAttributes: string[];
+            /** @description The options, retired ones included, in `sortOrder` then name. Empty for a product without options — and once there are any, every sale and stock movement must name one. */
+            variants: components["schemas"]["ProductVariantView"][];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -3177,6 +3230,27 @@ export interface components {
             /** @description Use this code on printed labels. */
             isPrimary?: boolean;
         };
+        ProductVariantInput: {
+            /**
+             * Format: uuid
+             * @description Client-supplied id. Names the option to change; on a new option it becomes its id. Without one, an option is matched by its values, and added when none matches.
+             */
+            id?: string;
+            /**
+             * @description One value per entry in `variantAttributes`, in the same order — ["Chicken", "70g"] for Flavour and Pack size.
+             * @example [
+             *       "Chicken"
+             *     ]
+             */
+            values: string[];
+            /** @description False retires the option: it can no longer be sold or received, but its leftover stock can still be counted, adjusted, moved and returned. True restores it. At least one option must stay active. */
+            isActive?: boolean;
+            /**
+             * @description Where the option sits in lists, lowest first.
+             * @example 0
+             */
+            sortOrder?: number;
+        };
         CreateProductDto: {
             /**
              * Format: uuid
@@ -3266,6 +3340,15 @@ export interface components {
              *     ]
              */
             barcodes?: components["schemas"]["ProductBarcodeInput"][];
+            /**
+             * @description What the options differ by — at most two, such as ["Flavour", "Pack size"]. Needed before any option can be added. Names can be changed at any time; once options exist, a second attribute can be added but none removed.
+             * @example [
+             *       "Flavour"
+             *     ]
+             */
+            variantAttributes?: string[];
+            /** @description The options — Chicken, Onion Chicken, Pepper Soup. Each has its own stock and shares the product’s units and, unless given its own, its prices. Once a product has options, every sale and stock movement must name one. On PATCH, listed options are upserted and unlisted ones left alone; none is ever deleted. */
+            variants?: components["schemas"]["ProductVariantInput"][];
         };
         UpdateProductDto: {
             /**
@@ -3356,6 +3439,20 @@ export interface components {
              *     ]
              */
             barcodes?: components["schemas"]["ProductBarcodeInput"][];
+            /**
+             * @description What the options differ by — at most two, such as ["Flavour", "Pack size"]. Needed before any option can be added. Names can be changed at any time; once options exist, a second attribute can be added but none removed.
+             * @example [
+             *       "Flavour"
+             *     ]
+             */
+            variantAttributes?: string[];
+            /** @description The options — Chicken, Onion Chicken, Pepper Soup. Each has its own stock and shares the product’s units and, unless given its own, its prices. Once a product has options, every sale and stock movement must name one. On PATCH, listed options are upserted and unlisted ones left alone; none is ever deleted. */
+            variants?: components["schemas"]["ProductVariantInput"][];
+            /**
+             * Format: uuid
+             * @description Needed when this request gives a product that already holds stock its first options: the id of the option that stock is. It moves there as a transfer — same lots, same cost — and a count can spread it across the others later. An id from `variants` in this same request is fine.
+             */
+            existingStockVariantId?: string;
         };
         CreateBarcodeDto: {
             /** Format: uuid */
@@ -4067,6 +4164,11 @@ export interface components {
             organizationId: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option moved. Null for a product without options (§24).
+             */
+            variantId: string | null;
             /** Format: uuid */
             locationId: string;
             /**
@@ -4120,6 +4222,11 @@ export interface components {
             organizationId: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option moved. Null for a product without options (§24).
+             */
+            variantId: string | null;
             /** Format: uuid */
             locationId: string;
             /**
@@ -4232,6 +4339,11 @@ export interface components {
             organizationId: string;
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description Which option moved. Null for a product without options (§24).
+             */
+            variantId: string | null;
             /** Format: uuid */
             locationId: string;
             /**
@@ -4306,6 +4418,11 @@ export interface components {
         DriftedBalance: {
             /** Format: uuid */
             productId: string;
+            /**
+             * Format: uuid
+             * @description The option; null for a product without options.
+             */
+            variantId: string | null;
             /** Format: uuid */
             locationId: string;
             /** Format: uuid */

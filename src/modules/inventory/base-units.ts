@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
+import { checkVariant } from '../catalog/variants';
 
 /**
  * Stock is recorded in base units — the one unit per product with `factor = 1`.
@@ -33,11 +34,22 @@ export async function resolveProductUnit(
      * so only selling asks; deliveries, counts and adjustments use any unit.
      */
     forSale?: boolean;
+    /**
+     * The option, for a product that has options — required then, refused
+     * otherwise (`checkVariant`). The stock engine checks again on every
+     * movement; this names the problem before anything is written, and covers
+     * a non-stocked product, which never reaches the engine.
+     */
+    variantId?: string | null;
   } = {},
 ) {
   const product = await prisma.product.findFirst({
     where: { id: productId, deletedAt: null },
-    include: { units: true, prices: options.withPrices },
+    include: {
+      units: true,
+      prices: options.withPrices,
+      variants: { select: { id: true, name: true, isActive: true } },
+    },
   });
   if (!product) throw new NotFoundException(`Product ${productId} not found`);
 
@@ -46,6 +58,15 @@ export async function resolveProductUnit(
       `"${product.name}" is not stocked, so it has no stock to move.`,
     );
   }
+
+  // Selling refuses a retired option; everything else may still clear its
+  // leftover stock. Receiving is refused by the stock engine, by movement type.
+  const variant = checkVariant(
+    product.name,
+    product.variants,
+    options.variantId,
+    { allowRetired: !options.forSale },
+  );
 
   const unit = unitId
     ? product.units.find((candidate) => candidate.id === unitId)
@@ -70,5 +91,5 @@ export async function resolveProductUnit(
     );
   }
 
-  return { product, unit };
+  return { product, unit, variant };
 }

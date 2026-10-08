@@ -65,9 +65,13 @@ ProductVariant
   sku, isActive, sortOrder
 ```
 
+> **As built (2026-10-08, DECISIONS.md §24):** not on `StockBatch`. The option sits on the
+> movement and balance like the location, so moving stock into an option keeps the lot and its
+> exact cost. Attributes are per product, at most two (`Product.variantAttributes`).
+
 | Table                                           | Why it needs `variantId`                   |
 | ----------------------------------------------- | ------------------------------------------ |
-| `StockMovement`, `StockBalance`, `StockBatch`   | Size 39 and size 41 are different stock    |
+| `StockMovement`, `StockBalance`                 | Size 39 and size 41 are different stock    |
 | `SaleLine`, `GoodsReceiptLine`, `StocktakeLine` | You sell, receive and count a specific one |
 | `ProductPrice`                                  | Size 45 may cost more than size 39         |
 | `ProductBarcode`                                | Each variant scans differently             |
@@ -233,6 +237,6 @@ These need answers before the slice that depends on them, not before this docume
 
 1. **Reservation expiry default.** Hours or days, and whether a shop can override per order.
 2. **Whether an expired reservation notifies anyone**, or just quietly releases.
-3. **Variant attributes: structured columns or free-form.** `size`/`colour`/`style` is rigid but sortable and filterable; a JSON bag is flexible and harder to report on. Leaning structured, with the axes configurable per organization.
+3. ~~**Variant attributes: structured columns or free-form.**~~ **Decided 2026-10-08:** up to two named attributes chosen per product ("Flavour", "Pack size"), each option filling them in — DECISIONS.md §24.
 4. **Statement formats to support first.** Depends on which banks the first users actually use.
 5. **Whether order capture needs its own public link** (as drops do) or stays staff-entered only.

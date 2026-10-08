@@ -57,6 +57,7 @@ describe('ReceivingService', () => {
         findFirst: jest.fn().mockResolvedValue({
           id: PRODUCT,
           name: 'Lotion 200ml',
+          variants: [],
           trackStock: true,
           units: [
             { id: PIECE, name: 'piece', factor: 1 },

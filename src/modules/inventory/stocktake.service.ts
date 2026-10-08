@@ -148,36 +148,37 @@ export class StocktakeService {
     await this.assertProductsExist(productIds);
     const onHand = await this.onHandByProduct(stocktake.locationId, productIds);
 
-    await this.prisma.$transaction(
-      input.lines.map((line) =>
-        this.prisma.stocktakeLine.upsert({
-          where: {
-            stocktakeId_productId: {
-              stocktakeId: id,
-              productId: line.productId,
-            },
-          },
-          create: {
-            organizationId,
-            stocktakeId: id,
-            productId: line.productId,
-            countedQuantity: line.countedQuantity,
-            // Snapshotted so the sheet still explains itself weeks later, when
-            // stock has moved on. It is evidence, not the arithmetic.
-            expectedQuantity: onHand.get(line.productId) ?? 0,
-            note: line.note ?? null,
-            countedByUserId,
-          },
-          update: {
-            countedQuantity: line.countedQuantity,
-            expectedQuantity: onHand.get(line.productId) ?? 0,
-            note: line.note ?? null,
-            countedByUserId,
-            countedAt: new Date(),
-          },
-        }),
-      ),
-    );
+    // Update-then-create rather than `upsert`: "one line per product (and
+    // option)" is a pair of partial unique indexes now (§24), which a Prisma
+    // upsert cannot name. `variantId` is in the where as null when there is
+    // none, so a recount finds the line it corrects. In order, so the same
+    // product twice in one request still ends as one line, the later count.
+    await this.prisma.$transaction(async (tx) => {
+      for (const line of input.lines) {
+        const where = {
+          stocktakeId: id,
+          productId: line.productId,
+          variantId: null,
+        };
+        const counted = {
+          countedQuantity: line.countedQuantity,
+          // Snapshotted so the sheet still explains itself weeks later, when
+          // stock has moved on. It is evidence, not the arithmetic.
+          expectedQuantity: onHand.get(line.productId) ?? 0,
+          note: line.note ?? null,
+          countedByUserId,
+        };
+        const { count } = await tx.stocktakeLine.updateMany({
+          where,
+          data: { ...counted, countedAt: new Date() },
+        });
+        if (count === 0) {
+          await tx.stocktakeLine.create({
+            data: { organizationId, ...where, ...counted },
+          });
+        }
+      }
+    });
 
     return this.findOne(id);
   }

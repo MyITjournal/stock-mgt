@@ -5762,3 +5762,103 @@ movements still sum to levels.
 
 The root `tsconfig.json` and the jest config are scoped to `src` and `test` so `web/` cannot break
 `npm run typecheck` or `npx jest` at the root. Keep it that way.
+
+## 24. Product options (variants)
+
+Asked 2026-10-08: "add variants/attributes for each item — there could be 10 of one item"
+(Indomie in Chicken, Onion Chicken, Pepper Soup). The model was already decided in
+[PRD-V2.md](PRD-V2.md) §2 — an **optional sub-identity of a product, never a unit and never its own
+product**; a nullable `variantId`; units stay on the product and every option shares them. The
+screens call them **options**; the code and schema say *variant*. Built in five branches, merged to
+`dev` one at a time, nothing to `main` until all five are in:
+
+1. `feat/variants-ledger` — schema, stock engine, the options on the product API. **Done.**
+2. `feat/variants-on-product-and-till` — product form and detail, an option's own price and
+   barcode, till search and scan, sale lines, receipt, invoice, returns.
+3. `feat/variants-stock-in` — receiving, delivery corrections ("wrong option"), opening stock, lot
+   cost.
+4. `feat/variants-counting-and-moving` — counts, adjustments, transfers, the stock levels page.
+5. `feat/variants-reports` — valuation, low stock, margins, movers, stock in/out, import/export.
+
+### The owner's three answers
+
+- **Up to two named attributes, chosen per product** — "Flavour", or "Flavour" and "Pack size" —
+  and each option fills them in (`Product.variantAttributes`, `ProductVariant.values`). Not a bare
+  name (reports could not group by flavour), not a shop-wide attribute list (a settings screen for
+  nothing). Settles PRD-V2 §8 open decision 3. Renaming an attribute is always fine and adding a
+  second is allowed; **removing one that options fill is refused** (`settleAttributes`).
+- **Price: the product's, unless the option has its own.** `ProductPrice.variantId` null is the
+  product's price; set, it is that option's override. `resolveUnitPrice(…, variantId)` takes the
+  option's row, else the product's — **never** another option's, and an option's price never
+  stands in for the product's. Ten flavours at one price are priced once.
+- **A product that already holds stock and gets its first options: ask which option that stock
+  is** (`existingStockVariantId` on the PATCH; 400 without it, nothing saved). A count spreads it
+  later.
+
+### The option is on the movement, not the lot
+
+PRD-V2 §2 listed `StockBatch` among the tables to carry `variantId`. It does not. The option sits on
+`StockMovement` and `StockBalance` (and the lines: sale, delivery, count; prices; barcodes) — **the
+way the location does**. That is what makes the third answer honest: `StockService.moveIntoVariant`
+writes, per balance, a `transfer_out` from "no option" and a `transfer_in` to the option **on the same
+lot**, sharing a `transferGroupId` — exactly a move to the van. The lot keeps its exact total, so
+nothing is re-costed or rounded (§2) and the value is identical before and after (smoke step 62
+checks it). On the lot, adoption would have meant either editing the lot — rewriting history — or
+splitting its cost into a new lot, which rounds. A lot can therefore hold two options' stock, which
+is why the balance grain is now (product, option, location, lot) and `rebuild` groups by it.
+
+Negative balances (forced sales) move too: what is owed to the shelf belongs to the option as much
+as what is on it. A forced sale's estimated rate (`lastKnownRates`) stays per product.
+
+### Where the rule is enforced
+
+**`StockService` is the guarantee**, because not every write passes the product-and-unit lookup —
+opening stock, counts, returns and corrections reach the engine directly. Every `recordInbound`,
+`recordOutbound` and `recordNewLots` checks the option against the product's (`checkVariant`,
+`catalog/variants.ts`): a product with options must name one of its own; a product without must
+name none. `resolveProductUnit` checks too, to name the problem before anything is written and to
+cover a non-stocked product, which never reaches the engine. Selling (`sale`) and receiving
+(`receipt`, and every new lot) refuse a **retired** option; counts, adjustments, transfers and
+returns may still move its leftover stock, or retiring it would strand that stock. Retiring the
+last active option is refused — retire the product instead. Options are never deleted.
+
+Until branches 2–5 land, a screen that sends no option gets a plain "comes in options (…). Say
+which one." on a product that has them. It cannot write wrong data; it just cannot sell that
+product yet. That is acceptable on `dev`, and is why nothing goes to `main` before branch 5.
+
+### Written like units, not through endpoints of their own
+
+The plan said "endpoints to add, rename, retire options". Built instead as `variantAttributes` and
+`variants` on `POST`/`PATCH /products`, **upserted like units** — what a request leaves out is left
+alone, matched by `id` (how one is renamed) else by name, case aside. One save from the form sets
+everything, as units, prices and barcodes already do, and the "upsert, never delete" rule applies
+unchanged. `ProductVariant.name` is the values joined ("Chicken / 70g"), written only by
+`variantName`, stored so a receipt or report selects it like any other name; `key` is the name
+lower-cased, and `(organization, product, key)` is unique — a plain column, so that rule has no
+nullable part. `ProductVariant` is in `TENANT_SCOPED_MODELS`.
+
+### The trap, planned for and checked
+
+Three "one row per" keys gained the nullable `variantId`: `StockBalance`, `ProductPrice`,
+`StocktakeLine`. A plain unique over a nullable column does not hold (§13, the `PurchaseTarget`
+bug) — two option-less balance rows for one lot would both be accepted and stock would split between
+them silently. Each is a **pair of partial unique indexes** hand-written in
+`20261008150000_product_variants`, one `WHERE "variantId" IS NULL`, one `IS NOT NULL`; `migrate
+diff` returns empty afterwards. Checked against the local database by copying an existing row
+inside a rolled-back transaction: all three refused with their `_unique_no_variant` index.
+
+Two consequences in code: Prisma cannot `upsert` through a partial index, so **`writePrices` and the
+stocktake `count` are update-then-create**; and **every `where` on those tables names `variantId`,
+as `null` when there is none** — left out, an update matches every option's row at once (a
+product's carton price would overwrite each option's override).
+
+### Traps hit while building it
+
+- `migrate diff … > migration.sql 2>&1` writes Prisma's "Loaded Prisma config…" line into the SQL,
+  and the deploy fails on it. Redirect stdout only. The failed attempt needed
+  `prisma migrate resolve --rolled-back` before redeploying (nothing had run: it failed on line 1).
+- `as const` on `PRODUCT_INCLUDE` makes a nested `orderBy` array read-only, which Prisma refuses —
+  hence `VARIANT_ORDER` typed apart.
+- Smoke against a second server: the owner's watch server holds 4000 and logs to its terminal, so
+  smoke ran against `PORT=4001 node dist/main` logging to a file, with `BASE_URL` and
+  `SMOKE_SERVER_LOG` pointed at it; `api:types` likewise with `API_DOCS_URL`.

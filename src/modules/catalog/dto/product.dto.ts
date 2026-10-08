@@ -18,6 +18,7 @@ import {
 import { MAX_PRODUCT_CHILDREN } from '../../../common/pagination/request-limits';
 import { IsUUID } from 'class-validator';
 import { IsMoney } from '../../../common/money/is-money.validator';
+import { MAX_VARIANT_ATTRIBUTES } from '../variants';
 
 export class ProductUnitInput {
   @ApiProperty({ example: 'carton' })
@@ -117,6 +118,53 @@ export class ProductBarcodeInput {
   @IsOptional()
   @IsBoolean()
   isPrimary?: boolean;
+}
+
+/**
+ * One option of the product — Chicken, or Chicken / 70g (DECISIONS.md §24).
+ *
+ * Upserted like units: an option the request leaves out is left alone, and
+ * none is ever deleted. Matched by `id` when one is given — which is how an
+ * option is renamed — and otherwise by its values.
+ */
+export class ProductVariantInput {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Client-supplied id. Names the option to change; on a new option it becomes its id. Without one, an option is matched by its values, and added when none matches.',
+  })
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
+  @ApiProperty({
+    example: ['Chicken'],
+    description:
+      'One value per entry in `variantAttributes`, in the same order — ["Chicken", "70g"] for Flavour and Pack size.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_VARIANT_ATTRIBUTES)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  values!: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'False retires the option: it can no longer be sold or received, but its leftover stock can still be counted, adjusted, moved and returned. True restores it. At least one option must stay active.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: 'Where the option sits in lists, lowest first.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
 }
 
 export class CreateProductDto {
@@ -262,6 +310,39 @@ export class CreateProductDto {
   @ValidateNested({ each: true })
   @Type(() => ProductBarcodeInput)
   barcodes?: ProductBarcodeInput[];
+
+  @ApiPropertyOptional({
+    example: ['Flavour'],
+    description:
+      'What the options differ by — at most two, such as ["Flavour", "Pack size"]. Needed before any option can be added. Names can be changed at any time; once options exist, a second attribute can be added but none removed.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_VARIANT_ATTRIBUTES)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  variantAttributes?: string[];
+
+  @ApiPropertyOptional({
+    type: [ProductVariantInput],
+    description:
+      'The options — Chicken, Onion Chicken, Pepper Soup. Each has its own stock and shares the product’s units and, unless given its own, its prices. Once a product has options, every sale and stock movement must name one. On PATCH, listed options are upserted and unlisted ones left alone; none is ever deleted.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_PRODUCT_CHILDREN)
+  @ValidateNested({ each: true })
+  @Type(() => ProductVariantInput)
+  variants?: ProductVariantInput[];
 }
 
-export class UpdateProductDto extends PartialType(CreateProductDto) {}
+export class UpdateProductDto extends PartialType(CreateProductDto) {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Needed when this request gives a product that already holds stock its first options: the id of the option that stock is. It moves there as a transfer — same lots, same cost — and a count can spread it across the others later. An id from `variants` in this same request is fine.',
+  })
+  @IsOptional()
+  @IsUUID()
+  existingStockVariantId?: string;
+}

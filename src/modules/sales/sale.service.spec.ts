@@ -67,6 +67,7 @@ describe('SaleService', () => {
           name: 'Peak Milk 400g',
           trackStock: true,
           taxRateBps: 750,
+          variants: [],
           basePrice: 250_000,
           prices: [
             { tierId: RETAIL, unitId: CARTON, price: CARTON_PRICE },
@@ -215,6 +216,7 @@ describe('SaleService', () => {
         name: 'Peak Milk 400g',
         trackStock: true,
         taxRateBps: 750,
+        variants: [],
         basePrice: 250_000,
         prices: [{ tierId: RETAIL, unitId: CARTON, price: CARTON_PRICE }],
         units: [
@@ -410,6 +412,7 @@ describe('SaleService', () => {
     prisma.product.findFirst.mockResolvedValue({
       id: PRODUCT,
       name: 'Delivery to Ikeja',
+      variants: [],
       trackStock: false,
       taxRateBps: 750,
       basePrice: 500_000,
