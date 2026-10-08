@@ -11,7 +11,7 @@ import { StocktakeStatus } from '@prisma/client';
  * A storekeeper walks the aisles and records what is on the shelf; a manager
  * looks at the variance and decides it is real. Until it is **posted** a
  * stocktake changes no stock at all — it is a claim about the world, not a
- * change to it. Posting writes ordinary `adjustment` movements with reason
+ * change to it. Posting writes ordinary movements with reason
  * `count_correction`, so the ledger stays the only source of truth.
  */
 
@@ -45,7 +45,15 @@ class CountProductRef {
   sku!: string;
 }
 
-/** One product on a count sheet. */
+class CountOptionRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Gold' })
+  name!: string;
+}
+
+/** One product, or one option of it, on a count sheet. */
 export class StocktakeLineSummary {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -58,6 +66,15 @@ export class StocktakeLineSummary {
 
   @ApiProperty({ format: 'uuid' })
   productId!: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Which option was counted. Null for a product without options.',
+  })
+  variantId!: string | null;
 
   @ApiProperty({
     description:
@@ -88,6 +105,9 @@ export class StocktakeLineSummary {
 
   @ApiProperty({ type: () => CountProductRef })
   product!: CountProductRef;
+
+  @ApiProperty({ type: () => CountOptionRef, nullable: true })
+  variant!: CountOptionRef | null;
 
   @ApiProperty({ type: () => CountUserRef, nullable: true })
   countedBy!: CountUserRef | null;

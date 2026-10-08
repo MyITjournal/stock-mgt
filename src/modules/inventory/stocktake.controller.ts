@@ -97,7 +97,7 @@ export class StocktakeController {
   @ApiOperation({
     summary: 'Record what was counted',
     description:
-      'Takes the whole sheet at once, in base units. Counting a product twice replaces the earlier line — a recount is a correction, not a second opinion. Nothing here touches stock.',
+      'Takes the whole sheet at once, in base units. Counting a product (or one option of it) twice replaces the earlier line — a recount is a correction, not a second opinion. Nothing here touches stock.',
   })
   @ApiCreatedResponse({ type: StocktakeView })
   count(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CountLinesDto) {
@@ -106,13 +106,21 @@ export class StocktakeController {
 
   @Delete(':id/lines/:productId')
   @Roles(...COUNTERS)
+  @ApiQuery({
+    name: 'variantId',
+    required: false,
+    description:
+      'Which option’s line, for a product with options. Left out, the line that names none.',
+  })
   @ApiOperation({ summary: 'Remove a line counted by mistake' })
   @ApiOkResponse({ type: StocktakeView })
   removeLine(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('productId', ParseUUIDPipe) productId: string,
+    @Query('variantId', new ParseUUIDPipe({ optional: true }))
+    variantId?: string,
   ) {
-    return this.stocktakes.removeLine(id, productId);
+    return this.stocktakes.removeLine(id, productId, variantId);
   }
 
   @Post(':id/post')
@@ -123,7 +131,7 @@ export class StocktakeController {
   @ApiOperation({
     summary: 'Post the count, writing the corrections to the ledger',
     description:
-      'Owner or manager only — finding a shortfall and approving it are deliberately different jobs. Variances are recomputed against live stock, then written as `adjustment` movements with reason `count_correction`: shortfalls leave FEFO, surpluses land on the most recently received batch at that location.',
+      'Owner or manager only — finding a shortfall and approving it are deliberately different jobs. Variances are recomputed against live stock, then written with reason `count_correction`. Within one product, what one option is short and another is over **moves** between them on the same lots (`transfer_out`/`transfer_in` sharing a `transferGroupId`), so nothing is re-costed; only the rest is written off or on as `adjustment` — shortfalls leave FEFO, surpluses land on the most recently received batch at that location.',
   })
   @ApiCreatedResponse({ type: PostedStocktakeView })
   post(@Param('id', ParseUUIDPipe) id: string) {

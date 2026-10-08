@@ -8,6 +8,7 @@ import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
 import { useIsManager, useRecordsStock } from '../auth/useAuth';
 import type { components } from '../api/schema';
+import { choiceValue, optionLabel, stockChoices } from '../lib/options';
 
 type StocktakeView = components['schemas']['StocktakeView'];
 type PostedStocktakeView = components['schemas']['PostedStocktakeView'];
@@ -26,9 +27,16 @@ type ProductView = components['schemas']['ProductView'];
  * and that is correct rather than unstable. Once posted it reports the
  * snapshot, which is what was actually true when the correction was made.
  *
- * Posting writes ordinary `adjustment` movements with reason
- * `count_correction`: shortfalls leave FEFO, surpluses land on the newest lot
- * at that location, because every movement carries a batch (§5).
+ * Posting writes ordinary movements with reason `count_correction`:
+ * shortfalls leave FEFO, surpluses land on the newest lot at that location,
+ * because every movement carries a batch (§5).
+ *
+ * **Each option is counted as an item of its own** — one entry per option in
+ * the list, one line per option on the sheet (§24). When one option of a
+ * product is short and another over, posting moves the stock between them on
+ * the same lots rather than writing one off and the other on (owner,
+ * 2026-10-08) — the usual cause is stock put on one option when the product's
+ * options were added.
  */
 export function CountSheetPage() {
   const { id = '' } = useParams();
@@ -37,7 +45,8 @@ export function CountSheetPage() {
   const isManager = useIsManager();
   const recordsStock = useRecordsStock();
 
-  const [productId, setProductId] = useState('');
+  // A `stockChoices` value: the product, or `product/option`.
+  const [choice, setChoice] = useState('');
   const [counted, setCounted] = useState('');
   const [lineNote, setLineNote] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -57,12 +66,19 @@ export function CountSheetPage() {
     afterWrite(queryClient);
   };
 
+  const choices = stockChoices(
+    products.filter((product) => product.trackStock),
+    { includeRetired: true },
+  );
+  const chosen = choices.find((option) => option.value === choice);
+
   const addLine = useMutation({
     mutationFn: () =>
       api.post<StocktakeView>(`/stocktakes/${id}/lines`, {
         lines: [
           {
-            productId,
+            productId: chosen?.product.id,
+            ...(chosen?.variantId ? { variantId: chosen.variantId } : {}),
             countedQuantity: Number(counted),
             ...(lineNote.trim() ? { note: lineNote.trim() } : {}),
           },
@@ -70,7 +86,7 @@ export function CountSheetPage() {
       }),
     onSuccess: () => {
       refresh();
-      setProductId('');
+      setChoice('');
       setCounted('');
       setLineNote('');
       setError(null);
@@ -84,8 +100,10 @@ export function CountSheetPage() {
   });
 
   const removeLine = useMutation({
-    mutationFn: (lineProductId: string) =>
-      api.delete<StocktakeView>(`/stocktakes/${id}/lines/${lineProductId}`),
+    mutationFn: (line: { productId: string; variantId: string | null }) =>
+      api.delete<StocktakeView>(
+        `/stocktakes/${id}/lines/${line.productId}${line.variantId ? `?variantId=${line.variantId}` : ''}`,
+      ),
     onSuccess: refresh,
     onError: (caught) =>
       setError(
@@ -132,15 +150,17 @@ export function CountSheetPage() {
   }
 
   const open = count.status === 'open';
-  const alreadyCounted = new Set(count.lines.map((line) => line.productId));
-  const addable = products.filter(
-    (product) => product.trackStock && !alreadyCounted.has(product.id),
+  const alreadyCounted = new Set(
+    count.lines.map((line) => choiceValue(line.productId, line.variantId)),
+  );
+  const addable = choices.filter(
+    (option) => !alreadyCounted.has(option.value),
   );
 
   const submitLine = (event: FormEvent) => {
     event.preventDefault();
     setError(null);
-    if (productId && counted !== '') addLine.mutate();
+    if (chosen && counted !== '') addLine.mutate();
   };
 
   return (
@@ -227,13 +247,13 @@ export function CountSheetPage() {
             <Field label="Product" htmlFor="count-product">
               <Select
                 id="count-product"
-                value={productId}
-                onChange={(event) => setProductId(event.target.value)}
+                value={choice}
+                onChange={(event) => setChoice(event.target.value)}
               >
                 <option value="">Choose a product</option>
-                {addable.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name}
+                {addable.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </Select>
@@ -272,7 +292,7 @@ export function CountSheetPage() {
           <div className="flex items-end sm:col-span-2">
             <Button
               type="submit"
-              disabled={addLine.isPending || !productId || counted === ''}
+              disabled={addLine.isPending || !chosen || counted === ''}
               className="w-full"
             >
               {addLine.isPending ? 'Saving…' : 'Record'}
@@ -327,7 +347,7 @@ export function CountSheetPage() {
               <tr key={line.id}>
                 <td className="px-4 py-3">
                   <span className="block text-slate-900">
-                    {line.product.name}
+                    {optionLabel(line.product.name, line.variant?.name)}
                   </span>
                   <span className="block text-xs text-slate-500">
                     {line.product.sku}
@@ -357,7 +377,7 @@ export function CountSheetPage() {
                   <td className="px-4 py-3 text-right">
                     <Button
                       variant="ghost"
-                      onClick={() => removeLine.mutate(line.productId)}
+                      onClick={() => removeLine.mutate(line)}
                       disabled={removeLine.isPending}
                     >
                       Remove
@@ -372,8 +392,10 @@ export function CountSheetPage() {
 
       {open && (
         <p className="mt-4 text-xs text-slate-500">
-          Counting the same product twice replaces the earlier line — a recount
-          is a correction, not a second opinion. The variance is measured
+          Counting the same product (or option) twice replaces the earlier line
+          — a recount is a correction, not a second opinion. Stock that turns
+          out to be under the wrong option is moved to the right one when the
+          count is posted, at the same cost. The variance is measured
           against live stock and is recomputed again at the moment of posting,
           so goods that move in between are accounted for.
         </p>

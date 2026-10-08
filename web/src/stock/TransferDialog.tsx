@@ -9,6 +9,7 @@ import { useIsManager } from '../auth/useAuth';
 import { OverrideDialog } from '../till/OverrideDialog';
 import { useProductUnits, toBaseUnits } from './units';
 import type { components } from '../api/schema';
+import { optionLabel } from '../lib/options';
 
 type LocationView = components['schemas']['LocationView'];
 
@@ -25,17 +26,24 @@ type LocationView = components['schemas']['LocationView'];
  * needs no lot details. That is why this form has fewer questions than an
  * adjustment despite doing more.
  *
+ * **An option moves as an item of its own** (DECISIONS.md §24): both halves
+ * carry it, as they carry the lot. Moving stock from one option to another is
+ * not this — a count puts a wrong label right.
+ *
  * Moving more than is on hand is refused with a 409 and overridable by an owner
  * or manager, the same rule as a sale.
  */
 export function TransferDialog({
   product,
+  variant,
   from,
   onHand,
   locations,
   onClose,
 }: {
   product: { id: string; name: string; sku: string };
+  /** The option, for a product that has options. */
+  variant?: { id: string; name: string } | null;
   from: { id: string; name: string };
   onHand: number;
   locations: readonly LocationView[];
@@ -69,6 +77,7 @@ export function TransferDialog({
       api.post<unknown>('/stock/transfers', {
         id: transferId,
         productId: product.id,
+        ...(variant ? { variantId: variant.id } : {}),
         fromLocationId: from.id,
         toLocationId,
         ...(unit && unit.factor !== 1 ? { unitId: unit.id } : {}),
@@ -134,7 +143,8 @@ export function TransferDialog({
           Move stock
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          {product.name} · {onHand} at {from.name}
+          {optionLabel(product.name, variant?.name)} · {onHand} at{' '}
+          {from.name}
         </p>
 
         {elsewhere.length === 0 ? (

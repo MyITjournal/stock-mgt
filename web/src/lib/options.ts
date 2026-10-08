@@ -39,7 +39,8 @@ export interface StockChoice<P> {
  * What a delivery can bring in: **one choice per active option** of a product
  * with options — to stock, as to the till, an option is an item of its own
  * (DECISIONS.md §24) — and one per product without. Retired options are left
- * out: they take no new stock.
+ * out: they take no new stock. A count asks for them too (`includeRetired`),
+ * marked, because their leftover stock still sits on the shelf.
  */
 export function stockChoices<
   P extends {
@@ -47,7 +48,10 @@ export function stockChoices<
     name: string;
     variants: readonly { id: string; name: string; isActive: boolean }[];
   },
->(products: readonly P[]): StockChoice<P>[] {
+>(
+  products: readonly P[],
+  { includeRetired = false }: { includeRetired?: boolean } = {},
+): StockChoice<P>[] {
   return products.flatMap((product): StockChoice<P>[] =>
     product.variants.length === 0
       ? [
@@ -60,13 +64,13 @@ export function stockChoices<
           },
         ]
       : product.variants
-          .filter((variant) => variant.isActive)
+          .filter((variant) => variant.isActive || includeRetired)
           .map((variant) => ({
             value: `${product.id}/${variant.id}`,
             product,
             variantId: variant.id,
             optionName: variant.name,
-            label: optionLabel(product.name, variant.name),
+            label: `${optionLabel(product.name, variant.name)}${variant.isActive ? '' : ' (retired)'}`,
           })),
   );
 }

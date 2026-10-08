@@ -396,7 +396,7 @@ export class StockController {
   @ApiOperation({
     summary: 'Stock on hand',
     description:
-      'One row per product and location, in base units. Ask for batches to see the lots behind the number and what each cost.',
+      'One row per product, option and location, in base units — each option of a product is a row of its own. Ask for batches to see the lots behind the number and what each cost.',
   })
   @ApiOkResponse({ type: [StockLevelRow] })
   findLevels(

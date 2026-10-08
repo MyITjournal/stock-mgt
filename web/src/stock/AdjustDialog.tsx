@@ -8,6 +8,7 @@ import { afterWrite } from '../api/cache';
 import { useIsManager, useSeesCost } from '../auth/useAuth';
 import { OverrideDialog } from '../till/OverrideDialog';
 import { useProductUnits, toBaseUnits } from './units';
+import { optionLabel } from '../lib/options';
 
 /** The reasons stock moves without being sold or delivered. */
 const REASONS = [
@@ -39,17 +40,25 @@ type Reason = (typeof REASONS)[number]['value'];
  *   request and must not reuse the key. The stable thing across the two
  *   attempts is the movement `id`, minted once here (§8).
  *
+ * **An option is adjusted as an item of its own** (DECISIONS.md §24): the
+ * card it was opened from names it, and the movement carries it. Stock coming
+ * on opens a lot for the product — the option is on the movement, never the
+ * lot.
+ *
  * Counting a whole location is a stocktake, not this. That is deliberate: a
  * count is recorded by whoever counts and posted by a manager, and doing it
  * through adjustments would collapse the two jobs into one (§5).
  */
 export function AdjustDialog({
   product,
+  variant,
   location,
   onHand,
   onClose,
 }: {
   product: { id: string; name: string; sku: string };
+  /** The option, for a product that has options. */
+  variant?: { id: string; name: string } | null;
   location: { id: string; name: string };
   onHand: number;
   onClose: () => void;
@@ -84,6 +93,7 @@ export function AdjustDialog({
       api.post<unknown>('/stock/adjustments', {
         id: movementId,
         productId: product.id,
+        ...(variant ? { variantId: variant.id } : {}),
         locationId: location.id,
         ...(unit && unit.factor !== 1 ? { unitId: unit.id } : {}),
         quantity: direction === 'out' ? -typed : typed,
@@ -163,7 +173,8 @@ export function AdjustDialog({
           Adjust stock
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          {product.name} · {location.name} · {onHand} on hand
+          {optionLabel(product.name, variant?.name)} · {location.name} ·{' '}
+          {onHand} on hand
         </p>
 
         <div className="mt-4 space-y-4">

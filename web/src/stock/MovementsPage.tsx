@@ -6,6 +6,7 @@ import { Button } from '../components/Button';
 import { Field, Input, Select } from '../components/Field';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
+import { optionLabel } from '../lib/options';
 
 type MovementPageView = components['schemas']['MovementPageView'];
 type SyncedMovementView = components['schemas']['SyncedMovementView'];
@@ -101,7 +102,10 @@ export function MovementsPage() {
       header: 'Product',
       cell: (row) => (
         <span className="text-slate-900">
-          {productName.get(row.productId) ?? row.productId.slice(0, 8)}
+          {optionLabel(
+            productName.get(row.productId) ?? row.productId.slice(0, 8),
+            row.variant?.name,
+          )}
         </span>
       ),
     },

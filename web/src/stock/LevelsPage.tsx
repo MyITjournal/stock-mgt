@@ -15,6 +15,11 @@ import { ExpiryPanel } from './ExpiryPanel';
 import { DownloadButton } from '../components/DownloadButton';
 import { downloadSheet, stamp, type SheetColumn } from '../lib/exportSheet';
 import { sortRows } from '../lib/sort';
+import { optionLabel } from '../lib/options';
+
+/** "Eva Soap — Gold": each option is an item of its own on the shelf. */
+const itemName = (row: StockLevelRow) =>
+  optionLabel(row.product.name, row.variant?.name);
 
 /**
  * How the cards can be ordered (2026-10-07). A "Sort by" box rather than
@@ -24,7 +29,7 @@ import { sortRows } from '../lib/sort';
 const LEVEL_ORDER = {
   name: {
     label: 'Name, A to Z',
-    value: (row: StockLevelRow) => row.product.name,
+    value: itemName,
     direction: 'asc',
   },
   most: {
@@ -48,6 +53,7 @@ type LevelOrder = keyof typeof LEVEL_ORDER;
  */
 const LEVEL_COLUMNS: readonly SheetColumn<StockLevelRow>[] = [
   { header: 'Product', value: (row) => row.product.name, width: 32 },
+  { header: 'Option', value: (row) => row.variant?.name ?? '', width: 18 },
   { header: 'SKU', value: (row) => row.product.sku, width: 18 },
   { header: 'Location', value: (row) => row.location.name, width: 16 },
   {
@@ -124,15 +130,17 @@ export function LevelsPage() {
   });
 
   // Filtered here rather than server-side because `GET /stock/levels` takes a
-  // productId, not a search: it is one row per product and location, already
-  // scoped to a location, so the list a shop scrolls is small.
-  const needle = search.trim().toLowerCase();
-  const matching = needle
-    ? levels.filter(
-        (row) =>
-          row.product.name.toLowerCase().includes(needle) ||
-          row.product.sku.toLowerCase().includes(needle),
-      )
+  // productId, not a search: it is one row per product, option and location,
+  // already scoped to a location, so the list a shop scrolls is small. Every
+  // word typed must match the name, SKU or option, as at the till, so
+  // "eva gold" finds Gold alone.
+  const words = search.trim().toLowerCase().split(/s+/).filter(Boolean);
+  const matching = words.length
+    ? levels.filter((row) => {
+        const text =
+          `${row.product.name} ${row.product.sku} ${row.variant?.name ?? ''}`.toLowerCase();
+        return words.every((word) => text.includes(word));
+      })
     : levels;
   const order = LEVEL_ORDER[orderBy];
   const rows = sortRows(matching, order.value, order.direction);
@@ -175,7 +183,7 @@ export function LevelsPage() {
             id="level-search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Name or SKU"
+            placeholder="Name, SKU or option"
           />
         </Field>
 
@@ -240,7 +248,7 @@ export function LevelsPage() {
 
       <div className="space-y-2">
         {rows.map((row) => {
-          const key = `${row.product.id}:${row.location.id}`;
+          const key = `${row.product.id}:${row.variant?.id ?? '-'}:${row.location.id}`;
           const open = expanded === key;
 
           return (
@@ -258,7 +266,7 @@ export function LevelsPage() {
                   <span className="w-4 text-slate-400">{open ? '−' : '+'}</span>
                   <span className="flex-1">
                     <span className="block font-medium text-slate-900">
-                      {row.product.name}
+                      {itemName(row)}
                     </span>
                     <span className="block text-xs text-slate-500">
                       {row.product.sku} · {row.location.name} ·{' '}
@@ -357,7 +365,10 @@ export function LevelsPage() {
                                     onClick={() =>
                                       setCorrecting({
                                         batchId: batch.batchId,
-                                        product: row.product,
+                                        product: {
+                                          id: row.product.id,
+                                          name: itemName(row),
+                                        },
                                         quantity: batch.quantity,
                                       })
                                     }
@@ -386,6 +397,7 @@ export function LevelsPage() {
       {adjusting && (
         <AdjustDialog
           product={adjusting.product}
+          variant={adjusting.variant}
           location={adjusting.location}
           onHand={adjusting.quantity}
           onClose={() => setAdjusting(null)}
@@ -404,6 +416,7 @@ export function LevelsPage() {
       {transferring && (
         <TransferDialog
           product={transferring.product}
+          variant={transferring.variant}
           from={transferring.location}
           onHand={transferring.quantity}
           locations={locations}

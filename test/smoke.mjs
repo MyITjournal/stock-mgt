@@ -183,14 +183,32 @@ async function signUp(label) {
   return { email, token: data.accessToken };
 }
 
-/** One product at one location, in base units, with its batches. */
+/**
+ * One product at one location, in base units, with its batches — every option
+ * together, since a product with options comes back as a row per option (§24).
+ */
 async function onHand(token, productId, locationId) {
   const { data } = await api(
     'GET',
     `/stock/levels?productId=${productId}&locationId=${locationId}&includeBatches=true`,
     { token },
   );
-  return data[0] ?? { quantity: 0, batches: [] };
+  return {
+    quantity: data.reduce((sum, row) => sum + row.quantity, 0),
+    batches: data.flatMap((row) => row.batches ?? []),
+  };
+}
+
+/** One option of a product at one location, in base units. */
+async function optionAt(token, productId, variantId, locationId) {
+  const { data } = await api(
+    'GET',
+    `/stock/levels?productId=${productId}&locationId=${locationId}`,
+    { token },
+  );
+  return data
+    .filter((row) => (row.variant?.id ?? null) === variantId)
+    .reduce((sum, row) => sum + row.quantity, 0);
 }
 
 /** Just the base-unit count, for the places that only need the number. */
@@ -4166,6 +4184,142 @@ async function main() {
 
   const rebuiltAfterStockIn = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
   eq('after stock in by option, cache and ledger still agree', rebuiltAfterStockIn.corrected, 0);
+
+  step(65, 'Counting and moving by option: on hand, adjust, move, and a count that puts a label right');
+  // Each option is an item of its own on the shelf (owner, 2026-10-08). A
+  // count that finds one option short and another over moves the stock
+  // between them on the same lots — no loss, no find, the same value.
+  const noodleShelf = (
+    await api('GET', `/stock/levels?productId=${noodles.id}&locationId=${main.id}&includeEmpty=true`, { token: t })
+  ).data;
+  eq(
+    'on hand is a row per option',
+    JSON.stringify(noodleShelf.map((row) => row.variant?.name).sort()),
+    JSON.stringify(['Chicken', 'Pepper Soup']),
+  );
+
+  const unnamed = (
+    await api('POST', '/stock/adjustments', {
+      token: t,
+      key: randomUUID(),
+      body: { productId: noodles.id, locationId: main.id, quantity: -1, reason: 'damage' },
+      expect: 400,
+    })
+  ).data;
+  check('an adjustment must say which option', /Say which one/.test(unnamed.message), unnamed.message);
+
+  const chickenBefore = await optionAt(t, noodles.id, chickenId, main.id);
+  const pepperBefore = await optionAt(t, noodles.id, pepperId, main.id);
+  await api('POST', '/stock/adjustments', {
+    token: t,
+    key: randomUUID(),
+    body: { productId: noodles.id, variantId: chickenId, locationId: main.id, quantity: -1, reason: 'damage' },
+  });
+  eq('one Chicken written off', await optionAt(t, noodles.id, chickenId, main.id), chickenBefore - 1);
+  eq('Pepper Soup untouched', await optionAt(t, noodles.id, pepperId, main.id), pepperBefore);
+
+  await api('POST', '/stock/transfers', {
+    token: t,
+    key: randomUUID(),
+    body: { productId: noodles.id, variantId: chickenId, fromLocationId: main.id, toLocationId: van.id, quantity: 2 },
+  });
+  eq('two Chicken on the van, as Chicken', await optionAt(t, noodles.id, chickenId, van.id), 2);
+  eq('and none of Pepper Soup', await optionAt(t, noodles.id, pepperId, van.id), 0);
+
+  const chickenHere = await optionAt(t, noodles.id, chickenId, main.id);
+  const pepperHere = await optionAt(t, noodles.id, pepperId, main.id);
+  const noodlesHere = await levelAt(t, noodles.id, main.id);
+  const optionCount = (
+    await api('POST', '/stocktakes', { token: t, key: randomUUID(), body: { locationId: main.id } })
+  ).data;
+  const unsaidCount = (
+    await api('POST', `/stocktakes/${optionCount.id}/lines`, {
+      token: t,
+      body: { lines: [{ productId: noodles.id, countedQuantity: 5 }] },
+      expect: 400,
+    })
+  ).data;
+  check('a count must say which option', /Say which one/.test(unsaidCount.message), unsaidCount.message);
+
+  // Ten packs on the shelf are Pepper Soup, recorded as Chicken.
+  const optionSheet = (
+    await api('POST', `/stocktakes/${optionCount.id}/lines`, {
+      token: t,
+      body: {
+        lines: [
+          { productId: noodles.id, variantId: chickenId, countedQuantity: chickenHere - 10 },
+          { productId: noodles.id, variantId: pepperId, countedQuantity: pepperHere + 10 },
+        ],
+      },
+    })
+  ).data;
+  eq(
+    'each option has its own line and its own expected figure',
+    JSON.stringify(optionSheet.lines.map((l) => [l.variant?.name, l.expectedQuantity, l.variance]).sort()),
+    JSON.stringify([
+      ['Chicken', chickenHere, -10],
+      ['Pepper Soup', pepperHere, 10],
+    ]),
+  );
+  const withoutPepper = (
+    await api('DELETE', `/stocktakes/${optionCount.id}/lines/${noodles.id}?variantId=${pepperId}`, { token: t })
+  ).data;
+  eq(
+    'removing a line names the option, and only that line goes',
+    JSON.stringify(withoutPepper.lines.map((l) => l.variant?.name)),
+    JSON.stringify(['Chicken']),
+  );
+  await api('POST', `/stocktakes/${optionCount.id}/lines`, {
+    token: t,
+    body: { lines: [{ productId: noodles.id, variantId: pepperId, countedQuantity: pepperHere + 10 }] },
+  });
+
+  const valueBeforeCount = await valueOf();
+  const postedOptions = (
+    await api('POST', `/stocktakes/${optionCount.id}/post`, { token: t, key: randomUUID() })
+  ).data;
+  eq('both lines post', postedOptions.corrections, 2);
+  eq('Chicken is ten fewer', await optionAt(t, noodles.id, chickenId, main.id), chickenHere - 10);
+  eq('Pepper Soup ten more', await optionAt(t, noodles.id, pepperId, main.id), pepperHere + 10);
+  eq('the shelf holds the same in all', await levelAt(t, noodles.id, main.id), noodlesHere);
+  eq('and it is worth exactly what it was', await valueOf(), valueBeforeCount);
+
+  await new Promise((r) => setTimeout(r, 1500)); // the feed's one-second window
+  const countMoves = (
+    await api('GET', `/stock/movements?productId=${noodles.id}&limit=1000`, { token: t })
+  ).data.movements.filter((m) => m.referenceId === optionCount.id);
+  eq(
+    'written as a move between options, nothing written off or on',
+    [...new Set(countMoves.map((m) => m.type))].sort().join(),
+    'transfer_in,transfer_out',
+  );
+  eq('as one act', new Set(countMoves.map((m) => m.transferGroupId)).size, 1);
+  const lotsOut = countMoves.filter((m) => m.type === 'transfer_out').map((m) => `${m.batchId}:${-m.quantity}`).sort();
+  const lotsIn = countMoves.filter((m) => m.type === 'transfer_in').map((m) => `${m.batchId}:${m.quantity}`).sort();
+  eq('on the same lots it left', JSON.stringify(lotsIn), JSON.stringify(lotsOut));
+  check(
+    'and the feed names the option',
+    countMoves.every((m) => m.variant?.name === (m.variantId === chickenId ? 'Chicken' : 'Pepper Soup')),
+  );
+
+  // Every page: by now the shop has more movements than one page holds.
+  const optionMovements = [];
+  for (let cursor = null, more = true; more; ) {
+    const page = (
+      await api('GET', `/stock/movements?limit=1000${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, { token: t })
+    ).data;
+    optionMovements.push(...page.movements);
+    cursor = page.nextCursor;
+    more = page.hasMore && Boolean(cursor);
+  }
+  const optionLevels = (await api('GET', '/stock/levels?includeEmpty=true', { token: t })).data;
+  eq(
+    'counted and moved by option, the ledger still sums to the levels',
+    optionMovements.reduce((sum, m) => sum + m.quantity, 0),
+    optionLevels.reduce((sum, row) => sum + row.quantity, 0),
+  );
+  const rebuiltAfterCount = (await api('POST', '/stock/rebuild-balances', { token: t })).data;
+  eq('and cache and ledger agree', rebuiltAfterCount.corrected, 0);
 
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(

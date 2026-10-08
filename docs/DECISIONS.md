@@ -5782,6 +5782,7 @@ screens call them **options**; the code and schema say *variant*. Built in five 
 3. `feat/variants-stock-in` — receiving, delivery corrections ("wrong option"), opening stock, lot
    cost. **Done.**
 4. `feat/variants-counting-and-moving` — counts, adjustments, transfers, the stock levels page.
+   **Done.**
 5. `feat/variants-reports` — valuation, low stock, margins, movers, stock in/out, import/export.
 
 ### The owner's three answers
@@ -5826,10 +5827,10 @@ cover a non-stocked product, which never reaches the engine. Selling (`sale`) an
 returns may still move its leftover stock, or retiring it would strand that stock. Retiring the
 last active option is refused — retire the product instead. Options are never deleted.
 
-Until branches 4–5 land, a screen that sends no option gets a plain "comes in options (…). Say
-which one." on a product that has them — a count, an adjustment, a transfer. It cannot write wrong
-data; it just cannot do that yet. That is acceptable on `dev`, and is why nothing goes to `main`
-before branch 5.
+Until branches 4–5 landed, a screen that sent no option got a plain "comes in options (…). Say
+which one." on a product that has them — a count, an adjustment, a transfer (branch 4 put those
+right). It cannot write wrong data; it just cannot do that yet. That is acceptable on `dev`, and is
+why nothing goes to `main` before branch 5.
 
 ### Selling an option (branch 2)
 
@@ -5883,6 +5884,41 @@ size and price. So **to the till an option is an item of its own**:
   once Chicken has stock. **Add product with options takes one unit and one cost for all** (owner,
   2026-10-08: "they mostly share the same") and a quantity box per option; a wrong one is put right
   with the lot-cost correction, which now names the option.
+
+### Counting and moving by option (branch 4)
+
+Owner, 2026-10-08: "each variant is to be handled as an item — it is like a grouped family of
+items." So everywhere stock is looked at or touched by hand, **an option is an item of its own**:
+
+- **Stock on hand is a row per (product, option, location)**, each carrying `variant {id, name}`;
+  the screen is a card per option ("Eva Soap — Gold"), searched word by word as at the till. The
+  expiring-lots list, the forced list and the movement feed name the option too. Anything that wants
+  the product's total adds the rows up (the products list already did; smoke's `onHand` had to).
+- **Adjustments and transfers take `variantId`**, and both halves of a transfer carry it. Moving
+  stock *between* options is not a transfer — a count or a delivery correction puts a wrong label
+  right. A positive adjustment's new lot is the product's; the movement names the option.
+- **A count line names its option** (one line per product and option, the partial unique pair of
+  branch 1); "ledger says" is per option; removing a line takes `?variantId=`. A product with options
+  counted without one is refused **when counted**, not at posting. A line counted before its product
+  had options is refused at posting — remove it and count by option. Retired options can be counted.
+
+**Posting: a shortfall in one option and a surplus in another of the same product is a move**
+(owner chose this over loss-plus-find, 2026-10-08). The case is the third answer above: 100 cartons
+put on Chicken when the options were added, and the shelf says 40 Chicken, 30 Onion, 30 Pepper.
+`postProduct` moves the smaller of (what the product's options are short, what they are over) as
+`transfer_out`/`transfer_in` **on the lots it left**, one `transferGroupId`, reason
+`count_correction` — the same shape as `moveIntoVariant`, so nothing is re-costed and the value is
+exactly unchanged (smoke 65 checks it). Only the product's net shortfall or surplus is written off
+(FEFO) or on (`batchForSurplus`) as `adjustment`. The alternative, write-off plus write-on, would
+have put a 60-carton loss and a 60-carton find on reports, and the surplus would have landed on the
+newest lot rather than the one the stock came from, shifting the value. A count can never be short
+by more than is on hand (counted ≥ 0), so the moving pick has no shortfall and the lots add up.
+
+`batchForSurplus` deliberately looks across every option's balance: the lot is the product's, so
+"newest lot holding stock here" is a product question. It is the one `where` on balances that leaves
+`variantId` out, and it says so. `withCurrentOptions` (branch 3) takes the *earliest* option
+`transfer_in` on a lot, so a later count move on that lot does not change which option an old
+delivery line is read as.
 
 ### Written like units, not through endpoints of their own
 
