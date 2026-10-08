@@ -1364,3 +1364,6 @@ when some of it is more than a day old.
 **347. Money → Money in → Record a payment**, in a shop with two stores, offers *Store* starting at
 the main store; with one store it does not ask. Reports → Collections no longer says *Not at a
 counter*.
+
+**348. [gate] In a shop that existed before 8 October, Money → Cash** says *counted from*
+1 October, and cash taken between the 1st and the 7th is in *Still holding* and can be banked.

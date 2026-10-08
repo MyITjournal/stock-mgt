@@ -2062,10 +2062,14 @@ accounts, or **handed to the owner**. It touches no invoice, bill, collection or
 - **Shortfalls stay as still holding.** No write-off. Banking more than is held is a 409
   `MORE_THAN_HELD` with no override. **"Not received"** (owner/manager, reason required) voids a
   banking and the amount goes back to still holding; the row is kept.
-- **Counting starts the day it shipped.** `Organization.cashCountedFrom` was set by the migration to
-  midnight, shop time, on 2026-10-08 for every shop then existing — counting from the first sale
-  would have shown everybody "still holding" months of cash banked with nothing recorded. Null
-  (every newer shop) means from the beginning. Bankings themselves are never bounded by it.
+- **Counting starts at the start of the month it shipped.** `Organization.cashCountedFrom` is
+  midnight, shop time, on **2026-10-01** for every shop then existing — counting from the first
+  sale would have shown everybody "still holding" months of cash banked with nothing recorded.
+  Null (every newer shop) means from the beginning. Bankings themselves are never bounded by it.
+  **Trap:** it first went out as the ship day (2026-10-08), and the owner had taken cash the day
+  before — never "held", so banking it was a `MORE_THAN_HELD` refusal with no way round. A second
+  migration moved it back to the 1st. Cash banked between the 1st and the 8th shows as still
+  holding until somebody records that banking.
 - **Home: "Cash not yet banked"** is the screen's total, amber once some is more than a day old,
   with "₦X waiting for you to confirm" under it. A person holding a negative (paid out more cash
   than they took) never cancels a colleague's holding — the receivables rule.
