@@ -12,7 +12,13 @@ export interface PricedProduct {
   /** Null when the product has no fallback price — see resolveUnitPrice. */
   basePrice: Minor | null;
   taxRateBps: number;
-  prices: readonly { tierId: string; unitId: string; price: Minor }[];
+  prices: readonly {
+    tierId: string;
+    unitId: string;
+    /** Set on an option's own price; null or absent is the product's. */
+    variantId?: string | null;
+    price: Minor;
+  }[];
 }
 
 export interface PricedUnit {
@@ -25,11 +31,23 @@ export function resolveUnitPrice(
   product: PricedProduct,
   unit: PricedUnit,
   tierId?: string,
+  /**
+   * The option being priced. Its own price for this unit and tier wins; with
+   * none, it sells at the product's — the owner's rule of 2026-10-08, so ten
+   * flavours at one price are priced once. An option's price never stands in
+   * for the product's, or for another option's.
+   */
+  variantId?: string | null,
 ) {
+  const onTier = (row: PricedProduct['prices'][number]) =>
+    row.tierId === tierId && row.unitId === unit.id;
   const tiered = tierId
-    ? product.prices.find(
-        (row) => row.tierId === tierId && row.unitId === unit.id,
-      )
+    ? ((variantId
+        ? product.prices.find(
+            (row) => onTier(row) && row.variantId === variantId,
+          )
+        : undefined) ??
+      product.prices.find((row) => onTier(row) && !row.variantId))
     : undefined;
 
   // No tier price for this unit falls back to the base price scaled by the

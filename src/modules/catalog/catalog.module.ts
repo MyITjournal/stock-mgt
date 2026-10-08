@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
+import { InventoryModule } from '../inventory/inventory.module';
 import {
   CategoryController,
   PackagingTypeController,
@@ -16,7 +17,10 @@ import { BarcodeService } from './barcode.service';
 import { ScanService } from './scan.service';
 
 @Module({
-  imports: [CloudinaryModule],
+  // Inventory for the stock engine: giving a product that holds stock its
+  // first options moves that stock into one of them (§24). Inventory does not
+  // import catalog, so there is no cycle.
+  imports: [CloudinaryModule, InventoryModule],
   controllers: [
     CategoryController,
     PackagingTypeController,

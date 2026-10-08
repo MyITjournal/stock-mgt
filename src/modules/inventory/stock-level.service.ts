@@ -219,13 +219,22 @@ export class StockLevelService {
   async rebuild(): Promise<RebuildBalancesView> {
     const organizationId = TenantContext.requireOrganizationId();
 
+    // The option is part of the grain: one lot can hold two options' stock
+    // after `moveIntoVariant`, and those are two balances, not one.
     const summed = await this.prisma.stockMovement.groupBy({
-      by: ['productId', 'locationId', 'batchId'],
+      by: ['productId', 'variantId', 'locationId', 'batchId'],
       _sum: { quantity: true },
     });
+    const keyOf = (row: {
+      productId: string;
+      variantId: string | null;
+      locationId: string;
+      batchId: string;
+    }) =>
+      `${row.productId}:${row.variantId ?? '-'}:${row.locationId}:${row.batchId}`;
     const truth = new Map(
       summed.map((row) => [
-        `${row.productId}:${row.locationId}:${row.batchId}`,
+        keyOf(row),
         { ...row, quantity: row._sum.quantity ?? 0 },
       ]),
     );
@@ -233,6 +242,7 @@ export class StockLevelService {
     const cached = await this.prisma.stockBalance.findMany();
     const drifted: {
       productId: string;
+      variantId: string | null;
       locationId: string;
       batchId: string;
       was: number;
@@ -240,11 +250,12 @@ export class StockLevelService {
     }[] = [];
 
     for (const balance of cached) {
-      const key = `${balance.productId}:${balance.locationId}:${balance.batchId}`;
+      const key = keyOf(balance);
       const expected = truth.get(key)?.quantity ?? 0;
       if (expected !== balance.quantity) {
         drifted.push({
           productId: balance.productId,
+          variantId: balance.variantId,
           locationId: balance.locationId,
           batchId: balance.batchId,
           was: balance.quantity,
@@ -258,6 +269,7 @@ export class StockLevelService {
     for (const [, row] of truth) {
       drifted.push({
         productId: row.productId,
+        variantId: row.variantId,
         locationId: row.locationId,
         batchId: row.batchId,
         was: 0,
@@ -272,6 +284,7 @@ export class StockLevelService {
           data: summed.map((row) => ({
             organizationId,
             productId: row.productId,
+            variantId: row.variantId,
             locationId: row.locationId,
             batchId: row.batchId,
             quantity: row._sum.quantity ?? 0,

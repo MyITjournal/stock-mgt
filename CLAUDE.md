@@ -50,8 +50,12 @@ One line each; the reasoning is in DECISIONS.md.
 - Opening stock is an **opening balance, never a delivery** (no bill). A recorded delivery is
   **corrected, never edited**. Quantities are whole base units; a decimal like 6.25 cartons is
   allowed only in forms and must convert whole (`toWholeBaseUnits`).
-- Units, prices and barcodes on a product **upsert and never delete** what a request omits; no
-  base price means no fallback price.
+- Units, prices, barcodes and options on a product **upsert and never delete** what a request
+  omits; no base price means no fallback price.
+- **Options (variants)**: once a product has any, every sale and stock write names one
+  (`checkVariant`; `StockService` is the guarantee). The option sits on the movement and balance
+  like the location — **never on the lot**. Every `where` on balances, prices and count lines
+  names `variantId`, as `null` when none (partial unique pairs; DECISIONS.md §24).
 
 **Time and feeds**
 - All date arithmetic lives in `reports/period.ts`, in `Organization.timezone`, never UTC.
@@ -103,7 +107,9 @@ API runs on 4000.
 v1 is feature-complete and hosted; work now is fixes and owner requests, one branch each.
 Latest (2026-10-08): who is signed in and sign-out, growth, the duplicate-sale warning, opening
 stock on Add product, cash banking (Money → Cash, Sales → My cash). The 2026-10-08 build queue
-is done. v2 is scoped in [docs/PRD-V2.md](docs/PRD-V2.md). The by-hand
+is done. **In progress: product options (variants), five branches — 1 of 5 done (ledger + API);
+next `feat/variants-on-product-and-till`.** Nothing goes to `main` until all five are in;
+DECISIONS.md §24 has the list. v2 is scoped in [docs/PRD-V2.md](docs/PRD-V2.md). The by-hand
 browser script is [docs/MANUAL-TESTS-WEB.md](docs/MANUAL-TESTS-WEB.md).
 
 ## Working practice

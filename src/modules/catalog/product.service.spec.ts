@@ -2,11 +2,13 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
+import { StockService } from '../inventory/stock.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import {
   ProductService,
   assertExactlyOneBaseUnit,
   generateSku,
+  settleAttributes,
 } from './product.service';
 
 describe('assertExactlyOneBaseUnit', () => {
@@ -87,7 +89,7 @@ describe('ProductService packaging types', () => {
     };
     packagingType: { findFirst: jest.Mock };
     priceTier: { findFirst: jest.Mock };
-    productPrice: { upsert: jest.Mock };
+    productPrice: { updateMany: jest.Mock; create: jest.Mock };
     productBarcode: { create: jest.Mock };
     productUnit: {
       findMany: jest.Mock;
@@ -121,7 +123,10 @@ describe('ProductService packaging types', () => {
       priceTier: {
         findFirst: jest.fn().mockResolvedValue({ id: 'tier-retail' }),
       },
-      productPrice: { upsert: jest.fn().mockResolvedValue({}) },
+      productPrice: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        create: jest.fn().mockResolvedValue({}),
+      },
       productBarcode: { create: jest.fn().mockResolvedValue({}) },
       productUnit: {
         updateMany: jest.fn().mockResolvedValue({}),
@@ -142,6 +147,7 @@ describe('ProductService packaging types', () => {
       providers: [
         ProductService,
         { provide: TENANT_PRISMA, useValue: prisma },
+        { provide: StockService, useValue: { moveIntoVariant: jest.fn() } },
         // Nothing in this suite uploads; the service only needs the collaborator
         // to exist. The image path is covered against a running server instead,
         // where the interesting behaviour (an unconfigured CDN) actually lives.
@@ -303,7 +309,7 @@ describe('ProductService inline prices and barcodes', () => {
     };
     packagingType: { findFirst: jest.Mock };
     priceTier: { findFirst: jest.Mock };
-    productPrice: { upsert: jest.Mock };
+    productPrice: { updateMany: jest.Mock; create: jest.Mock };
     productBarcode: { create: jest.Mock };
     productUnit: {
       findMany: jest.Mock;
@@ -331,7 +337,10 @@ describe('ProductService inline prices and barcodes', () => {
       priceTier: {
         findFirst: jest.fn().mockResolvedValue({ id: 'tier-retail' }),
       },
-      productPrice: { upsert: jest.fn().mockResolvedValue({}) },
+      productPrice: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        create: jest.fn().mockResolvedValue({}),
+      },
       productBarcode: { create: jest.fn().mockResolvedValue({}) },
       productUnit: {
         findMany: jest.fn().mockResolvedValue(UNITS),
@@ -348,6 +357,7 @@ describe('ProductService inline prices and barcodes', () => {
       providers: [
         ProductService,
         { provide: TENANT_PRISMA, useValue: prisma },
+        { provide: StockService, useValue: { moveIntoVariant: jest.fn() } },
         {
           provide: CloudinaryService,
           useValue: {
@@ -385,11 +395,13 @@ describe('ProductService inline prices and barcodes', () => {
       }),
     );
 
-    expect(prisma.productPrice.upsert).toHaveBeenCalledWith(
+    expect(prisma.productPrice.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
+        data: expect.objectContaining({
           unitId: 'unit-carton',
           tierId: 'tier-retail',
+          // The product's own price, not an option's (§24).
+          variantId: null,
           price: 5400000,
         }) as object,
       }),
@@ -405,9 +417,9 @@ describe('ProductService inline prices and barcodes', () => {
     );
 
     expect(prisma.priceTier.findFirst).not.toHaveBeenCalled();
-    expect(prisma.productPrice.upsert).toHaveBeenCalledWith(
+    expect(prisma.productPrice.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({ tierId: 'tier-wholesale' }) as object,
+        data: expect.objectContaining({ tierId: 'tier-wholesale' }) as object,
       }),
     );
   });
@@ -467,7 +479,8 @@ describe('ProductService inline prices and barcodes', () => {
   it('writes nothing extra when neither array is sent', async () => {
     await asOrg(() => service.create(milo));
 
-    expect(prisma.productPrice.upsert).not.toHaveBeenCalled();
+    expect(prisma.productPrice.updateMany).not.toHaveBeenCalled();
+    expect(prisma.productPrice.create).not.toHaveBeenCalled();
     expect(prisma.productBarcode.create).not.toHaveBeenCalled();
     expect(prisma.priceTier.findFirst).not.toHaveBeenCalled();
   });
@@ -475,16 +488,27 @@ describe('ProductService inline prices and barcodes', () => {
   it('upserts on update without touching unlisted prices', async () => {
     // The trap: replacing the set would let a PATCH naming one unit silently
     // delete the price of every other.
+    prisma.productPrice.updateMany.mockResolvedValue({ count: 1 });
     await asOrg(() =>
       service.update('prod-1', {
         prices: [{ unit: 'carton', price: 5600000 }],
       }),
     );
 
-    expect(prisma.productPrice.upsert).toHaveBeenCalledTimes(1);
-    expect(prisma.productPrice.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: { price: 5600000 } }),
-    );
+    // Update-then-create, since the key is a pair of partial indexes (§24) —
+    // and the option is in the where as null, so an option's own price for
+    // the carton is not overwritten with the product's.
+    expect(prisma.productPrice.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.productPrice.updateMany).toHaveBeenCalledWith({
+      where: {
+        productId: 'prod-1',
+        tierId: 'tier-retail',
+        unitId: 'unit-carton',
+        variantId: null,
+      },
+      data: { price: 5600000 },
+    });
+    expect(prisma.productPrice.create).not.toHaveBeenCalled();
   });
 });
 
@@ -493,7 +517,7 @@ describe('ProductService editing units', () => {
   let prisma: {
     product: { update: jest.Mock; findFirst: jest.Mock };
     priceTier: { findFirst: jest.Mock };
-    productPrice: { upsert: jest.Mock };
+    productPrice: { updateMany: jest.Mock; create: jest.Mock };
     productBarcode: { create: jest.Mock };
     productUnit: {
       findMany: jest.Mock;
@@ -534,7 +558,10 @@ describe('ProductService editing units', () => {
       priceTier: {
         findFirst: jest.fn().mockResolvedValue({ id: 'tier-retail' }),
       },
-      productPrice: { upsert: jest.fn().mockResolvedValue({}) },
+      productPrice: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        create: jest.fn().mockResolvedValue({}),
+      },
       productBarcode: { create: jest.fn().mockResolvedValue({}) },
       productUnit: {
         findMany: jest.fn().mockResolvedValue(EXISTING),
@@ -552,6 +579,7 @@ describe('ProductService editing units', () => {
       providers: [
         ProductService,
         { provide: TENANT_PRISMA, useValue: prisma },
+        { provide: StockService, useValue: { moveIntoVariant: jest.fn() } },
         {
           provide: CloudinaryService,
           useValue: {
@@ -710,6 +738,7 @@ describe('ProductService tillSearch', () => {
       providers: [
         ProductService,
         { provide: TENANT_PRISMA, useValue: prisma },
+        { provide: StockService, useValue: { moveIntoVariant: jest.fn() } },
         {
           provide: CloudinaryService,
           useValue: { isConfigured: false, assertConfigured: jest.fn() },
@@ -772,5 +801,240 @@ describe('ProductService tillSearch', () => {
     await expect(service.tillSearch('peak', 'tier-wholesale')).resolves.toEqual(
       [],
     );
+  });
+});
+
+describe('ProductService options (§24)', () => {
+  let service: ProductService;
+  let stock: { moveIntoVariant: jest.Mock };
+  let prisma: {
+    product: { update: jest.Mock; findFirst: jest.Mock };
+    productVariant: {
+      findMany: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
+    stockBalance: { count: jest.Mock };
+    productUnit: { findMany: jest.Mock };
+    $transaction: jest.Mock;
+  };
+
+  /** Indomie, whose options differ by flavour. */
+  const INDOMIE = {
+    id: 'prod-1',
+    name: 'Indomie',
+    variantAttributes: ['Flavour'],
+    units: [],
+    variants: [],
+  };
+  const CHICKEN = {
+    id: 'v-chicken',
+    name: 'Chicken',
+    key: 'chicken',
+    values: ['Chicken'],
+    isActive: true,
+  };
+
+  beforeEach(async () => {
+    stock = { moveIntoVariant: jest.fn().mockResolvedValue([]) };
+    prisma = {
+      product: {
+        update: jest.fn().mockResolvedValue({ id: 'prod-1' }),
+        findFirst: jest.fn().mockResolvedValue(INDOMIE),
+      },
+      productVariant: {
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn(({ data }: { data: { id?: string } }) =>
+          Promise.resolve({ id: data.id ?? 'v-new', isActive: true, ...data }),
+        ),
+        update: jest.fn(
+          ({ where, data }: { where: { id: string }; data: object }) =>
+            Promise.resolve({ ...CHICKEN, id: where.id, ...data }),
+        ),
+      },
+      stockBalance: { count: jest.fn().mockResolvedValue(0) },
+      productUnit: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductService,
+        { provide: TENANT_PRISMA, useValue: prisma },
+        { provide: StockService, useValue: stock },
+        { provide: CloudinaryService, useValue: { isConfigured: false } },
+      ],
+    }).compile();
+
+    service = module.get(ProductService);
+  });
+
+  const asOrg = <T>(fn: () => Promise<T>) =>
+    TenantContext.run({ organizationId: 'org-aaa' }, fn);
+
+  it('adds options, named from their values', async () => {
+    await asOrg(() =>
+      service.update('prod-1', {
+        variants: [{ values: ['  Onion   Chicken '] }, { values: ['Chicken'] }],
+      }),
+    );
+
+    expect(prisma.productVariant.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        productId: 'prod-1',
+        values: ['Onion Chicken'],
+        name: 'Onion Chicken',
+        key: 'onion chicken',
+      }) as object,
+    });
+    expect(prisma.productVariant.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses options before the product says what they differ by', async () => {
+    prisma.product.findFirst.mockResolvedValue({
+      ...INDOMIE,
+      variantAttributes: [],
+    });
+
+    await expect(
+      asOrg(() =>
+        service.update('prod-1', { variants: [{ values: ['Chicken'] }] }),
+      ),
+    ).rejects.toThrow(/differ by first/);
+  });
+
+  it('refuses an option that does not fill every attribute', async () => {
+    prisma.product.findFirst.mockResolvedValue({
+      ...INDOMIE,
+      variantAttributes: ['Flavour', 'Pack size'],
+    });
+
+    await expect(
+      asOrg(() =>
+        service.update('prod-1', { variants: [{ values: ['Chicken'] }] }),
+      ),
+    ).rejects.toThrow(/needs a Flavour and a Pack size/);
+  });
+
+  it('refuses a new option that repeats a name, case aside', async () => {
+    prisma.productVariant.findMany.mockResolvedValue([CHICKEN]);
+
+    await expect(
+      asOrg(() =>
+        service.update('prod-1', {
+          variants: [{ id: 'v-other', values: ['CHICKEN'] }],
+        }),
+      ),
+    ).rejects.toThrow(/already has an option called "Chicken"/);
+    expect(prisma.productVariant.create).not.toHaveBeenCalled();
+  });
+
+  it('renames an option named by id, and matches one by name without', async () => {
+    prisma.productVariant.findMany.mockResolvedValue([CHICKEN]);
+
+    await asOrg(() =>
+      service.update('prod-1', {
+        variants: [{ id: 'v-chicken', values: ['Chicken Curry'] }],
+      }),
+    );
+    expect(prisma.productVariant.update).toHaveBeenCalledWith({
+      where: { id: 'v-chicken' },
+      data: expect.objectContaining({
+        name: 'Chicken Curry',
+        key: 'chicken curry',
+      }) as object,
+    });
+
+    prisma.productVariant.update.mockClear();
+    await asOrg(() =>
+      service.update('prod-1', {
+        variants: [{ values: ['chicken'], sortOrder: 2 }],
+      }),
+    );
+    expect(prisma.productVariant.update).toHaveBeenCalledWith({
+      where: { id: 'v-chicken' },
+      data: expect.objectContaining({ sortOrder: 2 }) as object,
+    });
+    expect(prisma.productVariant.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses to retire the last option still sold', async () => {
+    prisma.productVariant.findMany.mockResolvedValue([CHICKEN]);
+
+    await expect(
+      asOrg(() =>
+        service.update('prod-1', {
+          variants: [{ id: 'v-chicken', values: ['Chicken'], isActive: false }],
+        }),
+      ),
+    ).rejects.toThrow(/at least one option that is not retired/);
+  });
+
+  describe('a product that already holds stock', () => {
+    beforeEach(() => prisma.stockBalance.count.mockResolvedValue(2));
+
+    it('moves that stock into the option named', async () => {
+      await asOrg(() =>
+        service.update('prod-1', {
+          variants: [
+            { id: 'v-chicken', values: ['Chicken'] },
+            { id: 'v-pepper', values: ['Pepper Soup'] },
+          ],
+          existingStockVariantId: 'v-chicken',
+        }),
+      );
+
+      expect(prisma.stockBalance.count).toHaveBeenCalledWith({
+        where: { productId: 'prod-1', variantId: null, quantity: { not: 0 } },
+      });
+      expect(stock.moveIntoVariant).toHaveBeenCalledWith(
+        'prod-1',
+        expect.objectContaining({ id: 'v-chicken', name: 'Chicken' }),
+        prisma,
+      );
+    });
+
+    it('refuses first options that do not say which one the stock is', async () => {
+      await expect(
+        asOrg(() =>
+          service.update('prod-1', { variants: [{ values: ['Chicken'] }] }),
+        ),
+      ).rejects.toThrow(/already holds stock\. Say which option/);
+      expect(stock.moveIntoVariant).not.toHaveBeenCalled();
+    });
+
+    it('moves nothing once the product already had options', async () => {
+      prisma.productVariant.findMany.mockResolvedValue([CHICKEN]);
+
+      await asOrg(() =>
+        service.update('prod-1', { variants: [{ values: ['Pepper Soup'] }] }),
+      );
+      expect(stock.moveIntoVariant).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('settleAttributes', () => {
+  it('tidies the names', () => {
+    expect(settleAttributes([' Flavour ', 'Pack  size'], [])).toEqual([
+      'Flavour',
+      'Pack size',
+    ]);
+  });
+
+  it('refuses a blank name or two alike', () => {
+    expect(() => settleAttributes([' '], [])).toThrow(/needs a name/);
+    expect(() => settleAttributes(['Size', 'size'], [])).toThrow(
+      /different names/,
+    );
+  });
+
+  it('allows adding a second attribute, never removing one options use', () => {
+    expect(
+      settleAttributes(['Flavour', 'Size'], [{ values: ['Chicken'] }]),
+    ).toEqual(['Flavour', 'Size']);
+    expect(() =>
+      settleAttributes(['Flavour'], [{ values: ['Chicken', '70g'] }]),
+    ).toThrow(/not removed once options use it/);
   });
 });

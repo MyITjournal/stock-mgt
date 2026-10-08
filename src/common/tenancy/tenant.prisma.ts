@@ -21,6 +21,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'PackagingType',
   'Product',
   'ProductUnit',
+  // A product's options — Chicken, Onion Chicken (2026-10-08).
+  'ProductVariant',
   'ProductBarcode',
   'PriceTier',
   'ProductPrice',

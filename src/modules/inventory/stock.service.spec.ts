@@ -36,11 +36,23 @@ describe('StockService', () => {
       updateMany: jest.Mock;
       create: jest.Mock;
     };
-    stockBatch: { create: jest.Mock; findMany: jest.Mock };
+    stockBatch: {
+      create: jest.Mock;
+      findMany: jest.Mock;
+      createMany: jest.Mock;
+    };
+    product: { findFirst: jest.Mock; findMany: jest.Mock };
+    productVariant: { findMany: jest.Mock };
   };
 
   beforeEach(async () => {
     prisma = {
+      // No options unless a test gives the product some (§24).
+      product: {
+        findFirst: jest.fn().mockResolvedValue({ name: 'Indomie' }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      productVariant: { findMany: jest.fn().mockResolvedValue([]) },
       stockMovement: {
         create: jest
           .fn()
@@ -55,6 +67,7 @@ describe('StockService', () => {
       },
       stockBatch: {
         create: jest.fn().mockResolvedValue({ id: 'new-batch' }),
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockResolvedValue([]),
       },
     };
@@ -89,8 +102,15 @@ describe('StockService', () => {
           recordedByUserId: USER,
         }) as object,
       });
+      // The option is in the key as null when there is none — left out, the
+      // update would hit every option's row for the lot at once (§24).
       expect(prisma.stockBalance.updateMany).toHaveBeenCalledWith({
-        where: { productId: PRODUCT, locationId: LOCATION, batchId: 'batch-1' },
+        where: {
+          productId: PRODUCT,
+          variantId: null,
+          locationId: LOCATION,
+          batchId: 'batch-1',
+        },
         data: { quantity: { increment: 480 } },
       });
     });
@@ -473,6 +493,158 @@ describe('StockService', () => {
 
       expect(cost.cost).toBe(0);
       expect(prisma.stockBatch.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('options (§24)', () => {
+    const CHICKEN = { id: 'v-chicken', name: 'Chicken', isActive: true };
+    const PEPPER = { id: 'v-pepper', name: 'Pepper Soup', isActive: false };
+
+    beforeEach(() => {
+      prisma.productVariant.findMany.mockResolvedValue([CHICKEN, PEPPER]);
+    });
+
+    const sell = (variantId?: string) =>
+      as(OrgRole.sales_rep, () =>
+        service.recordOutbound({
+          productId: PRODUCT,
+          variantId,
+          locationId: LOCATION,
+          quantity: 10,
+          type: StockMovementType.sale,
+        }),
+      );
+
+    it('refuses a movement that does not say which option, before writing', async () => {
+      await expect(sell()).rejects.toThrow(
+        /"Indomie" comes in options \(Chicken\)/,
+      );
+      expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+    });
+
+    it("picks only the named option's lots, and records the option", async () => {
+      prisma.stockBalance.findMany.mockResolvedValue([balance('lot-1', 30)]);
+
+      await sell(CHICKEN.id);
+
+      // Selling Chicken never draws on Pepper Soup, even from a shared lot.
+      expect(prisma.stockBalance.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ variantId: CHICKEN.id }) as object,
+        }),
+      );
+      expect(prisma.stockMovement.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          variantId: CHICKEN.id,
+          batchId: 'lot-1',
+          quantity: -10,
+        }) as object,
+      });
+      expect(prisma.stockBalance.updateMany).toHaveBeenCalledWith({
+        where: {
+          productId: PRODUCT,
+          variantId: CHICKEN.id,
+          locationId: LOCATION,
+          batchId: 'lot-1',
+        },
+        data: { quantity: { increment: -10 } },
+      });
+    });
+
+    it('refuses to sell a retired option, but lets a count clear its stock', async () => {
+      await expect(sell(PEPPER.id)).rejects.toThrow(/retired/);
+
+      prisma.stockBalance.findMany.mockResolvedValue([balance('lot-1', 5)]);
+      await as(OrgRole.owner, () =>
+        service.recordOutbound({
+          productId: PRODUCT,
+          variantId: PEPPER.id,
+          locationId: LOCATION,
+          quantity: 5,
+          type: StockMovementType.adjustment,
+        }),
+      );
+      expect(prisma.stockMovement.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses opening stock that names no option for a product with options', async () => {
+      prisma.productVariant.findMany.mockResolvedValue([
+        { ...CHICKEN, productId: PRODUCT },
+      ]);
+      prisma.product.findMany.mockResolvedValue([
+        { id: PRODUCT, name: 'Indomie' },
+      ]);
+
+      await expect(
+        as(OrgRole.owner, () =>
+          service.recordNewLots([
+            {
+              productId: PRODUCT,
+              locationId: LOCATION,
+              quantity: 40,
+              type: StockMovementType.adjustment,
+              occurredAt: new Date('2026-10-08'),
+              totalCost: 360_000,
+              quantityPaidFor: 0,
+            },
+          ]),
+        ),
+      ).rejects.toThrow(/Say which one/);
+      expect(prisma.stockBatch.createMany).not.toHaveBeenCalled();
+    });
+
+    describe('moveIntoVariant', () => {
+      it('moves each balance as a transfer pair on the same lot, so the cost cannot change', async () => {
+        prisma.stockBalance.findMany.mockResolvedValue([
+          { locationId: LOCATION, batchId: 'lot-1', quantity: 30 },
+          // Forced sales left this one owing; it moves too.
+          { locationId: 'van', batchId: 'lot-2', quantity: -4 },
+        ]);
+
+        const movements = await as(OrgRole.owner, () =>
+          service.moveIntoVariant(PRODUCT, CHICKEN),
+        );
+
+        expect(prisma.stockBalance.findMany).toHaveBeenCalledWith({
+          where: { productId: PRODUCT, variantId: null, quantity: { not: 0 } },
+        });
+        const written = prisma.stockMovement.create.mock.calls.map(
+          ([call]: [
+            {
+              data: {
+                type: string;
+                variantId: string | null;
+                batchId: string;
+                locationId: string;
+                quantity: number;
+                transferGroupId: string;
+              };
+            },
+          ]) => call.data,
+        );
+        expect(
+          written.map((m) => [m.type, m.variantId, m.batchId, m.quantity]),
+        ).toEqual([
+          ['transfer_out', null, 'lot-1', -30],
+          ['transfer_in', CHICKEN.id, 'lot-1', 30],
+          ['transfer_out', null, 'lot-2', 4],
+          ['transfer_in', CHICKEN.id, 'lot-2', -4],
+        ]);
+        // One act, and no new lot: the lot's exact total is untouched, so the
+        // stock is worth exactly what it was before (§2).
+        expect(new Set(written.map((m) => m.transferGroupId)).size).toBe(1);
+        expect(prisma.stockBatch.create).not.toHaveBeenCalled();
+        expect(movements).toHaveLength(4);
+      });
+
+      it('moves nothing when the product holds no stock', async () => {
+        prisma.stockBalance.findMany.mockResolvedValue([]);
+
+        await expect(
+          as(OrgRole.owner, () => service.moveIntoVariant(PRODUCT, CHICKEN)),
+        ).resolves.toEqual([]);
+        expect(prisma.stockMovement.create).not.toHaveBeenCalled();
+      });
     });
   });
 });

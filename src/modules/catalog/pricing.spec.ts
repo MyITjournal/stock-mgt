@@ -37,3 +37,41 @@ describe('resolveUnitPrice', () => {
     expect(result.price).toBe(0);
   });
 });
+
+describe('resolveUnitPrice for an option (§24)', () => {
+  /** Indomie: the carton at ₦9,000, but Pepper Soup's carton at ₦9,500. */
+  const indomie = {
+    basePrice: null,
+    taxRateBps: 750,
+    prices: [
+      { tierId: 'retail', unitId: 'u-carton', variantId: null, price: 900_000 },
+      {
+        tierId: 'retail',
+        unitId: 'u-carton',
+        variantId: 'v-pepper',
+        price: 950_000,
+      },
+    ],
+  };
+
+  it('sells an option at its own price when it has one', () => {
+    expect(resolveUnitPrice(indomie, CARTON, 'retail', 'v-pepper').price).toBe(
+      950_000,
+    );
+  });
+
+  it("sells an option at the product's price when it has none", () => {
+    // The owner's rule: ten flavours at one price are priced once.
+    expect(resolveUnitPrice(indomie, CARTON, 'retail', 'v-chicken').price).toBe(
+      900_000,
+    );
+  });
+
+  it("never lets one option's price stand in for the product's", () => {
+    const pepperOnly = { ...indomie, prices: [indomie.prices[1]] };
+    expect(resolveUnitPrice(pepperOnly, CARTON, 'retail').price).toBeNull();
+    expect(
+      resolveUnitPrice(pepperOnly, CARTON, 'retail', 'v-chicken').price,
+    ).toBeNull();
+  });
+});

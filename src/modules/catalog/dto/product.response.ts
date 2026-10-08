@@ -138,6 +138,53 @@ export class ProductUnitView {
   updatedAt!: Date;
 }
 
+/** One option of a product — Chicken, or Chicken / 70g (DECISIONS.md §24). */
+export class ProductVariantView {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  organizationId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  productId!: string;
+
+  @ApiProperty({
+    type: [String],
+    example: ['Chicken', '70g'],
+    description:
+      'One per entry in the product’s `variantAttributes`, in order.',
+  })
+  values!: string[];
+
+  @ApiProperty({
+    example: 'Chicken / 70g',
+    description: 'The values joined. Written by the server, never typed.',
+  })
+  name!: string;
+
+  @ApiProperty({
+    example: 'chicken / 70g',
+    description: 'The name, case aside — what two options may not share.',
+  })
+  key!: string;
+
+  @ApiProperty({
+    description:
+      'False when retired: not sold or received, but its stock can still be counted, adjusted, moved and returned.',
+  })
+  isActive!: boolean;
+
+  @ApiProperty({ example: 0 })
+  sortOrder!: number;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt!: Date;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  updatedAt!: Date;
+}
+
 export class ProductPriceView {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -153,6 +200,15 @@ export class ProductPriceView {
 
   @ApiProperty({ format: 'uuid' })
   unitId!: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Set on an option’s own price, which overrides the product’s for that option. Null is the product’s price.',
+  })
+  variantId!: string | null;
 
   @ApiProperty({
     example: 1200000,
@@ -185,6 +241,14 @@ export class ProductBarcodeView {
 
   @ApiProperty({ format: 'uuid' })
   unitId!: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'The option the code is printed on; null when none.',
+  })
+  variantId!: string | null;
 
   @ApiProperty({ example: '6154000010025' })
   code!: string;
@@ -375,6 +439,21 @@ export class ProductView {
       'False for a service or anything sold without touching the ledger.',
   })
   trackStock!: boolean;
+
+  @ApiProperty({
+    type: [String],
+    example: ['Flavour'],
+    description:
+      'What the options differ by, at most two. Empty for a product without options.',
+  })
+  variantAttributes!: string[];
+
+  @ApiProperty({
+    type: () => [ProductVariantView],
+    description:
+      'The options, retired ones included, in `sortOrder` then name. Empty for a product without options — and once there are any, every sale and stock movement must name one.',
+  })
+  variants!: ProductVariantView[];
 
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: Date;
