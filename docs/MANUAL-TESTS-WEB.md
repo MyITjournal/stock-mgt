@@ -1624,3 +1624,13 @@ report stays on the named period rather than showing an error.
 
 **405. On a phone.** Narrow the window to a phone's width: the date boxes wrap under the buttons with
 no stray line at their left, and nothing scrolls sideways.
+
+## BS. The wordmark and the landing page
+
+**406. [gate] Signed in.** As the owner, click **Reho** at the top left: the landing page opens at
+`/about`, and its buttons (top, middle, bottom and footer) all say **Open my shop** — no *Sign in*,
+no *Create your shop*, no "No card, no email" line. Open my shop goes to Home. As a sales rep, it
+goes to the till.
+
+**407. Signed out.** Sign out and open `/about`: the page as a stranger sees it, with *Sign in* and
+*Create your shop*. Opening `/` signed in still goes straight to your start screen.

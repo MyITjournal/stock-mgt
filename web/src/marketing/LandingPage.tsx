@@ -32,8 +32,15 @@ import { Link } from 'react-router-dom';
  *
  * Nothing here is behind authentication, so it must not import anything that
  * assumes a session.
+ *
+ * ## Signed in
+ *
+ * The dashboard's wordmark opens this page at `/about` (2026-10-09), so a
+ * signed-in person reads it too. They get `startPath` — their own start
+ * screen, from `landingPath` — and every sign-in or sign-up button becomes
+ * **Open my shop**, since those pages would only send them back anyway.
  */
-export function LandingPage() {
+export function LandingPage({ startPath }: { startPath?: string } = {}) {
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
@@ -41,18 +48,29 @@ export function LandingPage() {
           Reho
         </span>
         <nav className="flex items-center gap-2">
-          <Link
-            to="/sign-in"
-            className="rounded-md px-4 py-2 text-sm font-medium text-slate-600 transition hover:text-slate-900"
-          >
-            Sign in
-          </Link>
-          <Link
-            to="/sign-up"
-            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700"
-          >
-            Create your shop
-          </Link>
+          {startPath ? (
+            <Link
+              to={startPath}
+              className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700"
+            >
+              Open my shop
+            </Link>
+          ) : (
+            <>
+              <Link
+                to="/sign-in"
+                className="rounded-md px-4 py-2 text-sm font-medium text-slate-600 transition hover:text-slate-900"
+              >
+                Sign in
+              </Link>
+              <Link
+                to="/sign-up"
+                className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700"
+              >
+                Create your shop
+              </Link>
+            </>
+          )}
         </nav>
       </header>
 
@@ -73,28 +91,41 @@ export function LandingPage() {
         </p>
 
         <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-          <Link
-            to="/sign-up"
-            className="w-full rounded-md bg-brand-600 px-6 py-3 text-base font-medium text-white transition hover:bg-brand-700 sm:w-auto"
-          >
-            Create your shop — free
-          </Link>
-          <Link
-            to="/sign-in"
-            className="w-full rounded-md border border-slate-300 px-6 py-3 text-base font-medium text-slate-700 transition hover:bg-slate-50 sm:w-auto"
-          >
-            I already have one
-          </Link>
+          {startPath ? (
+            <Link
+              to={startPath}
+              className="w-full rounded-md bg-brand-600 px-6 py-3 text-base font-medium text-white transition hover:bg-brand-700 sm:w-auto"
+            >
+              Open my shop
+            </Link>
+          ) : (
+            <>
+              <Link
+                to="/sign-up"
+                className="w-full rounded-md bg-brand-600 px-6 py-3 text-base font-medium text-white transition hover:bg-brand-700 sm:w-auto"
+              >
+                Create your shop — free
+              </Link>
+              <Link
+                to="/sign-in"
+                className="w-full rounded-md border border-slate-300 px-6 py-3 text-base font-medium text-slate-700 transition hover:bg-slate-50 sm:w-auto"
+              >
+                I already have one
+              </Link>
+            </>
+          )}
         </div>
 
         {/*
           Said here because it is the objection that stops people: every other
           tool wants an email, a verification code and a card before it shows
-          them anything.
+          them anything. Somebody already in has no use for it.
         */}
-        <p className="mt-4 text-sm text-slate-500">
-          No card, no email needed. You will be using it in under a minute.
-        </p>
+        {!startPath && (
+          <p className="mt-4 text-sm text-slate-500">
+            No card, no email needed. You will be using it in under a minute.
+          </p>
+        )}
 
         <OwedCard />
       </section>
@@ -128,18 +159,18 @@ export function LandingPage() {
           on the shop computer and on a phone at the counter.
         </p>
         <Link
-          to="/sign-up"
+          to={startPath ?? '/sign-up'}
           className="mt-8 inline-block rounded-md bg-brand-600 px-6 py-3 text-base font-medium text-white transition hover:bg-brand-700"
         >
-          Create your shop
+          {startPath ? 'Open my shop' : 'Create your shop'}
         </Link>
       </section>
 
       <footer className="border-t border-slate-200">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-2 px-6 py-8 text-sm text-slate-500 sm:flex-row">
           <span>Reho — sales and stock for your shop.</span>
-          <Link to="/sign-in" className="hover:text-slate-800">
-            Sign in
+          <Link to={startPath ?? '/sign-in'} className="hover:text-slate-800">
+            {startPath ? 'Open my shop' : 'Sign in'}
           </Link>
         </div>
       </footer>
