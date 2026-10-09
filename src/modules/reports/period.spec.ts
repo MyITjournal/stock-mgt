@@ -117,6 +117,18 @@ describe('period', () => {
       expect(eachDayKey(period)).toHaveLength(31);
     });
 
+    it('takes the plain days the reports send, parsed as the controller does', () => {
+      // `new Date('2026-08-01')` is UTC midnight — 01:00 in Lagos, the same
+      // day. The browser sends these as typed (2026-10-09), no time of day.
+      const period = customPeriod(
+        LAGOS,
+        new Date('2026-08-01'),
+        new Date('2026-08-31'),
+      );
+      expect(period.from.toISOString()).toBe('2026-07-31T23:00:00.000Z');
+      expect(period.to.toISOString()).toBe('2026-08-31T23:00:00.000Z');
+    });
+
     it('a single-day custom range is one day, not zero', () => {
       const day = new Date('2026-08-30T15:00:00Z');
       expect(eachDayKey(customPeriod(LAGOS, day, day))).toEqual(['2026-08-30']);

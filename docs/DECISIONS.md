@@ -6178,3 +6178,19 @@ that owes cannot be collected from any screen:
 - **Not closed**: voiding the payment on a walk-in sale still leaves it owing — a void records that
   the money never came in, and refusing it would force a false record. The way out is the one for
   any old walk-in sale that owes: **Correct sale** to name the customer, then *Take payment*.
+
+## 27. The reports' date range (2026-10-09)
+
+Owner: "the date picker on the reports is not responsive." It was broken, not slow: `setRange` kept
+the dates only when **both** were set, so picking *From* (with *To* still empty) threw it away and
+the box went blank — a custom range could never be chosen. Now a half-picked range stays in the URL
+(`usePeriodQuery.ts`); the report stays on the named period until both dates are in and the right
+way round, and the picker says which date is missing or that they cross. Each calendar stops at the
+other (`min`/`max`).
+
+The browser now sends the **plain days** (`from=2026-10-01&to=2026-10-07`), not instants it worked
+out from the computer's clock — `customPeriod` already reads them as whole days in the shop's zone,
+inclusive of the last. ⚠ **Trap left in place**: the controller parses them with `new Date('YYYY-MM-DD')`,
+which is UTC midnight. East of UTC (Lagos) that falls on the same local day, so it is right; a shop
+in a zone **west** of UTC would get every custom range a day early. Fix in the controller when the
+first such shop signs up.

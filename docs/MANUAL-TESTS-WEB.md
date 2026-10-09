@@ -1610,3 +1610,17 @@ whole balance, then the same correction goes through.
 
 **402. Another client.** (Swagger, `POST /sales` with no `customerId` and `payment: { amount: 0 }`.)
 A 400: "A walk-in pays in full…", and no stock leaves.
+
+## BR. The reports' date range
+
+**403. [gate] One date at a time.** Reports → Profit. Pick a *From* date: it stays in the box, a
+note says to pick the end date too, and the report still shows *This month*. Pick a *To* date: no
+named button is highlighted, the report reads that range, and the line on the right names those two
+days. Switch to the Sales tab: the same range is kept. Click *Last month*: both boxes clear.
+
+**404. Not the wrong way round.** With *From* set, the *To* calendar greys out the days before it
+(and the reverse). Type an end before the start: the note says the start is after the end, and the
+report stays on the named period rather than showing an error.
+
+**405. On a phone.** Narrow the window to a phone's width: the date boxes wrap under the buttons with
+no stray line at their left, and nothing scrolls sideways.

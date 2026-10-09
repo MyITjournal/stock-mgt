@@ -1547,6 +1547,18 @@ async function main() {
 
   const profit = (await api('GET', '/reports/profit?period=today', { token: t })).data;
   eq('gross sales match the invoices themselves', profit.grossSales, grossSales);
+
+  // A custom range as the reports send it (2026-10-09): plain days, read as
+  // whole days in the shop's zone. Today to today is the same window as Today.
+  const todayThere = new Intl.DateTimeFormat('en-CA', {
+    timeZone: profit.period.timezone,
+  }).format(new Date());
+  const ranged = (
+    await api('GET', `/reports/profit?from=${todayThere}&to=${todayThere}`, { token: t })
+  ).data;
+  eq('a range of plain days is the whole of each day', ranged.period.from, profit.period.from);
+  eq('through the end of the last', ranged.period.to, profit.period.to);
+  eq('so it reads the same sales', ranged.grossSales, profit.grossSales);
   eq('and the return is accounted for', profit.returned, refunded);
   eq(
     'revenue is tax-exclusive and net of returns',
