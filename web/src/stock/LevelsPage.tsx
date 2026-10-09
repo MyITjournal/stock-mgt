@@ -16,6 +16,7 @@ import { DownloadButton } from '../components/DownloadButton';
 import { downloadSheet, stamp, type SheetColumn } from '../lib/exportSheet';
 import { sortRows } from '../lib/sort';
 import { optionLabel } from '../lib/options';
+import { Count } from '../components/Count';
 
 /** "Eva Soap — Gold": each option is an item of its own on the shelf. */
 const itemName = (row: StockLevelRow) =>
@@ -274,13 +275,13 @@ export function LevelsPage() {
                       {row.batches?.length === 1 ? '' : 's'}
                     </span>
                   </span>
-                  <span
-                    className={`tabular-nums text-lg font-semibold ${
-                      row.quantity < 0 ? 'text-red-600' : 'text-slate-900'
+                  <Count
+                    quantity={row.quantity}
+                    units={row.units}
+                    className={`text-right text-lg font-semibold ${
+                      row.quantity < 0 ? '' : 'text-slate-900'
                     }`}
-                  >
-                    {row.quantity}
-                  </span>
+                  />
                 </button>
 
                 {/* Adjusting and moving stock is a decision — owner or
@@ -345,8 +346,11 @@ export function LevelsPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="py-1.5 text-right tabular-nums text-slate-700">
-                              {batch.quantity}
+                            <td className="py-1.5 text-right text-slate-700">
+                              <Count
+                                quantity={batch.quantity}
+                                units={row.units}
+                              />
                             </td>
                             {seesCost && (
                               <td className="py-1.5 text-right">

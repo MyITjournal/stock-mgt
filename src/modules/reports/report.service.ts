@@ -18,6 +18,7 @@ import { Profit, computeProfit, marginBps } from './profit';
 import { ValuedLot, valueOf } from './valuation';
 import { HAS_OPTIONS, OPTION_REF, itemKey, itemLabel } from './options';
 import { stockAlerts } from './stock-alerts';
+import { COUNT_UNITS } from '../inventory/dto/count-unit.response';
 import {
   CollectionsView,
   CustomerReportView,
@@ -618,7 +619,7 @@ export class ReportService {
             quantityReceived: true,
           },
         },
-        product: { select: { id: true, name: true } },
+        product: { select: { id: true, name: true, units: COUNT_UNITS } },
         variant: OPTION_REF,
         location: { select: { id: true, name: true } },
       },
@@ -630,10 +631,11 @@ export class ReportService {
       batchId: row.batch.id,
       lotCode: row.batch.lotCode,
       expiryDate: row.batch.expiryDate,
-      product: row.product,
+      product: { id: row.product.id, name: row.product.name },
       variant: row.variant,
       location: row.location,
       quantity: row.quantity,
+      units: row.product.units,
       value: valueOf([
         {
           quantity: row.quantity,
@@ -680,6 +682,7 @@ export class ReportService {
           name: true,
           sku: true,
           reorderPoint: true,
+          units: COUNT_UNITS,
           variants: {
             orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
             select: { id: true, name: true, isActive: true },
@@ -815,7 +818,7 @@ export class ReportService {
         isForced: true,
         forcedReason: true,
         createdAt: true,
-        product: { select: { id: true, name: true } },
+        product: { select: { id: true, name: true, units: COUNT_UNITS } },
         variant: OPTION_REF,
         location: { select: { id: true, name: true } },
         recordedBy: { select: { id: true, firstName: true, lastName: true } },
@@ -834,7 +837,11 @@ export class ReportService {
 
     return {
       period: describe(period),
-      movements,
+      movements: movements.map(({ product, ...movement }) => ({
+        ...movement,
+        product: { id: product.id, name: product.name },
+        units: product.units,
+      })),
       forced: movements.filter((movement) => movement.isForced).length,
       /** Net base units written off or corrected. Negative means stock left. */
       netQuantity: movements.reduce((sum, row) => sum + row.quantity, 0),
@@ -895,7 +902,7 @@ export class ReportService {
     const [names, variants] = await Promise.all([
       this.prisma.product.findMany({
         where: { id: { in: stagnant.map((row) => row.productId) } },
-        select: { id: true, name: true, sku: true },
+        select: { id: true, name: true, sku: true, units: COUNT_UNITS },
       }),
       this.prisma.productVariant.findMany({
         where: {
@@ -923,11 +930,17 @@ export class ReportService {
         .filter((row) => row.revenue > 0)
         .sort((a, b) => a.marginBps - b.marginBps)
         .slice(0, TOP_N),
-      deadStock: stagnant.map((row) => ({
-        product: nameOf.get(row.productId) ?? { id: row.productId },
-        variant: row.variantId ? (optionOf.get(row.variantId) ?? null) : null,
-        quantity: row._sum.quantity ?? 0,
-      })),
+      deadStock: stagnant.map((row) => {
+        const product = nameOf.get(row.productId);
+        return {
+          product: product
+            ? { id: product.id, name: product.name, sku: product.sku }
+            : { id: row.productId },
+          variant: row.variantId ? (optionOf.get(row.variantId) ?? null) : null,
+          quantity: row._sum.quantity ?? 0,
+          units: product?.units ?? [],
+        };
+      }),
       staleDays,
     };
   }

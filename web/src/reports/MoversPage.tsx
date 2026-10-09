@@ -6,6 +6,7 @@ import { DataTable, type Column } from '../components/DataTable';
 import { api } from '../api/client';
 import type { components } from '../api/schema';
 import { optionLabel } from '../lib/options';
+import { Count } from '../components/Count';
 import { PeriodPicker } from './PeriodPicker';
 import { usePeriodQuery } from './usePeriodQuery';
 import { DownloadButton } from '../components/DownloadButton';
@@ -197,9 +198,12 @@ export function MoversPage() {
                   row.product.sku ?? <span className="text-slate-300">—</span>,
               },
               {
-                header: 'Units held',
+                header: 'Held',
                 numeric: true,
-                cell: (row) => row.quantity,
+                sortValue: (row) => row.quantity,
+                cell: (row) => (
+                  <Count quantity={row.quantity} units={row.units} />
+                ),
               },
             ]}
             rowKey={(row) => `${row.product.id}:${row.variant?.id ?? ''}`}

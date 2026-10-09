@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { useSeesCost } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { optionLabel } from '../lib/options';
+import { Count } from '../components/Count';
 
 type ExpiringBatchRow = components['schemas']['ExpiringBatchRow'];
 
@@ -79,7 +80,7 @@ export function ExpiryPanel({ locationId }: { locationId: string }) {
                   {batch.lotCode ? ` · ${batch.lotCode}` : ''}
                 </span>
               </span>
-              <span className="tabular-nums">{batch.quantity}</span>
+              <Count quantity={batch.quantity} units={batch.units} />
               <span className="w-28 text-right tabular-nums">
                 {days === null
                   ? '—'
@@ -100,9 +101,7 @@ export function ExpiryPanel({ locationId }: { locationId: string }) {
           onClick={() => setShowAll(!showAll)}
           className="mt-3 text-xs font-medium text-amber-900 underline"
         >
-          {showAll
-            ? 'Show fewer'
-            : `Show all ${batches.length} lots`}
+          {showAll ? 'Show fewer' : `Show all ${batches.length} lots`}
         </button>
       )}
     </section>

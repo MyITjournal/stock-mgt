@@ -20,6 +20,8 @@ export interface AlertProduct {
   name: string;
   sku: string;
   reorderPoint: number | null;
+  /** Carried onto each row so the count can be said in them. */
+  units: readonly { name: string; factor: number }[];
   variants: readonly { id: string; name: string; isActive: boolean }[];
 }
 
@@ -37,6 +39,7 @@ export interface AlertRow {
   reorderPoint: number | null;
   variant: { id: string; name: string } | null;
   quantity: number;
+  units: { name: string; factor: number }[];
 }
 
 export interface StockAlerts {
@@ -66,6 +69,7 @@ export function stockAlerts(
       name: product.name,
       sku: product.sku,
       reorderPoint: product.reorderPoint,
+      units: [...product.units],
     };
     if (product.variants.length === 0) {
       rows.push({

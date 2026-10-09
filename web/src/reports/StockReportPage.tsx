@@ -12,6 +12,7 @@ import { exportStockValue } from './exportReports';
 import { StockInOut } from './StockInOut';
 import { auditLines } from './auditLines';
 import { optionLabel } from '../lib/options';
+import { Count } from '../components/Count';
 
 type StockValuationView = components['schemas']['StockValuationView'];
 type StockAlertsView = components['schemas']['StockAlertsView'];
@@ -84,7 +85,8 @@ export function StockReportPage() {
   const valuationColumns: readonly Column<ValuationGroupRow>[] = [
     { header: 'Name', sortValue: (row) => row.label, cell: (row) => row.label },
     {
-      header: 'Units',
+      // A group adds different products, so it stays in the smallest unit.
+      header: 'Pieces',
       sortValue: (row) => row.units,
       numeric: true,
       cell: (row) => row.units,
@@ -114,20 +116,18 @@ export function StockReportPage() {
       header: 'On hand',
       sortValue: (row) => row.quantity,
       numeric: true,
-      cell: (row) => (
-        <span
-          className={`tabular-nums ${row.quantity < 0 ? 'text-red-600' : ''}`}
-        >
-          {row.quantity}
-        </span>
-      ),
+      cell: (row) => <Count quantity={row.quantity} units={row.units} />,
     },
     {
       header: 'Reorder at',
       sortValue: (row) => row.reorderPoint,
       numeric: true,
       cell: (row) =>
-        row.reorderPoint ?? <span className="text-slate-300">not set</span>,
+        row.reorderPoint === null ? (
+          <span className="text-slate-300">not set</span>
+        ) : (
+          <Count quantity={row.reorderPoint} units={row.units} />
+        ),
     },
   ];
 
@@ -165,7 +165,11 @@ export function StockReportPage() {
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <div className="text-xs uppercase text-slate-500">Base units</div>
+            {/* Every product added together, so only the smallest unit can
+                say it — a carton of 24 and a carton of 12 do not add. */}
+            <div className="text-xs uppercase text-slate-500">
+              Pieces, all products
+            </div>
             <div className="mt-1 text-2xl font-semibold text-slate-900">
               {valuation?.units ?? '—'}
             </div>
@@ -307,7 +311,14 @@ export function StockReportPage() {
                   </span>
                 ),
               },
-              { header: 'Units', numeric: true, cell: (row) => row.quantity },
+              {
+                header: 'Quantity',
+                numeric: true,
+                sortValue: (row) => row.quantity,
+                cell: (row) => (
+                  <Count quantity={row.quantity} units={row.units} />
+                ),
+              },
               {
                 header: 'At risk',
                 numeric: true,
@@ -356,7 +367,7 @@ export function StockReportPage() {
           </div>
           <div>
             <div className="text-xs uppercase text-slate-500">
-              Net base units
+              Net pieces, all products
             </div>
             <div className="tabular-nums text-slate-900">
               {audit?.netQuantity ?? 0}
@@ -368,7 +379,7 @@ export function StockReportPage() {
                 {REASON_LABELS[row.reason] ?? row.reason}
               </div>
               <div className="tabular-nums text-slate-900">
-                {row.quantity} · {row.count}×
+                {row.quantity.toLocaleString()} pieces · {row.count}×
               </div>
             </div>
           ))}
@@ -430,13 +441,12 @@ export function StockReportPage() {
               header: 'Quantity',
               numeric: true,
               cell: (row) => (
-                <span
-                  className={`tabular-nums ${
-                    row.quantity < 0 ? 'text-red-600' : 'text-emerald-700'
-                  }`}
-                >
-                  {row.quantity > 0 ? `+${row.quantity}` : row.quantity}
-                </span>
+                <Count
+                  quantity={row.quantity}
+                  units={row.units}
+                  signed
+                  className={row.quantity < 0 ? '' : 'text-emerald-700'}
+                />
               ),
             },
           ]}

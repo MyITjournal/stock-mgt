@@ -5,6 +5,10 @@ const indomie: AlertProduct = {
   name: 'Indomie',
   sku: 'INDOMIE',
   reorderPoint: 5,
+  units: [
+    { name: 'pack', factor: 1 },
+    { name: 'carton', factor: 40 },
+  ],
   variants: [
     { id: 'chicken', name: 'Chicken', isActive: true },
     { id: 'pepper', name: 'Pepper Soup', isActive: true },
@@ -18,6 +22,7 @@ const peak: AlertProduct = {
   name: 'Peak',
   sku: 'PEAK',
   reorderPoint: null,
+  units: [{ name: 'tin', factor: 1 }],
   variants: [],
 };
 
@@ -38,6 +43,8 @@ describe('stockAlerts', () => {
         id: 'indomie',
         variant: { id: 'pepper', name: 'Pepper Soup' },
         quantity: 3,
+        // So the screen can say it in cartons as well as packs (2026-10-09).
+        units: indomie.units,
       }),
     ]);
     // Onion has none; Curry has none too but is retired, so is not "out".

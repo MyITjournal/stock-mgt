@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { StockAdjustmentReason, StockMovementType } from '@prisma/client';
+import { CountUnitView } from './count-unit.response';
 
 /**
  * What the stock endpoints return.
@@ -109,6 +110,13 @@ export class StockLevelRow {
   location!: StockLocationRef;
 
   @ApiProperty({
+    type: () => [CountUnitView],
+    description:
+      'The units of this product, smallest first, so `quantity` can be said as "14 carton, 5 piece".',
+  })
+  units!: CountUnitView[];
+
+  @ApiProperty({
     description:
       'Base units on hand. May be negative — a forced movement records stock that went out before it was entered as received.',
   })
@@ -147,6 +155,13 @@ export class ExpiringBatchRow {
 
   @ApiProperty({ description: 'Base units still on hand in this lot.' })
   quantity!: number;
+
+  @ApiProperty({
+    type: () => [CountUnitView],
+    description:
+      'The units of this product, smallest first, so `quantity` can be said as "14 carton, 5 piece".',
+  })
+  units!: CountUnitView[];
 
   @ApiPropertyOptional({
     description:

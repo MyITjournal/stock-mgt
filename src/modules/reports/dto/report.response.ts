@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '@prisma/client';
+import { CountUnitView } from '../../inventory/dto/count-unit.response';
+
+/** On every row that says a count of one product (2026-10-09). */
+const UNITS_NOTE =
+  'The units of this product, smallest first, so its quantity can be said as "14 carton, 5 piece".';
 
 /**
  * What the report endpoints return.
@@ -453,6 +458,9 @@ export class ExpiringLotRow {
   @ApiProperty()
   quantity!: number;
 
+  @ApiProperty({ type: () => [CountUnitView], description: UNITS_NOTE })
+  units!: CountUnitView[];
+
   @ApiPropertyOptional({
     description:
       'What walking away from this lot costs. **Absent** for a role that may not see cost — the list itself stays open, because knowing which lots to push is a shelf question rather than a cost one.',
@@ -515,6 +523,9 @@ export class StockAlertRow {
 
   @ApiProperty({ description: 'Summed across every location.' })
   quantity!: number;
+
+  @ApiProperty({ type: () => [CountUnitView], description: UNITS_NOTE })
+  units!: CountUnitView[];
 }
 
 /**
@@ -573,6 +584,9 @@ export class StockAuditRow {
 
   @ApiProperty({ description: 'Signed, in base units.' })
   quantity!: number;
+
+  @ApiProperty({ type: () => [CountUnitView], description: UNITS_NOTE })
+  units!: CountUnitView[];
 
   @ApiProperty({ type: String, nullable: true })
   reason!: string | null;
@@ -675,6 +689,9 @@ export class DeadStockRow {
 
   @ApiProperty({ description: 'Base units sitting on a shelf.' })
   quantity!: number;
+
+  @ApiProperty({ type: () => [CountUnitView], description: UNITS_NOTE })
+  units!: CountUnitView[];
 }
 
 /**

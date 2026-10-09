@@ -4255,6 +4255,15 @@ export interface components {
             /** @example Main Store */
             name: string;
         };
+        CountUnitView: {
+            /** @example carton */
+            name: string;
+            /**
+             * @description Base units in one of these.
+             * @example 24
+             */
+            factor: number;
+        };
         StockLevelBatch: {
             /** Format: uuid */
             batchId: string;
@@ -4274,6 +4283,8 @@ export interface components {
             /** @description Which option. Null for a product without options. */
             variant: components["schemas"]["StockOptionRef"] | null;
             location: components["schemas"]["StockLocationRef"];
+            /** @description The units of this product, smallest first, so `quantity` can be said as "14 carton, 5 piece". */
+            units: components["schemas"]["CountUnitView"][];
             /** @description Base units on hand. May be negative — a forced movement records stock that went out before it was entered as received. */
             quantity: number;
             /** @description Only when `includeBatches=true`. The lots that add up to `quantity`, which is what FEFO will pick from. */
@@ -4290,6 +4301,8 @@ export interface components {
             expiryDate: string | null;
             /** @description Base units still on hand in this lot. */
             quantity: number;
+            /** @description The units of this product, smallest first, so `quantity` can be said as "14 carton, 5 piece". */
+            units: components["schemas"]["CountUnitView"][];
             /** @description What walks out of the door if this is not sold in time. **Absent** for a role that may not see cost — the list itself stays open, because knowing which lots to push is not a cost question. */
             valueAtRisk?: number;
         };
@@ -6713,6 +6726,8 @@ export interface components {
             variant: components["schemas"]["ReportOptionRef"] | null;
             location: components["schemas"]["ReportLocationRef"];
             quantity: number;
+            /** @description The units of this product, smallest first, so its quantity can be said as "14 carton, 5 piece". */
+            units: components["schemas"]["CountUnitView"][];
             /** @description What walking away from this lot costs. **Absent** for a role that may not see cost — the list itself stays open, because knowing which lots to push is a shelf question rather than a cost one. */
             value?: number;
             /** @description Negative once the date has passed. */
@@ -6729,6 +6744,8 @@ export interface components {
             variant: components["schemas"]["ReportOptionRef"] | null;
             /** @description Summed across every location. */
             quantity: number;
+            /** @description The units of this product, smallest first, so its quantity can be said as "14 carton, 5 piece". */
+            units: components["schemas"]["CountUnitView"][];
         };
         AttentionSummary: {
             expiringSoon: components["schemas"]["ExpiringLotRow"][];
@@ -6773,6 +6790,8 @@ export interface components {
             variant: components["schemas"]["ReportOptionRef"] | null;
             /** @description Base units sitting on a shelf. */
             quantity: number;
+            /** @description The units of this product, smallest first, so its quantity can be said as "14 carton, 5 piece". */
+            units: components["schemas"]["CountUnitView"][];
         };
         MoversSummary: {
             topByRevenue: components["schemas"]["SalesGroupRow"][];
@@ -7190,6 +7209,8 @@ export interface components {
             type: components["schemas"]["AuditMovementType"];
             /** @description Signed, in base units. */
             quantity: number;
+            /** @description The units of this product, smallest first, so its quantity can be said as "14 carton, 5 piece". */
+            units: components["schemas"]["CountUnitView"][];
             reason: string | null;
             isForced: boolean;
             /** @description Never null on a forced movement: supplying it is the override. */

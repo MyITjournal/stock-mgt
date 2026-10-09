@@ -1624,6 +1624,21 @@ async function main() {
   eq('with the level it was given', alerts.lowStock[0].reorderPoint, 200);
   // 134 across both locations, not 182 at Main Store: the level is per product.
   eq('measured across every location at once', alerts.lowStock[0].quantity, 134);
+  // So the screen can say 134 as cartons and pieces (2026-10-09): the
+  // product's units come with the row, smallest — the counted-in unit — first.
+  const lowUnits = alerts.lowStock[0].units;
+  eq('the row carries the units to say it in', lowUnits[0]?.factor, 1);
+  check(
+    'including the carton',
+    lowUnits.some((unit) => unit.factor === carton.factor),
+    JSON.stringify(lowUnits),
+  );
+  const shelf = (await api('GET', `/stock/levels?productId=${product.id}`, { token: t })).data;
+  check(
+    'and so does every stock level',
+    shelf.length > 0 && shelf.every((row) => row.units.some((unit) => unit.factor === carton.factor)),
+    JSON.stringify(shelf.map((row) => row.units)),
+  );
 
   step(33, 'Sales sliced by product, by customer, and by day');
   const byProduct = (

@@ -10,6 +10,7 @@ import {
   RebuildBalancesView,
   StockLevelRow,
 } from './dto/stock.response';
+import { COUNT_UNITS } from './dto/count-unit.response';
 
 export interface LevelFilter {
   productId?: string;
@@ -48,6 +49,7 @@ export class StockLevelService {
             id: true,
             name: true,
             sku: true,
+            units: COUNT_UNITS,
             // Only whether it has options, for the leftover rows below.
             variants: { select: { id: true }, take: 1 },
           },
@@ -89,6 +91,7 @@ export class StockLevelService {
         product: { id: string; name: string; sku: string };
         variant: { id: string; name: string } | null;
         location: { id: string; name: string };
+        units: { name: string; factor: number }[];
         quantity: number;
         batches: {
           batchId: string;
@@ -128,6 +131,7 @@ export class StockLevelService {
         },
         variant: balance.variant,
         location: balance.location,
+        units: balance.product.units,
         quantity: 0,
         batches: [],
       };
@@ -156,6 +160,7 @@ export class StockLevelService {
       product: row.product,
       variant: row.variant,
       location: row.location,
+      units: row.units,
       quantity: row.quantity,
       ...(filter.includeBatches ? { batches: row.batches } : {}),
     }));
@@ -177,7 +182,9 @@ export class StockLevelService {
         batch: { expiryDate: { not: null, lte: before } },
       },
       include: {
-        product: { select: { id: true, name: true, sku: true } },
+        product: {
+          select: { id: true, name: true, sku: true, units: COUNT_UNITS },
+        },
         variant: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
         batch: {
@@ -196,7 +203,12 @@ export class StockLevelService {
 
     return balances
       .map((balance) => ({
-        product: balance.product,
+        product: {
+          id: balance.product.id,
+          name: balance.product.name,
+          sku: balance.product.sku,
+        },
+        units: balance.product.units,
         variant: balance.variant,
         location: balance.location,
         batchId: balance.batchId,

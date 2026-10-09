@@ -1528,3 +1528,15 @@ amber note above the buttons says ₦30,000 will be kept as credit on the custom
 transfer for the rest. Open the sale and print the invoice: **Paid** carries the total, with a
 smaller *Cash* and *Transfer* line under it. Void one of the payments and print again: its line is
 gone. A credit sale nobody has paid prints plain *Paid ₦0.00*.
+
+## BL. Stock in the biggest unit
+
+**388. [gate] Reports → Stock.** Give a product with a carton of 24 a reorder level of 50 and hold
+less than that. *Below reorder point* reads its stock like "1 carton, 5 piece" and the level as
+"2 carton, 2 piece"; hovering shows the count in pieces. Sorting *On hand* still goes by the true
+count. *Going off soon* and *Decisions somebody made* read the same way (a write-off shows
+"−1 carton"). The valuation tiles and *By location* / *By category* say *Pieces*.
+
+**389. Stock → Levels and Movers.** Stock → Levels: each card's figure and each lot under it read
+in cartons and pieces, and so does the expiry panel. Reports → Movers → dead stock: *Held* reads
+the same way.

@@ -649,6 +649,16 @@ prefix the portion helper names them with — and **the counted-in unit is alway
 the parts add back to the count exactly. Verified live: after a half carton is sold the list reads
 "13 carton, 13 roll" — the loose sachets and the opened roll's remainder make a whole roll.
 
+**And everywhere else a count of one product is shown** (owner, 2026-10-09: "see the stock
+balance in the reports in the largest unit, not only in pieces"). Reports → Stock (out, low,
+negative and their reorder level; going off soon; decisions somebody made), Reports → Movers (dead
+stock), and Stock → Levels (each place, each lot, the expiry panel) now read the same way through
+`<Count>`, sorted on the number. The rows carry the product's `units` (`CountUnitView`,
+`COUNT_UNITS`), as `StockSummaryRow` already did. Chosen over "14.2 carton": exact, and what the
+Products list already said. **Figures adding different products stay in pieces** and say so
+("Pieces, all products"): a carton of 24 and a carton of 12 do not add. Spreadsheets keep plain
+counted-in numbers, so they still add and sort.
+
 A delivery the shop **charges the customer for** stays what §4 below says: a product with
 `trackStock` off. A delivery the shop **pays for** is an expense and never a product.
 
