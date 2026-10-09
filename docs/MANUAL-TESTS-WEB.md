@@ -1503,3 +1503,18 @@ owing, with a due day five days after the sale.
 **382. [gate] What is closed.** Take one item back, then open **Correct sale**: the prices cannot be
 typed in and a note says why; the customer can still be changed. Signed in as a sales rep or
 storekeeper, there is no **Correct sale** button.
+
+## BJ. A part payment
+
+**383. [gate] The part payment.** Sell to a customer on credit (say ₦50,000). Invoices → **Record a
+payment** for that customer: the top box is **Amount received**. Type ₦20,000, tick *Choose which
+invoices this settles*, and type ₦20,000 beside the invoice. Save: Money in shows ₦20,000, and the
+invoice still owes ₦30,000.
+
+**384. The invoice total in the wrong box.** Same dialog: ₦20,000 received, ₦50,000 beside the
+invoice. A red note says it owes only what it owes / only ₦20,000 was received, and **Record
+payment** is greyed out.
+
+**385. The invoice total as the amount received.** ₦50,000 received, ₦20,000 beside the invoice: an
+amber note above the buttons says ₦30,000 will be kept as credit on the customer and asks whether
+₦50,000 is what you received. It still saves if that is true.

@@ -1942,6 +1942,24 @@ error to reject.
 invoice is a typo far more often than it is generosity, and the extra belongs on the customer as
 credit where the next invoice will find it.
 
+### Two amount boxes, and the part payment that went in as full (2026-10-09)
+
+Found in real use: the owner recorded a cash part payment and Money in and Cash showed the whole
+invoice. The form had **Amount** at the top and, under "Choose which invoices this settles", a box
+per invoice. Read as "the invoice total, then the part paid", the full total went in as money
+received and the difference became credit while the invoice still owed it. The other way round —
+part paid on top, invoice total in its box — was refused in small red text. The rules were right;
+the form did not say which box was which. Now: **Amount received** ("what the customer actually
+handed over"); the invoice boxes are headed *How much of this payment goes to each invoice*; a box
+above what its invoice owes, or boxes above the payment, say so in full and block saving; and
+money left as credit while a named invoice still owes gets an amber "₦X of this will be kept as
+credit on …. Is ₦Y what you received?" above the button. Nothing is refused that wasn't before.
+
+The server's refusals named sales by id and amounts in kobo ("Cannot allocate 5000000 to sale
+3f2a…"). `planAllocations` takes a `money` formatter and the invoice `number`; the service plans
+once without, and only on a refusal looks up `shopMoney` and plans again for the message — a
+payment that goes through costs no extra query.
+
 ### The amount is signed, so a refund needs no second table
 
 Positive is money in, negative is money handed back — following `StockMovement.quantity`, which

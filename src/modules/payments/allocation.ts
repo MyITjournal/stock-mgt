@@ -16,6 +16,8 @@ export interface Outstanding {
   saleId: string;
   /** What is still owed. Negative when the customer is owed money instead. */
   balance: Minor;
+  /** INV-0012 — what a refusal calls it. Without it, "That invoice". */
+  number?: string;
 }
 
 export interface AllocationRequest {
@@ -40,11 +42,16 @@ export interface AllocationResult {
  *
  * Signs must agree with the payment. A refund (negative payment) can only
  * unwind allocations, and money in can only settle debt.
+ *
+ * A refusal is read by the person at the payment form, so it names the
+ * invoice by its number and amounts through `money` (`shopMoney`) — never a
+ * sale id or a count of kobo.
  */
 export function planAllocations(
   paymentAmount: Minor,
   requested: readonly AllocationRequest[],
   outstanding: readonly Outstanding[],
+  money: (minor: Minor) => string = String,
 ): AllocationResult {
   assertMinor(paymentAmount, 'Payment amount');
   if (paymentAmount === 0) {
@@ -57,27 +64,28 @@ export function planAllocations(
 
   for (const request of requested) {
     assertMinor(request.amount, 'Allocation amount');
+    const invoice = byId.get(request.saleId);
+    const name = invoice?.number ?? 'That invoice';
     if (request.amount === 0) {
       throw new RangeError(
-        `Allocation to sale ${request.saleId} is zero, which settles nothing`,
+        `Nothing is put against ${name}, which settles nothing. Leave it off.`,
       );
     }
     if (Math.sign(request.amount) !== Math.sign(paymentAmount)) {
       throw new RangeError(
-        `Allocation to sale ${request.saleId} runs the opposite way to the payment. Money in settles debt; money out unwinds it.`,
+        `The amount against ${name} runs the opposite way to the payment. Money in settles debt; money out unwinds it.`,
       );
     }
     if (seen.has(request.saleId)) {
       throw new RangeError(
-        `Sale ${request.saleId} is allocated to twice in one payment. Combine them into a single line.`,
+        `${name} appears twice in one payment. Combine them into a single line.`,
       );
     }
     seen.add(request.saleId);
 
-    const invoice = byId.get(request.saleId);
     if (!invoice) {
       throw new RangeError(
-        `Sale ${request.saleId} is not on this payment's account`,
+        "That invoice is not on this payment's account, or nothing is owed on it.",
       );
     }
 
@@ -89,7 +97,7 @@ export function planAllocations(
       Math.sign(invoice.balance) !== Math.sign(request.amount)
     ) {
       throw new RangeError(
-        `Cannot allocate ${request.amount} to sale ${request.saleId}: ${invoice.balance} is outstanding on it`,
+        `${name} owes ${money(invoice.balance)}, so ${money(request.amount)} cannot go against it. Put at most ${money(invoice.balance)} there — anything more stays as credit on the customer.`,
       );
     }
 
@@ -98,7 +106,7 @@ export function planAllocations(
 
   if (Math.abs(claimed) > Math.abs(paymentAmount)) {
     throw new RangeError(
-      `Allocations total ${claimed}, which is more than the payment of ${paymentAmount}`,
+      `${money(claimed)} is put against invoices, which is more than the payment of ${money(paymentAmount)}. Each invoice gets a part of what was received, not its own total.`,
     );
   }
 

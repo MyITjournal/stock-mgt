@@ -43,7 +43,36 @@ describe('planAllocations', () => {
         [{ saleId: INV_B, amount: 6_000_000 }],
         outstanding,
       ),
-    ).toThrow(/5000000 is outstanding/);
+    ).toThrow(/owes 5000000, so 6000000 cannot go against it/);
+  });
+
+  it('names the invoice and the shop’s money in a refusal, never ids or kobo', () => {
+    const naira = (minor: number) =>
+      `₦${(minor / 100).toLocaleString('en-NG')}`;
+    const numbered = [
+      { saleId: INV_B, balance: 5_000_000, number: 'INV-0012' },
+    ];
+
+    // The mix-up the owner hit: the invoice's total typed where the part of
+    // this payment going to it belongs.
+    expect(() =>
+      planAllocations(
+        2_000_000,
+        [{ saleId: INV_B, amount: 5_000_000 }],
+        numbered,
+        naira,
+      ),
+    ).toThrow(
+      '₦50,000 is put against invoices, which is more than the payment of ₦20,000. Each invoice gets a part of what was received, not its own total.',
+    );
+    expect(() =>
+      planAllocations(
+        9_000_000,
+        [{ saleId: INV_B, amount: 6_000_000 }],
+        numbered,
+        naira,
+      ),
+    ).toThrow(/^INV-0012 owes ₦50,000, so ₦60,000 cannot go against it/);
   });
 
   it('refuses to allocate more than the payment itself', () => {
@@ -76,7 +105,7 @@ describe('planAllocations', () => {
         ],
         outstanding,
       ),
-    ).toThrow(/allocated to twice/);
+    ).toThrow(/appears twice in one payment/);
   });
 
   it('refuses an allocation that runs against the payment', () => {

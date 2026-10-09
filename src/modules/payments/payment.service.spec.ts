@@ -18,8 +18,20 @@ const INV_B = 'sale-b';
 
 /** Two unpaid invoices: ₦108,000 from Monday, ₦50,000 from Friday. */
 const openInvoices = [
-  { id: INV_A, total: 10_800_000, allocations: [], returns: [] },
-  { id: INV_B, total: 5_000_000, allocations: [], returns: [] },
+  {
+    id: INV_A,
+    number: 'INV-0001',
+    total: 10_800_000,
+    allocations: [],
+    returns: [],
+  },
+  {
+    id: INV_B,
+    number: 'INV-0002',
+    total: 5_000_000,
+    allocations: [],
+    returns: [],
+  },
 ];
 
 describe('PaymentService', () => {
@@ -31,6 +43,7 @@ describe('PaymentService', () => {
   let prisma: {
     sale: { findMany: jest.Mock };
     customer: { findFirst: jest.Mock };
+    organization: { findFirst: jest.Mock };
     payment: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock };
     $transaction: jest.Mock;
   };
@@ -44,6 +57,9 @@ describe('PaymentService', () => {
     prisma = {
       sale: { findMany: jest.fn().mockResolvedValue(openInvoices) },
       customer: { findFirst: jest.fn().mockResolvedValue({ id: CUSTOMER }) },
+      organization: {
+        findFirst: jest.fn().mockResolvedValue({ currency: 'NGN' }),
+      },
       payment: {
         findFirst: jest
           .fn()
@@ -149,13 +165,15 @@ describe('PaymentService', () => {
     expect(writtenPayment()).toMatchObject({ amount: 5_000_000 });
   });
 
-  it('refuses an over-allocation with a 409', async () => {
-    await expect(
-      pay({
-        amount: 9_000_000,
-        allocations: [{ saleId: INV_B, amount: 6_000_000 }],
-      }),
-    ).rejects.toBeInstanceOf(ConflictException);
+  it('refuses an over-allocation with a 409, in invoice numbers and naira', async () => {
+    const refused = pay({
+      amount: 9_000_000,
+      allocations: [{ saleId: INV_B, amount: 6_000_000 }],
+    });
+    await expect(refused).rejects.toBeInstanceOf(ConflictException);
+    await expect(refused).rejects.toThrow(
+      /^INV-0002 owes ₦50,000\.00, so ₦60,000\.00 cannot go against it/,
+    );
     expect(tx.payment.create).not.toHaveBeenCalled();
   });
 

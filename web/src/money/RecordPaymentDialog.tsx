@@ -135,12 +135,31 @@ export function RecordPaymentDialog({
   const shownAmount = amount ?? invoice?.balance ?? null;
   const paying = shownAmount ?? 0;
 
+  // The two mix-ups between "Amount received" and the boxes beside each
+  // invoice (owner, 2026-10-09). An invoice's own total typed into its box
+  // shows up as more than the invoice owes or more than was received; the
+  // invoice's total typed as the amount received leaves the difference as
+  // credit while that invoice still owes — `strandedCredit`, said out loud
+  // before saving rather than in a grey line.
+  const overInvoice = manual
+    ? invoices.filter((row) => (split[row.id] ?? 0) > row.balance)
+    : [];
+  const stillOwing = invoices.some((row) => (split[row.id] ?? 0) < row.balance);
+  const strandedCredit =
+    manual && allocated > 0 && allocated < paying && stillOwing
+      ? paying - allocated
+      : 0;
+  const payer = customers.find((customer) => customer.id === customerId);
+  const payerName = payer
+    ? [payer.firstName, payer.lastName].filter(Boolean).join(' ')
+    : 'the customer';
+
   const requiresAccount = needsBankAccount(method);
   const canSubmit =
     paying !== 0 &&
     Boolean(customerId) &&
     (!requiresAccount || Boolean(bankAccountId)) &&
-    (!manual || allocated <= paying) &&
+    (!manual || (allocated <= paying && overInvoice.length === 0)) &&
     // Marking an invoice paid is money in; handing money back is not that.
     (!invoice || paying > 0);
 
@@ -217,9 +236,9 @@ export function RecordPaymentDialog({
           </Field>
 
           <Field
-            label="Amount"
+            label="Amount received"
             htmlFor="amount"
-            hint="A negative amount is money handed back."
+            hint="What the customer actually handed over. A negative amount is money handed back."
           >
             <MoneyInput
               id="amount"
@@ -347,10 +366,16 @@ export function RecordPaymentDialog({
 
               {manual && (
                 <div className="mt-3 space-y-2">
+                  <p className="text-sm font-medium text-slate-900">
+                    How much of this payment goes to each invoice
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    A part of the amount received — not the invoice's total.
+                  </p>
                   {invoices.map((invoice) => (
                     <div
                       key={invoice.id}
-                      className="flex items-center justify-between gap-3 text-sm"
+                      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm"
                     >
                       <span className="flex-1">
                         <span className="text-slate-900">{invoice.number}</span>
@@ -372,6 +397,13 @@ export function RecordPaymentDialog({
                         }
                         className="w-28 text-right"
                       />
+                      {(split[invoice.id] ?? 0) > invoice.balance && (
+                        <p className="w-full text-xs text-red-600">
+                          {invoice.number} owes only{' '}
+                          <Money value={invoice.balance} />. Put at most that
+                          here — anything more stays as credit.
+                        </p>
+                      )}
                     </div>
                   ))}
 
@@ -389,11 +421,14 @@ export function RecordPaymentDialog({
                   </div>
 
                   {allocated > paying && (
-                    <p className="text-xs text-red-600">
-                      That is more than the payment.
+                    <p className="rounded-md bg-red-50 p-2 text-sm text-red-700">
+                      You've put <Money value={allocated} /> against invoices,
+                      but only <Money value={paying} /> was received. These
+                      boxes are how much of the payment goes to each invoice,
+                      not the invoice totals.
                     </p>
                   )}
-                  {allocated < paying && allocated > 0 && (
+                  {allocated < paying && allocated > 0 && !strandedCredit && (
                     <p className="text-xs text-slate-500">
                       <Money value={paying - allocated} /> stays as credit.
                     </p>
@@ -413,6 +448,17 @@ export function RecordPaymentDialog({
             />
           </Field>
         </div>
+
+        {strandedCredit > 0 && (
+          <p
+            className="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-800"
+            role="status"
+          >
+            <Money value={strandedCredit} /> of this will be kept as credit on{' '}
+            {payerName}, not put against an invoice. Is <Money value={paying} />{' '}
+            what you received?
+          </p>
+        )}
 
         {error && (
           <p

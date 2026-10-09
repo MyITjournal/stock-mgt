@@ -26,6 +26,7 @@ import {
   planAllocations,
 } from './allocation';
 import { LIVE_ALLOCATIONS, saleBalance } from './balance';
+import { shopMoney } from '../../common/money/shop-money';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { VoidPaymentDto } from './dto/void-payment.dto';
 import { PaymentListView, PaymentView } from './dto/payment.response';
@@ -165,14 +166,25 @@ export class PaymentService {
       requested = allocateOldest(input.amount, outstanding);
     }
 
+    const attempt = (money?: (minor: number) => string) =>
+      planAllocations(input.amount, requested, outstanding, money);
     let plan: AllocationResult;
     try {
-      plan = planAllocations(input.amount, requested, outstanding);
-    } catch (error) {
-      // The pure layer speaks in RangeError; the API speaks in 409.
-      throw new ConflictException(
-        error instanceof Error ? error.message : 'Allocation is not valid',
-      );
+      plan = attempt();
+    } catch {
+      // Refused. Plan it again with the shop's currency so the message reads
+      // ₦50,000 rather than 5000000 — looked up only now, so a payment that
+      // goes through costs no extra query. The pure layer speaks in
+      // RangeError; the API speaks in 409.
+      const money = await shopMoney(this.prisma);
+      try {
+        attempt(money);
+      } catch (error) {
+        throw new ConflictException(
+          error instanceof Error ? error.message : 'Allocation is not valid',
+        );
+      }
+      throw new ConflictException('Allocation is not valid');
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -224,6 +236,7 @@ export class PaymentService {
       orderBy: [{ occurredAt: 'asc' }, { number: 'asc' }],
       select: {
         id: true,
+        number: true,
         total: true,
         allocations: LIVE_ALLOCATIONS,
         returns: { select: { refundAmount: true } },
@@ -231,7 +244,11 @@ export class PaymentService {
     });
 
     return sales
-      .map((sale) => ({ saleId: sale.id, balance: saleBalance(sale).balance }))
+      .map((sale) => ({
+        saleId: sale.id,
+        number: sale.number,
+        balance: saleBalance(sale).balance,
+      }))
       .filter((row) => row.balance !== 0);
   }
 
