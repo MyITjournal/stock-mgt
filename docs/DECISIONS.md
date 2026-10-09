@@ -1296,6 +1296,17 @@ anything — and an invoice without one (settled before due dates existed, reope
 a void) shows its age, as the list did before. Adding `dueDate` to the receipt is
 safe for printers: it is a contract that may grow, never one that may change.
 
+### The receipt says how it was paid (2026-10-09)
+
+Owner request. The receipt gained `paidBy` — a line per method, **summed per method, not listed
+per payment** (a customer wants "cash ₦5,000, transfer ₦3,000", not dated rows), signed so cash
+handed back on a return comes off the cash, a method netting to nothing left off, in the order
+the money came in. It adds up to `paid`; voided payments are not in it (`paidByMethod` skips
+them even if a caller forgets). Paid one way prints "Paid by cash"; several ways print "Paid"
+with a smaller line per method; nothing paid prints plain "Paid". The till's screen and the PDF
+invoice both read it. The method only — never the bank account it landed in: the invoice already
+lists the accounts to pay into. A new field, so it grows the printer contract without changing it.
+
 ### Printing: the server serves payloads and PDFs, the device drives the printer
 
 `GET /sales/:id/receipt` returns a deliberately narrow payload — what the customer is handed and

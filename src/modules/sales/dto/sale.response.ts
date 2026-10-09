@@ -596,6 +596,18 @@ export class ReceiptLineView {
   lineTotal!: number;
 }
 
+/** One way a sale was paid, on its receipt (2026-10-09). */
+export class ReceiptPaidByView {
+  @ApiProperty({ enum: PaymentMethod, enumName: 'PaymentMethod' })
+  method!: PaymentMethod;
+
+  @ApiProperty({
+    example: 500000,
+    description: 'Everything that came in this way, net of any handed back.',
+  })
+  amount!: number;
+}
+
 /**
  * What `GET /sales/:id/receipt` returns: the stable payload a thermal printer
  * renders, flattened and free of anything a customer should not read.
@@ -630,6 +642,13 @@ export class SaleReceiptView {
 
   @ApiProperty({ description: 'Settled so far, signed.' })
   paid!: number;
+
+  @ApiProperty({
+    type: () => [ReceiptPaidByView],
+    description:
+      'How `paid` came in, a line per method in the order the money arrived; sums to `paid`. Empty while nothing is paid. Voided payments are not in it. Added after the first printers, so older ones simply ignore it.',
+  })
+  paidBy!: ReceiptPaidByView[];
 
   @ApiProperty({ description: 'What is still owed.' })
   balance!: number;

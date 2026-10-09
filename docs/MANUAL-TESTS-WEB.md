@@ -1518,3 +1518,13 @@ payment** is greyed out.
 **385. The invoice total as the amount received.** ₦50,000 received, ₦20,000 beside the invoice: an
 amber note above the buttons says ₦30,000 will be kept as credit on the customer and asks whether
 ₦50,000 is what you received. It still saves if that is true.
+
+## BK. How it was paid, on the receipt
+
+**386. [gate] One way.** Sell at the till, paid by POS: the receipt on screen reads **Paid by POS**.
+**Print invoice**: the PDF says the same above *Balance due*.
+
+**387. Several ways.** Sell to a customer on credit, then record a cash part payment and later a
+transfer for the rest. Open the sale and print the invoice: **Paid** carries the total, with a
+smaller *Cash* and *Transfer* line under it. Void one of the payments and print again: its line is
+gone. A credit sale nobody has paid prints plain *Paid ₦0.00*.

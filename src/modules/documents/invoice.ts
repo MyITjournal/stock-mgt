@@ -6,7 +6,9 @@ import type {
 
 /** pdfmake accepts a number or a tuple; a bare array literal widens and fails. */
 type Margin = [number, number, number, number];
+import type { PaymentMethod } from '@prisma/client';
 import { presentLines, printDate, printMoney } from './pdf';
+import type { PaidBy } from '../sales/receipt';
 
 /** The business issuing the document. Every field but the name may be absent. */
 export interface Letterhead {
@@ -45,6 +47,8 @@ export interface InvoiceDocument {
   total: number;
   tax: number;
   paid: number;
+  /** How `paid` came in, a line per method — see `paidByMethod`. */
+  paidBy: PaidBy[];
   balance: number;
   /** Printed only while something is owed — see `SaleService.receipt`. */
   dueDate: Date | null;
@@ -158,7 +162,7 @@ export function invoiceDefinition(args: {
               ...(invoice.tax > 0
                 ? [totalRow('of which VAT', money(invoice.tax))]
                 : []),
-              totalRow('Paid', money(invoice.paid)),
+              ...paidRows(invoice, money),
               totalRow('Balance due', money(invoice.balance), true),
             ],
           },
@@ -274,6 +278,51 @@ export function letterhead(org: Letterhead): Content {
         : []),
     ],
   };
+}
+
+/** As a customer reads it: "POS", not "pos". */
+const METHOD_NAMES: Record<PaymentMethod, string> = {
+  cash: 'cash',
+  transfer: 'transfer',
+  pos: 'POS',
+  cheque: 'cheque',
+};
+
+/**
+ * "Paid" with how it was paid (2026-10-09). Paid one way, the method sits in
+ * the label: "Paid by cash". Paid several ways, "Paid" carries the total and a
+ * smaller line per method follows. Nothing paid yet, a plain "Paid" as before.
+ */
+export function paidRows(
+  invoice: Pick<InvoiceDocument, 'paid' | 'paidBy'>,
+  money: (value: number) => string,
+): TableCell[][] {
+  const [only, ...more] = invoice.paidBy;
+  if (only && more.length === 0) {
+    return [
+      totalRow(`Paid by ${METHOD_NAMES[only.method]}`, money(invoice.paid)),
+    ];
+  }
+  return [
+    totalRow('Paid', money(invoice.paid)),
+    ...invoice.paidBy.map(({ method, amount }): TableCell[] => [
+      {
+        text: capitalise(METHOD_NAMES[method]),
+        alignment: 'right',
+        style: 'note',
+      },
+      {
+        text: money(amount),
+        alignment: 'right',
+        style: 'note',
+        margin: [12, 0, 0, 0] as Margin,
+      },
+    ]),
+  ];
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function totalRow(

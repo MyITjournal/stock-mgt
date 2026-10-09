@@ -5,6 +5,14 @@ import type { components } from '../api/schema';
 
 type Receipt = components['schemas']['SaleReceiptView'];
 
+/** As a customer reads it — the printed invoice says the same. */
+const METHOD_NAMES: Record<components['schemas']['PaymentMethod'], string> = {
+  cash: 'cash',
+  transfer: 'transfer',
+  pos: 'POS',
+  cheque: 'cheque',
+};
+
 /**
  * What the sale actually was.
  *
@@ -93,10 +101,28 @@ export function Receipt({
               <Money value={receipt.tax} />
             </div>
           )}
+          {/*
+            How it was paid (2026-10-09): one way reads "Paid by cash"; several
+            put the total on "Paid" and a smaller line per way under it.
+          */}
           <div className="flex justify-between">
-            <span className="text-slate-500">Paid</span>
+            <span className="text-slate-500">
+              {receipt.paidBy.length === 1
+                ? `Paid by ${METHOD_NAMES[receipt.paidBy[0].method]}`
+                : 'Paid'}
+            </span>
             <Money value={receipt.paid} />
           </div>
+          {receipt.paidBy.length > 1 &&
+            receipt.paidBy.map((way) => (
+              <div
+                key={way.method}
+                className="flex justify-between pl-3 text-xs text-slate-500"
+              >
+                <span className="capitalize">{METHOD_NAMES[way.method]}</span>
+                <Money value={way.amount} signed />
+              </div>
+            ))}
           {receipt.balance !== 0 && (
             <div className="flex justify-between font-medium text-amber-700">
               <span>Balance</span>

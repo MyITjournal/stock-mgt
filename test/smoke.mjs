@@ -1450,6 +1450,21 @@ async function main() {
   check('the lines read as descriptions, not ids', !!receipt.lines[0].description);
   check('cost of goods sold never reaches the customer', receipt.costTotal === undefined);
   check('and neither does the tier', receipt.tier === undefined);
+  // How it was paid (2026-10-09): a line per method, adding up to `paid`. The
+  // credit sale took several payments and one of them was voided above, so
+  // this also checks a voided payment is not counted.
+  eq(
+    'how it was paid adds up to what was paid',
+    receipt.paidBy.reduce((total, way) => total + way.amount, 0),
+    receipt.paid,
+  );
+  const counterReceipt = (await api('GET', `/sales/${cash.id}/receipt`, { token: t })).data;
+  eq(
+    'a counter sale paid in cash says cash',
+    counterReceipt.paidBy.map((way) => way.method).join(','),
+    'cash',
+  );
+  eq('net of the cash handed back', counterReceipt.paidBy[0].amount, counterReceipt.paid);
 
   // The letterhead a printed document carries. Every field is nullable, so the
   // PDF below is also rendered once with none of it filled in.

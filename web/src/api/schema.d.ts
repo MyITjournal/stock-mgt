@@ -5929,6 +5929,14 @@ export interface components {
             /** @example 2400000 */
             lineTotal: number;
         };
+        ReceiptPaidByView: {
+            method: components["schemas"]["PaymentMethod"];
+            /**
+             * @description Everything that came in this way, net of any handed back.
+             * @example 500000
+             */
+            amount: number;
+        };
         SaleReceiptView: {
             /** @example INV-0001 */
             number: string;
@@ -5945,6 +5953,8 @@ export interface components {
             tax: number;
             /** @description Settled so far, signed. */
             paid: number;
+            /** @description How `paid` came in, a line per method in the order the money arrived; sums to `paid`. Empty while nothing is paid. Voided payments are not in it. Added after the first printers, so older ones simply ignore it. */
+            paidBy: components["schemas"]["ReceiptPaidByView"][];
             /** @description What is still owed. */
             balance: number;
             /**

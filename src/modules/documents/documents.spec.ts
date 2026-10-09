@@ -6,6 +6,8 @@ import {
   payableBlock,
 } from './invoice';
 import { StatementDocument, statementDefinition } from './statement';
+import { PaymentMethod } from '@prisma/client';
+import type { PaidBy } from '../sales/receipt';
 
 const ORG: Letterhead = {
   name: 'Adebayo Stores Limited',
@@ -128,10 +130,53 @@ describe('invoiceDefinition', () => {
     total: 10_800_000,
     tax: 753_488,
     paid: 4_000_000,
+    paidBy: [{ method: PaymentMethod.cash, amount: 4_000_000 }] as PaidBy[],
     balance: 6_800_000,
     dueDate: null as Date | null,
     note: null,
   };
+
+  describe('how it was paid', () => {
+    const render = (over: Partial<typeof invoice>) =>
+      JSON.stringify(
+        invoiceDefinition({
+          organization: ORG,
+          accounts: [],
+          invoice: { ...invoice, ...over },
+        }),
+      );
+
+    it('names the one way it was paid', () => {
+      const doc = render({});
+      expect(doc).toContain('Paid by cash');
+    });
+
+    it('says POS the way a customer reads it', () => {
+      const doc = render({
+        paidBy: [{ method: PaymentMethod.pos, amount: 4_000_000 }],
+      });
+      expect(doc).toContain('Paid by POS');
+    });
+
+    it('lists each way under the total when it came in several', () => {
+      const doc = render({
+        paidBy: [
+          { method: PaymentMethod.cash, amount: 2_500_000 },
+          { method: PaymentMethod.transfer, amount: 1_500_000 },
+        ],
+      });
+      expect(doc).not.toContain('Paid by');
+      expect(doc).toContain('"Paid"');
+      expect(doc).toContain('"Cash"');
+      expect(doc).toContain('"Transfer"');
+    });
+
+    it('says plain "Paid" while nothing is paid', () => {
+      const doc = render({ paid: 0, balance: 10_800_000, paidBy: [] });
+      expect(doc).toContain('"Paid"');
+      expect(doc).not.toContain('Paid by');
+    });
+  });
 
   it('shows VAT as part of the total, never added on top', () => {
     // Prices are stored tax-inclusive (§2). Printing VAT as an addition would

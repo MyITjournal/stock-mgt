@@ -1,4 +1,5 @@
 import { dueDateFor } from './due';
+import { paidByMethod } from './receipt';
 import { duplicateWindow, sameItems } from './duplicates';
 import {
   BadRequestException,
@@ -684,6 +685,7 @@ export class SaleService {
       total: sale.total,
       tax: sale.taxTotal,
       paid: sale.allocated,
+      paidBy: paidByMethod(sale.allocations),
       balance: sale.balance,
       // Only while something is owed: a paid invoice has nothing to be due.
       dueDate: sale.balance > 0 ? sale.dueDate : null,

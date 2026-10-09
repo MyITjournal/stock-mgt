@@ -47,6 +47,7 @@ export class DocumentService {
           total: receipt.total,
           tax: receipt.tax,
           paid: receipt.paid,
+          paidBy: receipt.paidBy,
           balance: receipt.balance,
           dueDate: receipt.dueDate,
           note: receipt.note,
