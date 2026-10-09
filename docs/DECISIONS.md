@@ -1960,6 +1960,20 @@ The server's refusals named sales by id and amounts in kobo ("Cannot allocate 50
 once without, and only on a refusal looks up `shopMoney` and plans again for the message — a
 payment that goes through costs no extra query.
 
+### A payment settles only its own account (2026-10-09)
+
+Named invoices were looked up by id alone, so a request could put one customer's money against
+another's invoice: the invoice read paid while the money sat on the wrong statement. Worse, a
+payment with no customer and no invoices named read `customerId: undefined` as no filter at all,
+and settled the oldest invoice in the shop. The dashboard never sent either — the form lists only
+the chosen customer's invoices — but the API is the guarantee, not the form. Now
+`outstandingFor` looks only at the payment's own account: a customer's invoices, or walk-in
+sales for a payment with no customer (cash back to a walk-in still works). A named invoice on
+another account is a 409 that names it, checked before its balance so the reason is the real one.
+Payments recorded before are untouched. **The trap**: smoke's "runs the opposite way" check paid
+a walk-in sale under a customer's name, so the new 409 would have passed it for the wrong reason;
+it now uses the customer's own invoice and checks the message.
+
 ### The amount is signed, so a refund needs no second table
 
 Positive is money in, negative is money handed back — following `StockMovement.quantity`, which

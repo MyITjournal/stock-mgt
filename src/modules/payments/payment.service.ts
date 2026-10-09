@@ -222,26 +222,40 @@ export class PaymentService {
   /**
    * The invoices a payment may be put against, oldest first.
    *
-   * Scoped to the customer when there is one. A walk-in refund names its sale
-   * explicitly, so `saleIds` covers the case where there is no account to look
-   * the invoice up on.
+   * **Only the payment's own account** (2026-10-09): a customer's payment
+   * settles that customer's invoices, and one with no customer — cash back to
+   * a walk-in — settles walk-in sales. Before, named invoices were looked up
+   * by id alone, so one customer's money could settle another's invoice and
+   * the two statements stopped agreeing; and a payment with no customer and
+   * none named read `customerId: undefined` as "no filter" and settled the
+   * oldest invoice in the shop. A named invoice on another account is refused
+   * by number, before the balance is looked at, so the reason is the real one.
    */
   private async outstandingFor(customerId?: string, saleIds?: string[]) {
+    const account = customerId ?? null;
     const sales = await this.prisma.sale.findMany({
-      where: {
-        ...(saleIds?.length
-          ? { id: { in: saleIds } }
-          : { customerId: customerId ?? undefined }),
-      },
+      where: saleIds?.length
+        ? { id: { in: saleIds } }
+        : { customerId: account },
       orderBy: [{ occurredAt: 'asc' }, { number: 'asc' }],
       select: {
         id: true,
         number: true,
+        customerId: true,
         total: true,
         allocations: LIVE_ALLOCATIONS,
         returns: { select: { refundAmount: true } },
       },
     });
+
+    const elsewhere = sales.find((sale) => sale.customerId !== account);
+    if (elsewhere) {
+      throw new ConflictException(
+        account
+          ? `${elsewhere.number} is on another customer's account, so this payment cannot settle it.`
+          : `${elsewhere.number} is on a customer's account. Choose that customer to put a payment against it.`,
+      );
+    }
 
     return sales
       .map((sale) => ({

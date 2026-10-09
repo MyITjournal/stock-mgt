@@ -21,6 +21,7 @@ const openInvoices = [
   {
     id: INV_A,
     number: 'INV-0001',
+    customerId: CUSTOMER,
     total: 10_800_000,
     allocations: [],
     returns: [],
@@ -28,6 +29,7 @@ const openInvoices = [
   {
     id: INV_B,
     number: 'INV-0002',
+    customerId: CUSTOMER,
     total: 5_000_000,
     allocations: [],
     returns: [],
@@ -188,6 +190,7 @@ describe('PaymentService', () => {
     prisma.sale.findMany.mockResolvedValue([
       {
         id: INV_A,
+        customerId: CUSTOMER,
         total: 12_000_000,
         allocations: [{ amount: 12_000_000 }],
         returns: [{ refundAmount: 6_000_000 }],
@@ -206,6 +209,11 @@ describe('PaymentService', () => {
   });
 
   it('looks the invoice up by id for a walk-in with no account', async () => {
+    // Cash back to a walk-in: the sale it unwinds is a walk-in sale too.
+    prisma.sale.findMany.mockResolvedValue([
+      { ...openInvoices[0], customerId: null },
+    ]);
+
     await pay({
       customerId: undefined,
       amount: 1_000_000,
@@ -217,6 +225,51 @@ describe('PaymentService', () => {
         where: { id: { in: [INV_A] } },
       }),
     );
+    expect(writtenAllocations()).toEqual([
+      expect.objectContaining({ saleId: INV_A, amount: 1_000_000 }),
+    ]);
+  });
+
+  describe("settles only the payment's own account", () => {
+    it("refuses one customer's money against another's invoice", async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        { ...openInvoices[1], customerId: 'customer-2' },
+      ]);
+
+      const refused = pay({
+        allocations: [{ saleId: INV_B, amount: 2_000_000 }],
+      });
+      await expect(refused).rejects.toBeInstanceOf(ConflictException);
+      await expect(refused).rejects.toThrow(
+        "INV-0002 is on another customer's account, so this payment cannot settle it.",
+      );
+      expect(tx.payment.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses a payment with no customer against a customer's invoice", async () => {
+      const refused = pay({
+        customerId: undefined,
+        allocations: [{ saleId: INV_A, amount: 1_000_000 }],
+      });
+      await expect(refused).rejects.toBeInstanceOf(ConflictException);
+      await expect(refused).rejects.toThrow(
+        "INV-0001 is on a customer's account. Choose that customer to put a payment against it.",
+      );
+      expect(tx.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('looks only at walk-in sales when nobody is named and no invoice is either', async () => {
+      // `customerId: undefined` would be no filter at all — every invoice in
+      // the shop, oldest first.
+      prisma.sale.findMany.mockResolvedValue([]);
+
+      await pay({ customerId: undefined, amount: 1_000_000 });
+
+      expect(prisma.sale.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { customerId: null } }),
+      );
+      expect(tx.paymentAllocation.createMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('the sync feed', () => {

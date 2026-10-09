@@ -1033,16 +1033,22 @@ async function main() {
   );
 
   step(23, 'Overpaying an invoice is refused; change becomes credit');
-  await api('POST', '/payments', {
-    token: t,
-    expect: 409,
-    body: {
-      customerId: shopkeeper.id,
-      amount: 99_999_999,
-      allocations: [{ saleId: credit.id, amount: 99_999_999 }],
-    },
-  });
-  check('allocating more than an invoice owes is 409', true);
+  const overpaid = (
+    await api('POST', '/payments', {
+      token: t,
+      expect: 409,
+      body: {
+        customerId: shopkeeper.id,
+        amount: 99_999_999,
+        allocations: [{ saleId: credit.id, amount: 99_999_999 }],
+      },
+    })
+  ).data;
+  check(
+    'allocating more than an invoice owes is 409',
+    /cannot go against it/.test(overpaid.message),
+    overpaid.message,
+  );
 
   // Pays the invoice off and hands over more than was due. The excess is not
   // forced onto the invoice; it stays on the customer for the next one.
@@ -1091,16 +1097,60 @@ async function main() {
     0,
   );
 
-  await api('POST', '/payments', {
-    token: t,
-    expect: 409,
-    body: {
-      customerId: shopkeeper.id,
-      amount: 500_000,
-      allocations: [{ saleId: cash.id, amount: -500_000 }],
-    },
-  });
-  check('an allocation running against its payment is 409', true);
+  // Against the shopkeeper's own invoice: `cash` is a walk-in sale, and a
+  // customer's payment put against it is now refused for being on the wrong
+  // account (2026-10-09) — which would pass this check for the wrong reason.
+  const backwards = (
+    await api('POST', '/payments', {
+      token: t,
+      expect: 409,
+      body: {
+        customerId: shopkeeper.id,
+        amount: 500_000,
+        allocations: [{ saleId: credit.id, amount: -500_000 }],
+      },
+    })
+  ).data;
+  check(
+    'an allocation running against its payment is 409',
+    /opposite way to the payment/.test(backwards.message),
+    backwards.message,
+  );
+
+  // A payment settles only its own account: the shopkeeper's money cannot
+  // settle a walk-in sale, and money from nobody cannot settle the
+  // shopkeeper's invoice.
+  const notTheirs = (
+    await api('POST', '/payments', {
+      token: t,
+      expect: 409,
+      body: {
+        customerId: shopkeeper.id,
+        amount: 500_000,
+        allocations: [{ saleId: cash.id, amount: 500_000 }],
+      },
+    })
+  ).data;
+  check(
+    "a customer's payment cannot settle a walk-in sale",
+    /another customer's account/.test(notTheirs.message),
+    notTheirs.message,
+  );
+  const nobodys = (
+    await api('POST', '/payments', {
+      token: t,
+      expect: 409,
+      body: {
+        amount: 500_000,
+        allocations: [{ saleId: credit.id, amount: 500_000 }],
+      },
+    })
+  ).data;
+  check(
+    "a payment from nobody cannot settle a customer's invoice",
+    /Choose that customer/.test(nobodys.message),
+    nobodys.message,
+  );
 
   const cleared = (await api('GET', '/receivables', { token: t })).data;
   eq('nothing is outstanding once everything is paid', cleared.invoices.length, 0);
