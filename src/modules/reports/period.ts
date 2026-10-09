@@ -285,3 +285,24 @@ export function eachDayKey(period: Period): string[] {
 
   return keys;
 }
+
+/**
+ * How many local days from the day `from` falls on through the day `now`
+ * falls on, both counted — the 1st to the 12th is 12 (2026-10-09, the days a
+ * sales rate is measured over). At least 1: today alone is one day.
+ */
+export function localDaysThrough(
+  timezone: string,
+  from: Date,
+  now: Date,
+): number {
+  return Math.max(
+    1,
+    eachDayKey({
+      from: startOfDay(timezone, from),
+      to: addDays(timezone, now, 1),
+      timezone,
+      name: 'custom',
+    }).length,
+  );
+}

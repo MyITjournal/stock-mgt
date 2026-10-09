@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { PaymentMethod } from '@prisma/client';
+import { PaymentMethod, StockMovementType } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { TenantContext } from '../../common/tenancy/tenant-context';
@@ -12,6 +12,7 @@ import {
   customPeriod,
   dayKey,
   eachDayKey,
+  localDaysThrough,
   resolvePeriod,
 } from './period';
 import { Profit, computeProfit, marginBps } from './profit';
@@ -666,15 +667,28 @@ export class ReportService {
   }
 
   /**
-   * Stock that needs attention: out, low, or negative — a row per option, the
-   * product's level applying to each (`stock-alerts.ts`).
+   * Stock that needs attention: out, low, or negative — a row per option
+   * (`stock-alerts.ts`).
    *
-   * Quantities are summed **across locations**, because `reorderPoint` is a
-   * per-product level (§12) — a van being empty is not a reason to reorder if
-   * the store is full.
+   * Low is measured against how fast each item sells (2026-10-09): what went
+   * out on sales, less what came back, over the last 30 days — or since its
+   * first stock arrived, if that is later, so three cartons in on the 1st are
+   * measured over the days since the 1st and not over thirty. All in the
+   * shop's days (`localDaysThrough`). Quantities and sales are summed
+   * **across locations** (§12); a transfer is not a sale.
+   *
+   * Worked out on every read, so it never waits for a job at a time of day
+   * that a sleeping host may not see.
    */
-  async stockAlerts(): Promise<StockAlertsView> {
-    const [products, balances] = await Promise.all([
+  async stockAlerts(now: Date = new Date()): Promise<StockAlertsView> {
+    const organization = await this.prisma.organization.findFirst({
+      where: { id: TenantContext.requireOrganizationId() },
+      select: { timezone: true, lowStockDays: true },
+    });
+    const timezone = organization?.timezone || FALLBACK_TIMEZONE;
+    const window = resolvePeriod('last-30-days', timezone, now);
+
+    const [products, balances, sold] = await Promise.all([
       this.prisma.product.findMany({
         where: { deletedAt: null, isActive: true, trackStock: true },
         select: {
@@ -693,7 +707,35 @@ export class ReportService {
         by: ['productId', 'variantId'],
         _sum: { quantity: true },
       }),
+      // Sales are negative and returns positive, so the sum is what really
+      // left the shop, signed the other way.
+      this.prisma.stockMovement.groupBy({
+        by: ['productId', 'variantId'],
+        where: {
+          type: { in: [StockMovementType.sale, StockMovementType.return_in] },
+          occurredAt: { gte: window.from, lt: window.to },
+        },
+        _sum: { quantity: true },
+      }),
     ]);
+
+    // When each item that sold first had stock, for one newer than the
+    // window. Only those products, so it never walks the whole ledger.
+    const firstSeen = sold.length
+      ? await this.prisma.stockMovement.groupBy({
+          by: ['productId', 'variantId'],
+          where: {
+            productId: { in: [...new Set(sold.map((row) => row.productId))] },
+          },
+          _min: { occurredAt: true },
+        })
+      : [];
+
+    const keyOf = (row: { productId: string; variantId: string | null }) =>
+      `${row.productId}|${row.variantId ?? ''}`;
+    const firstAt = new Map(
+      firstSeen.map((row) => [keyOf(row), row._min.occurredAt]),
+    );
 
     return stockAlerts(
       products,
@@ -702,6 +744,17 @@ export class ReportService {
         variantId: row.variantId,
         quantity: row._sum.quantity ?? 0,
       })),
+      sold.map((row) => {
+        const first = firstAt.get(keyOf(row));
+        const from = first && first > window.from ? first : window.from;
+        return {
+          productId: row.productId,
+          variantId: row.variantId,
+          sold: -(row._sum.quantity ?? 0),
+          days: localDaysThrough(timezone, from, now),
+        };
+      }),
+      organization?.lowStockDays ?? 7,
     );
   }
 

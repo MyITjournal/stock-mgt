@@ -115,6 +115,9 @@ export class OrganizationService {
         ...(input.chargesVat !== undefined && {
           chargesVat: input.chargesVat,
         }),
+        ...(input.lowStockDays !== undefined && {
+          lowStockDays: input.lowStockDays,
+        }),
         // Checked above: only while nothing with money in it exists.
         ...(input.currency !== undefined && { currency: input.currency }),
         ...(input.timezone !== undefined && { timezone: input.timezone }),
@@ -138,6 +141,7 @@ const ORGANIZATION_FIELDS = {
   maxUsers: true,
   businessType: true,
   chargesVat: true,
+  lowStockDays: true,
   address: true,
   phone: true,
   email: true,

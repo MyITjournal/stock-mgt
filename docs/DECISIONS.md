@@ -2356,6 +2356,29 @@ empty van is not a reason to reorder when the store is full. Per-location levels
 were considered and rejected for now — they need a table and a setup step before
 a single alert works, and nobody has yet asked for a van to reorder itself.
 
+### Running low is worked out from how fast it sells (2026-10-09)
+
+Owner: most shops never type a reorder level, so they got no warnings at all — and a fixed level
+ignores speed (fifty rolls is two days of Milo and two months of toothpicks). Now an item is
+**running low once its stock will not last `Organization.lowStockDays`** (default 7, Settings →
+Business, 1–90) at the rate it has sold: sales less returns over the last 30 local days, or since
+its first movement if that is later — the owner's example, three cartons in on the 1st and five
+rolls left on the 12th, is measured over 12 days (`localDaysThrough`, both ends counted). Kept in
+whole numbers: low when `onHand × days < sold × lowStockDays`. Summed across locations, per
+option; a transfer is not a sale. Computed on every read — no job, so the sleeping host (§21)
+cannot miss it.
+
+- **A typed reorder level still counts, as a floor** (`reason: 'below_level'`). It is the only
+  way an item with no recent sales is flagged before it runs out, and removing levels people had
+  set would silently stop a warning. The form shows the box only on a product that has one.
+- Each row says why (`reason`, `daysLeft`, `soldInWindow`/`windowDays`); the list runs soonest
+  gone first. Home's tile and the report say *Running low*. The "N products have no level" note
+  went: it is no longer true that the list is incomplete without levels.
+- **Known gap**: days an item was sold out count as days of no sales, so its rate reads a little
+  slow afterwards. It is on the out-of-stock list meanwhile; accepted for now.
+- On screen only. An emailed digest would be its own branch, sent on the first request of a day
+  rather than at a time of day.
+
 ### Reps do not see cost
 
 Margin, cost of goods and stock valuation are restricted to owner, manager and

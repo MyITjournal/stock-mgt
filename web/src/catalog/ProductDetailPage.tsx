@@ -229,11 +229,11 @@ export function ProductDetailPage() {
             }
           />
         )}
-        <Stat
-          label="Reorder at"
-          value={product.reorderPoint ?? '—'}
-          note={product.reorderPoint === null ? 'No level set' : undefined}
-        />
+        {/* Running low is worked out from sales (2026-10-09); a level only
+            shows where somebody set one, never as "No level set". */}
+        {product.reorderPoint !== null && (
+          <Stat label="Reorder at" value={product.reorderPoint} />
+        )}
       </section>
 
       {hasOptions && (

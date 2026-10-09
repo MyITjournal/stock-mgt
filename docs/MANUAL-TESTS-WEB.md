@@ -1540,3 +1540,20 @@ count. *Going off soon* and *Decisions somebody made* read the same way (a write
 **389. Stock → Levels and Movers.** Stock → Levels: each card's figure and each lot under it read
 in cartons and pieces, and so does the expiry panel. Reports → Movers → dead stock: *Held* reads
 the same way.
+
+## BM. Running low, from how fast it sells
+
+**390. [gate] No level needed.** Take a product with no reorder level. Receive 3 cartons, then sell
+most of it over a few sales so that what is left would last less than a week at that pace. Home:
+*Running low* counts it. Reports → Stock → *Running low*: the row says "Lasts about N days" and how
+much it sells a day, in cartons and pieces. The note under the lists says seven days and links to
+Settings.
+
+**391. The shop's number of days.** Settings → Business → *Warn me when stock won’t last*: set it
+below the days the product lasts and save. It leaves the list. Type 0 or 91: a red note, and that
+number is not saved. Put it back to 7.
+
+**392. Levels.** Add product: there is no *Reorder point* box. A product that already had a level
+still shows the box when edited, and its page shows *Reorder at*; a product without one shows
+nothing about a level. A product with a level that has not sold lately and is at or below it is
+on the list as "At or below your level of …".

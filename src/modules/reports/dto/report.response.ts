@@ -524,6 +524,32 @@ export class StockAlertRow {
   @ApiProperty({ description: 'Summed across every location.' })
   quantity!: number;
 
+  @ApiProperty({
+    description:
+      'Base units sold, less returns, over `windowDays` — the last 30, or since its first stock arrived if later. 0 when none sold.',
+  })
+  soldInWindow!: number;
+
+  @ApiProperty({ description: 'The local days `soldInWindow` covers.' })
+  windowDays!: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Whole days the stock on hand lasts at that rate. Null when nothing sold, or nothing is on hand.',
+  })
+  daysLeft!: number | null;
+
+  @ApiProperty({
+    enum: ['running_out', 'below_level'],
+    enumName: 'LowStockReason',
+    nullable: true,
+    description:
+      'Why it is on the low list: it will not last the shop’s `lowStockDays` at the rate it sells, or it is at or below a reorder level somebody set. Null off that list.',
+  })
+  reason!: 'running_out' | 'below_level' | null;
+
   @ApiProperty({ type: () => [CountUnitView], description: UNITS_NOTE })
   units!: CountUnitView[];
 }
@@ -555,9 +581,16 @@ export class StockAlertsView {
 
   @ApiProperty({
     description:
-      'How many products have no level set, so nobody mistakes the list for complete. Products, not options: the level is set once per product.',
+      'How many products have no reorder level typed in. Since 2026-10-09 running low is worked out from sales, so this no longer means the low list is incomplete. Products, not options.',
   })
   withoutReorderPoint!: number;
+
+  @ApiProperty({
+    example: 7,
+    description:
+      'The shop’s warning period the low list was measured against: stock that will not last this many days.',
+  })
+  lowStockDays!: number;
 }
 
 class AuditUserRef {

@@ -1606,27 +1606,56 @@ async function main() {
     valuation.byLocation.find((l) => l.label === 'Main Store').units === 182,
   );
 
-  step(32, 'Alerts: out of stock, and below a level somebody set');
+  step(32, 'Alerts: out of stock, and running low from how fast it sells');
+  // Running low is worked out from sales (2026-10-09), with no level typed in.
+  // This run's product sold far more than a seventh of what it holds over the
+  // few days it has had stock.
   let alerts = (await api('GET', '/reports/stock-alerts', { token: t })).data;
+  eq('measured against the shop’s seven days to start with', alerts.lowStockDays, 7);
+  let milkRow = alerts.lowStock.find((row) => row.id === product.id);
+  check('a product selling fast is running low with no level set', !!milkRow, JSON.stringify(alerts.lowStock.map((row) => row.name)));
+  eq('because it will not last', milkRow?.reason, 'running_out');
   check(
-    'nothing is flagged low while no product has a reorder point',
-    alerts.lowStock.length === 0,
-    `${alerts.lowStock.length}`,
+    'measured over the days it has had stock, thirty at most',
+    milkRow?.windowDays >= 1 && milkRow?.windowDays <= 30,
+    `${milkRow?.windowDays}`,
   );
-  check('and the report says how many have none', alerts.withoutReorderPoint > 0);
+  check('from what it actually sold', milkRow?.soldInWindow > 0, `${milkRow?.soldInWindow}`);
+  // 134 across both locations, not 182 at Main Store: stock is per product.
+  eq('measured across every location at once', milkRow?.quantity, 134);
+  eq(
+    'and it says how many days that lasts',
+    milkRow?.daysLeft,
+    Math.floor((134 * milkRow?.windowDays) / milkRow?.soldInWindow),
+  );
 
+  // Fewer days than the stock lasts takes it off the list; the setting is the
+  // shop's, and an owner changes it.
+  const lastsDays = Math.floor((134 * milkRow.windowDays) / milkRow.soldInWindow);
+  if (lastsDays >= 1) {
+    await api('PATCH', '/organization', { token: t, body: { lowStockDays: lastsDays } });
+    alerts = (await api('GET', '/reports/stock-alerts', { token: t })).data;
+    check(
+      'a shorter warning takes it off the list',
+      !alerts.lowStock.some((row) => row.id === product.id),
+      JSON.stringify(alerts.lowStock.map((row) => [row.name, row.daysLeft])),
+    );
+  }
+  await api('PATCH', '/organization', { token: t, body: { lowStockDays: 0 }, expect: 400 });
+  check('a warning of no days is refused', true);
+  await api('PATCH', '/organization', { token: t, body: { lowStockDays: 7 } });
+
+  // A level somebody typed in still counts, as a floor.
   await api('PATCH', `/products/${product.id}`, {
     token: t,
     body: { reorderPoint: 200 },
   });
   alerts = (await api('GET', '/reports/stock-alerts', { token: t })).data;
-  eq('setting a level puts the product on the low-stock list', alerts.lowStock.length, 1);
-  eq('with the level it was given', alerts.lowStock[0].reorderPoint, 200);
-  // 134 across both locations, not 182 at Main Store: the level is per product.
-  eq('measured across every location at once', alerts.lowStock[0].quantity, 134);
+  milkRow = alerts.lowStock.find((row) => row.id === product.id);
+  eq('a level that was set comes with the row', milkRow?.reorderPoint, 200);
   // So the screen can say 134 as cartons and pieces (2026-10-09): the
   // product's units come with the row, smallest — the counted-in unit — first.
-  const lowUnits = alerts.lowStock[0].units;
+  const lowUnits = milkRow.units;
   eq('the row carries the units to say it in', lowUnits[0]?.factor, 1);
   check(
     'including the carton',
@@ -4472,10 +4501,16 @@ async function main() {
   const lowest = Math.min(optionTotals.get(chickenId), optionTotals.get(pepperId));
   await api('PATCH', `/products/${noodles.id}`, { token: t, body: { reorderPoint: lowest } });
   const optionAlerts = (await api('GET', '/reports/stock-alerts', { token: t })).data;
+  // Every option at or below the level is on the list. One that is selling
+  // fast may be there for that reason too (2026-10-09), so only those at or
+  // below the level are compared.
   eq(
     'low stock is checked per option, against the product’s level',
     JSON.stringify(
-      optionAlerts.lowStock.filter((row) => row.id === noodles.id).map((row) => row.variant?.name).sort(),
+      optionAlerts.lowStock
+        .filter((row) => row.id === noodles.id && row.quantity <= lowest)
+        .map((row) => row.variant?.name)
+        .sort(),
     ),
     JSON.stringify(
       [

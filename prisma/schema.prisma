@@ -912,6 +912,12 @@ model Organization {
   /// they behaved until then (the migration sets it).
   chargesVat Boolean @default(false)
 
+  /// "Running low" means stock will not last this many days at the rate it has
+  /// been selling (owner, 2026-10-09). One number for the shop rather than a
+  /// level on every product: most shops never set a reorder level, so the
+  /// level is worked out from what actually sells. See `stock-alerts.ts`.
+  lowStockDays Int @default(7)
+
   /// When staff may sign in, as **minutes past midnight** in this business's
   /// timezone: 480 is 08:00, 1140 is 19:00.
   ///

@@ -119,15 +119,9 @@ export function StockReportPage() {
       cell: (row) => <Count quantity={row.quantity} units={row.units} />,
     },
     {
-      header: 'Reorder at',
-      sortValue: (row) => row.reorderPoint,
-      numeric: true,
-      cell: (row) =>
-        row.reorderPoint === null ? (
-          <span className="text-slate-300">not set</span>
-        ) : (
-          <Count quantity={row.reorderPoint} units={row.units} />
-        ),
+      header: 'Why',
+      sortValue: (row) => row.daysLeft,
+      cell: (row) => <LowReason row={row} />,
     },
   ];
 
@@ -217,9 +211,7 @@ export function StockReportPage() {
             />
           </Panel>
 
-          <Panel
-            title={`Below reorder point (${alerts?.lowStock.length ?? 0})`}
-          >
+          <Panel title={`Running low (${alerts?.lowStock.length ?? 0})`}>
             <DataTable
               rows={alerts?.lowStock ?? []}
               columns={alertColumns}
@@ -239,17 +231,14 @@ export function StockReportPage() {
         </div>
 
         <p className="mt-2 text-xs text-slate-500">
-          Quantities are summed across every location, because a reorder point
-          is a per-product level — an empty van is not a reason to reorder when
-          the store is full.
-          {alerts && alerts.withoutReorderPoint > 0 && (
-            <>
-              {' '}
-              {alerts.withoutReorderPoint} product
-              {alerts.withoutReorderPoint === 1 ? ' has' : 's have'} no level
-              set, so the middle list is not the whole picture.
-            </>
-          )}
+          Running low means the stock will not last {alerts?.lowStockDays ?? 7}{' '}
+          days at the rate it sold over the last 30 days — or since it first
+          came in, if that is more recent. Change the number of days in{' '}
+          <Link to="/settings" className="underline">
+            Settings
+          </Link>
+          . Stock and sales are added up across every location: an empty van is
+          not a reason to reorder when the store is full.
           {alerts && alerts.negative.length > 0 && (
             <>
               {' '}
@@ -455,6 +444,56 @@ export function StockReportPage() {
         />
       </section>
     </Page>
+  );
+}
+
+/**
+ * Why a row needs attention, said the way a shop would (2026-10-09): how long
+ * it lasts and how fast it sells, or the level somebody set. Counts, not
+ * money, so working out "a day" here is the screen's to do.
+ */
+function LowReason({ row }: { row: StockAlertRow }) {
+  const selling =
+    row.soldInWindow === 0 ? null : row.soldInWindow >= row.windowDays ? (
+      <>
+        sells{' '}
+        <Count
+          quantity={Math.round(row.soldInWindow / row.windowDays)}
+          units={row.units}
+        />{' '}
+        a day
+      </>
+    ) : (
+      <>
+        sold <Count quantity={row.soldInWindow} units={row.units} /> in{' '}
+        {row.windowDays} days
+      </>
+    );
+
+  if (row.reason === 'running_out') {
+    return (
+      <span className="text-sm">
+        <span className="block font-medium text-amber-700">
+          {row.daysLeft === 0
+            ? 'Lasts less than a day'
+            : `Lasts about ${row.daysLeft} day${row.daysLeft === 1 ? '' : 's'}`}
+        </span>
+        <span className="block text-xs text-slate-500">{selling}</span>
+      </span>
+    );
+  }
+  if (row.reason === 'below_level' && row.reorderPoint !== null) {
+    return (
+      <span className="text-sm text-slate-700">
+        At or below your level of{' '}
+        <Count quantity={row.reorderPoint} units={row.units} />
+      </span>
+    );
+  }
+  return selling ? (
+    <span className="text-xs text-slate-500">{selling}</span>
+  ) : (
+    <span className="text-slate-300">—</span>
   );
 }
 

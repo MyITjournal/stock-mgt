@@ -78,6 +78,14 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
     data.businessType,
   );
   const [chargesVat, setChargesVat] = useState(data.chargesVat);
+  // The typed string, so the box never rewrites what is being typed.
+  const [lowStockDays, setLowStockDays] = useState(String(data.lowStockDays));
+  const warnDays = Number(lowStockDays);
+  const warnDaysValid =
+    lowStockDays !== '' &&
+    Number.isInteger(warnDays) &&
+    warnDays >= 1 &&
+    warnDays <= 90;
   const [currency, setCurrency] = useState(data.currency);
   const [timezone, setTimezone] = useState(data.timezone);
   // The shop's own zone stays on the list even when it is not a usual one.
@@ -103,6 +111,7 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
         logoUrl: form.logoUrl.trim(),
         businessType,
         chargesVat,
+        ...(warnDaysValid && { lowStockDays: warnDays }),
         // Only while the server would accept them; once locked they are not
         // sent at all, so saving the letterhead can never trip the 409.
         ...(!data.currencyLocked && {
@@ -276,6 +285,40 @@ function BusinessForm({ organization }: { organization: OrganizationView }) {
               : 'Sales record no VAT, the invoice shows no VAT line, and reports count the whole price as yours.'}{' '}
             Changing this affects sales from now on — sales already made keep
             what they recorded.
+          </p>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 bg-white p-4">
+          <Field
+            label="Warn me when stock won’t last"
+            htmlFor="org-low-days"
+            hint="Days, at the rate each item has been selling. 1 to 90."
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                id="org-low-days"
+                inputMode="numeric"
+                value={lowStockDays}
+                onChange={(event) => {
+                  setLowStockDays(event.target.value.replace(/[^d]/g, ''));
+                  setSaved(false);
+                }}
+                className="w-20"
+                disabled={!canEdit}
+              />
+              <span className="text-sm text-slate-700">days</span>
+            </div>
+          </Field>
+          {!warnDaysValid && (
+            <p className="mt-2 text-xs text-red-600">
+              Between 1 and 90 days. This one is not saved until it is.
+            </p>
+          )}
+          <p className="mt-2 text-xs text-slate-500">
+            An item is <em>running low</em> once what is on hand will not last
+            this long at the rate it sold over the last 30 days. Set it to about
+            how long a delivery takes to arrive. It shows on Home and in Reports
+            → Stock.
           </p>
         </section>
 

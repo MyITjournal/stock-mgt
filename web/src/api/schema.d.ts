@@ -6733,6 +6733,11 @@ export interface components {
             /** @description Negative once the date has passed. */
             daysToExpiry: number | null;
         };
+        /**
+         * @description Why it is on the low list: it will not last the shop’s `lowStockDays` at the rate it sells, or it is at or below a reorder level somebody set. Null off that list.
+         * @enum {string}
+         */
+        LowStockReason: "running_out" | "below_level";
         StockAlertRow: {
             /** Format: uuid */
             id: string;
@@ -6744,6 +6749,14 @@ export interface components {
             variant: components["schemas"]["ReportOptionRef"] | null;
             /** @description Summed across every location. */
             quantity: number;
+            /** @description Base units sold, less returns, over `windowDays` — the last 30, or since its first stock arrived if later. 0 when none sold. */
+            soldInWindow: number;
+            /** @description The local days `soldInWindow` covers. */
+            windowDays: number;
+            /** @description Whole days the stock on hand lasts at that rate. Null when nothing sold, or nothing is on hand. */
+            daysLeft: number | null;
+            /** @description Why it is on the low list: it will not last the shop’s `lowStockDays` at the rate it sells, or it is at or below a reorder level somebody set. Null off that list. */
+            reason: components["schemas"]["LowStockReason"] | null;
             /** @description The units of this product, smallest first, so its quantity can be said as "14 carton, 5 piece". */
             units: components["schemas"]["CountUnitView"][];
         };
@@ -7081,8 +7094,13 @@ export interface components {
             lowStock: components["schemas"]["StockAlertRow"][];
             /** @description Stock that went out before it was entered as received. A forced movement leaves this trail. */
             negative: components["schemas"]["StockAlertRow"][];
-            /** @description How many products have no level set, so nobody mistakes the list for complete. Products, not options: the level is set once per product. */
+            /** @description How many products have no reorder level typed in. Since 2026-10-09 running low is worked out from sales, so this no longer means the low list is incomplete. Products, not options. */
             withoutReorderPoint: number;
+            /**
+             * @description The shop’s warning period the low list was measured against: stock that will not last this many days.
+             * @example 7
+             */
+            lowStockDays: number;
         };
         ProductReportView: {
             period: components["schemas"]["PeriodView"];
@@ -7492,6 +7510,11 @@ export interface components {
             businessType: components["schemas"]["BusinessType"];
             /** @description Whether new sales record VAT. Off, they record none, whatever rate the products carry. */
             chargesVat: boolean;
+            /**
+             * @description Running low: stock that will not last this many days at the rate it sells.
+             * @example 7
+             */
+            lowStockDays: number;
             address: string | null;
             phone: string | null;
             email: string | null;
@@ -7577,6 +7600,11 @@ export interface components {
             businessType?: components["schemas"]["BusinessType"];
             /** @description Whether this shop charges VAT. Off, every sale from now on records no VAT and the invoice prints no VAT line; sales already made keep the VAT they were recorded with. */
             chargesVat?: boolean;
+            /**
+             * @description A product is "running low" once its stock will not last this many days at the rate it has been selling.
+             * @example 7
+             */
+            lowStockDays?: number;
             /**
              * @description Only until the first price, sale, delivery, payment or expense is recorded; after that it is refused with a 409, because it would relabel every figure already entered.
              * @enum {string}

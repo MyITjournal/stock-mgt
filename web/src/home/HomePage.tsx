@@ -385,9 +385,11 @@ export function HomePage() {
             value={attention.outOfStockCount}
             tone={attention.outOfStockCount > 0 ? 'warn' : undefined}
           />
+          {/* Worked out from how fast each item sells (2026-10-09). */}
           <Stat
-            label="Low stock"
+            label="Running low"
             value={attention.lowStockCount}
+            note="Won’t last at the rate it sells"
             tone={attention.lowStockCount > 0 ? 'warn' : undefined}
           />
           <Stat

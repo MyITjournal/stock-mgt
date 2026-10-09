@@ -4,6 +4,7 @@ import {
   customPeriod,
   dayKey,
   eachDayKey,
+  localDaysThrough,
   monthKey,
   monthPeriod,
   resolvePeriod,
@@ -216,5 +217,33 @@ describe('monthPeriod and monthKey', () => {
     expect(september.from).toEqual(new Date('2026-08-31T23:00:00Z'));
     expect(september.to).toEqual(new Date('2026-09-30T23:00:00Z'));
     expect(monthKey(LAGOS, september.from)).toBe('2026-09');
+  });
+});
+
+describe('localDaysThrough', () => {
+  it('counts both ends: the 1st to the 12th is 12 days', () => {
+    expect(
+      localDaysThrough(
+        LAGOS,
+        new Date('2026-10-01T08:00:00Z'),
+        new Date('2026-10-12T15:00:00Z'),
+      ),
+    ).toBe(12);
+  });
+
+  it('counts in the shop’s days, not UTC’s', () => {
+    // 23:30 UTC on the 30th is already the 1st in Lagos.
+    expect(
+      localDaysThrough(
+        LAGOS,
+        new Date('2026-09-30T23:30:00Z'),
+        new Date('2026-10-01T10:00:00Z'),
+      ),
+    ).toBe(1);
+  });
+
+  it('is never less than one day', () => {
+    const now = new Date('2026-10-09T10:00:00Z');
+    expect(localDaysThrough(LAGOS, now, now)).toBe(1);
   });
 });

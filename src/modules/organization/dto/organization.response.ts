@@ -72,6 +72,13 @@ export class OrganizationView {
   })
   chargesVat!: boolean;
 
+  @ApiProperty({
+    example: 7,
+    description:
+      'Running low: stock that will not last this many days at the rate it sells.',
+  })
+  lowStockDays!: number;
+
   @ApiProperty({ type: String, nullable: true })
   address!: string | null;
 

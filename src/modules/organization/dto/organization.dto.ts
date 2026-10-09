@@ -157,6 +157,19 @@ export class UpdateOrganizationDto {
   chargesVat?: boolean;
 
   @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 90,
+    example: 7,
+    description:
+      'A product is "running low" once its stock will not last this many days at the rate it has been selling.',
+  })
+  @IsOptional()
+  @IsInt({ message: 'Say how many whole days.' })
+  @Min(1, { message: 'At least one day.' })
+  @Max(90, { message: 'At most 90 days.' })
+  lowStockDays?: number;
+
+  @ApiPropertyOptional({
     enum: SUPPORTED_CURRENCIES,
     description:
       'Only until the first price, sale, delivery, payment or expense is recorded; after that it is refused with a 409, because it would relabel every figure already entered.',

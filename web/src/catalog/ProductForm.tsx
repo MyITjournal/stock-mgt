@@ -752,28 +752,35 @@ export function ProductForm({
             </Field>
           )}
 
-          <Field
-            label="Reorder point"
-            htmlFor="p-reorder"
-            hint="In base units. Blank for none."
-          >
-            {/*
-              Digits filtered rather than `type="number"`, for the two reasons
-              that field is a trap on a form: a scroll wheel over a focused
-              number input silently changes it, and it happily accepts `2.5`
-              against a column the server requires to be a whole number of base
-              units. Blank stays possible — that is "no reorder point" — which
-              is why this holds the typed string rather than a number.
-            */}
-            <Input
-              id="p-reorder"
-              inputMode="numeric"
-              value={reorderPoint}
-              onChange={(event) =>
-                setReorderPoint(event.target.value.replace(/[^\d]/g, ''))
-              }
-            />
-          </Field>
+          {/*
+            Running low is worked out from what sells (2026-10-09), so a new
+            product asks for no level. One that already has a level keeps the
+            box, so it can still be changed — it is honoured as a floor.
+          */}
+          {product?.reorderPoint !== null &&
+            product?.reorderPoint !== undefined && (
+              <Field
+                label="Reorder point"
+                htmlFor="p-reorder"
+                hint="In base units. Running low is worked out from sales; this is an extra floor."
+              >
+                {/*
+                  Digits filtered rather than `type="number"`, for the two
+                  reasons that field is a trap on a form: a scroll wheel over a
+                  focused number input silently changes it, and it happily
+                  accepts `2.5` against a column the server requires to be a
+                  whole number of base units.
+                */}
+                <Input
+                  id="p-reorder"
+                  inputMode="numeric"
+                  value={reorderPoint}
+                  onChange={(event) =>
+                    setReorderPoint(event.target.value.replace(/[^\d]/g, ''))
+                  }
+                />
+              </Field>
+            )}
         </div>
 
         <label className="mt-4 flex items-center gap-2 text-sm">
