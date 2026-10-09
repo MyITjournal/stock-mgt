@@ -113,7 +113,7 @@ export class CreateSaleDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
-      'Omit for a walk-in paying cash. Their tier decides the prices; without one, the default tier applies.',
+      'Omit for a walk-in, who pays in full: anything less is refused with a 400. Their tier decides the prices; without one, the default tier applies.',
   })
   @IsOptional()
   @IsUUID()
@@ -131,7 +131,7 @@ export class CreateSaleDto {
   @ApiPropertyOptional({
     type: () => SalePaymentDto,
     description:
-      'What the customer handed over, recorded as a payment against this sale. Omitted, the sale is paid in full in cash — the counter sale. Pass `{ "amount": 0 }` for a sale on credit.',
+      'What the customer handed over, recorded as a payment against this sale. Omitted, the sale is paid in full in cash — the counter sale. Pass `{ "amount": 0 }` for a sale on credit — named customers only; a walk-in pays in full.',
   })
   @IsOptional()
   @ValidateNested()

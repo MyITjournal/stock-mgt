@@ -20,10 +20,20 @@
  *   so their cash in hand and Money in say what really came in.
  * - **Refused once goods have come back on the sale**: the refund was worked
  *   out from the old price, and the two would no longer agree.
+ * - **A sale paid in full stays paid in full** (2026-10-09): a price can be
+ *   raised as well as discounted, and a customer who paid at the till paid
+ *   what they were charged. The payment goes up with the total, the same way
+ *   it comes down. A sale that went out on credit, or part-paid, simply owes
+ *   the difference — raising its payment would record money nobody took.
  *
  * What follows from the customer: payments that settled only this sale move
  * with it. One that also settled other invoices belongs to the old customer's
  * account as a whole, so moving the sale is refused until it is voided.
+ *
+ * **No correction leaves a walk-in sale owing**: there is nobody to collect it
+ * from. Making a sale that still owes a walk-in's is refused; so is correcting
+ * the prices of a walk-in sale that was never paid in full, unless the same
+ * correction names who owes it.
  *
  * Stock and cost never move: the same goods went out.
  */
@@ -57,6 +67,8 @@ export interface RecordedSale {
   taxTotal: number;
   lines: readonly RecordedLine[];
   hasReturns: boolean;
+  /** The credit raised by returns, as `saleBalance` counts it. */
+  refunded: number;
   payments: readonly PaymentOnSale[];
 }
 
@@ -73,7 +85,7 @@ export interface LinePriceChange {
   taxAmount: number;
 }
 
-/** Payment brought down to the new total: void this one, record `amount`. */
+/** A payment brought to the new total, down or up: void this one, record `amount`. */
 export interface PaymentFollows {
   paymentId: string;
   /** What the replacement records; zero means none is recorded. */
@@ -161,6 +173,14 @@ export function planSaleCorrection(
 
   const live = sale.payments.filter((payment) => !payment.voided);
   const paidBefore = live.reduce((sum, row) => sum + row.allocatedHere, 0);
+  // The most recent payment that went wholly to this sale and was money in.
+  const latestOwn = (enough: (payment: PaymentOnSale) => boolean) =>
+    live
+      .filter(
+        (payment) =>
+          !payment.allocatedElsewhere && payment.amount > 0 && enough(payment),
+      )
+      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())[0];
 
   // ── The payment follows a lower total ────────────────────────────────────
   let follows: PaymentFollows | null = null;
@@ -168,14 +188,7 @@ export function planSaleCorrection(
   if (excess > 0) {
     // Only a payment that went wholly to this sale, and is big enough to take
     // the whole excess; the most recent, when there are several.
-    const candidate = live
-      .filter(
-        (payment) =>
-          !payment.allocatedElsewhere &&
-          payment.amount > 0 &&
-          payment.allocatedHere >= excess,
-      )
-      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())[0];
+    const candidate = latestOwn((payment) => payment.allocatedHere >= excess);
     if (!candidate) {
       return refuse(
         409,
@@ -184,7 +197,33 @@ export function planSaleCorrection(
     }
     follows = { paymentId: candidate.id, amount: candidate.amount - excess };
   }
-  const paidAfter = paidBefore - Math.max(excess, 0);
+  let paidAfter = paidBefore - Math.max(excess, 0);
+
+  // ── The payment follows a higher total, on a sale paid in full ───────────
+  // Raised by the difference, so it still tallies. With no payment of its own
+  // to raise (one that also paid other invoices), the difference is owed.
+  const owedBefore = sale.total - paidBefore - sale.refunded;
+  const shortfall = totalAfter - paidAfter - sale.refunded;
+  const raised =
+    owedBefore <= 0 && paidBefore > 0 && shortfall > 0
+      ? latestOwn(() => true)
+      : undefined;
+  if (raised) {
+    follows = { paymentId: raised.id, amount: raised.amount + shortfall };
+    paidAfter += shortfall;
+  }
+
+  // ── A walk-in cannot owe ─────────────────────────────────────────────────
+  // Nobody to collect it from (owner, 2026-10-09).
+  const owedAfter = totalAfter - paidAfter - sale.refunded;
+  if (customerIdAfter === null && owedAfter > 0) {
+    return refuse(
+      409,
+      customerChanged
+        ? `${money(owedAfter)} is still owed on this sale, and a walk-in cannot buy on credit. Take the payment first, or keep the sale on a named customer.`
+        : `A walk-in cannot buy on credit, and this sale would still owe ${money(owedAfter)}. Name the customer who owes it in the same correction.`,
+    );
+  }
 
   // ── The customer ─────────────────────────────────────────────────────────
   const movePaymentIds: string[] = [];

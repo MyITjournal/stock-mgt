@@ -34,7 +34,7 @@ describe('SaleService', () => {
     saleLine: { createMany: jest.Mock };
     payment: { create: jest.Mock };
     paymentAllocation: { create: jest.Mock };
-    organization: { update: jest.Mock };
+    organization: { update: jest.Mock; findFirst: jest.Mock };
   };
   let prisma: {
     product: { findFirst: jest.Mock };
@@ -57,6 +57,8 @@ describe('SaleService', () => {
       organization: {
         // The counter names the *next* number, so a first sale sees 2 here.
         update: jest.fn().mockResolvedValue({ nextSaleNumber: 2 }),
+        // The shop's currency, for a message naming an amount.
+        findFirst: jest.fn().mockResolvedValue({ currency: 'NGN' }),
       },
     };
 
@@ -550,8 +552,9 @@ describe('SaleService', () => {
     expect(writtenAllocation()).toMatchObject({ amount: 10_800_000 });
   });
 
+  // Credit is for a named customer: a walk-in pays in full.
   it('records a credit sale with no payment at all', async () => {
-    await sell({ payment: { amount: 0 } });
+    await sell({ customerId: 'customer-1', payment: { amount: 0 } });
 
     expect(writtenSale()).toMatchObject({ total: 10_800_000 });
     expect(tx.payment.create).not.toHaveBeenCalled();
@@ -560,6 +563,7 @@ describe('SaleService', () => {
 
   it('records a part payment, leaving the rest owed', async () => {
     await sell({
+      customerId: 'customer-1',
       payment: { amount: 5_000_000, method: PaymentMethod.transfer },
     });
 
@@ -729,20 +733,39 @@ describe('SaleService', () => {
       expect(tx.sale.create).toHaveBeenCalled();
     });
 
-    it('does not ask about credit for a walk-in with no account', async () => {
-      owes();
+    describe('a walk-in pays in full (2026-10-09)', () => {
+      const walkIn = (amount: number, role: OrgRole = OrgRole.sales_rep) =>
+        TenantContext.run(
+          { organizationId: ORG, orgRole: role, userId: 'user-1' },
+          () =>
+            service.create({
+              payment: { amount },
+              lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 2 }],
+              // Even a reason does not open credit without a customer.
+              creditOverrideReason: 'Owner said so',
+            } as CreateSaleDto),
+        );
 
-      await TenantContext.run(
-        { organizationId: ORG, orgRole: OrgRole.sales_rep, userId: 'user-1' },
-        () =>
-          service.create({
-            payment: { amount: 0 },
-            lines: [{ productId: PRODUCT, unitId: CARTON, quantity: 2 }],
-          } as CreateSaleDto),
-      );
+      it('refuses one on credit, naming what it comes to, and writes nothing', async () => {
+        const refused = walkIn(0, OrgRole.owner);
+        await expect(refused).rejects.toBeInstanceOf(BadRequestException);
+        await expect(refused).rejects.toThrow('A walk-in pays in full');
+        expect(tx.sale.create).not.toHaveBeenCalled();
+        expect(tx.payment.create).not.toHaveBeenCalled();
+      });
 
-      expect(tx.sale.findMany).not.toHaveBeenCalled();
-      expect(tx.sale.create).toHaveBeenCalled();
+      it('refuses one part-paid', async () => {
+        const refused = walkIn(5_000_000);
+        await expect(refused).rejects.toBeInstanceOf(BadRequestException);
+        await expect(refused).rejects.toThrow('take the whole ₦108,000.00');
+      });
+
+      it('records one paid in full, without asking about credit', async () => {
+        owes();
+        await walkIn(10_800_000);
+        expect(tx.sale.findMany).not.toHaveBeenCalled();
+        expect(tx.sale.create).toHaveBeenCalled();
+      });
     });
   });
 
