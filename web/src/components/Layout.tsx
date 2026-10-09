@@ -5,7 +5,7 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
-import { useAuth, useLandingPath, useSeesCost } from '../auth/useAuth';
+import { useAuth, useSeesCost } from '../auth/useAuth';
 import { Button } from './Button';
 
 interface NavItem {
@@ -41,7 +41,6 @@ export function Layout() {
   const { user, signOut } = useAuth();
   const { pathname } = useLocation();
   const seesCost = useSeesCost();
-  const landing = useLandingPath();
 
   const items = NAV.filter((item) => !item.costOnly || seesCost);
 
@@ -50,14 +49,13 @@ export function Layout() {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
           {/*
-            The wordmark goes to the person's own start screen — the dashboard
-            for an owner, the till for a cashier — never to a fixed route. It
-            asks `landingPath`, the one place that decides where somebody
-            lands (§19): a hard-coded "/home" would send a cashier to a screen
-            they are not allowed to see.
+            The wordmark opens the landing page (owner, 2026-10-09) — at
+            `/about`, because `/` sends a signed-in person straight back here.
+            Its **Open my shop** returns them to their own start screen through
+            `landingPath` (§19), never a hard-coded "/home".
           */}
           <Link
-            to={landing}
+            to="/about"
             className="text-sm font-semibold tracking-tight text-brand-700 hover:text-brand-800"
           >
             Reho

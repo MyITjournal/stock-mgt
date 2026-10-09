@@ -27,6 +27,22 @@ export function Home() {
 }
 
 /**
+ * The landing page at `/about`, for everybody (2026-10-09).
+ *
+ * `/` steps aside for a signed-in person, so the dashboard's wordmark could
+ * not show them the page there. Here it stays, with their own start screen
+ * behind **Open my shop** instead of the sign-in and sign-up buttons.
+ */
+export function About() {
+  const { user, loading } = useAuth();
+  const landing = useLandingPath();
+
+  // Same wait as `Home`: the buttons depend on whether they are signed in.
+  if (loading) return null;
+  return <LandingPage startPath={user ? landing : undefined} />;
+}
+
+/**
  * Anything that does not know where to send somebody, sending them somewhere
  * they can work.
  *

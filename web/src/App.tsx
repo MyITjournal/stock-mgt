@@ -7,7 +7,7 @@ import { SignInPage } from './auth/SignInPage';
 import { SignUpPage } from './auth/SignUpPage';
 import { Layout } from './components/Layout';
 import { ApiError } from './api/client';
-import { Home, LandingRedirect } from './auth/Landing';
+import { About, Home, LandingRedirect } from './auth/Landing';
 import { HomePage } from './home/HomePage';
 import { TillPage } from './till/TillPage';
 import { SalesPage } from './sales/SalesPage';
@@ -91,6 +91,8 @@ export default function App() {
               when `/` stopped being the app.
             */}
               <Route path="/" element={<Home />} />
+              {/* The same page, for the signed-in too — the wordmark's target. */}
+              <Route path="/about" element={<About />} />
               <Route path="/sign-in" element={<SignInPage />} />
               <Route path="/sign-up" element={<SignUpPage />} />
 

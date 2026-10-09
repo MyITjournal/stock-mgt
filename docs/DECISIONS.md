@@ -6194,3 +6194,15 @@ inclusive of the last. ⚠ **Trap left in place**: the controller parses them wi
 which is UTC midnight. East of UTC (Lagos) that falls on the same local day, so it is right; a shop
 in a zone **west** of UTC would get every custom range a day early. Fix in the controller when the
 first such shop signs up.
+
+## 28. The wordmark opens the landing page (2026-10-09)
+
+Owner: "let Reho point to the landing page and not to Home." The dashboard's wordmark had gone to
+the person's start screen (`landingPath`). It could not simply point at `/`: that is the landing
+page only for a stranger, and steps aside for anyone signed in (`auth/Landing.tsx`) — the link would
+have looked dead. So the page also lives at **`/about`** (`About`), shown to everybody, and the
+wordmark goes there. `/` is unchanged, so opening the site still takes staff straight to work.
+
+Signed in, the page gets `startPath` and every *Sign in* / *Create your shop* button becomes **Open
+my shop**, to their own start screen — those pages would only have bounced them back. The page
+itself still reads no session; `About` does, and passes the path in.
