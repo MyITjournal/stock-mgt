@@ -385,7 +385,7 @@ export class SaleCorrectionPreviewView {
 
   @ApiProperty({
     description:
-      'True when a payment is brought down to the new total: voided, and one for the true amount recorded in its place.',
+      'True when a payment is brought to the new total — down, or up on a sale that was paid in full: voided, and one for the true amount recorded in its place.',
   })
   paymentFollows!: boolean;
 

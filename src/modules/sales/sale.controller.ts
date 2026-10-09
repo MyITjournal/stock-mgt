@@ -215,7 +215,7 @@ export class SaleController {
   @ApiOperation({
     summary: 'Correct a sale',
     description:
-      'The prices really charged (per line, tax-inclusive, as the till takes them), the customer it really was, or both, and why. The sale and its lines take the true figures, so every report reads them. A payment that would be more than the new total is voided and one for the true amount recorded in its place, by the same person on the same day. Payments that settled only this sale move with it to the right customer. Stock and cost do not move. A 409 when goods have come back on the sale (prices only), when no single payment can be brought down to the new total, or when a payment on it also paid other invoices (customer only).',
+      'The prices really charged (per line, tax-inclusive, as the till takes them), the customer it really was, or both, and why. The sale and its lines take the true figures, so every report reads them. A payment that would be more than the new total is voided and one for the true amount recorded in its place, by the same person on the same day; on a sale that was paid in full, a higher total raises the payment the same way, so it stays paid in full. One on credit or part-paid owes the difference instead. Payments that settled only this sale move with it to the right customer. Stock and cost do not move. A 409 when goods have come back on the sale (prices only), when no single payment can be brought down to the new total, when a payment on it also paid other invoices (customer only), or when it would leave a walk-in sale owing — a walk-in cannot buy on credit.',
   })
   @ApiCreatedResponse({ type: SaleView })
   correct(

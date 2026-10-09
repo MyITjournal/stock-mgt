@@ -22,7 +22,7 @@ import { SaleService } from './sale.service';
  * `sale-correction.ts`; this is the writing.
  *
  * Everything moves in one transaction or nothing does: the lines, the sale,
- * the payment brought down with a lower total, the payments that move to the
+ * the payment brought to the new total, the payments that move to the
  * right customer, and the correction record keeping what it all said before.
  */
 @Injectable()
@@ -143,6 +143,10 @@ export class SaleCorrectionService {
           });
         }
 
+        const refunded = sale.returns.reduce(
+          (sum, row) => sum + row.refundAmount,
+          0,
+        );
         const plan = planSaleCorrection(
           {
             customerId: sale.customerId,
@@ -150,6 +154,7 @@ export class SaleCorrectionService {
             taxTotal: sale.taxTotal,
             lines: sale.lines,
             hasReturns: sale.returns.length > 0,
+            refunded,
             payments: [...payments.values()],
           },
           { customerId: input.customerId, lines: input.lines },
@@ -173,10 +178,6 @@ export class SaleCorrectionService {
           });
         }
 
-        const refunded = sale.returns.reduce(
-          (sum, row) => sum + row.refundAmount,
-          0,
-        );
         const balanceAfter = plan.totalAfter - plan.paidAfter - refunded;
 
         // A sale that now owes and never had a due day gets the one it would
@@ -200,9 +201,9 @@ export class SaleCorrectionService {
           },
         });
 
-        // The payment that claimed more than was taken: voided, and the true
-        // amount recorded in its place by the same person, the same way, on
-        // the same day — so their cash in hand says what really came in.
+        // The payment that no longer tallies with the total: voided, and the
+        // true amount recorded in its place by the same person, the same way,
+        // on the same day — so their cash in hand says what really came in.
         if (plan.follows) {
           const original = await tx.payment.findFirstOrThrow({
             where: { id: plan.follows.paymentId },

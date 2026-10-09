@@ -37,6 +37,7 @@ import {
 } from '../payments/balance';
 import type { SaleBalanceInput } from '../payments/balance';
 import { redactCost } from '../../common/authz/cost-visibility';
+import { shopMoney } from '../../common/money/shop-money';
 import { PRINT_COUNT, PRINT_HISTORY, withPrints } from './prints';
 
 /**
@@ -238,6 +239,16 @@ export class SaleService {
       if (paid < 0) {
         throw new BadRequestException(
           'A sale cannot be recorded with a negative payment. Take goods back through a return instead.',
+        );
+      }
+
+      // A walk-in pays in full (owner, 2026-10-09): there is no account to
+      // collect the rest from. The till already says so; this is for every
+      // other client. No override — credit needs a customer.
+      if (paid < total && !input.customerId) {
+        const money = await shopMoney(tx);
+        throw new BadRequestException(
+          `A walk-in pays in full: take the whole ${money(total)}, or choose the customer to sell on credit.`,
         );
       }
 

@@ -1497,8 +1497,10 @@ with *Price corrected on INV-…*, and one for the true amount stands, recorded 
 the payment moves with it. Save: the sale is on that customer's page, and so is its payment. Back to
 *Walk-in* works too.
 
-**381. A higher price.** Raise a price: *Still owed* is the difference, and the sale shows it as
-owing, with a due day five days after the sale.
+**381. A higher price.** On a sale paid in full, raise a price: *Paid … → …* rises with the total and
+*Still owed* is ₦0.00 (the rep's *Still holding* goes up by the difference). On a sale to a customer
+on credit, raise a price: *Still owed* is the difference, and the sale shows it as owing, with a due
+day five days after the sale.
 
 **382. [gate] What is closed.** Take one item back, then open **Correct sale**: the prices cannot be
 typed in and a note says why; the customer can still be changed. Signed in as a sales rep or
@@ -1594,3 +1596,17 @@ filled in. Pay it: the button disappears.
 
 **399. Who and which sales.** A fully paid sale, and a walk-in sale, have no *Take payment*. Signed
 in as a storekeeper, neither does an owing one; as a sales rep, it does.
+
+## BQ. A walk-in pays in full
+
+**400. [gate] Sold above the list price.** As a rep, sell a walk-in one item at the list price, paid
+in cash. As the owner, **Correct sale** and raise the price (₦1,200 → ₦1,250): Check shows *Paid*
+rising to the new total and *Still owed ₦0.00*. Save: Money in has the old payment struck through
+and one for the new total; the rep's *Still holding* is ₦50 higher.
+
+**401. Not on credit.** Sell a named customer on credit, then **Correct sale** and pick *Walk-in*:
+Check refuses — the amount is still owed and a walk-in cannot buy on credit. *Take payment* for the
+whole balance, then the same correction goes through.
+
+**402. Another client.** (Swagger, `POST /sales` with no `customerId` and `payment: { amount: 0 }`.)
+A 400: "A walk-in pays in full…", and no stock leaves.

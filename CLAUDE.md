@@ -42,8 +42,11 @@ One line each; the reasoning is in DECISIONS.md.
   profit. Still holding = received − paid out − banked − waiting (`cash.ts`); nobody confirms
   their own.
 - A sale's **prices or customer are corrected** (`sale-correction.ts`, owner/manager), never edited
-  elsewhere: the sale takes the true figures, a history row keeps the old, and a payment above the
-  new total is voided and re-recorded as its true amount — never a refund. Stock never moves.
+  elsewhere: the sale takes the true figures, a history row keeps the old, and on a sale paid in
+  full the payment is voided and re-recorded at the new total, up or down — never a refund. Stock
+  never moves.
+- **A walk-in pays in full** — `POST /sales` refuses less, and no correction may leave a walk-in
+  sale owing: there is nobody to collect it from.
 - Server messages naming an amount use `shopMoney`; the browser renders money through `<Money>`
   and computes none (the till's running total is the one exception).
 

@@ -1157,8 +1157,11 @@ required, `/preview` runs it and rolls back — the delivery-correction shape) t
   otherwise a 409 says to void the extra first. **The trap**: if the customer really paid the full
   price and was handed money back later, that is a refund, not this — the correction would erase
   cash that was taken.
-- **A higher price leaves the difference owed**, and a sale that had no due day gets the one it
-  would have had — five days after the *sale*.
+- **A higher price** (superseded 2026-10-09, §26): on a sale **paid in full** the payment goes up
+  with it, the same void-and-re-record as a lower one — owner: "payment should tally with the total
+  … one could sell a 1,200 item at 1,250", for any customer. On credit or part-paid, the difference
+  is owed, and a sale that had no due day gets the one it would have had — five days after the
+  *sale*.
 - **Prices are closed once goods have come back** (409): the refund was worked out from the old
   price. The customer can still be changed.
 - **The customer**: the tier is not re-applied — prices are what was charged. The owes-already gate
@@ -6160,8 +6163,18 @@ payment, more stays as the customer's credit. Shown to `TAKES_PAYMENTS` (`useAut
 mirrors the server's `MONEY_HANDLERS` (everyone but the storekeeper). No server change.
 
 **Named customers only.** Owner: "Only named customers can have reasons not to pay immediately.
-Walk-in customers cannot buy on credit." The till already refuses to finish a walk-in sale that is
-not paid in full. ⚠ **The server does not**: `POST /sales` from another client can record a part-paid
-walk-in sale, and a price correction that raises a walk-in sale's total leaves the difference owed.
-Neither can be collected from a screen. Enforcing the rule on the server is a separate change, not
-made here.
+Walk-in customers cannot buy on credit." The till already refused to finish a walk-in sale that is
+not paid in full; the server now refuses it too (`fix/walk-in-pays-in-full`), since a walk-in sale
+that owes cannot be collected from any screen:
+
+- **`POST /sales`** with no customer and less than the total paid is a **400** naming the total. No
+  override — `creditOverrideReason` does not open it; credit needs a customer.
+- **A sale paid in full stays paid in full** when its prices are corrected, up as well as down, for
+  any customer (`sale-correction.ts`): the latest payment that went wholly to the sale is voided and
+  re-recorded at the new total. On credit or part-paid, a named customer owes the difference.
+- **No correction leaves a walk-in sale owing** (409): making an owing sale a walk-in's ("take the
+  payment first"), or re-pricing an old part-paid walk-in sale without naming who owes it in the same
+  correction. The planner now takes `refunded`, so goods that came back count toward what is owed.
+- **Not closed**: voiding the payment on a walk-in sale still leaves it owing — a void records that
+  the money never came in, and refusing it would force a false record. The way out is the one for
+  any old walk-in sale that owes: **Correct sale** to name the customer, then *Take payment*.

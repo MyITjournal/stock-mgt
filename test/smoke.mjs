@@ -765,6 +765,26 @@ async function main() {
   eq('cost comes from LOT-A alone', cash.costTotal, 48 * 37_500);
   eq('168 left at Main Store', (await onHand(t, product.id, main.id)).quantity, 168);
 
+  // A walk-in pays in full (2026-10-09): there is nobody to collect the rest
+  // from. The till never sends this; another client could.
+  const walkInCredit = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      expect: 400,
+      body: {
+        locationId: main.id,
+        payment: { amount: 0 },
+        lines: [{ productId: product.id, unitId: carton.id, quantity: 1 }],
+      },
+    })
+  ).data;
+  check(
+    'a walk-in on credit is refused (400), naming the rule',
+    /walk-in pays in full/.test(walkInCredit.message),
+  );
+  eq('and no stock left for it', (await onHand(t, product.id, main.id)).quantity, 168);
+
   step(15, 'A negotiated price, and something that is not stocked');
   const service = (
     await api('POST', '/products', {
@@ -4701,8 +4721,16 @@ async function main() {
       body: { reason: 'Undercharged one trip', lines: [{ lineId: tripLine, unitPrice: 450_000 }] },
     })
   ).data;
-  eq('raising a price leaves the difference owed', raised.balance, 100_000);
-  check('and gives it the due day it would have had', raised.dueDate !== null);
+  // Paid in full, so the customer paid the higher price too (2026-10-09): the
+  // payment rises with the total rather than leaving the difference owed.
+  eq('raising a price on a paid sale raises its payment', raised.allocated, 900_000);
+  eq('so nothing is owed', raised.balance, 0);
+  eq(
+    'and Bola holds the extra she took',
+    (await api('GET', '/cash', { token: cashierNow })).data.people[0].stillHolding -
+      heldBefore.stillHolding,
+    900_000,
+  );
   eq('three corrections, oldest first', raised.corrections.map((c) => c.totalAfter).join(), '800000,800000,900000');
 
   const unchanged = (

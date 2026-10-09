@@ -44,6 +44,7 @@ function sale(overrides: Partial<RecordedSale> = {}): RecordedSale {
     taxTotal: CARTONS.taxAmount,
     lines: [CARTONS, PACK],
     hasReturns: false,
+    refunded: 0,
     payments: [AT_THE_TILL],
     ...overrides,
   };
@@ -127,7 +128,8 @@ describe('planSaleCorrection — prices', () => {
     expect(plan.paidAfter).toBe(1_000_000);
   });
 
-  it('raises a price without touching the payment, so the difference is owed', () => {
+  it('raises the till payment with a higher price, so a sale paid in full stays paid in full', () => {
+    // Sold for more than the list price, and the customer paid it.
     const plan = planned(
       planSaleCorrection(
         sale(),
@@ -136,8 +138,73 @@ describe('planSaleCorrection — prices', () => {
       ),
     );
     expect(plan.totalAfter).toBe(2_600_000);
-    expect(plan.paidAfter).toBe(2_500_000);
+    expect(plan.paidBefore).toBe(2_500_000);
+    expect(plan.paidAfter).toBe(2_600_000);
+    expect(plan.follows).toEqual({ paymentId: 'pay-till', amount: 2_600_000 });
+  });
+
+  it('raises a price on a sale that went out on credit without touching any payment', () => {
+    const plan = planned(
+      planSaleCorrection(
+        sale({ payments: [] }),
+        { lines: [{ lineId: PACK.id, unitPrice: 600_000 }] },
+        money,
+      ),
+    );
+    expect(plan.totalAfter).toBe(2_600_000);
+    expect(plan.paidAfter).toBe(0);
     expect(plan.follows).toBeNull();
+  });
+
+  it('leaves a part payment alone when the price goes up — the difference is owed', () => {
+    const part = {
+      ...AT_THE_TILL,
+      amount: 1_000_000,
+      allocatedHere: 1_000_000,
+    };
+    const plan = planned(
+      planSaleCorrection(
+        sale({ payments: [part] }),
+        { lines: [{ lineId: PACK.id, unitPrice: 600_000 }] },
+        money,
+      ),
+    );
+    expect(plan.follows).toBeNull();
+    expect(plan.paidAfter).toBe(1_000_000);
+  });
+
+  it('raises only what is still short when the customer had paid a little over', () => {
+    const over = {
+      ...AT_THE_TILL,
+      amount: 2_550_000,
+      allocatedHere: 2_550_000,
+    };
+    const plan = planned(
+      planSaleCorrection(
+        sale({ payments: [over] }),
+        { lines: [{ lineId: PACK.id, unitPrice: 600_000 }] },
+        money,
+      ),
+    );
+    expect(plan.follows).toEqual({ paymentId: 'pay-till', amount: 2_600_000 });
+    expect(plan.paidAfter).toBe(2_600_000);
+  });
+
+  it('leaves the difference owed when the only payment also paid other invoices', () => {
+    const shared = {
+      ...AT_THE_TILL,
+      amount: 4_000_000,
+      allocatedElsewhere: true,
+    };
+    const plan = planned(
+      planSaleCorrection(
+        sale({ payments: [shared] }),
+        { lines: [{ lineId: PACK.id, unitPrice: 600_000 }] },
+        money,
+      ),
+    );
+    expect(plan.follows).toBeNull();
+    expect(plan.paidAfter).toBe(2_500_000);
   });
 
   it('voids the till payment outright when the sale comes to nothing', () => {
@@ -253,6 +320,124 @@ describe('planSaleCorrection — prices', () => {
     );
     expect(plan.refused?.status).toBe(400);
     expect(plan.refused?.message).toContain('Nothing has changed');
+  });
+});
+
+describe('planSaleCorrection — a walk-in cannot owe', () => {
+  const walkIn = (overrides: Partial<RecordedSale> = {}) =>
+    sale({ customerId: null, ...overrides });
+
+  it('raises the payment with a higher price, as for anyone paid in full', () => {
+    const plan = planned(
+      planSaleCorrection(
+        walkIn(),
+        { lines: [{ lineId: PACK.id, unitPrice: 550_000 }] },
+        money,
+      ),
+    );
+    expect(plan.follows).toEqual({ paymentId: 'pay-till', amount: 2_550_000 });
+    expect(plan.paidAfter).toBe(plan.totalAfter);
+  });
+
+  it('brings the payment down with a lower price', () => {
+    const plan = planned(
+      planSaleCorrection(
+        walkIn(),
+        { lines: [{ lineId: PACK.id, unitPrice: 400_000 }] },
+        money,
+      ),
+    );
+    expect(plan.follows).toEqual({ paymentId: 'pay-till', amount: 2_400_000 });
+  });
+
+  it('refuses a higher price when no payment of its own can be raised', () => {
+    const shared = { ...AT_THE_TILL, allocatedElsewhere: true };
+    const plan = planSaleCorrection(
+      walkIn({ payments: [shared] }),
+      { lines: [{ lineId: PACK.id, unitPrice: 600_000 }] },
+      money,
+    );
+    expect(plan.refused?.status).toBe(409);
+    expect(plan.refused?.message).toContain('would still owe ₦1000.00');
+  });
+
+  it('refuses a price change that leaves an old part-paid walk-in sale owing', () => {
+    const part = {
+      ...AT_THE_TILL,
+      amount: 1_000_000,
+      allocatedHere: 1_000_000,
+    };
+    const plan = planSaleCorrection(
+      walkIn({ payments: [part] }),
+      { lines: [{ lineId: PACK.id, unitPrice: 400_000 }] },
+      money,
+    );
+    expect(plan.refused?.status).toBe(409);
+    expect(plan.refused?.message).toContain('Name the customer who owes it');
+  });
+
+  it('lets the same correction name the customer who owes it', () => {
+    const part = {
+      ...AT_THE_TILL,
+      amount: 1_000_000,
+      allocatedHere: 1_000_000,
+    };
+    const plan = planned(
+      planSaleCorrection(
+        walkIn({ payments: [part] }),
+        {
+          customerId: 'cust-ade',
+          lines: [{ lineId: PACK.id, unitPrice: 400_000 }],
+        },
+        money,
+      ),
+    );
+    expect(plan.customerIdAfter).toBe('cust-ade');
+    expect(plan.follows).toBeNull();
+  });
+
+  it('allows a lower price that clears what an old walk-in sale owed', () => {
+    const part = {
+      ...AT_THE_TILL,
+      amount: 2_000_000,
+      allocatedHere: 2_000_000,
+    };
+    const plan = planned(
+      planSaleCorrection(
+        walkIn({ payments: [part] }),
+        { lines: [{ lineId: PACK.id, unitPrice: 0 }] },
+        money,
+      ),
+    );
+    expect(plan.totalAfter).toBe(2_000_000);
+    expect(plan.follows).toBeNull();
+  });
+
+  it('refuses to make a sale that still owes a walk-in sale', () => {
+    const plan = planSaleCorrection(
+      sale({ payments: [] }),
+      { customerId: null },
+      money,
+    );
+    expect(plan.refused?.status).toBe(409);
+    expect(plan.refused?.message).toContain('₦25000.00 is still owed');
+  });
+
+  it('counts goods that came back: a sale they settled can become a walk-in', () => {
+    // ₦20,000 paid, ₦5,000 of goods back: nothing owed.
+    const part = {
+      ...AT_THE_TILL,
+      amount: 2_000_000,
+      allocatedHere: 2_000_000,
+    };
+    const plan = planned(
+      planSaleCorrection(
+        sale({ payments: [part], hasReturns: true, refunded: 500_000 }),
+        { customerId: null },
+        money,
+      ),
+    );
+    expect(plan.customerIdAfter).toBeNull();
   });
 });
 
