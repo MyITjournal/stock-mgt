@@ -274,12 +274,14 @@ export class DashboardService {
       },
 
       // 9. What stock did I handle this month? Opening + delivered, at cost —
-      // from the same ledger walk as Reports → Stock, so the two agree.
+      // from the same ledger walk as Reports → Stock, so the two agree. And
+      // what is left of it now (2026-10-09): the walk's closing figure.
       ...(monthStock.totalValue && {
         stock: {
           opening: monthStock.totalValue.opening,
           delivered: monthStock.totalValue.delivered,
           available: monthStock.availableValue!,
+          onHand: monthStock.totalValue.closing,
         },
       }),
     };

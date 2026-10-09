@@ -1605,6 +1605,15 @@ async function main() {
     'Main Store holds the rest',
     valuation.byLocation.find((l) => l.label === 'Main Store').units === 182,
   );
+  // Home's inventory valuation (2026-10-09) comes from the stock summary's ledger walk,
+  // not these balances. Same lots, same rate, each rounded once — they may sum
+  // in a different order, so a kobo apart at most.
+  const homeStock = (await api('GET', '/reports/dashboard', { token: t })).data.stock;
+  check(
+    'home’s inventory valuation agrees with Reports → Stock',
+    Math.abs(homeStock.onHand - valuation.total) <= 1,
+    `${homeStock.onHand} vs ${valuation.total}`,
+  );
 
   step(32, 'Alerts: out of stock, and running low from how fast it sells');
   // Running low is worked out from sales (2026-10-09), with no level typed in.

@@ -22,6 +22,9 @@ import { GrowthPanel } from './GrowthPanel';
  */
 type Dashboard = ApiResponse<'/api/v1/reports/dashboard'>;
 
+/** Every row of figures: two across on a tablet, three on a laptop, five wide. */
+const TILES = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5';
+
 export function HomePage() {
   const { data, isPending, error } = useQuery({
     queryKey: ['dashboard'],
@@ -92,11 +95,14 @@ export function HomePage() {
       </p>
 
       {/*
+        Five across (2026-10-09, owner: smaller tiles, room for more), in three
+        rows: money coming in, the month's profit, then stock and suppliers.
+
         Sales and collections sit next to each other on purpose. On a credit
         route they diverge constantly, and a business reading only the first
         can have a good month while running out of cash.
       */}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className={TILES}>
         <Stat
           label="Sold today"
           value={<Money value={sales.today} />}
@@ -108,28 +114,10 @@ export function HomePage() {
           note="Money actually received"
         />
         {/*
-          Tax-exclusive, as profit is, with what those goods cost beside it.
-          "Uncollected this month" sat here until 2026-10-07; the owner read it
-          as the same figure as Unpaid invoices below and it was removed.
+          What came in beside what is still owed (2026-10-07, owner: "add
+          total paid, not just the unpaid"): each pair is the server's two
+          figures, side by side, never one taken from the other.
         */}
-        <Stat
-          label="Revenue this month"
-          value={<Money value={sales.month} />}
-          note={<Change bps={sales.changeBps} />}
-        />
-        <Stat
-          label="Cost of goods sold"
-          value={<Money value={profit.cogs} />}
-          note={`${percent(profit.cogsShareBps)} of revenue`}
-        />
-      </section>
-
-      {/*
-        What came in and went out beside what is still owed (2026-10-07,
-        owner: "add total paid, not just the unpaid"): each pair is the
-        server's two figures, side by side, never one taken from the other.
-      */}
-      <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Paid this month"
           value={<Money value={collections.month} />}
@@ -153,27 +141,11 @@ export function HomePage() {
             receivables.invoices === 1 ? '' : 's'
           }, oldest ${receivables.oldestDays}d`}
         />
-        <Stat
-          label="Unpaid bills"
-          value={<Money value={purchasing.payables.total} />}
-          note={`${purchasing.payables.bills} bill${
-            purchasing.payables.bills === 1 ? '' : 's'
-          } across ${purchasing.payables.suppliers}`}
-          tone={purchasing.payables.overdue > 0 ? 'warn' : undefined}
-        />
-        <Stat
-          label="Bills paid this month"
-          value={<Money value={purchasing.payables.paidThisMonth} />}
-          note="Paid to vendors"
-        />
-      </section>
-
-      {/*
-        Cash taken and not yet banked (2026-10-08) — the Money → Cash total,
-        amber once some of it is more than a day old. What is waiting for the
-        owner or a manager to confirm is a line under it, not hidden in it.
-      */}
-      <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {/*
+          Cash taken and not yet banked (2026-10-08) — the Money → Cash total,
+          amber once some of it is more than a day old. What is waiting for the
+          owner or a manager to confirm is a line under it, not hidden in it.
+        */}
         <Link to="/money/cash" className="block">
           <Stat
             label="Cash not yet banked"
@@ -195,10 +167,22 @@ export function HomePage() {
       </section>
 
       {/*
-        Gross profit − expenses = operating profit, read left to right, then
-        what the month's stock came to (2026-10-07, owner).
+        Revenue − cost of goods = gross profit − expenses = operating profit,
+        read left to right (2026-10-07, owner). Revenue is tax-exclusive, as
+        profit is. "Uncollected this month" sat beside it until 2026-10-07; the
+        owner read it as the same figure as Unpaid invoices and it was removed.
       */}
-      <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className={`mt-3 ${TILES}`}>
+        <Stat
+          label="Revenue this month"
+          value={<Money value={sales.month} />}
+          note={<Change bps={sales.changeBps} />}
+        />
+        <Stat
+          label="Cost of goods sold"
+          value={<Money value={profit.cogs} />}
+          note={`${percent(profit.cogsShareBps)} of revenue`}
+        />
         <Stat
           label="Gross profit"
           value={<Money value={profit.grossProfit} />}
@@ -215,23 +199,50 @@ export function HomePage() {
           note={`${percent(profit.operatingMarginBps)} of revenue`}
           tone={profit.operatingProfit < 0 ? 'bad' : undefined}
         />
+      </section>
+
+      {/* Stock, then what is owed to and paid to the people who supply it. */}
+      <section className={`mt-3 ${TILES}`}>
         {/*
           Goods available for sale: all the stock the shop handled this month,
-          at cost — what it started with plus what came in. Not what is left;
-          that is the inventory valuation on Reports → Stock.
+          at cost — what it started with plus what came in. Beside it, what is
+          left of it now (2026-10-09): the same figure, and the same name, as
+          Inventory valuation on Reports → Stock.
         */}
         {data.stock && (
-          <Stat
-            label="Goods available for sale"
-            value={<Money value={data.stock.available} />}
-            note={
-              <>
-                Opening <Money value={data.stock.opening} /> + delivered{' '}
-                <Money value={data.stock.delivered} />
-              </>
-            }
-          />
+          <>
+            <Stat
+              label="Goods available for sale"
+              value={<Money value={data.stock.available} />}
+              note={
+                <>
+                  Opening <Money value={data.stock.opening} /> + delivered{' '}
+                  <Money value={data.stock.delivered} />
+                </>
+              }
+            />
+            <Link to="/reports/stock" className="block">
+              <Stat
+                label="Inventory valuation"
+                value={<Money value={data.stock.onHand} />}
+                note="On hand now, at cost"
+              />
+            </Link>
+          </>
         )}
+        <Stat
+          label="Unpaid bills"
+          value={<Money value={purchasing.payables.total} />}
+          note={`${purchasing.payables.bills} bill${
+            purchasing.payables.bills === 1 ? '' : 's'
+          } across ${purchasing.payables.suppliers}`}
+          tone={purchasing.payables.overdue > 0 ? 'warn' : undefined}
+        />
+        <Stat
+          label="Bills paid this month"
+          value={<Money value={purchasing.payables.paidThisMonth} />}
+          note="Paid to vendors"
+        />
       </section>
 
       {profit.estimatedLines > 0 && (
@@ -379,7 +390,7 @@ export function HomePage() {
         <h2 className="mb-3 text-sm font-semibold text-slate-900">
           What needs attention
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className={TILES}>
           <Stat
             label="Out of stock"
             value={attention.outOfStockCount}
@@ -440,11 +451,11 @@ function Stat({
         : 'border-slate-200 bg-white';
 
   return (
-    <div className={`rounded-lg border p-4 ${ring}`}>
+    <div className={`h-full rounded-lg border p-3 ${ring}`}>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
       </p>
-      <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-1 text-xl font-semibold text-slate-900">{value}</p>
       {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}
     </div>
   );

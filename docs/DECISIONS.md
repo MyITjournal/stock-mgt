@@ -2316,6 +2316,17 @@ already on Reports → Stock, whose heading was renamed from "What the stock is 
 **A wider renaming to standard accounting terms is planned once the remaining bugs are done**, so
 this is the first of those labels, not a one-off.
 
+**2026-10-09: the closing value came to Home after all** (owner: smaller tiles, five a row, "add
+stock balance valuation"). It is `dashboard.stock.onHand`, the stock summary's
+`totalValue.closing` — the walk Home already ran, so no new query — labelled **Inventory
+valuation** like the Reports → Stock heading it links to. That heading reads balances, this reads
+movements: same lots, same ratio, each rounded once, so smoke allows a kobo between them for the
+order of the sum. The tiles were regrouped into rows of five rather than rows of four with gaps:
+money in (sold and collected today, paid, unpaid invoices, cash not banked); the month's profit as
+a sum (revenue − cost of goods = gross profit − expenses = operating profit); stock and suppliers
+(goods available, inventory valuation, unpaid bills, bills paid) with a slot free. The pairs the
+owner asked to see together stay together.
+
 ### Periods are resolved in the organization's timezone
 
 Rows are UTC instants; an owner asks about a day in Lagos. Bucketing on the UTC

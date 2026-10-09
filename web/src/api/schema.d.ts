@@ -6947,6 +6947,8 @@ export interface components {
             delivered: number;
             /** @description Goods available for sale: opening + delivered, summed exactly and rounded once. */
             available: number;
+            /** @description Inventory valuation: what is on hand now, at cost — the closing figure of the same ledger walk, rounded once (2026-10-09). */
+            onHand: number;
         };
         DashboardView: {
             /** Format: date-time */

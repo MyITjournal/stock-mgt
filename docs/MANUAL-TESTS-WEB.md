@@ -1557,3 +1557,14 @@ number is not saved. Put it back to 7.
 still shows the box when edited, and its page shows *Reorder at*; a product without one shows
 nothing about a level. A product with a level that has not sold lately and is at or below it is
 on the list as "At or below your level of …".
+
+## BN. Home, five a row, with the inventory valuation
+
+**393. [gate] Five across.** On a wide screen, Home's figures sit five to a row in three rows:
+*Sold today … Cash not yet banked*; *Revenue this month … Operating profit*; *Goods available for
+sale, Inventory valuation, Unpaid bills, Bills paid this month*. A long amount fits its tile without
+wrapping out of it. Narrow the window: three a row, then two, then one.
+
+**394. Inventory valuation.** Its figure matches (a kobo apart at most) *Inventory valuation* on
+Reports → Stock. Clicking the tile opens that page. Receive a delivery or sell something and come
+back: it has moved by what those goods cost.
