@@ -6119,3 +6119,33 @@ product's carton price would overwrite each option's override).
 - Smoke against a second server: the owner's watch server holds 4000 and logs to its terminal, so
   smoke ran against `PORT=4001 node dist/main` logging to a file, with `BASE_URL` and
   `SMOKE_SERVER_LOG` pointed at it; `api:types` likewise with `API_DOCS_URL`.
+
+## 25. Copies of an invoice (2026-10-09)
+
+Owner: "a counter to track the number of times a receipt is printed." The receipt is the sale's
+invoice PDF (`GET /sales/:id/invoice.pdf`): the till's Print invoice, the sale page's Print invoice
+and Invoice PDF, and Print on each row of the Sales list. A reprint is how a receipt gets used twice,
+so this is a check on staff.
+
+**A log, not a number.** `SalePrint` is append-only, one row per copy: which copy, `printed` or
+`opened`, who, when. The count is the rows, so nothing can set it back. Owner's three answers:
+
+- **Opening the PDF counts, as well as printing it.** A PDF opened on a phone can be printed from the
+  viewer, so counting only the Print button would leave a way round it. Print sends
+  `?purpose=print`; anything else (and any app that sends nothing) is `opened`.
+- **Every copy after the first says so on the paper**: "COPY 2", and "Not the original · made …"
+  in the shop's timezone, under the invoice number. The original prints as it always did.
+- **Owner and manager only** see `printCount` (every sale read) and `prints` (who and when,
+  `GET /sales/:id` only). Removed for anyone else, never zeroed (`withPrints`, `sales/prints.ts`):
+  a zero would claim "never printed". Staff see only what is on the paper. Accountants are not in
+  `SEES_PRINTS` either; add them there if that changes.
+
+**Counted on the server, as the PDF is built** (`DocumentService.recordCopy`), not by a button
+reporting a click — so no button and no app can make a copy that goes uncounted, and the PDF knows
+which copy it is. That makes this GET a write: `PrintButton` and `PdfButton` end with
+`afterWrite`, and **nothing may prefetch or cache the invoice PDF**, or a copy is counted that
+nobody asked for. Two copies at the same instant: `(saleId, copy)` is unique, and the loser is
+retried as the next number.
+
+**Not counted:** `GET /sales/:id/receipt`, the JSON a thermal printer would use. Counting the mobile
+app's prints needs it to report them, offline ones included — a later step if that app prints.

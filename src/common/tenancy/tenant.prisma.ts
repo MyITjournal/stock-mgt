@@ -34,6 +34,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   // Corrections to a recorded sale — prices, customer — and their lines.
   'SaleCorrection',
   'SaleCorrectionLine',
+  // Every copy of a sale's invoice the shop produced (2026-10-09).
+  'SalePrint',
   // Money in and out (Slice 5).
   'Payment',
   'PaymentAllocation',

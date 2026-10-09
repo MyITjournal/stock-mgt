@@ -86,6 +86,8 @@ One line each; the reasoning is in DECISIONS.md.
 - A 409 is a rule: for stock and credit, **supplying the reason is the override**
   (owner/manager). `POSSIBLE_DUPLICATE` is a warning anyone passes with `allowDuplicate`. A test
   expecting a 409 must check *which* one.
+- **Every fetch of an invoice PDF is a counted copy** (`SalePrint`, DECISIONS.md §25): never
+  prefetch or cache it; copy 2 onwards says "COPY n"; the count is owner/manager only.
 
 ## Hosting
 

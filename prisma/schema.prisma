@@ -446,6 +446,7 @@ model Sale {
   returns      SaleReturn[]
   allocations  PaymentAllocation[]
   corrections  SaleCorrection[]
+  prints       SalePrint[]
 
   @@unique([organizationId, number])
   @@index([organizationId])
@@ -582,6 +583,41 @@ model SaleCorrectionLine {
   @@index([correctionId])
   @@index([saleLineId])
   @@map("sale_correction_lines")
+}
+
+/// A copy of a sale's invoice the shop produced (2026-10-09): printed from a
+/// Print button, or opened as a PDF to look at or share. **Append-only** — the
+/// count is the rows, so nobody can set it back to one. Written by the server
+/// as it builds the PDF, so no button and no app can make a copy uncounted.
+model SalePrint {
+  id             String @id @default(uuid())
+  organizationId String
+  saleId         String
+
+  /// 1 for the first copy, then 2, 3… Printed on every copy after the first,
+  /// so a reprint cannot pass as the original. Unique per sale: two copies
+  /// made at the same moment cannot both be the same number.
+  copy Int
+
+  kind SalePrintKind
+
+  printedByUserId String?
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sale         Sale         @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  printedBy    User?        @relation("SalePrintBy", fields: [printedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([saleId, copy])
+  @@index([organizationId])
+  @@map("sale_prints")
+}
+
+/// How the copy was made: a Print button, or the PDF opened to view or share
+/// (and perhaps printed from the phone's own viewer).
+enum SalePrintKind {
+  printed
+  opened
 }
 
 /// Goods coming back. One row per returned line; several returned in one visit
@@ -1014,6 +1050,7 @@ model Organization {
   lotCostCorrections          LotCostCorrection[]
   cashBankings                CashBanking[]
   saleCorrections             SaleCorrection[]
+  salePrints                  SalePrint[]
   saleCorrectionLines         SaleCorrectionLine[]
 
   @@map("organizations")
@@ -1140,6 +1177,7 @@ model User {
   receiptCorrections     GoodsReceiptCorrection[] @relation("GoodsReceiptCorrectionRecordedBy")
   lotCostCorrections     LotCostCorrection[]      @relation("LotCostCorrectionRecordedBy")
   saleCorrections        SaleCorrection[]         @relation("SaleCorrectionRecordedBy")
+  salePrints             SalePrint[]              @relation("SalePrintBy")
   supplierPayments       SupplierPayment[]        @relation("SupplierPaymentRecordedBy")
   voidedSupplierPayments SupplierPayment[]        @relation("SupplierPaymentVoidedBy")
   stocktakesStarted      Stocktake[]              @relation("StocktakeStartedBy")

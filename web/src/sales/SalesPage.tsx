@@ -178,6 +178,13 @@ export function SalesPage() {
                   >
                     {sale.number}
                   </Link>
+                  {/* Reprinted (2026-10-09). Owner and manager only — the
+                      server leaves the count out for anyone else. */}
+                  {sale.printCount !== undefined && sale.printCount > 1 && (
+                    <span className="block text-xs text-amber-700">
+                      {sale.printCount} copies
+                    </span>
+                  )}
                 </td>
                 {/* With the time (2026-10-08), so the day's sales can be read
                     down before one is entered again. */}

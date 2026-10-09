@@ -1568,3 +1568,18 @@ wrapping out of it. Narrow the window: three a row, then two, then one.
 **394. Inventory valuation.** Its figure matches (a kobo apart at most) *Inventory valuation* on
 Reports → Stock. Clicking the tile opens that page. Receive a delivery or sell something and come
 back: it has moved by what those goods cost.
+
+## BO. Copies of an invoice
+
+**395. [gate] Counted, and marked.** As the owner, record a sale at the till and press *Print
+invoice*: it prints as before, with no "COPY". Open the sale: *Copies of the invoice (1)* says
+"Original · printed", your name and the time. Press *Print invoice* again: the paper says **COPY 2**
+and "Not the original · made …" under the invoice number, and the list shows two. *Invoice PDF*
+opens copy 3, listed as "opened as PDF".
+
+**396. On the list.** Sales: that sale shows "3 copies" under its number. A sale printed once shows
+nothing extra.
+
+**397. Staff.** Sign in as a sales rep and print the same invoice from the Sales list: the paper
+says COPY 4, but neither the list nor the sale page shows a count or the copies section. Back as
+the owner, copy 4 is there, under the rep's name.

@@ -2464,6 +2464,8 @@ export interface paths {
         /**
          * The printable invoice for a sale
          * @description The document a customer is sent to pay from: letterhead, lines, the VAT split shown as *of which* rather than added on, and the accounts to pay into. `GET /sales/:id/receipt` remains the narrow JSON payload a thermal printer uses — this is deliberately a different document for a different reader.
+         *
+         *     **Every request is a copy, and is counted** (2026-10-09): the sale gains a print row, and every copy after the first says "COPY 2", "COPY 3" on it. That is why it is counted here, as the PDF is built, rather than by a button reporting a click — no button and no app can make a copy that goes uncounted.
          */
         get: operations["DocumentController_invoice"];
         put?: never;
@@ -5817,6 +5819,23 @@ export interface components {
             paidAfter: number;
             lines: components["schemas"]["SaleCorrectionLineView"][];
         };
+        /**
+         * @description `printed` from a Print button; `opened` as a PDF to look at or share.
+         * @enum {string}
+         */
+        SalePrintKind: "printed" | "opened";
+        SalePrintEntry: {
+            /**
+             * @description 1 is the original.
+             * @example 2
+             */
+            copy: number;
+            /** @description `printed` from a Print button; `opened` as a PDF to look at or share. */
+            kind: components["schemas"]["SalePrintKind"];
+            /** Format: date-time */
+            createdAt: string;
+            printedBy: components["schemas"]["RecordedByView"] | null;
+        };
         SaleView: {
             /** Format: uuid */
             id: string;
@@ -5883,6 +5902,10 @@ export interface components {
             allocations: components["schemas"]["SaleAllocationView"][];
             /** @description Corrections made to the sale, oldest first. The sale itself already shows the corrected figures. */
             corrections: components["schemas"]["SaleCorrectionView"][];
+            /** @description Copies of the invoice made so far — printed or opened as a PDF. **Absent** for anyone but an owner or manager (2026-10-09). */
+            printCount?: number;
+            /** @description Each copy, oldest first. On `GET /sales/:id` only, and **absent** for anyone but an owner or manager. */
+            prints?: components["schemas"]["SalePrintEntry"][];
             /** @description Settled by payments, signed. Derived, never stored. */
             allocated: number;
             /** @description Credited back by returns. */
@@ -11757,7 +11780,10 @@ export interface operations {
     };
     DocumentController_invoice: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description What the copy is for, as the owner reads it in the sale’s history: `print` from a Print button, `open` to look at or share. Either way it is counted (2026-10-09). Defaults to `open`. */
+                purpose?: "print" | "open";
+            };
             header?: never;
             path: {
                 id: string;
