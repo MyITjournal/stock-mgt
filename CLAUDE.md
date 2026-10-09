@@ -32,6 +32,8 @@ One line each; the reasoning is in DECISIONS.md.
 **Money and cost**
 - Revenue is **tax-exclusive** (unless `Organization.chargesVat` is off); every money figure on a
   sale is a snapshot. One currency per shop, locked once money is recorded.
+- A **delivery fee** (the driver) is part of cost: split by value onto the lots (`delivery-fee.ts`),
+  lot total = line + share, re-split on every correction. Never on the bill, never an `Expense`.
 - Value stock from **lot totals, rounded once** — never `Product.costPrice` or `costPrice × factor`.
 - Anything revealing what goods cost goes through `SEES_COST` / `redactCost`
   (`common/authz/cost-visibility.ts`): redact at the read edge, header and lines together, and
@@ -120,7 +122,8 @@ stock on Add product, cash banking (Money → Cash, Sales → My cash). The 2026
 is done. **Product options (variants): all five branches built** (ledger + API; product screens and
 till; stock in; counting and moving; reports and the spreadsheet) — `dev` is ready to go to `main`
 once `feat/variants-reports` is merged. DECISIONS.md §24 has the detail. Owner bug list
-(2026-10-09): 1. correcting a sale (prices per item, customer) — `fix/correct-a-sale`. v2 is scoped in
+(2026-10-09): 1. correcting a sale (prices per item, customer) — `fix/correct-a-sale`. The driver's
+delivery fee as part of cost — `feat/delivery-fee-in-cost` (DECISIONS.md §29). v2 is scoped in
 [docs/PRD-V2.md](docs/PRD-V2.md). The by-hand browser script is
 [docs/MANUAL-TESTS-WEB.md](docs/MANUAL-TESTS-WEB.md).
 

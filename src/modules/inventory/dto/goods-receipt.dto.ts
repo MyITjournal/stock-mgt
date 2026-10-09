@@ -1,10 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaymentMethod } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsDateString,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -90,6 +92,53 @@ export class GoodsReceiptLineDto {
   @IsOptional()
   @IsDateString()
   expiryDate?: string;
+}
+
+/**
+ * What it cost to bring the goods here — the driver's fee (2026-10-09).
+ *
+ * Part of what the goods cost: it is split across the lines by value and goes
+ * on each lot's total, so profit and stock value include it. It is **not** on
+ * the vendor's bill, and is never an `Expense`. Owner, manager or accountant
+ * only, like everything else on a delivery that is money.
+ */
+export class DeliveryFeeDto {
+  @ApiProperty({
+    example: 500_000,
+    description:
+      'In kobo. Zero, on a correction, takes a fee off a delivery that never had one.',
+  })
+  @IsMoney({ example: 500_000 })
+  amount!: number;
+
+  @ApiPropertyOptional({ enum: PaymentMethod, default: PaymentMethod.cash })
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  method?: PaymentMethod;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Which account it left. Required for `transfer` and `pos`, refused for `cash`.',
+  })
+  @IsOptional()
+  @IsUUID()
+  bankAccountId?: string;
+
+  @ApiPropertyOptional({ example: 'Musa (driver)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  paidTo?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'For cash: whose cash it came out of, so Money → Cash counts it as paid out by them. Defaults to whoever recorded the delivery. Refused for transfer and pos.',
+  })
+  @IsOptional()
+  @IsUUID()
+  paidByUserId?: string;
 }
 
 export class CreateGoodsReceiptDto {
@@ -188,6 +237,16 @@ export class CreateGoodsReceiptDto {
   @ValidateNested()
   @Type(() => DeliveryPaymentDto)
   payment?: DeliveryPaymentDto;
+
+  @ApiPropertyOptional({
+    type: () => DeliveryFeeDto,
+    description:
+      'What the driver was paid to bring it. Part of what the goods cost, never on the vendor’s bill. Owner, manager or accountant only.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeliveryFeeDto)
+  deliveryFee?: DeliveryFeeDto;
 
   @ApiProperty({ type: [GoodsReceiptLineDto] })
   @IsArray()

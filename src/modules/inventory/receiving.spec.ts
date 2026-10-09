@@ -357,4 +357,161 @@ describe('ReceivingService', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
+
+  describe('a delivery fee (2026-10-09)', () => {
+    const OWNER = 'user-owner';
+    const STOREKEEPER = 'user-store';
+
+    /** 10 pieces at ₦100,000 and 5 at ₦50,000; the driver took ₦5,000. */
+    const receiveWithFee = (
+      fee: Record<string, unknown> = { amount: 500_000 },
+      orgRole: OrgRole = OrgRole.owner,
+    ) =>
+      TenantContext.run({ organizationId: ORG, orgRole, userId: OWNER }, () =>
+        service.create({
+          supplierId: SUPPLIER,
+          deliveryFee: fee as never,
+          lines: [
+            {
+              productId: PRODUCT,
+              unitId: PIECE,
+              quantityReceived: 10,
+              totalCost: 10_000_000,
+            },
+            {
+              productId: PRODUCT,
+              unitId: PIECE,
+              quantityReceived: 5,
+              totalCost: 5_000_000,
+            },
+          ],
+        }),
+      );
+
+    beforeEach(() => {
+      (prisma as unknown as Record<string, unknown>).membership = {
+        findFirst: jest.fn().mockResolvedValue({ id: 'membership-1' }),
+      };
+    });
+
+    it('splits the fee by value onto the lots, and keeps the invoice on the line', async () => {
+      await receiveWithFee();
+
+      const lots = tx.stockBatch.create.mock.calls.map(
+        ([call]: [{ data: { totalCost: number } }]) => call.data.totalCost,
+      );
+      // ₦100,000 carries two thirds of ₦5,000, ₦50,000 one third.
+      expect(lots).toEqual([10_333_333, 5_166_667]);
+
+      const lines = tx.goodsReceiptLine.create.mock.calls.map(
+        ([call]: [{ data: { totalCost: number; deliveryCost: number } }]) => [
+          call.data.totalCost,
+          call.data.deliveryCost,
+        ],
+      );
+      expect(lines).toEqual([
+        [10_000_000, 333_333],
+        [5_000_000, 166_667],
+      ]);
+    });
+
+    it('never puts the fee on the vendor’s bill', async () => {
+      await receiveWithFee();
+
+      expect(tx.supplierBill.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ amountDue: 15_000_000 }) as object,
+      });
+    });
+
+    it('works the cost price out with the fee in it: ₦10,000 each becomes ₦10,333', async () => {
+      await receiveWithFee();
+
+      const [[{ data }]] = tx.product.update.mock.calls as [
+        [{ data: { costPrice: number } }],
+      ];
+      expect(data.costPrice).toBe(Math.round(10_333_333 / 10));
+    });
+
+    it('stores the fee on the delivery, paid from the cash of whoever recorded it', async () => {
+      await receiveWithFee({ amount: 500_000, paidTo: ' Musa ' });
+
+      expect(tx.goodsReceipt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          deliveryFee: 500_000,
+          deliveryFeeMethod: 'cash',
+          deliveryFeeBankAccountId: null,
+          deliveryFeePaidTo: 'Musa',
+          deliveryFeePaidByUserId: OWNER,
+        }) as object,
+      });
+    });
+
+    it('names nobody’s cash for a fee paid by transfer', async () => {
+      await expect(
+        receiveWithFee({
+          amount: 500_000,
+          method: 'transfer',
+          paidByUserId: STOREKEEPER,
+        }),
+      ).rejects.toThrow(/did not come out of anybody's cash/);
+
+      await receiveWithFee({ amount: 500_000, method: 'transfer' });
+      expect(tx.goodsReceipt.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          deliveryFeeMethod: 'transfer',
+          deliveryFeePaidByUserId: null,
+        }) as object,
+      });
+    });
+
+    it('refuses a fee from a storekeeper — it is a cost', async () => {
+      await expect(
+        receiveWithFee({ amount: 500_000 }, OrgRole.storekeeper),
+      ).rejects.toThrow(/Only an owner, manager or accountant/);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('withholds the fee and each share from a rep', async () => {
+      prisma.goodsReceipt.findFirst.mockResolvedValue({
+        id: 'receipt-1',
+        deliveryFee: 500_000,
+        deliveryFeeMethod: 'cash',
+        deliveryFeeBankAccountId: null,
+        deliveryFeePaidTo: 'Musa',
+        deliveryFeePaidByUserId: OWNER,
+        deliveryFeeBankAccount: null,
+        deliveryFeePaidBy: { id: OWNER, firstName: 'Ade', lastName: null },
+        lines: [
+          {
+            totalCost: 10_000_000,
+            deliveryCost: 500_000,
+            quantityReceived: 10,
+          },
+        ],
+        corrections: [],
+      });
+
+      const asOwner = await TenantContext.run(
+        { organizationId: ORG, orgRole: OrgRole.owner },
+        () => service.findOne('receipt-1'),
+      );
+      expect(asOwner.lines[0].unitCost).toBe(1_000_000);
+      expect(asOwner.lines[0].unitCostWithDelivery).toBe(1_050_000);
+
+      const asRep = await TenantContext.run(
+        { organizationId: ORG, orgRole: OrgRole.sales_rep },
+        () => service.findOne('receipt-1'),
+      );
+      for (const field of [
+        'deliveryFee',
+        'deliveryFeeMethod',
+        'deliveryFeePaidTo',
+        'deliveryFeePaidBy',
+      ]) {
+        expect(asRep).not.toHaveProperty(field);
+      }
+      expect(asRep.lines[0]).not.toHaveProperty('deliveryCost');
+      expect(asRep.lines[0]).not.toHaveProperty('unitCostWithDelivery');
+    });
+  });
 });

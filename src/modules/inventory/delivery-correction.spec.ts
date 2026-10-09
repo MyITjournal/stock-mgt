@@ -126,7 +126,18 @@ describe('planCorrection', () => {
     expect(plan.valueDelta).toBe(-300_000);
   });
 
+  it('takes a correction to the delivery fee alone, with no line moving (2026-10-09)', () => {
+    const plan = planCorrection([recorded], [], { feeChanged: true });
+    expect(plan.problems).toEqual([]);
+    expect(plan.changes).toEqual([]);
+    // The fee never moves the bill: the driver was paid, not the vendor.
+    expect(plan.valueDelta).toBe(0);
+  });
+
   it('refuses a correction that changes nothing', () => {
+    expect(planCorrection([recorded], []).problems[0]).toContain(
+      'Nothing changed',
+    );
     const plan = planCorrection(
       [recorded],
       [{ lineId: 'line-1', received: 98, paidFor: 98, totalCost: 9_800_000 }],

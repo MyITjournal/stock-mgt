@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -17,9 +18,11 @@ import { BankAccountService } from '../payments/bank-account.service';
 import { SupplierPaymentService } from '../payables/supplier-payment.service';
 import {
   CreateGoodsReceiptDto,
+  DeliveryFeeDto,
   GoodsReceiptLineDto,
 } from './dto/goods-receipt.dto';
 import { resolveProductUnit } from './base-units';
+import { splitDeliveryFee } from './delivery-fee';
 import {
   GoodsReceiptSummary,
   GoodsReceiptView,
@@ -43,20 +46,47 @@ const SETTLES_DELIVERIES: OrgRole[] = [
 const DEFAULT_RECEIPT_PAGE = 100;
 const MAX_RECEIPT_PAGE = 500;
 
-/** What the vendor charged for a line, as it is stored. */
-const RECEIPT_LINE_COST_FIELDS = ['totalCost'] as const;
+/** What the vendor charged for a line, and its share of the delivery fee. */
+const RECEIPT_LINE_COST_FIELDS = ['totalCost', 'deliveryCost'] as const;
 
-/** The same, plus the rate `findOne` derives from it on the way out. */
-const RECEIPT_LINE_READ_COST_FIELDS = ['totalCost', 'unitCost'] as const;
+/** The same, plus the rates `findOne` derives from them on the way out. */
+const RECEIPT_LINE_READ_COST_FIELDS = [
+  'totalCost',
+  'deliveryCost',
+  'unitCost',
+  'unitCostWithDelivery',
+] as const;
 
-/** A correction's bill figures, and each corrected line's values. */
-const CORRECTION_COST_FIELDS = ['billAmountBefore', 'billAmountAfter'] as const;
+/**
+ * The delivery fee is part of what the goods cost — divided by what arrived,
+ * it is a cost price — so it and how it was paid go together.
+ */
+const RECEIPT_FEE_FIELDS = [
+  'deliveryFee',
+  'deliveryFeeMethod',
+  'deliveryFeeBankAccountId',
+  'deliveryFeePaidTo',
+  'deliveryFeePaidByUserId',
+] as const;
+const RECEIPT_FEE_READ_FIELDS = [
+  ...RECEIPT_FEE_FIELDS,
+  'deliveryFeeBankAccount',
+  'deliveryFeePaidBy',
+] as const;
+
+/** A correction's bill and fee figures, and each corrected line's values. */
+const CORRECTION_COST_FIELDS = [
+  'billAmountBefore',
+  'billAmountAfter',
+  'deliveryFeeBefore',
+  'deliveryFeeAfter',
+] as const;
 const CORRECTION_LINE_COST_FIELDS = [
   'totalCostBefore',
   'totalCostAfter',
 ] as const;
 
-/** The same invoice total, as it sits on the lot the line created. */
+/** The lot's total: the invoice total plus the line's share of the fee. */
 const BATCH_COST_FIELDS = ['totalCost'] as const;
 
 /** What one line resolved to once the catalog had been consulted. */
@@ -67,6 +97,24 @@ interface ResolvedLine {
   quantityReceived: number;
   quantityPaidFor: number;
 }
+
+/** A delivery fee as it is stored on the receipt. */
+export interface ResolvedDeliveryFee {
+  deliveryFee: number;
+  deliveryFeeMethod: PaymentMethod | null;
+  deliveryFeeBankAccountId: string | null;
+  deliveryFeePaidTo: string | null;
+  deliveryFeePaidByUserId: string | null;
+}
+
+/** No fee — what every delivery from before 2026-10-09 carries. */
+export const NO_DELIVERY_FEE: ResolvedDeliveryFee = {
+  deliveryFee: 0,
+  deliveryFeeMethod: null,
+  deliveryFeeBankAccountId: null,
+  deliveryFeePaidTo: null,
+  deliveryFeePaidByUserId: null,
+};
 
 /**
  * Goods coming in.
@@ -110,7 +158,11 @@ export class ReceivingService {
     // the line totals from the invoice — stays open to everyone who could
     // record a receipt before. Overriding the amount due, or saying money
     // changed hands, is a money decision and needs a money role.
-    if (input.amountDue !== undefined || input.payment) {
+    if (
+      input.amountDue !== undefined ||
+      input.payment ||
+      input.deliveryFee !== undefined
+    ) {
       this.assertMaySettle();
     }
 
@@ -137,6 +189,20 @@ export class ReceivingService {
         )
       : null;
 
+    // The driver's fee, and each line's share of it by value. The share goes
+    // on the lot, so everything that values stock or costs a sale includes
+    // it; the line keeps what the vendor charged.
+    const fee = input.deliveryFee
+      ? await this.resolveDeliveryFee(input.deliveryFee, recordedByUserId)
+      : NO_DELIVERY_FEE;
+    const shares = splitDeliveryFee(
+      fee.deliveryFee,
+      lines.map((line) => ({
+        totalCost: line.input.totalCost,
+        quantityReceived: line.quantityReceived,
+      })),
+    );
+
     const receiptId = await this.prisma.$transaction(async (tx) => {
       const receipt = await tx.goodsReceipt.create({
         data: {
@@ -148,12 +214,16 @@ export class ReceivingService {
           receivedAt,
           note: input.note ?? null,
           recordedByUserId,
+          ...fee,
         },
       });
 
-      for (const line of lines) {
+      for (const [index, line] of lines.entries()) {
+        const deliveryCost = shares[index];
+        const lotTotal = line.input.totalCost + deliveryCost;
+
         // One batch per line, never merged with an earlier delivery: each keeps
-        // its own exact invoice total, which is what makes unit cost honest.
+        // its own exact total, which is what makes unit cost honest.
         const batch = await tx.stockBatch.create({
           data: {
             organizationId,
@@ -166,7 +236,7 @@ export class ReceivingService {
             receivedAt,
             quantityReceived: line.quantityReceived,
             quantityPaidFor: line.quantityPaidFor,
-            totalCost: line.input.totalCost,
+            totalCost: lotTotal,
           },
         });
 
@@ -186,6 +256,7 @@ export class ReceivingService {
             quantityReceived: line.quantityReceived,
             quantityPaidFor: line.quantityPaidFor,
             totalCost: line.input.totalCost,
+            deliveryCost,
           },
         });
 
@@ -205,12 +276,13 @@ export class ReceivingService {
         );
 
         // A convenience for pricing screens, not a valuation input: costPrice
-        // is the most recent unit cost, while `StockBatch.totalCost` stays the
-        // exact figure everything financial reads.
+        // is the most recent unit cost, delivery included, while
+        // `StockBatch.totalCost` stays the exact figure everything financial
+        // reads.
         await tx.product.update({
           where: { id: line.input.productId },
           data: {
-            costPrice: Math.round(line.input.totalCost / line.quantityReceived),
+            costPrice: Math.round(lotTotal / line.quantityReceived),
           },
         });
       }
@@ -313,7 +385,7 @@ export class ReceivingService {
     });
 
     return receipts.map((receipt) => ({
-      ...receipt,
+      ...redactCost(receipt, RECEIPT_FEE_FIELDS),
       lines: redactCostAll(receipt.lines, RECEIPT_LINE_COST_FIELDS),
     }));
   }
@@ -325,6 +397,12 @@ export class ReceivingService {
         supplier: { select: { id: true, name: true } },
         location: { select: { id: true, name: true } },
         recordedBy: { select: { id: true, firstName: true, lastName: true } },
+        deliveryFeeBankAccount: {
+          select: { id: true, bankName: true, accountNumber: true },
+        },
+        deliveryFeePaidBy: {
+          select: { id: true, firstName: true, lastName: true },
+        },
         lines: {
           include: {
             product: { select: { id: true, name: true, sku: true } },
@@ -347,7 +425,7 @@ export class ReceivingService {
     if (!receipt) throw new NotFoundException('Goods receipt not found');
 
     return {
-      ...receipt,
+      ...redactCost(receipt, RECEIPT_FEE_READ_FIELDS),
       // What the figures were before each correction. Values are cost, so a
       // role that may not see cost gets the counts and the reason only.
       corrections: receipt.corrections.map((correction) => ({
@@ -364,9 +442,13 @@ export class ReceivingService {
             /**
              * Output, never input. Divided by what *arrived*, not what was paid
              * for, so free goods pull the cost of every unit down — which is the
-             * whole point of them.
+             * whole point of them. What the vendor charged, each.
              */
             unitCost: line.totalCost / line.quantityReceived,
+            /** The same with the line's share of the delivery fee: what each
+             * really cost to get onto the shelf, and what profit is worked from. */
+            unitCostWithDelivery:
+              (line.totalCost + line.deliveryCost) / line.quantityReceived,
           },
           RECEIPT_LINE_READ_COST_FIELDS,
         ),
@@ -380,13 +462,63 @@ export class ReceivingService {
    * The factor is copied onto the line as `unitFactor`: if someone later edits
    * what a carton means, history must not silently change underneath.
    */
-  private assertMaySettle() {
+  assertMaySettle() {
     const orgRole = TenantContext.get()?.orgRole;
     if (!orgRole || !SETTLES_DELIVERIES.includes(orgRole)) {
       throw new ForbiddenException(
         'Only an owner, manager or accountant can set what a delivery costs or record a payment for it. Record the delivery without them and let one of them settle it.',
       );
     }
+  }
+
+  /**
+   * The driver's fee as it will be stored, checked (2026-10-09).
+   *
+   * The same rules as any money that moves: cash names no account, transfer
+   * and pos must name one, never defaulted. For cash, whose hands it left —
+   * `defaultPayer`, the person who recorded the delivery and so was at the
+   * door, unless somebody else is named — so Money → Cash counts it as paid
+   * out by them. A fee of zero stores nothing else.
+   */
+  async resolveDeliveryFee(
+    input: DeliveryFeeDto,
+    defaultPayer: string | null,
+  ): Promise<ResolvedDeliveryFee> {
+    if (input.amount === 0) return NO_DELIVERY_FEE;
+
+    const method = input.method ?? PaymentMethod.cash;
+    const bankAccountId = await this.bankAccounts.resolveForPayment(
+      method,
+      input.bankAccountId,
+    );
+
+    let paidBy: string | null = null;
+    if (method === PaymentMethod.cash) {
+      paidBy = input.paidByUserId ?? defaultPayer;
+      if (paidBy) {
+        const member = await this.prisma.membership.findFirst({
+          where: { userId: paidBy },
+          select: { id: true },
+        });
+        if (!member) {
+          throw new BadRequestException(
+            'Whoever paid the delivery fee has to be somebody who works here.',
+          );
+        }
+      }
+    } else if (input.paidByUserId) {
+      throw new BadRequestException(
+        `A ${method} fee did not come out of anybody's cash. Leave paidByUserId off, or record it as cash.`,
+      );
+    }
+
+    return {
+      deliveryFee: input.amount,
+      deliveryFeeMethod: method,
+      deliveryFeeBankAccountId: bankAccountId,
+      deliveryFeePaidTo: input.paidTo?.trim() || null,
+      deliveryFeePaidByUserId: paidBy,
+    };
   }
 
   private async resolveLines(

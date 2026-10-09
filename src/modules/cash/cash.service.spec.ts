@@ -61,6 +61,7 @@ describe('CashService', () => {
       },
       expense: { groupBy: jest.fn().mockResolvedValue([]) },
       supplierPayment: { groupBy: jest.fn().mockResolvedValue([]) },
+      goodsReceipt: { groupBy: jest.fn().mockResolvedValue([]) },
       cashBanking: {
         groupBy: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({}),
@@ -197,6 +198,29 @@ describe('CashService', () => {
           service.create(bank({ amount: 6_000_00 })),
         ),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('counts a delivery fee paid from their cash as paid out', async () => {
+      // ₦50,000 taken, ₦5,000 of it handed to a driver: ₦45,000 is left.
+      prisma.goodsReceipt.groupBy.mockResolvedValue([
+        { deliveryFeePaidByUserId: REP, _sum: { deliveryFee: 5_000_00 } },
+      ]);
+      await expect(
+        as(REP, OrgRole.sales_rep, () =>
+          service.create(bank({ amount: 45_000_01 })),
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      await as(REP, OrgRole.sales_rep, () =>
+        service.create(bank({ amount: 45_000_00 })),
+      );
+
+      const [query] = prisma.goodsReceipt.groupBy.mock.calls[0] as [
+        { where: Record<string, unknown> },
+      ];
+      expect(query.where).toMatchObject({
+        deliveryFeeMethod: 'cash',
+        deliveryFee: { gt: 0 },
+      });
     });
 
     it('needs an account for the bank, and refuses one for the owner', async () => {

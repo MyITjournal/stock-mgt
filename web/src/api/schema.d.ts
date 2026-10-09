@@ -3773,10 +3773,37 @@ export interface components {
              */
             totalCost: number;
         };
+        DeliveryFeeDto: {
+            /**
+             * @description In kobo. Zero, on a correction, takes a fee off a delivery that never had one.
+             * @example 500000
+             */
+            amount: number;
+            /**
+             * @default cash
+             * @enum {string}
+             */
+            method: "cash" | "transfer" | "pos" | "cheque";
+            /**
+             * Format: uuid
+             * @description Which account it left. Required for `transfer` and `pos`, refused for `cash`.
+             */
+            bankAccountId?: string;
+            /** @example Musa (driver) */
+            paidTo?: string;
+            /**
+             * Format: uuid
+             * @description For cash: whose cash it came out of, so Money → Cash counts it as paid out by them. Defaults to whoever recorded the delivery. Refused for transfer and pos.
+             */
+            paidByUserId?: string;
+        };
         CorrectDeliveryDto: {
             /** @example Miscounted: 6½ cartons arrived, not 7. */
             reason: string;
+            /** @description The lines that were wrong. Empty when only the delivery fee is being put right. */
             lines: components["schemas"]["TrueLineFiguresDto"][];
+            /** @description The delivery fee as it really was (2026-10-09) — added, changed, or 0 to take it off. Omitted, the fee stays. It is split again across the lines by value either way. Owner, manager or accountant only. */
+            deliveryFee?: components["schemas"]["DeliveryFeeDto"];
             /** @description Record it even though fewer arrived than have already been sold from the delivery — owner or manager, with forcedReason. */
             force?: boolean;
             forcedReason?: string;
@@ -3799,8 +3826,14 @@ export interface components {
             billAmountBefore: number | null;
             /** @description The bill after the correction, in kobo. */
             billAmountAfter: number | null;
+            /** @description The delivery fee now, in kobo. */
+            deliveryFeeBefore: number;
+            /** @description The delivery fee after the correction, in kobo. It never moves the bill. */
+            deliveryFeeAfter: number;
             lines: components["schemas"]["CorrectionPreviewLine"][];
         };
+        /** @enum {string} */
+        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
         ReceiptSupplierRef: {
             /** Format: uuid */
             id: string;
@@ -3818,6 +3851,14 @@ export interface components {
             id: string;
             firstName: string | null;
             lastName: string | null;
+        };
+        ReceiptFeeAccountRef: {
+            /** Format: uuid */
+            id: string;
+            /** @example Guaranty Trust Bank */
+            bankName: string;
+            /** @example 0123456789 */
+            accountNumber: string;
         };
         ReceiptProductRef: {
             /** Format: uuid */
@@ -3863,7 +3904,7 @@ export interface components {
             quantityReceived: number;
             /** @description Base units the invoice charged for. */
             quantityPaidFor: number;
-            /** @description The same invoice total as the line carries. **Absent** for a role that may not see cost — redacted with the line rather than left as the way round the front door. */
+            /** @description The line’s invoice total plus its share of the delivery fee — what everything that values stock or costs a sale reads. **Absent** for a role that may not see cost — redacted with the line rather than left as the way round the front door. */
             totalCost?: number;
             /** Format: date-time */
             createdAt: string;
@@ -3900,14 +3941,18 @@ export interface components {
             quantityPaidFor: number;
             /** @description The exact invoice total for this line, in kobo — never a per-unit price. **Absent** for a role that may not see cost. */
             totalCost?: number;
+            /** @description This line’s share of the delivery fee, in kobo, split by value. The lot costs `totalCost + deliveryCost`. **Absent** for a role that may not see cost. */
+            deliveryCost?: number;
             /** Format: date-time */
             createdAt: string;
             product: components["schemas"]["ReceiptProductRef"];
             variant: components["schemas"]["ReceiptOptionRef"] | null;
             unit: components["schemas"]["ReceiptUnitRef"];
             batch: components["schemas"]["ReceiptBatchView"];
-            /** @description Output, never input. Divided by what *arrived*, not what was paid for, so free goods pull the cost of every unit down — which is the whole point of them. **Absent** for a role that may not see cost. */
+            /** @description What the vendor charged, each. Output, never input. Divided by what *arrived*, not what was paid for, so free goods pull the cost of every unit down — which is the whole point of them. **Absent** for a role that may not see cost. */
             unitCost?: number;
+            /** @description The same with the line’s share of the delivery fee — what each really cost to get onto the shelf, and what profit is worked from. **Absent** for a role that may not see cost. */
+            unitCostWithDelivery?: number;
         };
         ReceiptCorrectionLineView: {
             /** Format: uuid */
@@ -3931,9 +3976,24 @@ export interface components {
             /** @description The bill before, in kobo; null when it did not move. */
             billAmountBefore?: number | null;
             billAmountAfter?: number | null;
+            /** @description The delivery fee before, in kobo; null when it did not move. Absent for roles that may not see cost. */
+            deliveryFeeBefore?: number | null;
+            deliveryFeeAfter?: number | null;
             lines: components["schemas"]["ReceiptCorrectionLineView"][];
         };
         GoodsReceiptView: {
+            /** @description In kobo. 0 when there was none. */
+            deliveryFee?: number;
+            deliveryFeeMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** Format: uuid */
+            deliveryFeeBankAccountId?: string | null;
+            /** @example Musa */
+            deliveryFeePaidTo?: string | null;
+            /**
+             * Format: uuid
+             * @description For a cash fee: whose cash it came out of.
+             */
+            deliveryFeePaidByUserId?: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -3956,6 +4016,10 @@ export interface components {
             supplier: components["schemas"]["ReceiptSupplierRef"];
             location: components["schemas"]["ReceiptLocationRef"];
             recordedBy: components["schemas"]["ReceiptRecorderRef"] | null;
+            /** @description The account a transfer or pos delivery fee left. **Absent** for a role that may not see cost. */
+            deliveryFeeBankAccount?: components["schemas"]["ReceiptFeeAccountRef"] | null;
+            /** @description Whose cash a cash delivery fee came out of. **Absent** for a role that may not see cost. */
+            deliveryFeePaidBy?: components["schemas"]["ReceiptRecorderRef"] | null;
             lines: components["schemas"]["GoodsReceiptLineView"][];
             /** @description Every correction made to it, oldest first, with the figures as they were before. Present on a single delivery read. */
             corrections?: components["schemas"]["ReceiptCorrectionView"][];
@@ -3990,12 +4054,26 @@ export interface components {
             quantityPaidFor: number;
             /** @description The exact invoice total for this line, in kobo — never a per-unit price. **Absent** for a role that may not see cost. */
             totalCost?: number;
+            /** @description This line’s share of the delivery fee, in kobo, split by value. The lot costs `totalCost + deliveryCost`. **Absent** for a role that may not see cost. */
+            deliveryCost?: number;
             /** Format: date-time */
             createdAt: string;
             product: components["schemas"]["ReceiptProductRef"];
             variant: components["schemas"]["ReceiptOptionRef"] | null;
         };
         GoodsReceiptSummary: {
+            /** @description In kobo. 0 when there was none. */
+            deliveryFee?: number;
+            deliveryFeeMethod?: components["schemas"]["PaymentMethod"] | null;
+            /** Format: uuid */
+            deliveryFeeBankAccountId?: string | null;
+            /** @example Musa */
+            deliveryFeePaidTo?: string | null;
+            /**
+             * Format: uuid
+             * @description For a cash fee: whose cash it came out of.
+             */
+            deliveryFeePaidByUserId?: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -4116,6 +4194,8 @@ export interface components {
             dueDate?: string;
             /** @description What you paid at the delivery, if anything. Cannot exceed what the delivery is worth. */
             payment?: components["schemas"]["DeliveryPaymentDto"];
+            /** @description What the driver was paid to bring it. Part of what the goods cost, never on the vendor’s bill. Owner, manager or accountant only. */
+            deliveryFee?: components["schemas"]["DeliveryFeeDto"];
             lines: components["schemas"]["GoodsReceiptLineDto"][];
         };
         OpeningStockUnitView: {
@@ -4903,8 +4983,6 @@ export interface components {
             /** @description Owed and already past the date the business said it would pay. Only counts bills that were given a date, since most are not. */
             overdue: number;
         };
-        /** @enum {string} */
-        PaymentMethod: "cash" | "transfer" | "pos" | "cheque";
         BillRef: {
             /** Format: uuid */
             id: string;
@@ -6211,7 +6289,7 @@ export interface components {
             lastName: string | null;
             /** @description Cash payments they took, voided ones left out. */
             received: number;
-            /** @description Cash refunds, cash expenses and cash supplier payments they recorded. */
+            /** @description Cash refunds, cash expenses and cash supplier payments they recorded, and delivery fees paid from their cash. */
             paidOut: number;
             /** @description Banking an owner or manager has confirmed. */
             banked: number;

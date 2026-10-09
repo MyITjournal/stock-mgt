@@ -1634,3 +1634,24 @@ goes to the till.
 
 **407. Signed out.** Sign out and open `/about`: the page as a stranger sees it, with *Sign in* and
 *Create your shop*. Opening `/` signed in still goes straight to your start screen.
+
+## BT. A delivery fee
+
+**408. [gate] Paid to the driver.** As the owner, Stock → Record a delivery: 10 of one product,
+invoice total ₦100,000, and 5 of another, invoice total ₦50,000. Under **Bringing it here**, a
+delivery fee of ₦5,000, cash, *Whose cash* a rep, paid to Musa. Record it. The delivery's page shows *Delivery fee ₦5,000.00 ·
+cash to Musa · from <rep>'s cash*, and a *With delivery* column: ₦10,333.33 and ₦10,333.33 each
+against ₦10,000 and ₦10,000 invoiced. Money → Bills: the bill is ₦150,000, not ₦155,000. Money →
+Cash: the rep's *Paid out* is ₦5,000 higher.
+
+**409. It reaches profit.** Sell one of the first product. The sale's cost of goods is ₦10,333.33,
+and the product's cost price reads the same.
+
+**410. Put right later.** **Correct this delivery**, change nothing on the lines, set the fee to
+₦6,000 and a reason. Check says *Delivery fee: ₦5,000.00 → ₦6,000.00* and the bill does not move.
+Save: *With delivery* is ₦10,400.00 each; the correction is listed with the fee before and after;
+the item already sold keeps ₦10,333.33.
+
+**411. Staff.** As a storekeeper, Record a delivery has no *Bringing it here* section, and the
+delivery's page shows no fee and no cost columns. As the owner, a fee by transfer will not record
+until an account is chosen.

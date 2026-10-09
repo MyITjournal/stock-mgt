@@ -1184,7 +1184,8 @@ model User {
   stocktakesPosted       Stocktake[]              @relation("StocktakePostedBy")
   stocktakeLines         StocktakeLine[]
   expenses               Expense[]
-  goodsReceipts          GoodsReceipt[]
+  goodsReceipts          GoodsReceipt[]           @relation("GoodsReceiptRecordedBy")
+  deliveryFeesPaid       GoodsReceipt[]           @relation("GoodsReceiptDeliveryFeePaidBy")
   cashHeld               CashBanking[]            @relation("CashBankingHeldBy")
   cashBankingsRecorded   CashBanking[]            @relation("CashBankingRecordedBy")
   cashBankingsConfirmed  CashBanking[]            @relation("CashBankingConfirmedBy")
@@ -1324,8 +1325,9 @@ model StockBatch {
   /// What the invoice charged for, in base units. Free goods make this smaller
   /// than quantityReceived.
   quantityPaidFor  Int
-  /// Exact invoice total in minor units (kobo). The only money stored; unit cost
-  /// is totalCost / quantityReceived, computed on read.
+  /// Exact total in minor units (kobo): the invoice total plus, for a
+  /// delivery's lot, its share of the delivery fee (2026-10-09). Unit cost is
+  /// totalCost / quantityReceived, computed on read.
   totalCost        Int
 
   createdAt DateTime @default(now())
@@ -1452,18 +1454,37 @@ model GoodsReceipt {
 
   recordedByUserId String?
 
+  /// What it cost to bring the goods here — the driver's fee — in kobo
+  /// (2026-10-09). **Part of what the goods cost**: split across the lines by
+  /// value into `GoodsReceiptLine.deliveryCost`, and on each lot's total. It
+  /// is not on the vendor's bill (the driver was paid, not the vendor) and
+  /// never an `Expense`, which would count it twice. Zero when there was none.
+  deliveryFee              Int            @default(0)
+  /// How the driver was paid. Null when there is no fee.
+  deliveryFeeMethod        PaymentMethod?
+  /// For a transfer or pos fee: which account it left. Null for cash.
+  deliveryFeeBankAccountId String?
+  /// Who was paid, as typed — the driver's name. Optional.
+  deliveryFeePaidTo        String?
+  /// For a cash fee: whose cash it came out of, so Money → Cash counts it as
+  /// paid out by them. Defaults to whoever recorded the delivery — the person
+  /// who was at the door.
+  deliveryFeePaidByUserId  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  supplier     Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  location     Location                 @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  recordedBy   User?                    @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
-  lines        GoodsReceiptLine[]
-  bill         SupplierBill?
+  organization           Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier               Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  location               Location                 @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  recordedBy             User?                    @relation("GoodsReceiptRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  deliveryFeeBankAccount BankAccount?             @relation(fields: [deliveryFeeBankAccountId], references: [id], onDelete: Restrict)
+  deliveryFeePaidBy      User?                    @relation("GoodsReceiptDeliveryFeePaidBy", fields: [deliveryFeePaidByUserId], references: [id], onDelete: SetNull)
+  lines                  GoodsReceiptLine[]
+  bill                   SupplierBill?
   /// Every correction made to it, oldest first. The lines hold the figures as
   /// they now stand; these hold what they were before.
-  corrections  GoodsReceiptCorrection[]
+  corrections            GoodsReceiptCorrection[]
 
   @@index([organizationId])
   @@index([organizationId, receivedAt])
@@ -1494,6 +1515,11 @@ model GoodsReceiptLine {
   quantityPaidFor  Int
   /// Exact invoice total for this line, in minor units (kobo).
   totalCost        Int
+  /// This line's share of the delivery's `deliveryFee`, in kobo, split by
+  /// value. The lot's `totalCost` is `totalCost + deliveryCost`: what the
+  /// vendor charged stays here as it was, and the lot carries what the goods
+  /// really cost to get onto the shelf.
+  deliveryCost     Int @default(0)
 
   createdAt DateTime @default(now())
 
@@ -1718,6 +1744,7 @@ model BankAccount {
   payments         Payment[]
   supplierPayments SupplierPayment[]
   cashBankings     CashBanking[]
+  deliveryFees     GoodsReceipt[]
 
   /// One row per account number at a bank. The same number at two different
   /// banks is a different account, so both columns are in the key.
@@ -2044,6 +2071,10 @@ model GoodsReceiptCorrection {
   /// Null when the delivery had no bill to move.
   billAmountBefore Int?
   billAmountAfter  Int?
+
+  /// The delivery fee before and after, in kobo. Null when it did not move.
+  deliveryFeeBefore Int?
+  deliveryFeeAfter  Int?
 
   recordedByUserId String?
   createdAt        DateTime @default(now())
