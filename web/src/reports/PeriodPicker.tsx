@@ -16,7 +16,15 @@ const NAMED = [
 
 export function PeriodPicker({ resolved }: { resolved?: PeriodView }) {
   const { period, from, to, setPeriod, setRange } = usePeriodQuery();
-  const custom = Boolean(from && to);
+  // Only a whole range, the right way round, is read; until then the named
+  // period stays chosen (`usePeriodQuery`).
+  const custom = Boolean(from && to && from <= to);
+  const hint =
+    from && to && !custom
+      ? 'The start is after the end.'
+      : Boolean(from) !== Boolean(to)
+        ? `Pick the ${from ? 'end' : 'start'} date too.`
+        : null;
 
   return (
     <div className="mb-6 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-3">
@@ -37,10 +45,14 @@ export function PeriodPicker({ resolved }: { resolved?: PeriodView }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+      {/* No divider: on a phone this wraps under the buttons, and a left
+          border would then hang off nothing. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-slate-400">From</span>
         <input
           type="date"
           value={from}
+          max={to || undefined}
           aria-label="From"
           onChange={(event) => setRange(event.target.value, to)}
           className="rounded-md border border-slate-300 px-2 py-1 text-sm"
@@ -49,10 +61,12 @@ export function PeriodPicker({ resolved }: { resolved?: PeriodView }) {
         <input
           type="date"
           value={to}
+          min={from || undefined}
           aria-label="To"
           onChange={(event) => setRange(from, event.target.value)}
           className="rounded-md border border-slate-300 px-2 py-1 text-sm"
         />
+        {hint && <span className="text-xs text-amber-700">{hint}</span>}
       </div>
 
       {resolved && (

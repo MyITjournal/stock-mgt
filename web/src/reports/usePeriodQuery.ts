@@ -11,7 +11,13 @@ import { useSearchParams } from 'react-router-dom';
  * response, which is what the screens label themselves with.
  *
  * A custom range is the one case the browser sends dates, and they are plain
- * calendar days that the server still interprets in the shop's zone.
+ * calendar days (`2026-10-07`) that the server reads as whole days in the
+ * shop's zone (`customPeriod`) — no time of day is worked out here.
+ *
+ * The two dates are picked one at a time, so a half-picked range is kept in
+ * the URL (2026-10-09: it used to be thrown away, and the box the person had
+ * just filled went blank). The report stays on the named period until both
+ * are in, and the right way round.
  *
  * Kept in the URL rather than in component state, so switching tabs keeps the
  * window and a link to "last month's profit" is a link somebody can send.
@@ -31,11 +37,11 @@ export function usePeriodQuery(): {
   const to = params.get('to') ?? '';
 
   const search = new URLSearchParams();
-  if (from && to) {
-    search.set('from', new Date(from).toISOString());
-    // The end of the chosen day, not its midnight: a person picking
-    // 1–7 September means the whole of the seventh.
-    search.set('to', new Date(`${to}T23:59:59.999`).toISOString());
+  // `YYYY-MM-DD` compares as text in date order.
+  if (from && to && from <= to) {
+    search.set('from', from);
+    // Inclusive: the server takes the whole of the last day named.
+    search.set('to', to);
   } else {
     search.set('period', period);
   }
@@ -47,9 +53,11 @@ export function usePeriodQuery(): {
     to,
     setPeriod: (name) => setParams({ period: name }),
     setRange: (nextFrom, nextTo) =>
-      nextFrom && nextTo
-        ? setParams({ from: nextFrom, to: nextTo })
-        : setParams({ period }),
+      setParams({
+        period,
+        ...(nextFrom && { from: nextFrom }),
+        ...(nextTo && { to: nextTo }),
+      }),
   };
 }
 
