@@ -136,6 +136,34 @@ describe('invoiceDefinition', () => {
     note: null,
   };
 
+  describe('which copy it is (2026-10-09)', () => {
+    const render = (copy: { number: number; madeAt: Date } | null) =>
+      JSON.stringify(
+        invoiceDefinition({
+          organization: ORG,
+          accounts: [],
+          invoice: { ...invoice, copy },
+        }),
+      );
+
+    it('prints the original as it always has', () => {
+      expect(render(null)).not.toContain('COPY');
+      expect(
+        render({ number: 1, madeAt: new Date('2026-10-09T13:02:00.000Z') }),
+      ).not.toContain('COPY');
+    });
+
+    it('marks every later copy, with when it was made in the shop’s time', () => {
+      const doc = render({
+        number: 3,
+        madeAt: new Date('2026-10-09T13:02:00.000Z'),
+      });
+      expect(doc).toContain('COPY 3');
+      // 13:02 UTC is 14:02 in Lagos.
+      expect(doc).toContain('Not the original · made 09 Oct 2026, 14:02');
+    });
+  });
+
   describe('how it was paid', () => {
     const render = (over: Partial<typeof invoice>) =>
       JSON.stringify(

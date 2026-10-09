@@ -269,6 +269,48 @@ export function SaleDetailPage() {
             </section>
           )}
 
+          {/*
+            Every copy of the invoice, printed or opened (2026-10-09). The
+            server sends this to an owner or manager only — absent, not empty,
+            for anyone else — so its presence is the role check.
+          */}
+          {sale.prints && (
+            <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <h2 className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs uppercase tracking-wide text-slate-500">
+                Copies of the invoice ({sale.prints.length})
+              </h2>
+              {sale.prints.length === 0 ? (
+                <p className="px-4 py-3 text-sm text-slate-500">
+                  Not printed or opened yet.
+                </p>
+              ) : (
+                <ul className="divide-y divide-slate-100 text-sm">
+                  {sale.prints.map((copy) => (
+                    <li
+                      key={copy.copy}
+                      className="flex items-center justify-between px-4 py-2"
+                    >
+                      <span>
+                        <span className="text-slate-900">
+                          {copy.copy === 1 ? 'Original' : `Copy ${copy.copy}`}
+                        </span>
+                        <span className="ml-2 text-xs text-slate-500">
+                          {copy.kind === 'printed' ? 'printed' : 'opened as PDF'}
+                          {copy.printedBy
+                            ? ` · ${[copy.printedBy.firstName, copy.printedBy.lastName].filter(Boolean).join(' ')}`
+                            : ''}
+                        </span>
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {new Date(copy.createdAt).toLocaleString('en-NG')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
           {sale.allocations.length > 0 && (
             <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
               <h2 className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs uppercase tracking-wide text-slate-500">

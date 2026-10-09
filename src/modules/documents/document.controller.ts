@@ -1,4 +1,12 @@
-import { Controller, Get, Param, ParseUUIDPipe, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  Res,
+} from '@nestjs/common';
+import { SalePrintKind } from '@prisma/client';
 import type { Response } from 'express';
 import {
   ApiBearerAuth,
@@ -7,6 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { DocumentService } from './document.service';
+import { InvoicePdfQuery } from './dto/invoice-pdf.query';
 
 @ApiTags('documents')
 @ApiBearerAuth('JWT')
@@ -19,13 +28,17 @@ export class DocumentController {
   @ApiOperation({
     summary: 'The printable invoice for a sale',
     description:
-      'The document a customer is sent to pay from: letterhead, lines, the VAT split shown as *of which* rather than added on, and the accounts to pay into. `GET /sales/:id/receipt` remains the narrow JSON payload a thermal printer uses — this is deliberately a different document for a different reader.',
+      'The document a customer is sent to pay from: letterhead, lines, the VAT split shown as *of which* rather than added on, and the accounts to pay into. `GET /sales/:id/receipt` remains the narrow JSON payload a thermal printer uses — this is deliberately a different document for a different reader.\n\n**Every request is a copy, and is counted** (2026-10-09): the sale gains a print row, and every copy after the first says "COPY 2", "COPY 3" on it. That is why it is counted here, as the PDF is built, rather than by a button reporting a click — no button and no app can make a copy that goes uncounted.',
   })
   async invoice(
     @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: InvoicePdfQuery,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { buffer, filename } = await this.documents.invoicePdf(id);
+    const { buffer, filename } = await this.documents.invoicePdf(
+      id,
+      query.purpose === 'print' ? SalePrintKind.printed : SalePrintKind.opened,
+    );
     return send(res, buffer, filename);
   }
 

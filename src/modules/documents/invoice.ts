@@ -53,6 +53,31 @@ export interface InvoiceDocument {
   /** Printed only while something is owed — see `SaleService.receipt`. */
   dueDate: Date | null;
   note: string | null;
+  /**
+   * Which copy this is and when it was made (2026-10-09). Copy 1, or none,
+   * prints as it always has; every later one is marked — see `copyMark`.
+   */
+  copy?: { number: number; madeAt: Date } | null;
+}
+
+/**
+ * "COPY 2", and when it was made, for every copy after the first — so a
+ * reprint cannot be handed over as the original. Null for the original.
+ */
+export function copyMark(
+  copy: InvoiceDocument['copy'],
+  timezone: string,
+): { title: string; detail: string } | null {
+  if (!copy || copy.number < 2) return null;
+  const time = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: timezone,
+  }).format(copy.madeAt);
+  return {
+    title: `COPY ${copy.number}`,
+    detail: `Not the original · made ${printDate(copy.madeAt, timezone)}, ${time}`,
+  };
 }
 
 /**
@@ -70,6 +95,7 @@ export function invoiceDefinition(args: {
 }): TDocumentDefinitions {
   const { organization: org, accounts, invoice } = args;
   const money = (value: number) => printMoney(value, org.currency);
+  const mark = copyMark(invoice.copy, org.timezone);
 
   const content: Content[] = [
     letterhead(org),
@@ -80,6 +106,18 @@ export function invoiceDefinition(args: {
           stack: [
             { text: 'INVOICE', style: 'documentTitle' },
             { text: invoice.number, style: 'documentNumber' },
+            // Under the number, where whoever checks a receipt looks first.
+            ...(mark
+              ? [
+                  {
+                    text: mark.title,
+                    bold: true,
+                    fontSize: 13,
+                    margin: [0, 6, 0, 0] as Margin,
+                  },
+                  { text: mark.detail, style: 'label' },
+                ]
+              : []),
           ],
         },
         {

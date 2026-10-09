@@ -37,6 +37,7 @@ import {
 } from '../payments/balance';
 import type { SaleBalanceInput } from '../payments/balance';
 import { redactCost } from '../../common/authz/cost-visibility';
+import { PRINT_COUNT, PRINT_HISTORY, withPrints } from './prints';
 
 /**
  * Who may extend further credit to a customer who already owes.
@@ -128,6 +129,9 @@ const SALE_INCLUDE = {
       },
     },
   },
+  // How many copies of the invoice were made (2026-10-09) — owner and manager
+  // only, removed for anyone else by `withPrints`.
+  ...PRINT_COUNT,
 } as const;
 
 /**
@@ -502,7 +506,7 @@ export class SaleService {
     const last = rows.at(-1);
 
     return {
-      sales: rows.map((row) => forReading(row)),
+      sales: rows.map((row) => withPrints(forReading(row))),
       nextCursor:
         rows.length === limit && last
           ? encodeCursor({ at: last.createdAt, id: last.id })
@@ -515,10 +519,11 @@ export class SaleService {
   async findOne(id: string): Promise<SaleView> {
     const sale = await this.prisma.sale.findFirst({
       where: { id },
-      include: SALE_INCLUDE,
+      // Who made each copy, on the sale's own page only (2026-10-09).
+      include: { ...SALE_INCLUDE, ...PRINT_HISTORY },
     });
     if (!sale) throw new NotFoundException('Sale not found');
-    return forReading(sale);
+    return withPrints(forReading(sale));
   }
 
   /**

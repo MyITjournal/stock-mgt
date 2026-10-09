@@ -1492,6 +1492,22 @@ async function main() {
     invoicePdf.disposition,
   );
 
+  // Every copy is counted as the PDF is built (2026-10-09): that one was
+  // opened; this one comes from a Print button.
+  await raw('GET', `/sales/${credit.id}/invoice.pdf?purpose=print`, t);
+  const printedSale = (await api('GET', `/sales/${credit.id}`, { token: t })).data;
+  eq('every copy of the invoice is counted', printedSale.printCount, 2);
+  eq('numbered from the original', printedSale.prints.map((p) => p.copy).join(','), '1,2');
+  eq('saying how each was made', printedSale.prints.map((p) => p.kind).join(','), 'opened,printed');
+  check('and who made it', printedSale.prints.every((p) => p.printedBy !== null));
+  const listedSale = (await api('GET', '/sales?order=desc&limit=100', { token: t })).data.sales.find(
+    (s) => s.id === credit.id,
+  );
+  eq('the list carries the count', listedSale.printCount, 2);
+  check('but not who made each copy', !('prints' in listedSale));
+  await api('GET', `/sales/${credit.id}/invoice.pdf?purpose=fax`, { token: t, expect: 400 });
+  check('a purpose it does not know is refused', true);
+
   const statementPdf = await raw('GET', `/customers/${shopkeeper.id}/statement.pdf`, t);
   eq('the statement is a PDF too', statementPdf.type, 'application/pdf');
   check('and really one', statementPdf.body.subarray(0, 5).toString() === '%PDF-');
@@ -2068,6 +2084,15 @@ async function main() {
   const aminaMe = (await api('GET', '/auth/me', { token: aminaToken })).data;
   eq('and she lands in her employer’s business', aminaMe.organizationId, ownerMe.organizationId);
   eq('with the role she was given', aminaMe.orgRole, 'sales_rep');
+
+  // Copies (2026-10-09): staff see only what is on the paper, not the count —
+  // and a copy she makes is counted, under her name.
+  const asAmina = (await api('GET', `/sales/${credit.id}`, { token: aminaToken })).data;
+  check('she does not see how often an invoice was printed', !('printCount' in asAmina) && !('prints' in asAmina));
+  await raw('GET', `/sales/${credit.id}/invoice.pdf?purpose=print`, aminaToken);
+  const afterAmina = (await api('GET', `/sales/${credit.id}`, { token: t })).data;
+  eq('but her copy is counted', afterAmina.printCount, 3);
+  eq('as hers', afterAmina.prints.at(-1).printedBy?.firstName, 'Amina');
 
   // A rep may sell but not see what the goods cost (§12).
   await api('GET', '/reports/profit?period=today', { token: aminaToken, expect: 403 });

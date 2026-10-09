@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { SalePrintKind } from '@prisma/client';
 import { TENANT_PRISMA } from '../../common/tenancy/tenant.prisma';
+import { TenantContext } from '../../common/tenancy/tenant-context';
 import type { TenantPrisma } from '../../common/tenancy/tenant.prisma';
 import { OrganizationService } from '../organization/organization.service';
 import { SaleService } from '../sales/sale.service';
@@ -27,12 +29,16 @@ export class DocumentService {
 
   async invoicePdf(
     saleId: string,
+    kind: SalePrintKind,
   ): Promise<{ buffer: Buffer; filename: string }> {
     const [receipt, organization, accounts] = await Promise.all([
       this.sales.receipt(saleId),
       this.letterhead(),
       this.payableAccounts(),
     ]);
+    // After the receipt, which refuses a sale that is not this shop's — so a
+    // copy is only ever counted against a sale that exists.
+    const copy = await this.recordCopy(saleId, kind);
 
     const buffer = await renderPdf(
       invoiceDefinition({
@@ -51,11 +57,53 @@ export class DocumentService {
           balance: receipt.balance,
           dueDate: receipt.dueDate,
           note: receipt.note,
+          copy,
         },
       }),
     );
 
     return { buffer, filename: `invoice-${receipt.number}.pdf` };
+  }
+
+  /**
+   * Counts one more copy of a sale's invoice and says which copy it is
+   * (2026-10-09).
+   *
+   * The number is the last copy plus one, and `(saleId, copy)` is unique, so
+   * two copies made at the same instant cannot both be "copy 2": the second
+   * insert fails and is tried again as copy 3. Three tries is far more than two
+   * people pressing Print on one sale at once will ever need.
+   */
+  private async recordCopy(
+    saleId: string,
+    kind: SalePrintKind,
+  ): Promise<{ number: number; madeAt: Date }> {
+    const organizationId = TenantContext.requireOrganizationId();
+    const printedByUserId = TenantContext.get()?.userId ?? null;
+
+    for (let attempt = 1; ; attempt++) {
+      const last = await this.prisma.salePrint.findFirst({
+        where: { saleId },
+        orderBy: { copy: 'desc' },
+        select: { copy: true },
+      });
+      try {
+        const row = await this.prisma.salePrint.create({
+          data: {
+            organizationId,
+            saleId,
+            copy: (last?.copy ?? 0) + 1,
+            kind,
+            printedByUserId,
+          },
+          select: { copy: true, createdAt: true },
+        });
+        return { number: row.copy, madeAt: row.createdAt };
+      } catch (error) {
+        if (attempt < 3 && isUniqueViolation(error)) continue;
+        throw error;
+      }
+    }
   }
 
   async statementPdf(
@@ -136,6 +184,14 @@ export class DocumentService {
     });
     return accounts;
   }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
 
 /** A filename a phone will not mangle when the document is shared. */

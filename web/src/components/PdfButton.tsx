@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { Button } from './Button';
 
 /**
@@ -15,6 +17,10 @@ import { Button } from './Button';
  * the tab lands on nothing; leaving it forever holds the PDF in memory for the
  * life of the session. A minute is long enough for any tab to load and short
  * enough not to matter.
+ *
+ * Opening an invoice counts as a copy of it (2026-10-09) — it can be printed
+ * from the viewer — so this ends with `afterWrite` too, and the sale on screen
+ * shows the new count.
  */
 export function PdfButton({
   path,
@@ -27,12 +33,14 @@ export function PdfButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const open = async () => {
     setBusy(true);
     setError(null);
     try {
       const { url } = await api.document(path);
+      afterWrite(queryClient);
       const tab = window.open(url, '_blank', 'noopener');
       if (!tab) {
         // Popup blocked. Fall back to a download, which is not blocked, rather

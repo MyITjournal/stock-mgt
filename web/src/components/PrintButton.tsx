@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
+import { afterWrite } from '../api/cache';
 import { Button } from './Button';
 
 /**
@@ -22,6 +24,12 @@ import { Button } from './Button';
  *
  * The object URL is revoked on a timer, for the same reason as `PdfButton`:
  * revoking at once races the frame's own load of the blob.
+ *
+ * ## Every copy is counted (2026-10-09)
+ *
+ * The server counts the copy as it builds the PDF; `purpose=print` only tells
+ * the owner, in the sale's history, that it came from a Print button. It is a
+ * write, so it ends with `afterWrite` and the sale on screen shows the count.
  */
 export function PrintButton({
   path,
@@ -37,12 +45,16 @@ export function PrintButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const print = async () => {
     setBusy(true);
     setError(null);
     try {
-      const { url } = await api.document(path);
+      const { url } = await api.document(
+        `${path}${path.includes('?') ? '&' : '?'}purpose=print`,
+      );
+      afterWrite(queryClient);
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 
       if (window.matchMedia('(pointer: coarse)').matches) {

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PaymentMethod } from '@prisma/client';
+import { PaymentMethod, SalePrintKind } from '@prisma/client';
 
 /**
  * What a sale looks like on the way out: `POST /sales`, `GET /sales` and
@@ -409,6 +409,26 @@ export class SaleCorrectionPreviewView {
   lines!: SaleCorrectionPreviewLine[];
 }
 
+/** One copy of the invoice: which copy, how it was made, by whom, when. */
+export class SalePrintEntry {
+  @ApiProperty({ example: 2, description: '1 is the original.' })
+  copy!: number;
+
+  @ApiProperty({
+    enum: SalePrintKind,
+    enumName: 'SalePrintKind',
+    description:
+      '`printed` from a Print button; `opened` as a PDF to look at or share.',
+  })
+  kind!: SalePrintKind;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt!: Date;
+
+  @ApiProperty({ type: () => RecordedByView, nullable: true })
+  printedBy!: RecordedByView | null;
+}
+
 export class SaleView {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -530,6 +550,19 @@ export class SaleView {
       'Corrections made to the sale, oldest first. The sale itself already shows the corrected figures.',
   })
   corrections!: SaleCorrectionView[];
+
+  @ApiPropertyOptional({
+    description:
+      'Copies of the invoice made so far — printed or opened as a PDF. **Absent** for anyone but an owner or manager (2026-10-09).',
+  })
+  printCount?: number;
+
+  @ApiPropertyOptional({
+    type: () => [SalePrintEntry],
+    description:
+      'Each copy, oldest first. On `GET /sales/:id` only, and **absent** for anyone but an owner or manager.',
+  })
+  prints?: SalePrintEntry[];
 
   @ApiProperty({
     description: 'Settled by payments, signed. Derived, never stored.',
