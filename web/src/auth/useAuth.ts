@@ -91,3 +91,19 @@ export function useRecordsStock(): boolean {
   const { user } = useAuth();
   return user !== null && RECORDS_STOCK.includes(user.orgRole);
 }
+
+/**
+ * Who takes a customer's payment, mirroring `MONEY_HANDLERS` on the server
+ * (2026-10-09): everybody but the storekeeper. Navigation, not security.
+ */
+export const TAKES_PAYMENTS: readonly OrgRole[] = [
+  'owner',
+  'manager',
+  'accountant',
+  'sales_rep',
+];
+
+export function useTakesPayments(): boolean {
+  const { user } = useAuth();
+  return user !== null && TAKES_PAYMENTS.includes(user.orgRole);
+}

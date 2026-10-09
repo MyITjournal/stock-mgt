@@ -8,11 +8,13 @@ import { PdfButton } from '../components/PdfButton';
 import { PrintButton } from '../components/PrintButton';
 import { api, ApiError } from '../api/client';
 import { afterWrite } from '../api/cache';
-import { useIsManager, useSeesCost } from '../auth/useAuth';
+import { useIsManager, useSeesCost, useTakesPayments } from '../auth/useAuth';
 import type { components } from '../api/schema';
 import { ReturnDialog, type ReturnLineInput } from './ReturnDialog';
 import { CorrectSaleDialog } from './CorrectSaleDialog';
 import { optionLabel } from '../lib/options';
+import { RecordPaymentDialog } from '../money/RecordPaymentDialog';
+import { useRecordPayment } from '../money/useRecordPayment';
 
 type SaleView = components['schemas']['SaleView'];
 
@@ -36,6 +38,11 @@ export function SaleDetailPage() {
   // Correcting prices or the customer is owner or manager too (2026-10-08).
   const [correcting, setCorrecting] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
+  // Paying this invoice from its own page (2026-10-09), fully or in part —
+  // the same dialog as Money → Invoices' Mark as paid, so the same request.
+  const takesPayments = useTakesPayments();
+  const [paying, setPaying] = useState(false);
+  const payment = useRecordPayment(() => setPaying(false));
 
   const { data: sale, isPending } = useQuery({
     queryKey: ['sale', id],
@@ -106,6 +113,13 @@ export function SaleDetailPage() {
       description={`${new Date(sale.occurredAt).toLocaleString('en-NG')} · ${customerName}`}
       actions={
         <>
+          {/*
+            Only for a named customer: a walk-in cannot buy on credit (owner,
+            2026-10-09), so a walk-in sale has nothing to collect.
+          */}
+          {takesPayments && sale.customer && sale.balance > 0 && (
+            <Button onClick={() => setPaying(true)}>Take payment</Button>
+          )}
           <PrintButton
             path={`/sales/${sale.id}/invoice.pdf`}
             label="Print invoice"
@@ -295,7 +309,9 @@ export function SaleDetailPage() {
                           {copy.copy === 1 ? 'Original' : `Copy ${copy.copy}`}
                         </span>
                         <span className="ml-2 text-xs text-slate-500">
-                          {copy.kind === 'printed' ? 'printed' : 'opened as PDF'}
+                          {copy.kind === 'printed'
+                            ? 'printed'
+                            : 'opened as PDF'}
                           {copy.printedBy
                             ? ` · ${[copy.printedBy.firstName, copy.printedBy.lastName].filter(Boolean).join(' ')}`
                             : ''}
@@ -411,6 +427,24 @@ export function SaleDetailPage() {
           )}
         </aside>
       </div>
+
+      {paying && sale.customer && (
+        <RecordPaymentDialog
+          invoice={{
+            saleId: sale.id,
+            number: sale.number,
+            customerId: sale.customer.id,
+            balance: sale.balance,
+          }}
+          busy={payment.record.isPending}
+          error={payment.error}
+          onCancel={() => {
+            setPaying(false);
+            payment.clearError();
+          }}
+          onConfirm={(draft) => payment.record.mutate(draft)}
+        />
+      )}
 
       {correcting && (
         <CorrectSaleDialog sale={sale} onClose={() => setCorrecting(false)} />

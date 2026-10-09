@@ -6149,3 +6149,19 @@ retried as the next number.
 
 **Not counted:** `GET /sales/:id/receipt`, the JSON a thermal printer would use. Counting the mobile
 app's prints needs it to report them, offline ones included — a later step if that app prints.
+
+## 26. Taking a payment from the sale's own page (2026-10-09)
+
+Owner: from an overdue invoice opened off Home, "clear the payments fully or partly without having
+to go to Money." A sale's page has **Take payment** while the sale owes something. It opens the
+same `RecordPaymentDialog` as Money → Invoices' *Mark as paid*, through the same
+`useRecordPayment`, so it sends the same request: the amount starts at the balance, less is a part
+payment, more stays as the customer's credit. Shown to `TAKES_PAYMENTS` (`useAuth.ts`), which
+mirrors the server's `MONEY_HANDLERS` (everyone but the storekeeper). No server change.
+
+**Named customers only.** Owner: "Only named customers can have reasons not to pay immediately.
+Walk-in customers cannot buy on credit." The till already refuses to finish a walk-in sale that is
+not paid in full. ⚠ **The server does not**: `POST /sales` from another client can record a part-paid
+walk-in sale, and a price correction that raises a walk-in sale's total leaves the difference owed.
+Neither can be collected from a screen. Enforcing the rule on the server is a separate change, not
+made here.

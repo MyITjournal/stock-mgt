@@ -1583,3 +1583,14 @@ nothing extra.
 **397. Staff.** Sign in as a sales rep and print the same invoice from the Sales list: the paper
 says COPY 4, but neither the list nor the sale page shows a count or the copies section. Back as
 the owner, copy 4 is there, under the rep's name.
+
+## BP. Taking a payment from the sale's page
+
+**398. [gate] Part, then the rest.** Sell to a named customer on credit. Open the sale (from Home's
+due payments or Sales): *Take payment* is beside *Print invoice*, and opens "Mark INV-… as paid"
+with the whole balance filled in. Change it to half, pick cash, save: the dialog closes, *Balance*
+drops by that much and the payment is listed under *Payments*. Take payment again: the rest is
+filled in. Pay it: the button disappears.
+
+**399. Who and which sales.** A fully paid sale, and a walk-in sale, have no *Take payment*. Signed
+in as a storekeeper, neither does an owing one; as a sales rep, it does.
