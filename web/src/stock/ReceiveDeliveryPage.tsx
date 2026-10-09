@@ -17,6 +17,8 @@ import {
 import type { components } from '../api/schema';
 import { decimalDraft, toWholeBaseUnits } from '../lib/decimalQuantity';
 import { choiceValue, stockChoices } from '../lib/options';
+import { DeliveryFeeFields } from './DeliveryFeeFields';
+import { NO_FEE, feeBody, feeReady, type FeeDraft } from './deliveryFee';
 
 type ProductView = components['schemas']['ProductView'];
 type SupplierView = components['schemas']['SupplierView'];
@@ -58,6 +60,8 @@ interface DeliveryDraft {
   method: Method;
   bankAccountId: string;
   reference: string;
+  /** Optional because a draft kept before 2026-10-09 has none. */
+  fee?: FeeDraft;
 }
 
 interface ReadLine {
@@ -200,6 +204,7 @@ export function ReceiveDeliveryPage() {
   const [method, setMethod] = useState<Method>(kept?.method ?? 'cash');
   const [bankAccountId, setBankAccountId] = useState(kept?.bankAccountId ?? '');
   const [reference, setReference] = useState(kept?.reference ?? '');
+  const [fee, setFee] = useState<FeeDraft>(kept?.fee ?? NO_FEE);
   const [error, setError] = useState<string | null>(null);
 
   // The receipt id is stable across every attempt; each attempt carries its own
@@ -262,7 +267,10 @@ export function ReceiveDeliveryPage() {
     (sum, line) => sum + (line.totalCost ?? 0),
     0,
   );
-  const ready = Boolean(supplierId) && complete.length > 0;
+  const ready =
+    Boolean(supplierId) &&
+    complete.length > 0 &&
+    (!settlesDeliveries || feeReady(fee));
 
   const record = useMutation({
     mutationFn: () =>
@@ -287,6 +295,9 @@ export function ReceiveDeliveryPage() {
                 ...(reference.trim() ? { reference: reference.trim() } : {}),
               },
             }
+          : {}),
+        ...(settlesDeliveries && fee.amount
+          ? { deliveryFee: feeBody(fee) }
           : {}),
         lines: complete.map((line) => {
           const read = readOf(line)!;
@@ -336,6 +347,7 @@ export function ReceiveDeliveryPage() {
       method,
       bankAccountId,
       reference,
+      fee,
     },
     !record.isSuccess &&
       (Boolean(supplierId) ||
@@ -658,9 +670,10 @@ export function ReceiveDeliveryPage() {
             <p className="text-xs text-slate-500">
               This delivery raises a bill on <strong>Money → Bills</strong>{' '}
               whether or not anything was paid. It defaults to the goods total;
-              override it when the invoice carries a delivery charge or a
-              settlement discount that no stock line can hold — that does not
-              change what the goods cost.
+              override it when the vendor’s invoice carries a settlement
+              discount or a charge that no stock line can hold — that does not
+              change what the goods cost. A driver paid to bring the goods goes
+              under <strong>Bringing it here</strong> below.
             </p>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -754,6 +767,27 @@ export function ReceiveDeliveryPage() {
                 </Field>
               </div>
             )}
+          </section>
+        )}
+
+        {settlesDeliveries && (
+          <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold text-slate-900">
+              Bringing it here
+            </h2>
+            <p className="text-xs text-slate-500">
+              A delivery fee is part of what the goods cost. It is shared across
+              the lines by value and added to what each item cost, so profit and
+              stock value include it. It is not on the vendor’s bill and not an
+              expense. Each item’s cost with delivery shows on the delivery’s
+              page once it is recorded.
+            </p>
+            <DeliveryFeeFields
+              fee={fee}
+              onChange={setFee}
+              idPrefix="receive-fee"
+              recorderLabel="Me"
+            />
           </section>
         )}
 

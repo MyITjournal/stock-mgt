@@ -45,6 +45,14 @@
  * A line may be corrected to zero — an item that was on the paperwork and
  * never came. Its stock comes out and its value goes to zero; if the vendor
  * still charged for it, that is the bill's amount to change, not the goods.
+ *
+ * ## The delivery fee (2026-10-09)
+ *
+ * A correction may put the driver's fee right too — add one that was left
+ * off, change it, or take it off — with or without any line. The fee is split
+ * across the lines again by their corrected values (`delivery-fee.ts`), and
+ * each lot's total becomes its line's value plus its share. The vendor's bill
+ * never moves for it: the driver was paid, not the vendor.
  */
 
 export interface RecordedLine {
@@ -110,6 +118,7 @@ export interface CorrectionPlan {
 export function planCorrection(
   recorded: readonly RecordedLine[],
   truths: readonly TrueFigures[],
+  options: { feeChanged?: boolean } = {},
 ): CorrectionPlan {
   const byId = new Map(recorded.map((line) => [line.id, line]));
   const problems: string[] = [];
@@ -180,7 +189,9 @@ export function planCorrection(
     });
   }
 
-  if (problems.length === 0 && changes.length === 0) {
+  // A correction to the delivery fee alone is a change: no line moves, but
+  // every lot's share of the fee does.
+  if (problems.length === 0 && changes.length === 0 && !options.feeChanged) {
     problems.push(
       'Nothing changed — the figures given are the ones already recorded.',
     );

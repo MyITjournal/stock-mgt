@@ -4755,6 +4755,142 @@ async function main() {
   ).data;
   check('a correction that changes nothing is refused', /Nothing has changed/.test(unchanged.message), unchanged.message);
 
+  step(68, 'A delivery fee: the driver’s ₦5,000 is part of what the goods cost');
+  // 10 bottles of water at ₦100,000 and 5 of juice at ₦50,000; Bola paid the
+  // driver ₦5,000 out of her till cash.
+  const feeProduct = async (name) =>
+    (
+      await api('POST', '/products', {
+        token: t,
+        key: randomUUID(),
+        body: { id: randomUUID(), name: `${name} ${shopSuffix}`, basePrice: 2_000_000, units: [{ name: 'piece', factor: 1 }] },
+      })
+    ).data;
+  const water = await feeProduct('Water carton');
+  const juice = await feeProduct('Juice carton');
+  const feeLines = [
+    { productId: water.id, quantityReceived: 10, totalCost: 10_000_000 },
+    { productId: juice.id, quantityReceived: 5, totalCost: 5_000_000 },
+  ];
+  const owedBeforeFee = (await api('GET', '/payables', { token: t })).data.total;
+  const bolaHeldBeforeFee = (await api('GET', '/cash', { token: cashierNow })).data.people[0].stillHolding;
+
+  await api('POST', '/goods-receipts', {
+    token: cashierNow,
+    key: randomUUID(),
+    body: { supplierId: supplier.id, locationId: main.id, deliveryFee: { amount: 500_000 }, lines: feeLines },
+    expect: 403,
+  });
+  check('a cashier cannot put a delivery fee on a delivery — it is a cost', true);
+  await api('POST', '/goods-receipts', {
+    token: t,
+    key: randomUUID(),
+    body: {
+      supplierId: supplier.id,
+      locationId: main.id,
+      deliveryFee: { amount: 500_000, method: 'transfer' },
+      lines: feeLines,
+    },
+    expect: 400,
+  });
+  check('a fee paid by transfer has to say which account', true);
+
+  const feeDeliveryId = randomUUID();
+  const feeDelivery = (
+    await api('POST', '/goods-receipts', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        id: feeDeliveryId,
+        supplierId: supplier.id,
+        locationId: main.id,
+        deliveryFee: { amount: 500_000, paidTo: 'Musa', paidByUserId: bolaId },
+        lines: feeLines,
+      },
+    })
+  ).data;
+  const [waterLine, juiceLine] = [water, juice].map((p) => feeDelivery.lines.find((l) => l.productId === p.id));
+  eq('the fee is stored on the delivery', feeDelivery.deliveryFee, 500_000);
+  eq('shared by value', `${waterLine.deliveryCost} / ${juiceLine.deliveryCost}`, '333333 / 166667');
+  eq('the line keeps what the vendor charged', waterLine.totalCost, 10_000_000);
+  eq('the lot carries the fee', waterLine.batch.totalCost, 10_333_333);
+  eq('₦10,000 each as invoiced', waterLine.unitCost, 1_000_000);
+  eq('₦10,333.33 each with delivery', waterLine.unitCostWithDelivery, 1_033_333.3);
+  eq(
+    'the vendor is owed the invoice, not the fee',
+    (await api('GET', '/payables', { token: t })).data.total - owedBeforeFee,
+    15_000_000,
+  );
+  eq(
+    'Bola paid the driver from her cash',
+    bolaHeldBeforeFee - (await api('GET', '/cash', { token: cashierNow })).data.people[0].stillHolding,
+    500_000,
+  );
+  eq('the cost price shown includes the fee', (await api('GET', `/products/${water.id}`, { token: t })).data.costPrice, 1_033_333);
+
+  const repSees = (await api('GET', `/goods-receipts/${feeDeliveryId}`, { token: cashierNow })).data;
+  check('a cashier does not see the fee', !('deliveryFee' in repSees) && !('deliveryCost' in repSees.lines[0]));
+
+  const waterSale = (
+    await api('POST', '/sales', {
+      token: t,
+      key: randomUUID(),
+      body: {
+        id: randomUUID(),
+        lines: [{ productId: water.id, unitId: water.units[0].id, quantity: 1 }],
+        allowDuplicate: true,
+      },
+    })
+  ).data;
+  eq('a bottle sold costs what it cost to get here', waterSale.lines[0].costOfGoodsSold, 1_033_333);
+
+  // The fee was ₦6,000, not ₦5,000: a correction to the fee alone.
+  const feeFix = { reason: 'Driver charged ₦6,000', lines: [], deliveryFee: { amount: 600_000, paidTo: 'Musa', paidByUserId: bolaId } };
+  const feePreview = (
+    await api('POST', `/goods-receipts/${feeDeliveryId}/corrections/preview`, { token: t, body: feeFix })
+  ).data;
+  eq('the preview names the fee before and after', `${feePreview.deliveryFeeBefore} → ${feePreview.deliveryFeeAfter}`, '500000 → 600000');
+  const feeFixed = (
+    await api('POST', `/goods-receipts/${feeDeliveryId}/corrections`, { token: t, key: randomUUID(), body: feeFix })
+  ).data;
+  const lotsOf = (receipt) => receipt.lines.map((l) => `${l.deliveryCost}:${l.batch.totalCost}`).join(' ');
+  eq('the new fee is shared again', lotsOf(feeFixed), '400000:10400000 200000:5200000');
+  eq('the correction keeps the fee before', feeFixed.corrections.at(-1).deliveryFeeBefore, 500_000);
+  eq(
+    'the bill does not move for it',
+    (await api('GET', '/payables', { token: t })).data.total - owedBeforeFee,
+    15_000_000,
+  );
+  eq(
+    'and the extra ₦1,000 also came from Bola’s cash',
+    bolaHeldBeforeFee - (await api('GET', '/cash', { token: cashierNow })).data.people[0].stillHolding,
+    600_000,
+  );
+  eq(
+    'the bottle already sold keeps its cost',
+    (await api('GET', `/sales/${waterSale.id}`, { token: t })).data.lines[0].costOfGoodsSold,
+    1_033_333,
+  );
+
+  // The water was invoiced at ₦120,000: a line's value moves its share too.
+  const valueFixed = (
+    await api('POST', `/goods-receipts/${feeDeliveryId}/corrections`, {
+      token: t,
+      key: randomUUID(),
+      body: {
+        reason: 'Water invoiced at ₦120,000',
+        lines: [{ lineId: waterLine.id, received: 10, paidFor: 10, totalCost: 12_000_000 }],
+      },
+    })
+  ).data;
+  const shares = valueFixed.lines.map((l) => l.deliveryCost);
+  eq('the fee still adds up to exactly ₦6,000', shares.reduce((a, b) => a + b, 0), 600_000);
+  check(
+    'every lot is its invoice plus its share',
+    valueFixed.lines.every((l) => l.batch.totalCost === l.totalCost + l.deliveryCost),
+  );
+  eq('and the fee is still ₦6,000', valueFixed.deliveryFee, 600_000);
+
   // The catch-all: no response anywhere in this run may contain an argon2 hash.
   check(
     'no response in this run leaked a password hash',

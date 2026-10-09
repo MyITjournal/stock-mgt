@@ -3523,7 +3523,8 @@ worse than none**: it turns every phone call into an argument about whose number
 So `amountDue` defaults to the line sum and is stored in its own right. It explicitly does **not**
 feed inventory cost. Stock is still valued from `GoodsReceiptLine.totalCost` per §2, and a delivery
 charge is not part of what a carton cost. Two different questions, two different figures, and the
-schema says so.
+schema says so. **Reversed for a driver paid to bring the goods (2026-10-09, §29)**: that fee is on
+the delivery, not the bill, and is part of what the goods cost.
 
 ### One payment settles exactly one bill
 
@@ -6206,3 +6207,38 @@ wordmark goes there. `/` is unchanged, so opening the site still takes staff str
 Signed in, the page gets `startPath` and every *Sign in* / *Create your shop* button becomes **Open
 my shop**, to their own start screen — those pages would only have bounced them back. The page
 itself still reads no session; `About` does, and passes the path in.
+
+## 29. A delivery fee is part of what the goods cost (2026-10-09)
+
+Owner: 10 items arrive and the driver is paid ₦5,000; that transport is part of the cost, without
+touching what the vendor charged. This **reverses §16's "a delivery charge is not part of what a
+carton cost"** for the case the owner actually has — the driver, not the vendor, is paid (vendors
+here hardly charge for delivery). A charge on the vendor's own invoice still goes in `amountDue`
+and still reaches no cost; nobody has asked for that yet.
+
+- **On the delivery, split by value onto the lots.** `GoodsReceipt.deliveryFee`; each line's
+  share is `GoodsReceiptLine.deliveryCost`, and the lot's `totalCost` is **line total + share**.
+  The line keeps what the vendor charged. Everything that values stock or costs a sale already
+  reads the lot, so profit, stock value, margins and `costPrice` include the fee with no change of
+  their own. `unitCost` (invoiced) and `unitCostWithDelivery` are both on the read.
+- **Shares add up to exactly the fee** — floor each, then one kobo each to the largest
+  remainders, ties to the earlier line (`delivery-fee.ts`). When every line is ₦0 (free goods
+  only), by what arrived; a line where nothing arrived carries nothing, or its unit cost would
+  divide by zero. ⚠ **Trap avoided**: `fee × lineValue` passes 2⁵³ on a ₦50,000 fee against a
+  ₦20m line — the split is done in BigInt.
+- **Not on the vendor's bill, never an `Expense`.** The vendor was not paid it, and it already
+  reaches profit through cost of goods; an expense would count it twice.
+- **Cash counts it as paid out** by whoever's cash paid it (`deliveryFeePaidByUserId`), which
+  defaults to **whoever recorded the delivery** — the person at the door — not whoever typed the
+  fee. An owner adding a fee later to a storekeeper's delivery would otherwise take it out of the
+  owner's cash and leave the storekeeper looking over. Transfer and POS name an account, as every
+  payment does, and nobody's cash.
+- **Owner, manager or accountant only** (`SETTLES_DELIVERIES`, the same gate as `amountDue`): a
+  fee divided by what arrived is a cost price, so it and how it was paid are redacted with cost.
+- **Corrected, never edited**: `CorrectDeliveryDto.deliveryFee` adds, changes or (at 0) removes
+  it, with or without a line — `lines` may now be empty. After **every** correction the fee is
+  split again by the corrected values and each lot set to line + share (`shareTheFee`), because a
+  line whose value moved takes a different share. The bill never moves for the fee. Sales already
+  made keep their cost, as with every correction. The correction row keeps the fee before/after.
+- **The browser works out no share.** The form says the fee is shared by value; the delivery's
+  page shows each item's cost with delivery from the server once it is saved.

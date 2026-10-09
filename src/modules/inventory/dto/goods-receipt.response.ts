@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaymentMethod } from '@prisma/client';
 
 /**
  * What the goods-receipt endpoints return.
@@ -117,7 +118,7 @@ class ReceiptBatchView {
 
   @ApiPropertyOptional({
     description:
-      'The same invoice total as the line carries. **Absent** for a role that may not see cost — redacted with the line rather than left as the way round the front door.',
+      'The line’s invoice total plus its share of the delivery fee — what everything that values stock or costs a sale reads. **Absent** for a role that may not see cost — redacted with the line rather than left as the way round the front door.',
   })
   totalCost?: number;
 
@@ -186,6 +187,12 @@ export class GoodsReceiptLineSummary {
   })
   totalCost?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'This line’s share of the delivery fee, in kobo, split by value. The lot costs `totalCost + deliveryCost`. **Absent** for a role that may not see cost.',
+  })
+  deliveryCost?: number;
+
   @ApiProperty({ type: String, format: 'date-time' })
   createdAt!: Date;
 
@@ -206,13 +213,61 @@ export class GoodsReceiptLineView extends GoodsReceiptLineSummary {
 
   @ApiPropertyOptional({
     description:
-      'Output, never input. Divided by what *arrived*, not what was paid for, so free goods pull the cost of every unit down — which is the whole point of them. **Absent** for a role that may not see cost.',
+      'What the vendor charged, each. Output, never input. Divided by what *arrived*, not what was paid for, so free goods pull the cost of every unit down — which is the whole point of them. **Absent** for a role that may not see cost.',
   })
   unitCost?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'The same with the line’s share of the delivery fee — what each really cost to get onto the shelf, and what profit is worked from. **Absent** for a role that may not see cost.',
+  })
+  unitCostWithDelivery?: number;
+}
+
+class ReceiptFeeAccountRef {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Guaranty Trust Bank' })
+  bankName!: string;
+
+  @ApiProperty({ example: '0123456789' })
+  accountNumber!: string;
+}
+
+/**
+ * The delivery fee on a receipt (2026-10-09): what the driver was paid to
+ * bring the goods. Part of what they cost, never on the vendor's bill. Every
+ * field is **absent** for a role that may not see cost.
+ */
+class ReceiptFeeFields {
+  @ApiPropertyOptional({ description: 'In kobo. 0 when there was none.' })
+  deliveryFee?: number;
+
+  @ApiPropertyOptional({
+    enum: PaymentMethod,
+    enumName: 'PaymentMethod',
+    nullable: true,
+  })
+  deliveryFeeMethod?: PaymentMethod | null;
+
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
+  deliveryFeeBankAccountId?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Musa' })
+  deliveryFeePaidTo?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: 'For a cash fee: whose cash it came out of.',
+  })
+  deliveryFeePaidByUserId?: string | null;
 }
 
 /** A delivery, as the list shows it. */
-export class GoodsReceiptSummary {
+export class GoodsReceiptSummary extends ReceiptFeeFields {
   @ApiProperty({ format: 'uuid' })
   id!: string;
 
@@ -270,7 +325,7 @@ export class GoodsReceiptSummary {
  * you get back for recording a delivery is exactly what reading it later
  * returns.
  */
-export class GoodsReceiptView {
+export class GoodsReceiptView extends ReceiptFeeFields {
   @ApiProperty({ format: 'uuid' })
   id!: string;
 
@@ -309,6 +364,22 @@ export class GoodsReceiptView {
 
   @ApiProperty({ type: () => ReceiptRecorderRef, nullable: true })
   recordedBy!: ReceiptRecorderRef | null;
+
+  @ApiPropertyOptional({
+    type: () => ReceiptFeeAccountRef,
+    nullable: true,
+    description:
+      'The account a transfer or pos delivery fee left. **Absent** for a role that may not see cost.',
+  })
+  deliveryFeeBankAccount?: ReceiptFeeAccountRef | null;
+
+  @ApiPropertyOptional({
+    type: () => ReceiptRecorderRef,
+    nullable: true,
+    description:
+      'Whose cash a cash delivery fee came out of. **Absent** for a role that may not see cost.',
+  })
+  deliveryFeePaidBy?: ReceiptRecorderRef | null;
 
   @ApiProperty({ type: () => [GoodsReceiptLineView] })
   lines!: GoodsReceiptLineView[];
@@ -371,6 +442,17 @@ class ReceiptCorrectionView {
   @ApiPropertyOptional({ type: Number, nullable: true })
   billAmountAfter?: number | null;
 
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      'The delivery fee before, in kobo; null when it did not move. Absent for roles that may not see cost.',
+  })
+  deliveryFeeBefore?: number | null;
+
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  deliveryFeeAfter?: number | null;
+
   @ApiProperty({ type: () => [ReceiptCorrectionLineView] })
   lines!: ReceiptCorrectionLineView[];
 }
@@ -421,6 +503,15 @@ export class CorrectionPreviewView {
     description: 'The bill after the correction, in kobo.',
   })
   billAmountAfter!: number | null;
+
+  @ApiProperty({ description: 'The delivery fee now, in kobo.' })
+  deliveryFeeBefore!: number;
+
+  @ApiProperty({
+    description:
+      'The delivery fee after the correction, in kobo. It never moves the bill.',
+  })
+  deliveryFeeAfter!: number;
 
   @ApiProperty({ type: () => [CorrectionPreviewLine] })
   lines!: CorrectionPreviewLine[];

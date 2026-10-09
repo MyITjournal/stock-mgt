@@ -9,6 +9,7 @@ import { useIsManager, useSeesCost } from '../auth/useAuth';
 import { Button } from '../components/Button';
 import { CorrectDeliveryDialog } from './CorrectDeliveryDialog';
 import { optionLabel } from '../lib/options';
+import { personName } from '../money/cashNames';
 import type { components } from '../api/schema';
 
 type GoodsReceiptView = components['schemas']['GoodsReceiptView'];
@@ -26,6 +27,10 @@ type GoodsReceiptLineView = components['schemas']['GoodsReceiptLineView'];
  *
  * The money is a buying price, so every figure here is **absent** rather than
  * zero for a role that may not see cost (§9).
+ *
+ * **The delivery fee** (2026-10-09) — what the driver was paid — is part of
+ * what the goods cost: each line shows its cost each as the vendor charged
+ * it and with its share of the fee, both the server's figures.
  *
  * **A delivery entered wrong is corrected, not edited** — owner or manager,
  * any number of times. The lines show the true figures; every correction is
@@ -80,6 +85,14 @@ export function ReceiptDetailPage() {
     (sum, line) => sum + (line.quantityReceived - line.quantityPaidFor),
     0,
   );
+
+  const hasFee = (receipt.deliveryFee ?? 0) > 0;
+  const METHOD_LABEL: Record<string, string> = {
+    cash: 'cash',
+    transfer: 'transfer',
+    pos: 'POS',
+    cheque: 'cheque',
+  };
 
   const columns: readonly Column<GoodsReceiptLineView>[] = [
     {
@@ -153,6 +166,17 @@ export function ReceiptDetailPage() {
               <Money value={line.unitCost} />
             ),
           },
+          ...(hasFee
+            ? [
+                {
+                  header: 'With delivery',
+                  numeric: true,
+                  cell: (line: GoodsReceiptLineView) => (
+                    <Money value={line.unitCostWithDelivery} />
+                  ),
+                },
+              ]
+            : []),
           {
             header: 'Line total',
             numeric: true,
@@ -196,6 +220,24 @@ export function ReceiptDetailPage() {
             <div className="text-xs uppercase text-slate-500">Goods value</div>
             <div className="text-slate-900">
               <Money value={goodsValue} />
+            </div>
+          </div>
+        )}
+        {seesCost && hasFee && (
+          <div>
+            <div className="text-xs uppercase text-slate-500">Delivery fee</div>
+            <div className="text-slate-900">
+              <Money value={receipt.deliveryFee} />
+              <span className="text-xs text-slate-500">
+                {' '}
+                · {METHOD_LABEL[receipt.deliveryFeeMethod ?? 'cash']}
+                {receipt.deliveryFeePaidTo &&
+                  ` to ${receipt.deliveryFeePaidTo}`}
+                {receipt.deliveryFeePaidBy &&
+                  ` · from ${personName(receipt.deliveryFeePaidBy)}’s cash`}
+                {receipt.deliveryFeeBankAccount &&
+                  ` · from ${receipt.deliveryFeeBankAccount.bankName} ${receipt.deliveryFeeBankAccount.accountNumber}`}
+              </span>
             </div>
           </div>
         )}
@@ -270,6 +312,14 @@ export function ReceiptDetailPage() {
                         <Money value={correction.billAmountAfter} />
                       </li>
                     )}
+                  {correction.deliveryFeeBefore != null &&
+                    correction.deliveryFeeAfter != null && (
+                      <li>
+                        Delivery fee:{' '}
+                        <Money value={correction.deliveryFeeBefore} /> →{' '}
+                        <Money value={correction.deliveryFeeAfter} />
+                      </li>
+                    )}
                 </ul>
               </li>
             ))}
@@ -290,7 +340,8 @@ export function ReceiptDetailPage() {
           Money → Bills
         </Link>
         . The goods value above is what the stock lines came to, which the
-        vendor&rsquo;s invoice total can legitimately differ from.
+        vendor&rsquo;s invoice total can legitimately differ from. A delivery
+        fee is not on the bill: the driver was paid, not the vendor.
       </p>
     </Page>
   );

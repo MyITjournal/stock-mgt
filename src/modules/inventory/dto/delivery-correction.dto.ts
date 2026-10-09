@@ -2,7 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
-  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsInt,
@@ -15,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsMoney } from '../../../common/money/is-money.validator';
+import { DeliveryFeeDto } from './goods-receipt.dto';
 
 /** One delivery line's true figures. */
 export class TrueLineFiguresDto {
@@ -75,13 +75,26 @@ export class CorrectDeliveryDto {
   @MaxLength(500)
   reason!: string;
 
-  @ApiProperty({ type: [TrueLineFiguresDto] })
+  @ApiProperty({
+    type: [TrueLineFiguresDto],
+    description:
+      'The lines that were wrong. Empty when only the delivery fee is being put right.',
+  })
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => TrueLineFiguresDto)
   lines!: TrueLineFiguresDto[];
+
+  @ApiPropertyOptional({
+    type: () => DeliveryFeeDto,
+    description:
+      'The delivery fee as it really was (2026-10-09) — added, changed, or 0 to take it off. Omitted, the fee stays. It is split again across the lines by value either way. Owner, manager or accountant only.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeliveryFeeDto)
+  deliveryFee?: DeliveryFeeDto;
 
   @ApiPropertyOptional({
     description:

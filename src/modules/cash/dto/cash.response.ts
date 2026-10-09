@@ -121,7 +121,7 @@ export class CashPersonView {
 
   @ApiProperty({
     description:
-      'Cash refunds, cash expenses and cash supplier payments they recorded.',
+      'Cash refunds, cash expenses and cash supplier payments they recorded, and delivery fees paid from their cash.',
   })
   paidOut!: number;
 

@@ -13,7 +13,11 @@ import { shopMoney } from '../../common/money/shop-money';
 import { SupplierBillService } from '../payables/supplier-bill.service';
 import { checkVariant, optionLabel } from '../catalog/variants';
 import { StockService, type StockWriter } from './stock.service';
-import { ReceivingService } from './receiving.service';
+import {
+  ReceivingService,
+  type ResolvedDeliveryFee,
+} from './receiving.service';
+import { feeHasSomewhereToGo, splitDeliveryFee } from './delivery-fee';
 import { CorrectDeliveryDto } from './dto/delivery-correction.dto';
 import {
   CorrectionPreviewView,
@@ -81,6 +85,23 @@ export class DeliveryCorrectionService {
     input: CorrectDeliveryDto,
     dryRun: boolean,
   ): Promise<void> {
+    // The fee is checked before the transaction opens: it reads accounts and
+    // memberships the transaction does not write, on a pool that may be one
+    // connection wide.
+    let fee: ResolvedDeliveryFee | null = null;
+    if (input.deliveryFee !== undefined) {
+      this.receiving.assertMaySettle();
+      const found = await this.prisma.goodsReceipt.findFirst({
+        where: { id: receiptId },
+        select: { recordedByUserId: true },
+      });
+      if (!found) throw new NotFoundException('Delivery not found');
+      fee = await this.receiving.resolveDeliveryFee(
+        input.deliveryFee,
+        found.recordedByUserId,
+      );
+    }
+
     await this.prisma.$transaction(
       async (tx) => {
         const writer = tx as unknown as StockWriter;
@@ -90,6 +111,11 @@ export class DeliveryCorrectionService {
             id: true,
             locationId: true,
             receivedAt: true,
+            deliveryFee: true,
+            deliveryFeeMethod: true,
+            deliveryFeeBankAccountId: true,
+            deliveryFeePaidTo: true,
+            deliveryFeePaidByUserId: true,
             lines: {
               select: {
                 id: true,
@@ -106,12 +132,19 @@ export class DeliveryCorrectionService {
         });
         if (!receipt) throw new NotFoundException('Delivery not found');
 
+        const feeChanged =
+          fee !== null &&
+          (Object.keys(fee) as (keyof ResolvedDeliveryFee)[]).some(
+            (field) => fee[field] !== receipt[field],
+          );
+        const feeAfter = feeChanged ? fee!.deliveryFee : receipt.deliveryFee;
+
         const recorded = await this.withCurrentOptions(
           tx,
           receipt.locationId,
           receipt.lines,
         );
-        const plan = planCorrection(recorded, input.lines);
+        const plan = planCorrection(recorded, input.lines, { feeChanged });
         if (plan.problems.length > 0) {
           throw new BadRequestException(plan.problems.join(' '));
         }
@@ -234,6 +267,14 @@ export class DeliveryCorrectionService {
           );
         }
 
+        if (feeChanged) {
+          await tx.goodsReceipt.update({
+            where: { id: receipt.id },
+            data: fee!,
+          });
+        }
+        await this.shareTheFee(tx, receipt.id, feeAfter);
+
         await tx.goodsReceiptCorrection.create({
           data: {
             organizationId: TenantContext.requireOrganizationId(),
@@ -242,6 +283,10 @@ export class DeliveryCorrectionService {
             billAmountBefore:
               bill && billAmountAfter !== null ? bill.amountDue : null,
             billAmountAfter,
+            ...(feeChanged && {
+              deliveryFeeBefore: receipt.deliveryFee,
+              deliveryFeeAfter: feeAfter,
+            }),
             recordedByUserId: TenantContext.get()?.userId ?? null,
             lines: {
               create: plan.changes.map((change) => ({
@@ -271,6 +316,8 @@ export class DeliveryCorrectionService {
             valueDelta: plan.valueDelta,
             billAmountBefore: bill ? bill.amountDue : null,
             billAmountAfter: bill ? (billAmountAfter ?? bill.amountDue) : null,
+            deliveryFeeBefore: receipt.deliveryFee,
+            deliveryFeeAfter: feeAfter,
             lines: plan.changes.map((change) => {
               const names = swapped.get(change.line.id);
               return {
@@ -564,6 +611,61 @@ export class DeliveryCorrectionService {
   }
 
   /**
+   * The delivery fee, split again by the lines' values as they now stand, and
+   * each lot's total put to its line's value plus its share (2026-10-09).
+   *
+   * Run after every correction, not only one to the fee: a line whose value
+   * changed takes a different share, and so does every other line. Lots whose
+   * total is already right are left alone. Sales already made keep their
+   * cost, as with every correction.
+   */
+  private async shareTheFee(
+    tx: Pick<TenantPrisma, 'goodsReceiptLine' | 'stockBatch' | 'product'>,
+    receiptId: string,
+    fee: number,
+  ) {
+    const lines = await tx.goodsReceiptLine.findMany({
+      where: { receiptId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        productId: true,
+        batchId: true,
+        totalCost: true,
+        deliveryCost: true,
+        quantityReceived: true,
+        batch: { select: { totalCost: true } },
+      },
+    });
+    if (fee > 0 && !feeHasSomewhereToGo(lines)) {
+      throw new BadRequestException(
+        'Nothing on this delivery arrived, so a delivery fee has nothing to be part of the cost of. Take the fee off too.',
+      );
+    }
+
+    const shares = splitDeliveryFee(fee, lines);
+    for (const [index, line] of lines.entries()) {
+      const deliveryCost = shares[index];
+      const lotTotal = line.totalCost + deliveryCost;
+      if (deliveryCost !== line.deliveryCost) {
+        await tx.goodsReceiptLine.update({
+          where: { id: line.id },
+          data: { deliveryCost },
+        });
+      }
+      if (lotTotal !== line.batch.totalCost) {
+        await tx.stockBatch.update({
+          where: { id: line.batchId },
+          data: { totalCost: lotTotal },
+        });
+      }
+      if (deliveryCost !== line.deliveryCost) {
+        await this.refreshCostPrice(tx, line.productId, line.id);
+      }
+    }
+  }
+
+  /**
    * The cost-price display, as a delivery writes it — but only when this line
    * is still the product's latest delivery, or a correction to an old delivery
    * would overwrite what a newer one set. A display only; never a valuation
@@ -577,13 +679,20 @@ export class DeliveryCorrectionService {
     const latest = await tx.goodsReceiptLine.findFirst({
       where: { productId },
       orderBy: [{ receipt: { receivedAt: 'desc' } }, { createdAt: 'desc' }],
-      select: { id: true, totalCost: true, quantityReceived: true },
+      select: {
+        id: true,
+        totalCost: true,
+        deliveryCost: true,
+        quantityReceived: true,
+      },
     });
     if (latest?.id !== lineId || latest.quantityReceived === 0) return;
     await tx.product.update({
       where: { id: productId },
       data: {
-        costPrice: Math.round(latest.totalCost / latest.quantityReceived),
+        costPrice: Math.round(
+          (latest.totalCost + latest.deliveryCost) / latest.quantityReceived,
+        ),
       },
     });
   }

@@ -15,6 +15,9 @@ import {
   stockChoices,
   type StockChoice,
 } from '../lib/options';
+import { personName } from '../money/cashNames';
+import { DeliveryFeeFields } from './DeliveryFeeFields';
+import { feeBody, feeOf, feeReady, type FeeDraft } from './deliveryFee';
 
 type GoodsReceiptView = components['schemas']['GoodsReceiptView'];
 type GoodsReceiptLineView = components['schemas']['GoodsReceiptLineView'];
@@ -72,6 +75,10 @@ interface LineDraft {
  * entered when Moringa came is chosen like a product. Another option of the
  * same product keeps the line's units, and the server moves the stock between
  * options on the same lot, its cost untouched.
+ *
+ * **The delivery fee** (2026-10-09): added when it was left off, changed, or
+ * cleared to take it off — with or without any line changing. The server
+ * shares it across the lines again by value; the bill never moves for it.
  */
 export function CorrectDeliveryDialog({
   receipt,
@@ -109,6 +116,13 @@ export function CorrectDeliveryDialog({
   const [preview, setPreview] = useState<CorrectionPreviewView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needsOverride, setNeedsOverride] = useState(false);
+  // Absent for a role that may not see cost — and then not offered.
+  const showsFee = receipt.deliveryFee !== undefined;
+  const [fee, setFee] = useState<FeeDraft>(() => feeOf(receipt));
+  const changeFee = (next: FeeDraft) => {
+    setFee(next);
+    setPreview(null);
+  };
 
   const change = (lineId: string, next: Partial<LineDraft>) => {
     setDrafts((current) => ({
@@ -144,6 +158,9 @@ export function CorrectDeliveryDialog({
       ? [`${recordedName(line)}: enter the value.`]
       : []),
   ]);
+  if (showsFee && !feeReady(fee)) {
+    problems.push('Choose the account the delivery fee was paid from.');
+  }
 
   const body = () => ({
     reason: reason.trim(),
@@ -162,6 +179,7 @@ export function CorrectDeliveryDialog({
       paidFor: 'base' in paidFor ? paidFor.base : 0,
       totalCost: draft.value ?? 0,
     })),
+    ...(showsFee && { deliveryFee: feeBody(fee) }),
     ...(needsOverride &&
       forcedReason.trim() && {
         force: true,
@@ -237,6 +255,8 @@ export function CorrectDeliveryDialog({
           Enter what is true for each line. Stock, the delivery’s value and its
           bill move by the difference, and what was recorded before is kept.
           Decimals are fine where they come to whole pieces — 6.5 cartons.
+          {showsFee &&
+            ' A delivery fee left off or wrong is put right at the bottom.'}
         </p>
 
         <div className="mt-4 space-y-4">
@@ -248,6 +268,28 @@ export function CorrectDeliveryDialog({
               onChange={(next) => change(line.id, next)}
             />
           ))}
+
+          {showsFee && (
+            <div className="rounded-md border border-slate-200 p-3">
+              <h3 className="mb-2 text-sm font-medium text-slate-900">
+                Bringing it here
+              </h3>
+              <DeliveryFeeFields
+                fee={fee}
+                onChange={changeFee}
+                idPrefix="correct-fee"
+                recorderLabel={
+                  receipt.recordedBy
+                    ? `Whoever recorded it (${personName(receipt.recordedBy)})`
+                    : 'Whoever recorded it'
+                }
+              />
+              <p className="mt-2 text-xs text-slate-500">
+                Shared across the lines by value and added to what each item
+                cost. It never changes the vendor’s bill.
+              </p>
+            </div>
+          )}
 
           <Field label="What was wrong" htmlFor="correct-reason">
             <Input
@@ -320,6 +362,13 @@ export function CorrectDeliveryDialog({
                     <Money value={preview.billAmountAfter} />
                   </li>
                 )}
+              {preview.deliveryFeeBefore !== preview.deliveryFeeAfter && (
+                <li>
+                  Delivery fee: <Money value={preview.deliveryFeeBefore} /> →{' '}
+                  <Money value={preview.deliveryFeeAfter} />, shared across the
+                  lines again
+                </li>
+              )}
             </ul>
           </div>
         )}

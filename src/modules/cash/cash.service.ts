@@ -333,7 +333,7 @@ export class CashService {
   // -- Figures --------------------------------------------------------------
 
   /**
-   * Received, paid out, banked and waiting per person — four aggregates, each
+   * Received, paid out, banked and waiting per person — aggregates, each
    * grouped in the database, so the work does not grow with the history.
    *
    * Rows with nobody recorded against them (from before people were recorded)
@@ -346,61 +346,80 @@ export class CashService {
     const since = countedFrom ? { gte: countedFrom } : undefined;
     const recorded = userId ?? { not: null };
 
-    const [received, refunded, expenses, supplierPayments, bankings] =
-      await Promise.all([
-        this.prisma.payment.groupBy({
-          by: ['recordedByUserId'],
-          where: {
-            method: PaymentMethod.cash,
-            voidedAt: null,
-            amount: { gt: 0 },
-            recordedByUserId: recorded,
-            ...(since && { occurredAt: since }),
-          },
-          _sum: { amount: true },
-        }),
-        this.prisma.payment.groupBy({
-          by: ['recordedByUserId'],
-          where: {
-            method: PaymentMethod.cash,
-            voidedAt: null,
-            amount: { lt: 0 },
-            recordedByUserId: recorded,
-            ...(since && { occurredAt: since }),
-          },
-          _sum: { amount: true },
-        }),
-        this.prisma.expense.groupBy({
-          by: ['recordedByUserId'],
-          where: {
-            method: PaymentMethod.cash,
-            deletedAt: null,
-            recordedByUserId: recorded,
-            ...(since && { occurredAt: since }),
-          },
-          _sum: { amount: true },
-        }),
-        this.prisma.supplierPayment.groupBy({
-          by: ['recordedByUserId'],
-          where: {
-            method: PaymentMethod.cash,
-            voidedAt: null,
-            recordedByUserId: recorded,
-            ...(since && { occurredAt: since }),
-          },
-          _sum: { amount: true },
-        }),
-        // Not bounded by `countedFrom`: every banking row was written after
-        // counting started, even one dated earlier.
-        this.prisma.cashBanking.groupBy({
-          by: ['heldByUserId', 'confirmedAt'],
-          where: {
-            voidedAt: null,
-            ...(userId && { heldByUserId: userId }),
-          },
-          _sum: { amount: true },
-        }),
-      ]);
+    const [
+      received,
+      refunded,
+      expenses,
+      supplierPayments,
+      deliveryFees,
+      bankings,
+    ] = await Promise.all([
+      this.prisma.payment.groupBy({
+        by: ['recordedByUserId'],
+        where: {
+          method: PaymentMethod.cash,
+          voidedAt: null,
+          amount: { gt: 0 },
+          recordedByUserId: recorded,
+          ...(since && { occurredAt: since }),
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.payment.groupBy({
+        by: ['recordedByUserId'],
+        where: {
+          method: PaymentMethod.cash,
+          voidedAt: null,
+          amount: { lt: 0 },
+          recordedByUserId: recorded,
+          ...(since && { occurredAt: since }),
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.expense.groupBy({
+        by: ['recordedByUserId'],
+        where: {
+          method: PaymentMethod.cash,
+          deletedAt: null,
+          recordedByUserId: recorded,
+          ...(since && { occurredAt: since }),
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.supplierPayment.groupBy({
+        by: ['recordedByUserId'],
+        where: {
+          method: PaymentMethod.cash,
+          voidedAt: null,
+          recordedByUserId: recorded,
+          ...(since && { occurredAt: since }),
+        },
+        _sum: { amount: true },
+      }),
+      // A driver paid in cash at a delivery (2026-10-09), from whoever's
+      // cash it came out of. Part of what the goods cost, not an expense —
+      // but it still left their hands.
+      this.prisma.goodsReceipt.groupBy({
+        by: ['deliveryFeePaidByUserId'],
+        where: {
+          deliveryFeeMethod: PaymentMethod.cash,
+          deliveryFee: { gt: 0 },
+          deliveryFeePaidByUserId: recorded,
+          ...(since && { receivedAt: since }),
+        },
+        _sum: { deliveryFee: true },
+      }),
+      // Not bounded by `countedFrom`: every banking row was written after
+      // counting started, even one dated earlier.
+      this.prisma.cashBanking.groupBy({
+        by: ['heldByUserId', 'confirmedAt'],
+        where: {
+          voidedAt: null,
+          ...(userId && { heldByUserId: userId }),
+        },
+        _sum: { amount: true },
+      }),
+    ]);
 
     const people = new Map<string, CashFigures>();
     const add = (
@@ -422,6 +441,8 @@ export class CashService {
       add(row.recordedByUserId, 'paidOut', row._sum.amount);
     for (const row of supplierPayments)
       add(row.recordedByUserId, 'paidOut', row._sum.amount);
+    for (const row of deliveryFees)
+      add(row.deliveryFeePaidByUserId, 'paidOut', row._sum.deliveryFee);
     for (const row of bankings) {
       add(
         row.heldByUserId,

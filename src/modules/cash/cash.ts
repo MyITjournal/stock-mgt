@@ -9,7 +9,8 @@ import { Minor } from '../../common/money/money';
  *
  * - **received**: cash payments they took, voided ones left out.
  * - **paid out**: cash refunds, cash expenses and cash supplier payments they
- *   recorded — money that left the till in their hands.
+ *   recorded, and delivery fees paid from their cash — money that left the
+ *   till in their hands.
  * - **banked**: banking an owner or manager has confirmed.
  * - **waiting**: banking recorded but not yet confirmed. Out of their hands,
  *   not yet known to be in the bank, so it has its own column rather than
